@@ -106,9 +106,10 @@ def api_proxy():
         action = data.get("action")
         param = data.get("param", {})
     except Exception as e:
+        logger.error(f"Invalid request format: {e}")
         return jsonify({
             "status": "error",
-            "message": f"Invalid request format: {e}"
+            "message": "Invalid request format"
         }), 400
     
     # Handle different actions
@@ -128,7 +129,7 @@ def api_proxy():
         logger.error(f"Netcup API error: {e}")
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": "API request failed"
         }), 500
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
