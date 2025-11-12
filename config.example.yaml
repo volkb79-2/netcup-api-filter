@@ -1,0 +1,45 @@
+# Netcup API Filter Configuration
+# Copy this file to config.yaml and fill in your details
+
+# Netcup API credentials (keep these secure!)
+netcup:
+  customer_id: "123456"
+  api_key: "your-api-key-here"
+  api_password: "your-api-password-here"
+  api_url: "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON"
+
+# Access control tokens
+# Each token has specific permissions for specific resources
+tokens:
+  # Example: Token for updating a specific A record
+  - token: "host1-update-token-changeme"
+    description: "Allow host1 to update its A record"
+    permissions:
+      - domain: "example.com"
+        record_name: "host1"
+        record_types: ["A"]
+        operations: ["read", "update"]
+  
+  # Example: Token for reading all records of a domain
+  - token: "readonly-token-changeme"
+    description: "Read-only access to example.com DNS records"
+    permissions:
+      - domain: "example.com"
+        record_name: "*"
+        record_types: ["*"]
+        operations: ["read"]
+  
+  # Example: Token for managing multiple specific records
+  - token: "multi-host-token-changeme"
+    description: "Manage multiple host records"
+    permissions:
+      - domain: "example.com"
+        record_name: "web*"
+        record_types: ["A", "AAAA"]
+        operations: ["read", "update", "create", "delete"]
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false

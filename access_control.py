@@ -1,0 +1,182 @@
+"""
+Access Control Logic
+Validates requests against configured permissions
+"""
+import fnmatch
+import logging
+from typing import Dict, List, Optional, Any
+
+logger = logging.getLogger(__name__)
+
+
+class AccessControl:
+    """Manages access control for API requests"""
+    
+    def __init__(self, tokens_config: List[Dict[str, Any]]):
+        """
+        Initialize access control with token configuration
+        
+        Args:
+            tokens_config: List of token configurations with permissions
+        """
+        self.tokens = {}
+        for token_config in tokens_config:
+            token = token_config.get("token")
+            if token:
+                self.tokens[token] = {
+                    "description": token_config.get("description", ""),
+                    "permissions": token_config.get("permissions", [])
+                }
+    
+    def validate_token(self, token: str) -> bool:
+        """Check if a token exists"""
+        return token in self.tokens
+    
+    def get_token_info(self, token: str) -> Optional[Dict[str, Any]]:
+        """Get information about a token"""
+        return self.tokens.get(token)
+    
+    def check_permission(self, token: str, action: str, domain: str, 
+                        record_name: Optional[str] = None, 
+                        record_type: Optional[str] = None) -> bool:
+        """
+        Check if a token has permission for a specific action
+        
+        Args:
+            token: The authentication token
+            action: The action being performed (read, update, create, delete)
+            domain: The domain being accessed
+            record_name: The DNS record name (hostname) being accessed
+            record_type: The DNS record type (A, AAAA, CNAME, etc.)
+        
+        Returns:
+            True if permission is granted, False otherwise
+        """
+        if not self.validate_token(token):
+            logger.warning(f"Invalid token attempted")
+            return False
+        
+        token_info = self.tokens[token]
+        permissions = token_info.get("permissions", [])
+        
+        for perm in permissions:
+            # Check domain match
+            perm_domain = perm.get("domain", "")
+            if not fnmatch.fnmatch(domain, perm_domain):
+                continue
+            
+            # Check operation match
+            perm_operations = perm.get("operations", [])
+            if action not in perm_operations and "*" not in perm_operations:
+                continue
+            
+            # If no record-specific checks needed (e.g., for infoDnsZone)
+            if record_name is None:
+                logger.info(f"Permission granted for {action} on domain {domain}")
+                return True
+            
+            # Check record name match
+            perm_record_name = perm.get("record_name", "*")
+            if not fnmatch.fnmatch(record_name, perm_record_name):
+                continue
+            
+            # Check record type match
+            if record_type:
+                perm_record_types = perm.get("record_types", ["*"])
+                if record_type not in perm_record_types and "*" not in perm_record_types:
+                    continue
+            
+            logger.info(f"Permission granted for {action} on {domain}/{record_name} ({record_type})")
+            return True
+        
+        logger.warning(f"Permission denied for {action} on {domain}/{record_name} ({record_type})")
+        return False
+    
+    def filter_dns_records(self, token: str, domain: str, 
+                          records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Filter DNS records based on token permissions
+        
+        Args:
+            token: The authentication token
+            domain: The domain
+            records: List of DNS records
+        
+        Returns:
+            Filtered list of DNS records the token has permission to see
+        """
+        if not self.validate_token(token):
+            return []
+        
+        token_info = self.tokens[token]
+        permissions = token_info.get("permissions", [])
+        
+        filtered_records = []
+        for record in records:
+            record_name = record.get("hostname", "")
+            record_type = record.get("type", "")
+            
+            # Check if token has permission to read this record
+            for perm in permissions:
+                # Check domain match
+                perm_domain = perm.get("domain", "")
+                if not fnmatch.fnmatch(domain, perm_domain):
+                    continue
+                
+                # Check if read operation is allowed
+                perm_operations = perm.get("operations", [])
+                if "read" not in perm_operations and "*" not in perm_operations:
+                    continue
+                
+                # Check record name match
+                perm_record_name = perm.get("record_name", "*")
+                if not fnmatch.fnmatch(record_name, perm_record_name):
+                    continue
+                
+                # Check record type match
+                perm_record_types = perm.get("record_types", ["*"])
+                if record_type not in perm_record_types and "*" not in perm_record_types:
+                    continue
+                
+                # Permission granted for this record
+                filtered_records.append(record)
+                break
+        
+        logger.info(f"Filtered {len(records)} records to {len(filtered_records)} for token")
+        return filtered_records
+    
+    def validate_dns_records_update(self, token: str, domain: str, 
+                                   records: List[Dict[str, Any]]) -> tuple[bool, Optional[str]]:
+        """
+        Validate if a token can update the specified DNS records
+        
+        Args:
+            token: The authentication token
+            domain: The domain
+            records: List of DNS records to update
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not self.validate_token(token):
+            return False, "Invalid token"
+        
+        for record in records:
+            record_name = record.get("hostname", "")
+            record_type = record.get("type", "")
+            delete_record = record.get("deleterecord", False)
+            record_id = record.get("id")
+            
+            # Determine the operation
+            if delete_record:
+                operation = "delete"
+            elif record_id:
+                operation = "update"
+            else:
+                operation = "create"
+            
+            # Check permission for this record
+            if not self.check_permission(token, operation, domain, record_name, record_type):
+                return False, f"No permission to {operation} record {record_name} ({record_type})"
+        
+        return True, None
