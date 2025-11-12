@@ -25,7 +25,7 @@ pip install -r requirements.txt
 # Copy the example configuration
 cp config.example.yaml config.yaml
 
-# Edit the configuration with your details
+# Edit the configuration with your Netcup credentials
 nano config.yaml  # or use your favorite editor
 ```
 
@@ -40,14 +40,59 @@ netcup:
   api_password: "YOUR_API_PASSWORD"
   api_url: "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON"
 
-tokens:
-  - token: "my-first-token-change-this"
-    description: "Test token for host1"
+tokens: []  # We'll generate tokens in the next step
+
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+```
+
+**Important**: Replace the placeholder values with your actual Netcup credentials.
+
+### Generate Secure Tokens
+
+Use the built-in token generator to create secure tokens:
+
+```bash
+# Generate a token for host1 to update its A record
+python generate_token.py \
+  --description "Host1 Dynamic DNS" \
+  --domain yourdomain.com \
+  --record-name host1 \
+  --record-types A \
+  --operations read,update
+
+# Optional: Add IP whitelist for extra security
+python generate_token.py \
+  --description "Host1 Dynamic DNS" \
+  --domain yourdomain.com \
+  --record-name host1 \
+  --record-types A \
+  --operations read,update \
+  --allowed-origins "192.168.1.100"
+```
+
+The tool will output YAML configuration. Copy the output and add it to your `config.yaml` under the `tokens:` section.
+
+**Example output:**
+```yaml
+# Add this to your config.yaml file under 'tokens:'
+  - description: Host1 Dynamic DNS
     permissions:
-      - domain: "yourdomain.com"
-        record_name: "host1"
-        record_types: ["A"]
-        operations: ["read", "update"]
+    - domain: yourdomain.com
+      operations:
+      - read
+      - update
+      record_name: host1
+      record_types:
+      - A
+    token: f66ac29d22026b8ca0e59c9d4472e5f83782deb55b571b61f63c1bff50721fa7
+
+# Token value (provide this to the client): f66ac29d22026b8ca0e59c9d4472e5f83782deb55b571b61f63c1bff50721fa7
+```
+
+Save the token value securely - you'll need to provide it to the client
 
 server:
   host: "0.0.0.0"
@@ -201,11 +246,25 @@ tokens:
 
 ## Security Tips
 
-1. **Generate Strong Tokens**: Use `openssl rand -hex 32` to generate secure tokens
-2. **Protect config.yaml**: Set permissions with `chmod 600 config.yaml`
-3. **Use HTTPS in Production**: Deploy behind nginx/Caddy with TLS certificates
-4. **Monitor Logs**: Review application logs regularly for suspicious activity
-5. **Apply Least Privilege**: Grant only the minimum permissions needed
+1. **Generate Strong Tokens**: Use the built-in token generator
+   ```bash
+   python generate_token.py --description "..." --domain ... --record-name ... --record-types ... --operations ...
+   ```
+   Or manually: `openssl rand -hex 32`
+
+2. **Use IP Whitelisting**: Restrict tokens to specific IPs or domains
+   ```bash
+   python generate_token.py ... --allowed-origins "192.168.1.100,10.0.0.0/24"
+   ```
+   This prevents token abuse even if intercepted.
+
+3. **Protect config.yaml**: Set permissions with `chmod 600 config.yaml`
+
+4. **Use HTTPS in Production**: Deploy behind nginx/Caddy with TLS certificates
+
+5. **Monitor Logs**: Review application logs regularly for suspicious activity
+
+6. **Apply Least Privilege**: Grant only the minimum permissions needed
 
 ## Troubleshooting
 

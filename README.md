@@ -112,8 +112,50 @@ server:
 
 ## Usage
 
+### Generating Tokens
+
+The filter includes a token generation tool that creates cryptographically secure tokens:
+
+```bash
+# Generate a token for a host to update its A record
+python generate_token.py \
+  --description "Host1 Dynamic DNS" \
+  --domain example.com \
+  --record-name host1 \
+  --record-types A \
+  --operations read,update
+
+# Generate a token with IP whitelist (recommended for security)
+python generate_token.py \
+  --description "Server1 Updates" \
+  --domain example.com \
+  --record-name server1 \
+  --record-types A,AAAA \
+  --operations read,update \
+  --allowed-origins "192.168.1.100,10.0.0.0/24"
+
+# Generate a read-only monitoring token
+python generate_token.py \
+  --description "DNS Monitoring" \
+  --domain example.com \
+  --record-name "*" \
+  --record-types "*" \
+  --operations read
+```
+
+The tool outputs YAML configuration that you can add directly to your `config.yaml` file.
+
+**Manual token generation** (if you prefer):
+```bash
+# Generate a secure random token (64 hex characters)
+openssl rand -hex 32
+```
+
+Then add it to your `config.yaml` with appropriate permissions.
+
 ### Starting the Server
 
+**Standalone mode** (for development or VPS):
 ```bash
 python filter_proxy.py
 ```
@@ -121,6 +163,21 @@ python filter_proxy.py
 Or with a custom config file:
 ```bash
 python filter_proxy.py /path/to/config.yaml
+```
+
+**Webhosting deployment** (WSGI/CGI):
+
+See [WEBHOSTING_DEPLOYMENT.md](WEBHOSTING_DEPLOYMENT.md) for detailed instructions on deploying to shared hosting environments like Netcup Webhosting.
+
+Quick start for WSGI:
+```bash
+# Use wsgi.py for Apache with mod_wsgi
+# See WEBHOSTING_DEPLOYMENT.md for .htaccess configuration
+```
+
+**Docker deployment**:
+```bash
+docker-compose up -d
 ```
 
 ### API Endpoint
@@ -247,18 +304,37 @@ tokens:
    - Never commit to version control
    - Use environment variables or secret management in production
 
-2. **Use strong tokens**: Generate cryptographically secure random tokens
+2. **Generate strong tokens**: Use the included token generator
+   ```bash
+   python generate_token.py --description "..." --domain ... --record-name ... --record-types ... --operations ...
+   ```
+   Or manually with:
    ```bash
    openssl rand -hex 32
    ```
 
-3. **Apply principle of least privilege**: Grant only the minimum permissions needed
+3. **Use IP/domain whitelisting**: Restrict token usage to specific origins
+   ```yaml
+   tokens:
+     - token: "your-secure-token"
+       allowed_origins:
+         - "192.168.1.100"      # Single IP
+         - "10.0.0.0/24"        # CIDR network
+         - "server.example.com" # Domain name
+         - "*.internal.net"     # Wildcard domain
+   ```
+   This prevents token abuse even if intercepted.
 
-4. **Use HTTPS in production**: Deploy behind a reverse proxy (nginx, Caddy) with TLS
+4. **Apply principle of least privilege**: Grant only the minimum permissions needed
 
-5. **Monitor access logs**: Review the application logs for suspicious activity
+5. **Use HTTPS in production**: Deploy behind a reverse proxy (nginx, Caddy) with TLS
 
-6. **Rotate tokens regularly**: Change tokens periodically, especially if compromised
+6. **Monitor access logs**: Review the application logs for suspicious activity
+   - Invalid token attempts
+   - Origin restriction violations
+   - Permission denied events
+
+7. **Rotate tokens regularly**: Change tokens periodically, especially if compromised
 
 ## Logging
 

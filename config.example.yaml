@@ -19,6 +19,12 @@ tokens:
         record_name: "host1"
         record_types: ["A"]
         operations: ["read", "update"]
+    # Optional: Restrict token usage to specific IPs or domains
+    # allowed_origins:
+    #   - "192.168.1.100"        # Single IP
+    #   - "10.0.0.0/24"          # CIDR network
+    #   - "example.com"          # Domain name
+    #   - "*.example.com"        # Wildcard domain
   
   # Example: Token for reading all records of a domain
   - token: "readonly-token-changeme"

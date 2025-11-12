@@ -100,6 +100,16 @@ def api_proxy():
             "message": "Invalid authentication token"
         }), 401
     
+    # Check origin restrictions (IP/domain whitelist)
+    client_ip = request.remote_addr
+    origin_host = request.headers.get("Host", "")
+    if not access_control.check_origin(token, client_ip, origin_host):
+        logger.warning(f"Access denied for token from origin: {client_ip} / {origin_host}")
+        return jsonify({
+            "status": "error",
+            "message": "Access denied: origin not allowed"
+        }), 403
+    
     # Parse request
     try:
         data = request.get_json()

@@ -3,8 +3,9 @@ Access Control Logic
 Validates requests against configured permissions
 """
 import fnmatch
+import ipaddress
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,8 @@ class AccessControl:
             if token:
                 self.tokens[token] = {
                     "description": token_config.get("description", ""),
-                    "permissions": token_config.get("permissions", [])
+                    "permissions": token_config.get("permissions", []),
+                    "allowed_origins": token_config.get("allowed_origins", [])
                 }
     
     def validate_token(self, token: str) -> bool:
@@ -35,6 +37,90 @@ class AccessControl:
     def get_token_info(self, token: str) -> Optional[Dict[str, Any]]:
         """Get information about a token"""
         return self.tokens.get(token)
+    
+    def _is_ip_in_network(self, ip: str, network: str) -> bool:
+        """
+        Check if an IP address is in a network (supports CIDR notation)
+        
+        Args:
+            ip: IP address to check
+            network: Network in CIDR notation (e.g., 192.168.1.0/24) or single IP
+        
+        Returns:
+            True if IP is in network, False otherwise
+        """
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            # Check if network contains '/' for CIDR notation
+            if '/' in network:
+                network_obj = ipaddress.ip_network(network, strict=False)
+                return ip_obj in network_obj
+            else:
+                # Single IP comparison
+                return ip == network
+        except ValueError:
+            logger.warning(f"Invalid IP address or network: {ip}, {network}")
+            return False
+    
+    def _matches_domain_pattern(self, origin: str, pattern: str) -> bool:
+        """
+        Check if an origin matches a domain pattern
+        
+        Args:
+            origin: Origin domain or IP to check
+            pattern: Pattern (supports wildcards, e.g., *.example.com)
+        
+        Returns:
+            True if origin matches pattern, False otherwise
+        """
+        # Try to parse as IP first
+        try:
+            ipaddress.ip_address(origin)
+            # It's an IP, check against IP patterns
+            return self._is_ip_in_network(origin, pattern)
+        except ValueError:
+            # It's a domain, use fnmatch
+            return fnmatch.fnmatch(origin.lower(), pattern.lower())
+    
+    def check_origin(self, token: str, client_ip: Optional[str] = None, 
+                    origin_host: Optional[str] = None) -> bool:
+        """
+        Check if the request origin is allowed for this token
+        
+        Args:
+            token: The authentication token
+            client_ip: Client IP address
+            origin_host: Origin hostname from request headers
+        
+        Returns:
+            True if origin is allowed or no restrictions configured, False otherwise
+        """
+        if not self.validate_token(token):
+            return False
+        
+        token_info = self.tokens[token]
+        allowed_origins = token_info.get("allowed_origins", [])
+        
+        # If no restrictions configured, allow all origins
+        if not allowed_origins:
+            return True
+        
+        # Check client IP if provided
+        if client_ip:
+            for allowed_origin in allowed_origins:
+                if self._matches_domain_pattern(client_ip, allowed_origin):
+                    logger.info(f"Origin allowed: {client_ip} matches {allowed_origin}")
+                    return True
+        
+        # Check origin host if provided
+        if origin_host:
+            for allowed_origin in allowed_origins:
+                if self._matches_domain_pattern(origin_host, allowed_origin):
+                    logger.info(f"Origin allowed: {origin_host} matches {allowed_origin}")
+                    return True
+        
+        logger.warning(f"Origin denied: {client_ip} / {origin_host} not in allowed origins")
+        return False
     
     def check_permission(self, token: str, action: str, domain: str, 
                         record_name: Optional[str] = None, 
