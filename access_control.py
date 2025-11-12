@@ -5,9 +5,14 @@ Validates requests against configured permissions
 import fnmatch
 import ipaddress
 import logging
+import re
 from typing import Dict, List, Optional, Any, Union
 
 logger = logging.getLogger(__name__)
+
+# Security: Limit pattern complexity to prevent ReDoS
+MAX_PATTERN_LENGTH = 100
+SAFE_PATTERN_REGEX = re.compile(r'^[a-zA-Z0-9\-\.\*_/]+$')  # Allow / for CIDR notation
 
 
 class AccessControl:
@@ -73,13 +78,22 @@ class AccessControl:
         Returns:
             True if origin matches pattern, False otherwise
         """
+        # Security: Validate pattern to prevent ReDoS
+        if len(pattern) > MAX_PATTERN_LENGTH:
+            logger.warning(f"Pattern too long: {len(pattern)} characters")
+            return False
+        
+        if not SAFE_PATTERN_REGEX.match(pattern):
+            logger.warning(f"Unsafe pattern detected: {pattern}")
+            return False
+        
         # Try to parse as IP first
         try:
             ipaddress.ip_address(origin)
             # It's an IP, check against IP patterns
             return self._is_ip_in_network(origin, pattern)
         except ValueError:
-            # It's a domain, use fnmatch
+            # It's a domain, use fnmatch with validated pattern
             return fnmatch.fnmatch(origin.lower(), pattern.lower())
     
     def check_origin(self, token: str, client_ip: Optional[str] = None, 
@@ -148,6 +162,12 @@ class AccessControl:
         for perm in permissions:
             # Check domain match
             perm_domain = perm.get("domain", "")
+            
+            # Security: Validate pattern
+            if len(perm_domain) > MAX_PATTERN_LENGTH or not SAFE_PATTERN_REGEX.match(perm_domain):
+                logger.warning(f"Invalid domain pattern in config: {perm_domain}")
+                continue
+            
             if not fnmatch.fnmatch(domain, perm_domain):
                 continue
             
@@ -163,6 +183,12 @@ class AccessControl:
             
             # Check record name match
             perm_record_name = perm.get("record_name", "*")
+            
+            # Security: Validate pattern
+            if len(perm_record_name) > MAX_PATTERN_LENGTH or not SAFE_PATTERN_REGEX.match(perm_record_name):
+                logger.warning(f"Invalid record_name pattern in config: {perm_record_name}")
+                continue
+            
             if not fnmatch.fnmatch(record_name, perm_record_name):
                 continue
             
@@ -206,6 +232,11 @@ class AccessControl:
             for perm in permissions:
                 # Check domain match
                 perm_domain = perm.get("domain", "")
+                
+                # Security: Validate pattern
+                if len(perm_domain) > MAX_PATTERN_LENGTH or not SAFE_PATTERN_REGEX.match(perm_domain):
+                    continue
+                
                 if not fnmatch.fnmatch(domain, perm_domain):
                     continue
                 
@@ -216,6 +247,11 @@ class AccessControl:
                 
                 # Check record name match
                 perm_record_name = perm.get("record_name", "*")
+                
+                # Security: Validate pattern
+                if len(perm_record_name) > MAX_PATTERN_LENGTH or not SAFE_PATTERN_REGEX.match(perm_record_name):
+                    continue
+                
                 if not fnmatch.fnmatch(record_name, perm_record_name):
                     continue
                 
