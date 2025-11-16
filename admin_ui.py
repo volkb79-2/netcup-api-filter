@@ -461,9 +461,7 @@ def setup_admin_ui(app):
     admin = Admin(
         app,
         name='Netcup API Filter',
-        template_mode='bootstrap4',
-        index_view=SecureAdminIndexView(name='Dashboard', url='/admin'),
-        base_template='admin/base.html'
+        index_view=SecureAdminIndexView(name='Dashboard', url='/admin')
     )
     
     # Add model views
