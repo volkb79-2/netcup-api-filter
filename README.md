@@ -145,7 +145,38 @@ python filter_proxy.py
 **Webhosting (Passenger):**
 See [WEBHOSTING_DEPLOYMENT.md](WEBHOSTING_DEPLOYMENT.md) for detailed instructions.
 
-## Quick Start
+## Quick Deploy (FTP-Only, No Command Line Needed!)
+
+**Perfect for netcup webhosting without SSH/command line access:**
+
+1. **Build the deployment package:**
+   ```bash
+   python build_deployment.py
+   ```
+
+2. **Download `deploy.zip`** from your repository
+
+3. **Upload via FTP:**
+   - Extract `deploy.zip` locally
+   - Upload all files to your webhosting via FTP/SFTP
+   - Upload to your domain directory (e.g., `/www/htdocs/w0123456/yourdomain.com/netcup-filter/`)
+
+4. **Edit one line in `.htaccess`:**
+   - Open `.htaccess` in your FTP client
+   - Change `PassengerAppRoot /path/to/your/domain/netcup-filter` to your actual path
+   - Change `PassengerPython` to `/usr/bin/python3` (system Python)
+
+5. **Access and configure:**
+   - Navigate to `https://yourdomain.com/admin`
+   - Login with `admin` / `admin`
+   - Configure your Netcup API credentials
+   - Create client tokens
+
+**No pip install, no command line, no virtual environment needed!** All dependencies are pre-bundled in the `vendor/` directory.
+
+See `DEPLOY_README.md` (included in the package) for detailed step-by-step instructions.
+
+## Quick Start (Development/VPS with Command Line)
 
 1. Install dependencies: `pip install -r requirements.txt`
 2. Start the application: `python passenger_wsgi.py` (or use Passenger)

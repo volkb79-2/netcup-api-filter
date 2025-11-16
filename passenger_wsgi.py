@@ -7,7 +7,15 @@ import os
 import logging
 
 # Add the application directory to the Python path
-sys.path.insert(0, os.path.dirname(__file__))
+app_dir = os.path.dirname(__file__) or os.getcwd()
+sys.path.insert(0, app_dir)
+
+# Support for vendored dependencies (for FTP-only deployment)
+vendor_dir = os.path.join(app_dir, 'vendor')
+if os.path.isdir(vendor_dir):
+    # Add vendor directory to the beginning of sys.path
+    # This allows Python to find all packages extracted there
+    sys.path.insert(0, vendor_dir)
 
 # Configure logging
 logging.basicConfig(
@@ -20,6 +28,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Auto-detect database location if not explicitly set
+if 'NETCUP_FILTER_DB_PATH' not in os.environ:
+    # Try application directory first
+    db_path = os.path.join(app_dir, 'netcup_filter.db')
+    if os.path.exists(db_path):
+        os.environ['NETCUP_FILTER_DB_PATH'] = db_path
+        logger.info(f"Auto-detected database at: {db_path}")
+
 try:
     from flask import Flask
     from database import init_db
@@ -31,6 +47,13 @@ try:
     import yaml
     
     logger.info("Starting Netcup API Filter with Passenger...")
+    logger.info(f"Application directory: {app_dir}")
+    
+    # Log vendor directory status
+    if os.path.isdir(vendor_dir):
+        logger.info(f"Using vendored dependencies from: {vendor_dir}")
+    else:
+        logger.info("Using system-installed dependencies")
     
     # Set up secret key for Flask sessions
     # SECURITY: Use environment variable or generate persistent key
@@ -110,14 +133,68 @@ try:
     # WSGI application
     application = app
 
-except Exception as e:
-    logger.error(f"Failed to start application: {e}", exc_info=True)
+except ImportError as e:
+    logger.error(f"Failed to import required module: {e}", exc_info=True)
+    logger.error("If using vendored dependencies, ensure vendor/ directory was uploaded correctly")
+    logger.error(f"Python path: {sys.path[:5]}")
+    
     # Create a minimal error application
     def application(environ, start_response):
         status = '500 Internal Server Error'
-        response_headers = [('Content-type', 'text/plain')]
+        response_headers = [('Content-type', 'text/html; charset=utf-8')]
         start_response(status, response_headers)
-        return [f'Application failed to start: {str(e)}'.encode('utf-8')]
+        
+        error_html = f"""
+        <html>
+        <head><title>Application Error</title></head>
+        <body>
+            <h1>Application Failed to Start</h1>
+            <h2>Import Error</h2>
+            <p><strong>Error:</strong> {str(e)}</p>
+            <h3>Troubleshooting Steps:</h3>
+            <ol>
+                <li>Verify all files were uploaded via FTP (especially vendor/ directory)</li>
+                <li>Check that .htaccess PassengerPython path is correct</li>
+                <li>Ensure Python version is 3.7 or higher</li>
+                <li>Review error logs for more details</li>
+            </ol>
+            <h3>Python Path:</h3>
+            <pre>{sys.path[:5]}</pre>
+            <h3>Application Directory:</h3>
+            <pre>{app_dir}</pre>
+        </body>
+        </html>
+        """
+        return [error_html.encode('utf-8')]
+
+except Exception as e:
+    logger.error(f"Failed to start application: {e}", exc_info=True)
+    
+    # Create a minimal error application
+    def application(environ, start_response):
+        status = '500 Internal Server Error'
+        response_headers = [('Content-type', 'text/html; charset=utf-8')]
+        start_response(status, response_headers)
+        
+        error_html = f"""
+        <html>
+        <head><title>Application Error</title></head>
+        <body>
+            <h1>Application Failed to Start</h1>
+            <p><strong>Error:</strong> {str(e)}</p>
+            <h3>Troubleshooting Steps:</h3>
+            <ol>
+                <li>Check .htaccess configuration (verify all paths are correct)</li>
+                <li>Ensure netcup_filter.db file has correct permissions</li>
+                <li>Verify all application files were uploaded</li>
+                <li>Check error logs for detailed information</li>
+            </ol>
+            <h3>Application Directory:</h3>
+            <pre>{app_dir}</pre>
+        </body>
+        </html>
+        """
+        return [error_html.encode('utf-8')]
 
 if __name__ == "__main__":
     # For local testing only - never use debug=True in production
