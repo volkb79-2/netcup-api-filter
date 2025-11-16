@@ -152,17 +152,31 @@ def validate_hostname(hostname: str) -> bool:
 def add_security_headers(response):
     """Add security headers to all responses"""
     # Prevent clickjacking
-    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'  # Allow admin UI to load in same origin
     # Prevent MIME sniffing
     response.headers['X-Content-Type-Options'] = 'nosniff'
     # Enable XSS protection
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    # Content Security Policy
-    response.headers['Content-Security-Policy'] = "default-src 'none'"
+    # Content Security Policy - Allow admin UI resources
+    # Allow self for scripts/styles, CDN for Bootstrap/jQuery
+    if request.path.startswith('/admin'):
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
+            "img-src 'self' data:; "
+            "font-src 'self' https://stackpath.bootstrapcdn.com; "
+            "connect-src 'self'"
+        )
+    else:
+        response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
     # Referrer policy
-    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     # Remove server header
     response.headers.pop('Server', None)
+    # Strict Transport Security (HSTS) - force HTTPS
+    if request.is_secure:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
 

@@ -33,7 +33,32 @@ try:
     logger.info("Starting Netcup API Filter with Passenger...")
     
     # Set up secret key for Flask sessions
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(24).hex()
+    # SECURITY: Use environment variable or generate persistent key
+    secret_key = os.environ.get('SECRET_KEY')
+    if not secret_key:
+        # Generate a persistent secret key and store it
+        secret_file = os.path.join(os.getcwd(), '.secret_key')
+        try:
+            if os.path.exists(secret_file):
+                with open(secret_file, 'r') as f:
+                    secret_key = f.read().strip()
+            else:
+                secret_key = os.urandom(24).hex()
+                with open(secret_file, 'w') as f:
+                    f.write(secret_key)
+                os.chmod(secret_file, 0o600)  # Restrict permissions
+                logger.info("Generated new persistent secret key")
+        except Exception as e:
+            logger.warning(f"Failed to persist secret key: {e}, using temporary key")
+            secret_key = os.urandom(24).hex()
+    
+    app.config['SECRET_KEY'] = secret_key
+    
+    # SECURITY: Configure secure session cookies
+    app.config['SESSION_COOKIE_SECURE'] = True  # Only send over HTTPS
+    app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session timeout
     
     # Initialize database
     try:

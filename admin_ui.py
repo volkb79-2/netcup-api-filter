@@ -80,10 +80,32 @@ class SecureAdminIndexView(AdminIndexView):
         if request.method == 'POST':
             username = request.form.get('username')
             password = request.form.get('password')
+            client_ip = request.remote_addr
+            
+            # SECURITY: Check for too many failed attempts from this IP
+            from database import get_system_config, set_system_config
+            failed_attempts_key = f'failed_login_attempts_{client_ip}'
+            lockout_key = f'login_lockout_{client_ip}'
+            
+            # Check if IP is locked out
+            lockout_data = get_system_config(lockout_key)
+            if lockout_data:
+                lockout_until = datetime.fromisoformat(lockout_data.get('until', '2000-01-01'))
+                if datetime.utcnow() < lockout_until:
+                    logger.warning(f"Login attempt from locked out IP: {client_ip}")
+                    flash('Too many failed login attempts. Please try again later.', 'danger')
+                    return self.render('admin/login.html')
+                else:
+                    # Lockout expired, clear it
+                    set_system_config(lockout_key, {})
+                    set_system_config(failed_attempts_key, {'count': 0})
             
             admin_user = AdminUser.query.filter_by(username=username).first()
             
             if admin_user and verify_password(password, admin_user.password_hash):
+                # Successful login - clear failed attempts
+                set_system_config(failed_attempts_key, {'count': 0})
+                
                 # Update last login
                 admin_user.last_login_at = datetime.utcnow()
                 db.session.commit()
@@ -91,7 +113,7 @@ class SecureAdminIndexView(AdminIndexView):
                 user = User(admin_user)
                 login_user(user)
                 
-                logger.info(f"Admin user '{username}' logged in")
+                logger.info(f"Admin user '{username}' logged in from {client_ip}")
                 
                 # Check if password change required
                 if admin_user.must_change_password:
@@ -100,8 +122,23 @@ class SecureAdminIndexView(AdminIndexView):
                 
                 return redirect(url_for('.index'))
             else:
-                logger.warning(f"Failed login attempt for username '{username}'")
-                flash('Invalid username or password', 'danger')
+                # Failed login - increment counter
+                logger.warning(f"Failed login attempt for username '{username}' from {client_ip}")
+                
+                failed_attempts = get_system_config(failed_attempts_key) or {'count': 0}
+                failed_attempts['count'] = failed_attempts.get('count', 0) + 1
+                set_system_config(failed_attempts_key, failed_attempts)
+                
+                # SECURITY: Lock out after 5 failed attempts for 15 minutes
+                if failed_attempts['count'] >= 5:
+                    lockout_until = datetime.utcnow()
+                    from datetime import timedelta
+                    lockout_until = lockout_until + timedelta(minutes=15)
+                    set_system_config(lockout_key, {'until': lockout_until.isoformat()})
+                    logger.error(f"IP {client_ip} locked out after 5 failed login attempts")
+                    flash('Too many failed login attempts. Account locked for 15 minutes.', 'danger')
+                else:
+                    flash('Invalid username or password', 'danger')
         
         return self.render('admin/login.html')
     
