@@ -13,18 +13,9 @@ sys.path.insert(0, app_dir)
 # Support for vendored dependencies (for FTP-only deployment)
 vendor_dir = os.path.join(app_dir, 'vendor')
 if os.path.isdir(vendor_dir):
-    # Add vendor directory itself
+    # Add vendor directory to the beginning of sys.path
+    # This allows Python to find all packages extracted there
     sys.path.insert(0, vendor_dir)
-    
-    # Add all subdirectories in vendor (for package structures)
-    try:
-        for item in os.listdir(vendor_dir):
-            item_path = os.path.join(vendor_dir, item)
-            if os.path.isdir(item_path) and not item.startswith('.'):
-                sys.path.insert(0, item_path)
-    except OSError as e:
-        # Log but don't fail if we can't read vendor directory
-        pass
 
 # Configure logging
 logging.basicConfig(
