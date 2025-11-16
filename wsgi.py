@@ -1,6 +1,9 @@
 """
 WSGI Application Entry Point
 For deployment on shared hosting environments with WSGI support
+
+NOTE: For Phusion Passenger (Netcup webhosting), use passenger_wsgi.py instead.
+This file is kept for backward compatibility with other WSGI servers.
 """
 import sys
 import os
