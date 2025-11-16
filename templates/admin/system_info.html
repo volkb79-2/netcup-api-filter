@@ -1,0 +1,96 @@
+{% extends 'admin/base.html' %}
+
+{% block body %}
+<div class="container-fluid">
+    <h1 class="mt-4">System Information</h1>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <h3>Python Environment</h3>
+            <table class="table table-bordered">
+                <tr>
+                    <th width="40%">Python Version</th>
+                    <td>{{ python_info.python_version }}</td>
+                </tr>
+                <tr>
+                    <th>Implementation</th>
+                    <td>{{ python_info.python_implementation }}</td>
+                </tr>
+                <tr>
+                    <th>Platform</th>
+                    <td>{{ python_info.platform }}</td>
+                </tr>
+                <tr>
+                    <th>Architecture</th>
+                    <td>{{ python_info.architecture[0] }} / {{ python_info.architecture[1] }}</td>
+                </tr>
+                <tr>
+                    <th>Executable</th>
+                    <td><code>{{ python_info.executable }}</code></td>
+                </tr>
+                <tr>
+                    <th>Prefix</th>
+                    <td><code>{{ python_info.prefix }}</code></td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="col-md-6">
+            <h3>Directory Information</h3>
+            <table class="table table-bordered">
+                <tr>
+                    <th width="40%">Current Working Dir</th>
+                    <td><code>{{ dir_info.cwd }}</code></td>
+                </tr>
+                <tr>
+                    <th>Script Directory</th>
+                    <td><code>{{ dir_info.script_dir }}</code></td>
+                </tr>
+                <tr>
+                    <th>Home Directory</th>
+                    <td><code>{{ dir_info.home }}</code></td>
+                </tr>
+                <tr>
+                    <th>Database Path</th>
+                    <td><code>{{ db_path }}</code></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <h3>Filesystem Access Tests</h3>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Path</th>
+                        <th>Writable</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for path, writable, message in fs_tests %}
+                    <tr>
+                        <td><code>{{ path }}</code></td>
+                        <td>
+                            {% if writable %}
+                                <span class="badge badge-success">Yes</span>
+                            {% else %}
+                                <span class="badge badge-danger">No</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <div class="alert alert-info">
+                <strong>Note:</strong> These tests check write access to common directories.
+                The database and log files need write access to function properly.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

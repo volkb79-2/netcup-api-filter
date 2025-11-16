@@ -1,0 +1,126 @@
+{% extends 'admin/base.html' %}
+
+{% block body %}
+<div class="container-fluid">
+    <h1 class="mt-4">Email Configuration</h1>
+    
+    <div class="row mt-4">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>SMTP Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <input type="hidden" name="action" value="save">
+                        
+                        <div class="form-group">
+                            <label for="smtp_server">SMTP Server</label>
+                            <input type="text" class="form-control" id="smtp_server" name="smtp_server" 
+                                   value="{{ email_config.smtp_server or '' }}" required>
+                            <small class="form-text text-muted">Hostname of your SMTP server</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="smtp_port">SMTP Port</label>
+                            <input type="number" class="form-control" id="smtp_port" name="smtp_port" 
+                                   value="{{ email_config.smtp_port or 465 }}" min="1" max="65535" required>
+                            <small class="form-text text-muted">Port number (465 for SSL, 587 for TLS)</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="smtp_username">SMTP Username</label>
+                            <input type="text" class="form-control" id="smtp_username" name="smtp_username" 
+                                   value="{{ email_config.smtp_username or '' }}" required>
+                            <small class="form-text text-muted">Username for SMTP authentication</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="smtp_password">SMTP Password</label>
+                            <input type="password" class="form-control" id="smtp_password" name="smtp_password" 
+                                   value="{{ email_config.smtp_password or '' }}" required>
+                            <small class="form-text text-muted">Password for SMTP authentication</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="sender_email">Sender Email Address</label>
+                            <input type="email" class="form-control" id="sender_email" name="sender_email" 
+                                   value="{{ email_config.sender_email or '' }}" required>
+                            <small class="form-text text-muted">Email address to send from</small>
+                        </div>
+                        
+                        <div class="form-group form-check">
+                            <input type="checkbox" class="form-check-input" id="use_ssl" name="use_ssl" 
+                                   {% if email_config.use_ssl is not defined or email_config.use_ssl %}checked{% endif %}>
+                            <label class="form-check-label" for="use_ssl">Use SSL</label>
+                            <small class="form-text text-muted">Enable SSL/TLS for secure connection</small>
+                        </div>
+                        
+                        <hr>
+                        
+                        <h5>Admin Notifications</h5>
+                        
+                        <div class="form-group">
+                            <label for="admin_email">Admin Email Address</label>
+                            <input type="email" class="form-control" id="admin_email" name="admin_email" 
+                                   value="{{ admin_email_config.admin_email or '' }}">
+                            <small class="form-text text-muted">Email address for security alerts and admin notifications</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Save Configuration</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5>Test Email</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <input type="hidden" name="action" value="test">
+                        
+                        <div class="form-group">
+                            <label for="test_email">Send Test Email To</label>
+                            <input type="email" class="form-control" id="test_email" name="test_email" 
+                                   placeholder="test@example.com" required>
+                            <small class="form-text text-muted">Enter an email address to test the configuration</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-success">Send Test Email</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Information</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Email notifications are used for:</strong></p>
+                    <ul>
+                        <li>Client API access notifications (when enabled per client)</li>
+                        <li>Security event alerts to admin</li>
+                        <li>Authentication failure notifications</li>
+                        <li>Permission denial alerts</li>
+                    </ul>
+                    
+                    <p><strong>Common SMTP Settings:</strong></p>
+                    <ul>
+                        <li>Gmail: smtp.gmail.com:587 (TLS)</li>
+                        <li>Outlook: smtp-mail.outlook.com:587 (TLS)</li>
+                        <li>Yahoo: smtp.mail.yahoo.com:465 (SSL)</li>
+                    </ul>
+                    
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> Emails are sent asynchronously with a 5-second delay 
+                        to avoid blocking API responses.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
