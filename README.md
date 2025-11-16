@@ -24,6 +24,19 @@ This project implements a filtering proxy that sits between clients and the Netc
 - **Domain and record filtering**: Limit access to specific domains and DNS record patterns
 - **Record type filtering**: Allow access only to specific record types (A, AAAA, CNAME, etc.)
 
+## Features
+
+- ✅ **Token-based authentication** with bcrypt hashing
+- ✅ **Granular access control** with realm-based domain matching
+- ✅ **Admin web UI** for easy management (Flask-Admin)
+- ✅ **Email notifications** for API access and security events
+- ✅ **Comprehensive audit logging** to file and database
+- ✅ **Database storage** (SQLite) for configuration and logs
+- ✅ **YAML to database migration** tool
+- ✅ **Phusion Passenger support** for webhosting deployment
+- ✅ **Rate limiting** to prevent abuse
+- ✅ **IP/network whitelisting** for origin restrictions
+
 ## Architecture
 
 ```
@@ -33,6 +46,63 @@ Netcup API Filter Proxy (validates permissions)
     ↓
 Netcup API (full credentials stored securely)
 ```
+
+## Admin Web UI
+
+The filter includes a comprehensive admin web interface for managing clients, viewing logs, and configuring the system.
+
+**Access:** Navigate to `/admin` after starting the application.
+
+**Default credentials:** `admin` / `admin` (you will be forced to change this on first login)
+
+### Admin UI Features:
+
+1. **Dashboard** - Overview of clients, logs, and recent activity
+2. **Client Management** - Create, edit, and manage API tokens with granular permissions
+3. **Audit Logs** - View and search all API access attempts
+4. **Netcup API Configuration** - Configure Netcup API credentials
+5. **Email Settings** - Configure SMTP for notifications with test email functionality
+6. **System Information** - View filesystem access, Python environment, and database location
+
+### Managing Clients:
+
+- Create new clients with auto-generated secure tokens
+- Configure realm type (host = exact domain match, subdomain = *.subdomain pattern)
+- Limit allowed DNS record types (A, AAAA, CNAME, NS only)
+- Restrict operations (read, update, create, delete)
+- Set IP/network access restrictions
+- Enable email notifications per client
+- Set token expiration dates
+- Deactivate tokens without deleting them
+
+### Email Notifications:
+
+**Client notifications (per-client setting):**
+- Sent on every API access when enabled
+- Includes timestamp, operation, IP, result, and details
+
+**Admin notifications (security events):**
+- Authentication failures
+- Permission denials
+- Origin restriction violations
+- Sent to configured admin email address
+
+All emails are sent asynchronously with a 5-second delay to avoid blocking API responses.
+
+### Audit Logging:
+
+All API requests are logged to:
+- **Database** - SQLite for easy querying through admin UI
+- **File** - Text log with structured format (no automatic rotation)
+
+Logs include:
+- Timestamp
+- Client ID
+- IP address
+- Operation performed
+- Domain and DNS records
+- Success/failure status
+- Full request and response data (with sensitive data masked)
 
 ## Installation
 
@@ -47,16 +117,60 @@ cd netcup-api-filter
 pip install -r requirements.txt
 ```
 
-3. Create configuration:
+3. Initialize the application:
+
+**Option A: Using Admin UI (Recommended)**
+
+Start the application with Passenger or standalone mode, then:
+- Navigate to `/admin` and login with `admin`/`admin`
+- Configure Netcup API credentials through the UI
+- Create clients with tokens through the UI
+- Configure email settings if desired
+
+**Option B: Using YAML configuration (Legacy)**
+
 ```bash
 cp config.example.yaml config.yaml
+# Edit config.yaml with your settings
+python migrate_yaml_to_db.py  # Migrate to database
 ```
 
-4. Edit `config.yaml` with your Netcup credentials and token configurations
+4. Start the application:
+
+**Standalone mode:**
+```bash
+python filter_proxy.py
+```
+
+**Webhosting (Passenger):**
+See [WEBHOSTING_DEPLOYMENT.md](WEBHOSTING_DEPLOYMENT.md) for detailed instructions.
+
+## Quick Start
+
+1. Install dependencies: `pip install -r requirements.txt`
+2. Start the application: `python passenger_wsgi.py` (or use Passenger)
+3. Open browser to `http://localhost:5000/admin`
+4. Login with `admin` / `admin` (change password when prompted)
+5. Configure Netcup API credentials in "Netcup API" menu
+6. Create a client in "Clients" menu
+7. Copy the generated token (shown only once!)
+8. Use the token to make API requests
 
 ## Configuration
 
-The `config.yaml` file has three main sections:
+### Admin UI Configuration (Recommended)
+
+All configuration is now managed through the admin web UI at `/admin`:
+
+- **Netcup API Config** - API credentials, endpoint URL, timeout
+- **Email Settings** - SMTP configuration for notifications
+- **Clients** - Token management with granular permissions
+
+### YAML Configuration (Legacy)
+
+The `config.yaml` file is now only used for initial bootstrap. Most settings should be configured via the admin UI.
+
+For reference, the `config.yaml` file has three main sections:
 
 ### 1. Netcup API Credentials
 
