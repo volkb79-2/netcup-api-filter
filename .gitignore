@@ -155,6 +155,11 @@ netcup_filter.log
 # Secret key file
 .secret_key
 
+# Deployment artifacts
+deploy/
+deploy.zip
+deploy.zip.sha256
+
 # Spyder project settings
 .spyderproject
 .spyproject

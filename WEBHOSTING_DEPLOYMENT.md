@@ -1,18 +1,113 @@
 # Webhosting Deployment Guide
 
-This guide explains how to deploy the Netcup API Filter on shared webhosting environments (like Netcup Webhosting 4000) where you have SSH access but cannot run Docker containers.
+This guide explains how to deploy the Netcup API Filter on shared webhosting environments (like Netcup Webhosting 4000).
 
 ## Prerequisites
 
 - Shared hosting account with:
   - Python 3.7+ support
-  - SSH access
-  - Apache with mod_wsgi or CGI support
+  - FTP/SFTP access (required for all methods)
+  - SSH access (optional, only for Method 2)
+  - Apache with Phusion Passenger support (standard on Netcup)
   - Access to configure .htaccess files
 
 ## Deployment Methods
 
-### Method 1: Phusion Passenger Deployment (Recommended for Netcup)
+### Method 1: Pre-Built Package (FTP-Only, No Command Line!) 🚀
+
+**Perfect for users WITHOUT SSH access or command line experience!**
+
+This method uses a pre-built deployment package with all dependencies bundled. You only need FTP/SFTP access.
+
+#### Step 1: Build the Deployment Package
+
+On your local machine (with Python installed):
+
+```bash
+# Clone or download the repository
+git clone https://github.com/volkb79-2/netcup-api-filter.git
+cd netcup-api-filter
+
+# Build the deployment package
+python build_deployment.py
+```
+
+This creates:
+- `deploy.zip` - Ready-to-deploy package (includes all dependencies)
+- `deploy.zip.sha256` - Hash for verification
+- `deploy/` - Directory with all files (if you prefer to upload directly)
+
+#### Step 2: Upload via FTP/SFTP
+
+1. **Connect to your netcup webhosting via FTP/SFTP:**
+   - Host: `ftp.yourdomain.com` or via SFTP: `ssh.webhosting-XXX.your-server.de`
+   - Use your netcup webhosting credentials
+   - Port 21 (FTP) or 22 (SFTP)
+
+2. **Navigate to your domain directory:**
+   - Example: `/www/htdocs/w0123456/yourdomain.com/`
+
+3. **Create application directory:**
+   - Create folder: `netcup-filter/`
+
+4. **Upload files:**
+   - Extract `deploy.zip` on your local computer
+   - Upload ALL files and folders to `netcup-filter/` directory
+   - Ensure you upload:
+     - `vendor/` directory with ALL subdirectories (contains Python packages)
+     - `templates/` directory with all HTML files
+     - All `.py` files
+     - `.htaccess` file
+     - `netcup_filter.db` file
+     - `DEPLOY_README.md` file
+
+#### Step 3: Edit .htaccess
+
+Open `.htaccess` in your FTP client's text editor (or download, edit locally, and re-upload):
+
+**Find these lines:**
+```apache
+PassengerAppRoot /path/to/your/domain/netcup-filter
+PassengerPython /path/to/your/domain/netcup-filter/venv/bin/python3
+```
+
+**Change to your actual paths:**
+```apache
+PassengerAppRoot /www/htdocs/w0123456/yourdomain.com/netcup-filter
+PassengerPython /usr/bin/python3
+```
+
+**Important notes:**
+- Replace `w0123456` with your actual webhosting ID
+- Replace `yourdomain.com` with your actual domain
+- Use system Python (`/usr/bin/python3`), NOT a venv path
+- Save the file
+
+#### Step 4: Test the Deployment
+
+1. Open your browser to: `https://yourdomain.com/admin`
+2. You should see the login page
+3. Login with:
+   - Username: `admin`
+   - Password: `admin`
+4. You'll be forced to change the password on first login
+
+#### Step 5: Configure
+
+1. **Change admin password** (required on first login)
+2. **Configure Netcup API credentials:**
+   - Go to "Configuration" → "Netcup API"
+   - Enter your Netcup customer ID, API key, and API password
+   - Click "Save"
+3. **Create API tokens:**
+   - Go to "Management" → "Clients"
+   - Create clients with appropriate permissions
+
+**Done!** Your Netcup API Filter is now running. See `DEPLOY_README.md` (included in the package) for troubleshooting and additional information.
+
+---
+
+### Method 2: Traditional Deployment (Requires SSH Access)
 
 Netcup webhosting supports Phusion Passenger, which is the recommended deployment method for Python web applications.
 
