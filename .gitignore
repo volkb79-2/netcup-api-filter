@@ -147,6 +147,14 @@ venv.bak/
 # Application configuration (contains secrets)
 config.yaml
 
+# Database and logs (contains sensitive data)
+netcup_filter.db
+netcup_filter_audit.log
+netcup_filter.log
+
+# Secret key file
+.secret_key
+
 # Spyder project settings
 .spyderproject
 .spyproject

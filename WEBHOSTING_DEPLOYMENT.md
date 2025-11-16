@@ -12,9 +12,121 @@ This guide explains how to deploy the Netcup API Filter on shared webhosting env
 
 ## Deployment Methods
 
-### Method 1: WSGI Deployment (Recommended)
+### Method 1: Phusion Passenger Deployment (Recommended for Netcup)
 
-WSGI (Web Server Gateway Interface) is the recommended method for Python web applications on shared hosting.
+Netcup webhosting supports Phusion Passenger, which is the recommended deployment method for Python web applications.
+
+#### Step 1: Upload Files
+
+Upload all files via SSH/SFTP to your webhosting account:
+
+```bash
+# Connect via SSH
+ssh username@ssh.webhosting-123.your-server.de
+
+# Navigate to your web directory
+cd /path/to/your/domain/
+
+# Create application directory
+mkdir netcup-filter
+cd netcup-filter
+
+# Upload files (or use git clone)
+git clone https://github.com/volkb79-2/netcup-api-filter.git .
+```
+
+#### Step 2: Install Dependencies
+
+```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+#### Step 3: Configure Database and Admin
+
+The application now uses a database (SQLite) for configuration and stores most settings via the admin UI.
+
+```bash
+# Initialize database (will create default admin user)
+python -c "from flask import Flask; from database import init_db; app = Flask(__name__); app.config['SECRET_KEY'] = 'temp'; init_db(app)"
+```
+
+**Default admin credentials:** `admin` / `admin` (you will be forced to change this on first login)
+
+#### Step 4: Create .htaccess
+
+Create a `.htaccess` file in the `netcup-filter` directory:
+
+```apache
+# .htaccess for Phusion Passenger deployment
+
+# Enable Passenger
+PassengerEnabled on
+PassengerAppRoot /path/to/your/domain/netcup-filter
+
+# Python configuration
+PassengerPython /path/to/your/domain/netcup-filter/venv/bin/python3
+PassengerStartupFile passenger_wsgi.py
+PassengerAppType wsgi
+
+# Optional: Set environment variables
+SetEnv NETCUP_FILTER_DB_PATH /path/to/your/domain/netcup-filter/netcup_filter.db
+
+# Protect sensitive files
+<FilesMatch "^(config\.yaml|\.env|netcup_filter\.db|.*\.log)$">
+    Require all denied
+</FilesMatch>
+
+# Allow admin UI access
+<Location /admin>
+    Require all granted
+</Location>
+```
+
+**Important**: Replace `/path/to/your/domain/netcup-filter` with the actual path.
+
+#### Step 5: Test the Deployment
+
+```bash
+# Test health endpoint
+curl https://yourdomain.com/
+
+# Access admin UI
+# Navigate to: https://yourdomain.com/admin
+# Login with: admin / admin (change password when prompted)
+```
+
+#### Step 6: Configure via Admin UI
+
+1. Navigate to `https://yourdomain.com/admin`
+2. Login with `admin` / `admin`
+3. Change your password when prompted
+4. Go to Configuration → Netcup API and enter your Netcup credentials
+5. Go to Management → Clients to create API tokens
+6. (Optional) Configure email settings in Configuration → Email Settings
+
+#### Database Location
+
+By default, the database is created in the current working directory. On shared hosting, you may want to specify a location:
+
+```apache
+# In .htaccess
+SetEnv NETCUP_FILTER_DB_PATH /path/to/writable/directory/netcup_filter.db
+```
+
+Or check the System Info page in the admin UI to see where the database is located and verify filesystem access.
+
+---
+
+### Method 2: WSGI Deployment (Alternative)
+
+If Passenger is not available, use standard WSGI deployment.
 
 #### Step 1: Upload Files
 
@@ -233,13 +345,33 @@ Or use a process manager like `supervisor` if available.
 
 ## Troubleshooting
 
+### Issue: Admin UI Not Accessible
+
+**Solutions:**
+1. Check that `.htaccess` allows access to `/admin` path
+2. Verify `passenger_wsgi.py` is configured correctly
+3. Ensure database is initialized and accessible
+4. Check Apache error logs for specific errors
+5. Try accessing root `/` first to ensure app is running
+
+### Issue: Database Errors
+
+**Solutions:**
+1. Check database file permissions: `ls -la netcup_filter.db`
+2. Verify directory is writable by web server user
+3. Set `NETCUP_FILTER_DB_PATH` environment variable to a writable location
+4. Check System Info page in admin UI for filesystem access tests
+5. Ensure SQLite is installed: `python -c "import sqlite3; print(sqlite3.version)"`
+
 ### Issue: 500 Internal Server Error
 
 **Solutions:**
-1. Check Apache error logs: `tail -f /var/log/apache2/error.log`
-2. Verify Python path in `.htaccess` matches your actual paths
-3. Ensure all files have correct permissions
-4. Check that virtual environment is activated and dependencies installed
+1. Check Apache/Passenger error logs: `tail -f ~/logs/error.log` (path may vary)
+2. Check application log: `tail -f netcup_filter.log`
+3. Verify Python path in `.htaccess` matches your actual paths
+4. Ensure all files have correct permissions
+5. Check that virtual environment is activated and dependencies installed
+6. Verify `passenger_wsgi.py` exists and is executable
 
 ### Issue: Module Import Errors
 
@@ -329,19 +461,16 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 5. Configure
+# 5. Initialize database
+python -c "from flask import Flask; from database import init_db; app = Flask(__name__); app.config['SECRET_KEY'] = 'temp'; init_db(app)"
+
+# 6. (Optional) Migrate existing YAML config
+# If you have an existing config.yaml:
 cp config.example.yaml config.yaml
 nano config.yaml  # Edit with your settings
+python migrate_yaml_to_db.py
 
-# 6. Generate token
-python generate_token.py \
-  --description "My Host DynDNS" \
-  --domain yourdomain.com \
-  --record-name myhost \
-  --record-types A \
-  --operations read,update
-
-# 7. Create .htaccess (use WSGI example above)
+# 7. Create .htaccess (use Passenger example above)
 nano .htaccess
 
 # 8. Set permissions

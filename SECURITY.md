@@ -421,3 +421,119 @@ This implementation follows:
 - [CIS Benchmarks](https://www.cisecurity.org/cis-benchmarks)
 - [Flask Security Best Practices](https://flask.palletsprojects.com/en/latest/security/)
 - [Netcup API Documentation](https://helpcenter.netcup.com/en/wiki/domain/our-api)
+
+## Admin UI Security (New in v2.0)
+
+### Authentication & Session Management
+
+#### Secure Cookie Configuration
+- **SESSION_COOKIE_SECURE=True**: Cookies only sent over HTTPS
+- **SESSION_COOKIE_HTTPONLY=True**: Prevents JavaScript access to cookies
+- **SESSION_COOKIE_SAMESITE=Lax**: CSRF protection
+- **PERMANENT_SESSION_LIFETIME=3600**: 1-hour session timeout
+
+#### Persistent Secret Key
+- Stored in `.secret_key` file with 600 permissions
+- Falls back to `SECRET_KEY` environment variable
+- Prevents session invalidation on restart
+
+#### Account Lockout Protection
+- **5 failed login attempts** = 15-minute lockout per IP
+- Automatic lockout expiration
+- Failed attempt counter stored in database
+
+### CSRF Protection
+
+- **Flask-Admin SecureForm** with CSRF tokens on all forms
+- **SameSite cookie attribute** for additional protection
+- **CSRF validation** on all state-changing operations
+
+### Content Security Policy
+
+#### Admin UI (`/admin/*`):
+```
+default-src 'self';
+script-src 'self' 'unsafe-inline' [CDN allowlist];
+style-src 'self' 'unsafe-inline' [CDN allowlist];
+img-src 'self' data:;
+font-src 'self' [CDN allowlist];
+connect-src 'self'
+```
+
+#### API endpoints:
+```
+default-src 'none'; frame-ancestors 'none'
+```
+
+### Additional HTTP Security Headers
+
+- **X-Frame-Options: SAMEORIGIN** - Prevents clickjacking
+- **Strict-Transport-Security** - Forces HTTPS (when available)
+- **Referrer-Policy: strict-origin-when-cross-origin** - Limits referrer leakage
+
+### Admin UI Security Checklist
+
+Before exposing admin UI to the internet:
+
+- [ ] Changed default admin password (`admin`/`admin`)
+- [ ] Set strong `SECRET_KEY` environment variable
+- [ ] Configured HTTPS with valid SSL certificate
+- [ ] Verified secure cookie settings are applied
+- [ ] Tested account lockout mechanism (5 failed attempts)
+- [ ] Configured admin email for security alerts
+- [ ] Restricted admin UI access by IP (if possible)
+- [ ] Enabled HSTS header
+- [ ] Verified CSRF tokens on all forms
+- [ ] Tested session timeout (1 hour)
+- [ ] Backed up `.secret_key` file securely
+- [ ] Set database file permissions to 600
+
+### Admin UI Attack Surface
+
+**Exposed endpoints:**
+- `/admin/login` - Login page (rate limited via lockout)
+- `/admin/*` - All admin views (requires authentication)
+
+**Mitigations:**
+1. Account lockout after 5 failed attempts
+2. CSRF protection on all forms
+3. Secure session cookies
+4. XSS protection via CSP headers
+5. Forced password change from default
+6. Bcrypt password hashing (cost factor 12)
+
+### Recommended Network-Level Protection
+
+For maximum security, restrict admin UI access:
+
+**Apache .htaccess:**
+```apache
+<Location /admin>
+    # Allow only specific IPs
+    Require ip 192.168.1.0/24
+    Require ip 10.0.0.1
+</Location>
+```
+
+**Firewall rules:**
+```bash
+# Allow admin UI only from specific IPs
+iptables -A INPUT -p tcp --dport 443 -s 192.168.1.0/24 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j DROP
+```
+
+### Security Monitoring
+
+**Monitor these events:**
+1. Failed login attempts (audit logs)
+2. Account lockouts (system logs)
+3. Password changes (audit logs)
+4. Client token creations (audit logs)
+5. Configuration changes (audit logs)
+
+**Alert on:**
+- 3+ failed logins from same IP in 1 minute
+- 10+ failed logins from different IPs in 5 minutes
+- Password change for admin user
+- Database file permission changes
+

@@ -152,17 +152,31 @@ def validate_hostname(hostname: str) -> bool:
 def add_security_headers(response):
     """Add security headers to all responses"""
     # Prevent clickjacking
-    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'  # Allow admin UI to load in same origin
     # Prevent MIME sniffing
     response.headers['X-Content-Type-Options'] = 'nosniff'
     # Enable XSS protection
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    # Content Security Policy
-    response.headers['Content-Security-Policy'] = "default-src 'none'"
+    # Content Security Policy - Allow admin UI resources
+    # Allow self for scripts/styles, CDN for Bootstrap/jQuery
+    if request.path.startswith('/admin'):
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
+            "img-src 'self' data:; "
+            "font-src 'self' https://stackpath.bootstrapcdn.com; "
+            "connect-src 'self'"
+        )
+    else:
+        response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
     # Referrer policy
-    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     # Remove server header
     response.headers.pop('Server', None)
+    # Strict Transport Security (HSTS) - force HTTPS
+    if request.is_secure:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
 
@@ -200,6 +214,7 @@ def api_proxy():
     # Security: Validate token format (should be hex string)
     if not re.match(r'^[a-fA-F0-9]{32,128}$', token):
         logger.warning(f"Invalid token format attempted from {request.remote_addr}")
+        send_admin_alert("AUTHENTICATION_FAILURE", "Invalid token format")
         return jsonify({
             "status": "error",
             "message": "Invalid authentication token"
@@ -207,6 +222,7 @@ def api_proxy():
     
     if not access_control.validate_token(token):
         logger.warning(f"Invalid token attempted from {request.remote_addr}")
+        send_admin_alert("AUTHENTICATION_FAILURE", "Invalid token")
         return jsonify({
             "status": "error",
             "message": "Invalid authentication token"
@@ -217,6 +233,7 @@ def api_proxy():
     origin_host = request.headers.get("Host", "")
     if not access_control.check_origin(token, client_ip, origin_host):
         logger.warning(f"Access denied for token from origin: {client_ip} / {origin_host}")
+        send_admin_alert("ORIGIN_VIOLATION", f"Access from {client_ip} / {origin_host}")
         return jsonify({
             "status": "error",
             "message": "Access denied: origin not allowed"
@@ -280,6 +297,7 @@ def handle_info_dns_zone(token: str, param: Dict[str, Any]):
     # Security: Validate domain name
     if not validate_domain_name(domain):
         logger.warning(f"Invalid domain name: {domain}")
+        log_request(token, "infoDnsZone", domain, False, "Invalid domain name")
         return jsonify({
             "status": "error",
             "message": "Invalid domain name"
@@ -287,18 +305,29 @@ def handle_info_dns_zone(token: str, param: Dict[str, Any]):
     
     # Check permission
     if not access_control.check_permission(token, "read", domain):
+        log_request(token, "infoDnsZone", domain, False, "Permission denied")
+        send_admin_alert("PERMISSION_DENIED", f"infoDnsZone on {domain}")
         return jsonify({
             "status": "error",
             "message": "Permission denied"
         }), 403
     
-    # Forward to Netcup API
-    zone_info = netcup_client.info_dns_zone(domain)
-    
-    return jsonify({
-        "status": "success",
-        "responsedata": zone_info
-    })
+    try:
+        # Forward to Netcup API
+        zone_info = netcup_client.info_dns_zone(domain)
+        
+        # Log successful request
+        log_request(token, "infoDnsZone", domain, True, 
+                   request_data={"action": "infoDnsZone", "param": param},
+                   response_data={"status": "success", "responsedata": zone_info})
+        
+        return jsonify({
+            "status": "success",
+            "responsedata": zone_info
+        })
+    except Exception as e:
+        log_request(token, "infoDnsZone", domain, False, str(e))
+        raise
 
 
 def handle_info_dns_records(token: str, param: Dict[str, Any]):
@@ -313,6 +342,7 @@ def handle_info_dns_records(token: str, param: Dict[str, Any]):
     # Security: Validate domain name
     if not validate_domain_name(domain):
         logger.warning(f"Invalid domain name: {domain}")
+        log_request(token, "infoDnsRecords", domain, False, "Invalid domain name")
         return jsonify({
             "status": "error",
             "message": "Invalid domain name"
@@ -320,23 +350,35 @@ def handle_info_dns_records(token: str, param: Dict[str, Any]):
     
     # Check permission
     if not access_control.check_permission(token, "read", domain):
+        log_request(token, "infoDnsRecords", domain, False, "Permission denied")
+        send_admin_alert("PERMISSION_DENIED", f"infoDnsRecords on {domain}")
         return jsonify({
             "status": "error",
             "message": "Permission denied"
         }), 403
     
-    # Get records from Netcup API
-    all_records = netcup_client.info_dns_records(domain)
-    
-    # Filter records based on token permissions
-    filtered_records = access_control.filter_dns_records(token, domain, all_records)
-    
-    return jsonify({
-        "status": "success",
-        "responsedata": {
-            "dnsrecords": filtered_records
-        }
-    })
+    try:
+        # Get records from Netcup API
+        all_records = netcup_client.info_dns_records(domain)
+        
+        # Filter records based on token permissions
+        filtered_records = access_control.filter_dns_records(token, domain, all_records)
+        
+        # Log successful request
+        log_request(token, "infoDnsRecords", domain, True,
+                   record_details={"total_records": len(all_records), "filtered_records": len(filtered_records)},
+                   request_data={"action": "infoDnsRecords", "param": param},
+                   response_data={"status": "success", "responsedata": {"dnsrecords": filtered_records}})
+        
+        return jsonify({
+            "status": "success",
+            "responsedata": {
+                "dnsrecords": filtered_records
+            }
+        })
+    except Exception as e:
+        log_request(token, "infoDnsRecords", domain, False, str(e))
+        raise
 
 
 def handle_update_dns_records(token: str, param: Dict[str, Any]):
@@ -351,6 +393,7 @@ def handle_update_dns_records(token: str, param: Dict[str, Any]):
     # Security: Validate domain name
     if not validate_domain_name(domain):
         logger.warning(f"Invalid domain name: {domain}")
+        log_request(token, "updateDnsRecords", domain, False, "Invalid domain name")
         return jsonify({
             "status": "error",
             "message": "Invalid domain name"
@@ -379,6 +422,7 @@ def handle_update_dns_records(token: str, param: Dict[str, Any]):
     
     # Security: Limit number of records per request
     if len(dns_records) > 100:
+        log_request(token, "updateDnsRecords", domain, False, "Too many records")
         return jsonify({
             "status": "error",
             "message": "Too many records (maximum 100 per request)"
@@ -395,6 +439,7 @@ def handle_update_dns_records(token: str, param: Dict[str, Any]):
         hostname = record.get("hostname", "")
         if hostname and not validate_hostname(hostname):
             logger.warning(f"Invalid hostname in DNS record: {hostname}")
+            log_request(token, "updateDnsRecords", domain, False, f"Invalid hostname: {hostname}")
             return jsonify({
                 "status": "error",
                 "message": f"Invalid hostname: {hostname}"
@@ -403,18 +448,139 @@ def handle_update_dns_records(token: str, param: Dict[str, Any]):
     # Validate permissions for all records
     is_valid, error_msg = access_control.validate_dns_records_update(token, domain, dns_records)
     if not is_valid:
+        log_request(token, "updateDnsRecords", domain, False, error_msg,
+                   record_details={"records_count": len(dns_records)})
+        send_admin_alert("PERMISSION_DENIED", f"updateDnsRecords on {domain}: {error_msg}")
         return jsonify({
             "status": "error",
             "message": error_msg
         }), 403
     
-    # Forward to Netcup API
-    result = netcup_client.update_dns_records(domain, dns_records)
+    try:
+        # Forward to Netcup API
+        result = netcup_client.update_dns_records(domain, dns_records)
+        
+        # Log successful request
+        log_request(token, "updateDnsRecords", domain, True,
+                   record_details={"records_count": len(dns_records), "records": dns_records},
+                   request_data={"action": "updateDnsRecords", "param": param},
+                   response_data={"status": "success", "responsedata": result})
+        
+        return jsonify({
+            "status": "success",
+            "responsedata": result
+        })
+    except Exception as e:
+        log_request(token, "updateDnsRecords", domain, False, str(e))
+        raise
+
+
+def log_request(token: str, action: str, domain: str, success: bool, 
+                error_message: str = None, record_details: Dict[str, Any] = None,
+                request_data: Dict[str, Any] = None, response_data: Dict[str, Any] = None):
+    """
+    Log request to audit logger and send email notifications if configured
     
-    return jsonify({
-        "status": "success",
-        "responsedata": result
-    })
+    Args:
+        token: Authentication token
+        action: Action performed
+        domain: Domain accessed
+        success: Whether the request succeeded
+        error_message: Optional error message
+        record_details: Optional record details
+        request_data: Optional request data
+        response_data: Optional response data
+    """
+    # Get audit logger if available
+    audit_logger = app.config.get('audit_logger')
+    if audit_logger:
+        # Get client info
+        token_info = None
+        client_id = None
+        
+        if access_control:
+            token_info = access_control.get_token_info(token)
+            if token_info:
+                client_id = token_info.get('client_id', token_info.get('description', 'unknown'))
+        
+        # Log the access
+        audit_logger.log_access(
+            client_id=client_id,
+            ip_address=request.remote_addr,
+            operation=action,
+            domain=domain,
+            record_details=record_details,
+            success=success,
+            error_message=error_message,
+            request_data=request_data,
+            response_data=response_data
+        )
+        
+        # Send email notification if enabled for this client
+        if token_info and token_info.get('email_notifications_enabled'):
+            email_address = token_info.get('email_address')
+            if email_address:
+                from datetime import datetime
+                from email_notifier import get_email_notifier_from_config
+                from database import get_system_config
+                
+                email_config = get_system_config('email_config')
+                if email_config:
+                    notifier = get_email_notifier_from_config(email_config)
+                    if notifier:
+                        notifier.send_client_notification(
+                            client_id=client_id,
+                            to_email=email_address,
+                            timestamp=datetime.utcnow(),
+                            operation=action,
+                            ip_address=request.remote_addr,
+                            success=success,
+                            domain=domain,
+                            record_details=record_details,
+                            error_message=error_message
+                        )
+
+
+def send_admin_alert(event_type: str, details: str):
+    """
+    Send admin alert for security events
+    
+    Args:
+        event_type: Type of security event
+        details: Event details
+    """
+    # Log security event
+    audit_logger = app.config.get('audit_logger')
+    if audit_logger:
+        audit_logger.log_security_event(
+            event_type=event_type,
+            details=details,
+            ip_address=request.remote_addr
+        )
+    
+    # Send admin email if configured
+    try:
+        from datetime import datetime
+        from email_notifier import get_email_notifier_from_config
+        from database import get_system_config
+        
+        email_config = get_system_config('email_config')
+        admin_email_config = get_system_config('admin_email_config')
+        
+        if email_config and admin_email_config:
+            admin_email = admin_email_config.get('admin_email')
+            if admin_email:
+                notifier = get_email_notifier_from_config(email_config)
+                if notifier:
+                    notifier.send_admin_notification(
+                        admin_email=admin_email,
+                        event_type=event_type,
+                        details=details,
+                        ip_address=request.remote_addr,
+                        timestamp=datetime.utcnow()
+                    )
+    except Exception as e:
+        logger.error(f"Failed to send admin alert: {e}")
 
 
 def main():
