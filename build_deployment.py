@@ -222,8 +222,9 @@ PassengerEnabled on
 # IMPORTANT: Edit this line with your actual path
 PassengerAppRoot /path/to/your/domain/netcup-filter
 
-# Python configuration (edit if needed)
-PassengerPython /path/to/your/domain/netcup-filter/venv/bin/python3
+# Python configuration
+# Use system Python since dependencies are vendored in deploy package
+PassengerPython /usr/bin/python3
 PassengerStartupFile passenger_wsgi.py
 PassengerAppType wsgi
 
@@ -299,23 +300,22 @@ You should already have `deploy.zip` - that's this package!
 
 Open `.htaccess` in your FTP client's editor (or download, edit, re-upload):
 
-**Find these lines:**
+**Find this line:**
 ```apache
 PassengerAppRoot /path/to/your/domain/netcup-filter
-PassengerPython /path/to/your/domain/netcup-filter/venv/bin/python3
 ```
 
-**Replace with your actual paths:**
+**Change it to your actual path:**
 ```apache
 PassengerAppRoot /www/htdocs/w0123456/yourdomain.com/netcup-filter
-PassengerPython /usr/bin/python3
 ```
 
-**Note:** 
+**Important notes:**
 - Replace `w0123456` with your actual webhosting ID
 - Replace `yourdomain.com` with your actual domain
-- For PassengerPython, use the system Python (typically `/usr/bin/python3`)
-- Do NOT use a venv path since we're using vendored dependencies
+- The PassengerPython line is already set to `/usr/bin/python3` (system Python)
+- Do NOT change PassengerPython to a venv path - dependencies are already bundled in vendor/
+- Save the file after editing
 
 **Optional:** If you want the database in a different location:
 ```apache
