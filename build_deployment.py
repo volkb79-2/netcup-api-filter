@@ -146,13 +146,19 @@ def initialize_database(deploy_dir):
     """Create and initialize SQLite database with admin user."""
     logger.info("Initializing database...")
     
+    # Save current directory
+    original_dir = os.getcwd()
+    
     # Temporarily add deploy directory to path to import modules
-    deploy_path = Path(deploy_dir)
+    deploy_path = Path(deploy_dir).resolve()
     sys.path.insert(0, str(deploy_path))
     sys.path.insert(0, str(deploy_path / "vendor"))
     
     try:
-        # Set database path
+        # Change to deploy directory so SQLite can create the database
+        os.chdir(deploy_path)
+        
+        # Set database path (absolute path)
         db_path = deploy_path / "netcup_filter.db"
         os.environ['NETCUP_FILTER_DB_PATH'] = str(db_path)
         
@@ -161,8 +167,8 @@ def initialize_database(deploy_dir):
         from database import db, AdminUser, init_db
         from utils import hash_password
         
-        # Create Flask app
-        app = Flask(__name__)
+        # Create Flask app with template_folder in deploy directory
+        app = Flask(__name__, template_folder=str(deploy_path / "templates"))
         app.config['SECRET_KEY'] = 'build-temp-key'
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -195,6 +201,9 @@ def initialize_database(deploy_dir):
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         raise
     finally:
+        # Restore original directory
+        os.chdir(original_dir)
+        
         # Clean up sys.path
         sys.path.remove(str(deploy_path))
         sys.path.remove(str(deploy_path / "vendor"))
