@@ -95,5 +95,7 @@ except Exception as e:
         return [f'Application failed to start: {str(e)}'.encode('utf-8')]
 
 if __name__ == "__main__":
-    # For local testing
-    app.run(debug=True)
+    # For local testing only - never use debug=True in production
+    import os
+    debug_mode = os.environ.get('FLASK_DEBUG', '').lower() == 'true'
+    app.run(debug=debug_mode)
