@@ -5,52 +5,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Netcup API Filter Admin</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: radial-gradient(circle at top, #1d4ed8, #0b1120 65%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: var(--text-primary);
         }
-        
+
         .login-container {
-            max-width: 400px;
+            max-width: 420px;
             width: 100%;
+            padding: 20px;
         }
-        
+
         .login-card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            background: rgba(17, 24, 39, 0.85);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            box-shadow: 0 25px 45px rgba(2, 6, 23, 0.55);
             padding: 40px;
+            backdrop-filter: blur(6px);
         }
-        
+
         .login-header {
             text-align: center;
             margin-bottom: 30px;
         }
-        
+
         .login-header h2 {
-            color: #333;
-            margin-bottom: 10px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
         }
-        
+
         .login-header p {
-            color: #666;
+            color: var(--text-secondary);
             font-size: 14px;
         }
-        
+
         .btn-login {
             width: 100%;
-            background: #667eea;
             border: none;
             padding: 12px;
             font-size: 16px;
         }
-        
-        .btn-login:hover {
-            background: #5568d3;
+
+        .form-control {
+            background-color: rgba(15, 23, 42, 0.85) !important;
+            border-color: var(--border-color) !important;
+            color: var(--text-primary) !important;
+        }
+
+        .form-control:focus {
+            background-color: rgba(15, 23, 42, 1) !important;
         }
     </style>
 </head>

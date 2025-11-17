@@ -29,6 +29,7 @@ This project implements a filtering proxy that sits between clients and the Netc
 - ✅ **Token-based authentication** with bcrypt hashing
 - ✅ **Granular access control** with realm-based domain matching
 - ✅ **Admin web UI** for easy management (Flask-Admin)
+- ✅ **Client self-service portal** so token holders can manage permitted DNS records without raw API calls
 - ✅ **Email notifications** for API access and security events
 - ✅ **Comprehensive audit logging** to file and database
 - ✅ **Database storage** (SQLite) for configuration and logs
@@ -103,6 +104,17 @@ Logs include:
 - Domain and DNS records
 - Success/failure status
 - Full request and response data (with sensitive data masked)
+
+## Client Portal (`/client`)
+
+Token holders can now manage their allowed DNS records directly from the browser:
+
+- **Token-based login** – paste the API token you already use for automation; sessions stay scoped to the same permissions.
+- **Domain dashboard** – shows each realm, zone TTL information, and the first few readable records.
+- **Record management** – view, create, update, or delete DNS records according to the token's operations and record-type limits.
+- **Activity view** – when using the database backend, clients can review their recent audit log entries for quick verification.
+
+See [`CLIENT_USAGE.md`](CLIENT_USAGE.md) for a client-facing walkthrough and matching API examples.
 
 ## Installation
 

@@ -1,0 +1,28 @@
+{% extends admin_base_template %}
+
+{% block head_css %}
+    {{ super() }}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-dark.css') }}">
+{% endblock %}
+
+{% block access_control %}
+    {% if current_user.is_authenticated %}
+    <ul class="navbar-nav ml-auto align-items-center">
+        <li class="nav-item">
+            <a class="btn btn-outline-light btn-sm" href="{{ url_for('admin.logout_view') }}">Logout</a>
+        </li>
+    </ul>
+    {% endif %}
+{% endblock %}
+
+{% block messages %}
+    <div class="flashes">
+        {{ super() }}
+    </div>
+{% endblock %}
+
+{% block body %}
+    <div class="pt-3 pb-5">
+        {{ super() }}
+    </div>
+{% endblock %}

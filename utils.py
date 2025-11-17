@@ -9,21 +9,31 @@ import logging
 import ipaddress
 import re
 from typing import List, Tuple
+import string
 
 logger = logging.getLogger(__name__)
 
 
-def generate_token(length: int = 32) -> str:
+def generate_token(min_length: int = 63, max_length: int = 65) -> str:
     """
-    Generate a cryptographically secure random token
-    
+    Generate a cryptographically secure alphanumeric token.
+
     Args:
-        length: Number of bytes (will be hex encoded, so output is 2x this length)
-        
+        min_length: Minimum number of characters the token must contain (inclusive).
+        max_length: Maximum number of characters the token may contain (inclusive).
+
     Returns:
-        Hex-encoded random token
+        Random token composed of [a-zA-Z0-9] with a length between min_length and max_length.
     """
-    return secrets.token_hex(length)
+    if min_length <= 0 or max_length <= 0:
+        raise ValueError("Token length must be positive")
+    if min_length > max_length:
+        raise ValueError("min_length cannot exceed max_length")
+
+    alphabet = string.ascii_letters + string.digits
+    span = max_length - min_length + 1
+    length = min_length + secrets.randbelow(span)
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 def hash_password(password: str, cost: int = 12) -> str:

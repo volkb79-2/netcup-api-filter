@@ -117,10 +117,13 @@ def copy_application_files(deploy_dir):
         "access_control.py",
         "database.py",
         "admin_ui.py",
+        "client_portal.py",
         "audit_logger.py",
         "email_notifier.py",
         "utils.py",
         "passenger_wsgi.py",
+        "passenger_wsgi_hello.py",  # Diagnostic hello world
+        "passenger_wsgi_debug.py",  # Debug version with detailed error reporting
         "wsgi.py",
         "cgi_handler.py",
         "generate_token.py",
@@ -129,6 +132,11 @@ def copy_application_files(deploy_dir):
         "requirements.txt",
         "config.example.yaml",
         ".env.example",
+        ".htaccess.hello-world",  # Test .htaccess for hello world
+        "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
+        "DEBUG_QUICK_START.md",  # Quick debugging reference
+        "READY_TO_DEPLOY.md",  # Instructions based on working hello world
+        "DEBUG_404_ERROR.md",  # How to debug 404 errors with debug version
     ]
     
     for file_name in files_to_copy:
@@ -140,6 +148,11 @@ def copy_application_files(deploy_dir):
     if os.path.exists("templates"):
         shutil.copytree("templates", deploy_path / "templates", dirs_exist_ok=True)
         logger.info("Copied templates directory")
+
+    # Copy static assets (CSS, JS)
+    if os.path.exists("static"):
+        shutil.copytree("static", deploy_path / "static", dirs_exist_ok=True)
+        logger.info("Copied static assets")
 
 
 def initialize_database(deploy_dir):
@@ -219,8 +232,10 @@ def create_htaccess(deploy_dir):
 # Enable Passenger
 PassengerEnabled on
 
-# IMPORTANT: Edit this line with your actual path
-PassengerAppRoot /path/to/your/domain/netcup-filter
+# IMPORTANT: Set this to your application directory (relative to webspace)
+# For netcup webhosting, use relative path like: /netcup-api-filter
+# The control panel App Root setting should match this value
+PassengerAppRoot /netcup-api-filter
 
 # Python configuration
 # Use system Python since dependencies are vendored in deploy package
@@ -228,8 +243,12 @@ PassengerPython /usr/bin/python3
 PassengerStartupFile passenger_wsgi.py
 PassengerAppType wsgi
 
+# Production mode settings
+PassengerAppEnv production
+PassengerFriendlyErrorPages off
+
 # Optional: Set environment variables
-# SetEnv NETCUP_FILTER_DB_PATH /path/to/your/domain/netcup-filter/netcup_filter.db
+# SetEnv NETCUP_FILTER_DB_PATH /path/to/netcup_filter.db
 
 # Protect sensitive files
 <FilesMatch "^(config\\.yaml|\\.env|netcup_filter\\.db|.*\\.log)$">

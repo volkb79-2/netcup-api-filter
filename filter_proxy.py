@@ -12,6 +12,7 @@ from typing import Dict, Any
 
 from netcup_client import NetcupClient, NetcupAPIError
 from access_control import AccessControl
+from client_portal import client_portal_bp
 
 # Configure logging
 logging.basicConfig(
@@ -21,6 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.register_blueprint(client_portal_bp)
 
 # Security: Set maximum content length (10MB)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
@@ -79,6 +81,7 @@ def load_config(config_path: str = "config.yaml"):
             api_password=netcup_config.get("api_password"),
             api_url=netcup_config.get("api_url", "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON")
         )
+        app.config['netcup_client'] = netcup_client
         
         # Initialize access control
         tokens_config = config.get("tokens", [])
@@ -87,6 +90,7 @@ def load_config(config_path: str = "config.yaml"):
             return False
             
         access_control = AccessControl(tokens_config)
+        app.config['access_control'] = access_control
         
         logger.info(f"Configuration loaded successfully. {len(tokens_config)} tokens configured.")
         return True
@@ -157,9 +161,9 @@ def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     # Enable XSS protection
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    # Content Security Policy - Allow admin UI resources
-    # Allow self for scripts/styles, CDN for Bootstrap/jQuery
-    if request.path.startswith('/admin'):
+    # Content Security Policy - Allow UI resources for admin + client portals
+    # Allow self for scripts/styles plus Bootstrap/jQuery CDNs
+    if request.path.startswith('/admin') or request.path.startswith('/client'):
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "

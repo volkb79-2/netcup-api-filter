@@ -19,7 +19,7 @@ This guide explains how to deploy the Netcup API Filter on shared webhosting env
 
 This method uses a pre-built deployment package with all dependencies bundled. You only need FTP/SFTP access.
 
-#### Step 1: Build the Deployment Package
+#### Step 1: Build the Deployment Package `deploy.zip`
 
 On your local machine (with Python installed):
 
@@ -36,6 +36,18 @@ This creates:
 - `deploy.zip` - Ready-to-deploy package (includes all dependencies)
 - `deploy.zip.sha256` - Hash for verification
 - `deploy/` - Directory with all files (if you prefer to upload directly)
+
+#### automatically deploy via `scp` and `ssh`
+
+it helps if you have `ssh-agent` provide a key to auto-login to the server
+
+```bash
+./build_deployment.py && \
+scp deploy.zip hosting218629@hosting218629.ae98d.netcup.net:/ && \
+ssh hosting218629@hosting218629.ae98d.netcup.net \
+    'cd / && rm -rf /netcup-api-filter/* /netcup-api-filter/.[!.]* /netcup-api-filter/..?* && mkdir -p /netcup-api-filter/tmp/ && unzip -o -u deploy.zip -d /netcup-api-filter/ && touch /netcup-api-filter/tmp/restart.txt'
+```
+
 
 #### Step 2: Upload via FTP/SFTP
 

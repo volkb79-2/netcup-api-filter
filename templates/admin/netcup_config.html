@@ -1,4 +1,4 @@
-{% extends 'admin/base.html' %}
+{% extends 'admin/master.html' %}
 
 {% block body %}
 <div class="container-fluid">
@@ -52,13 +52,13 @@
                 </div>
             </div>
             
-            <div class="alert alert-warning mt-4">
-                <strong>Security Note:</strong> These credentials provide full access to your Netcup account.
-                Keep them secure and never share them.
-            </div>
         </div>
         
         <div class="col-md-4">
+            <div class="alert alert-warning security-note mb-3">
+                <strong>Security Note:</strong> These credentials provide full access to your Netcup account.
+                Keep them secure and never share them.
+            </div>
             <div class="card">
                 <div class="card-header">
                     <h5>Information</h5>

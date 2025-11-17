@@ -4,7 +4,7 @@ Provides web interface for managing clients, viewing logs, and configuring syste
 """
 import logging
 from datetime import datetime
-from flask import Flask, redirect, url_for, request, flash, render_template_string
+from flask import Flask, redirect, url_for, request, flash, render_template_string, jsonify, abort
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.form import SecureForm
@@ -15,10 +15,36 @@ from wtforms.validators import DataRequired, Email, Optional, ValidationError
 import json
 
 from database import db, Client, AuditLog, AdminUser, SystemConfig, get_system_config, set_system_config
-from utils import generate_token, hash_password, verify_password, test_filesystem_access, get_python_info, get_current_directory_info, validate_email, validate_ip_range
+from utils import generate_token, hash_password, verify_password, test_filesystem_access, get_python_info, get_current_directory_info, validate_email, validate_ip_range, validate_domain
 from email_notifier import get_email_notifier_from_config
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_flask_admin_field_flags():
+    """Ensure Flask-Admin validators expose dict-style field_flags for WTForms 3.x."""
+    try:
+        from flask_admin.form import validators as fa_form_validators
+
+        flags = getattr(fa_form_validators.FieldListInputRequired, "field_flags", None)
+        if isinstance(flags, tuple):  # Older releases expose tuples which WTForms can't read now
+            fa_form_validators.FieldListInputRequired.field_flags = {flag: True for flag in flags}
+            logger.debug("Patched Flask-Admin FieldListInputRequired.field_flags for WTForms compatibility")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.warning("Unable to patch Flask-Admin FieldListInputRequired: %s", exc)
+
+    try:
+        from flask_admin.contrib.sqla import validators as fa_sqla_validators
+
+        flags = getattr(fa_sqla_validators.Unique, "field_flags", None)
+        if isinstance(flags, tuple):
+            fa_sqla_validators.Unique.field_flags = {flag: True for flag in flags}
+            logger.debug("Patched Flask-Admin Unique.field_flags for WTForms compatibility")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.warning("Unable to patch Flask-Admin Unique validator: %s", exc)
+
+
+_patch_flask_admin_field_flags()
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -206,6 +232,7 @@ class SecureModelView(ModelView):
 
 class ClientModelView(SecureModelView):
     """Admin view for Client management"""
+    create_template = 'admin/client_create.html'
     
     column_list = ['client_id', 'description', 'realm_type', 'realm_value', 'is_active', 'email_notifications_enabled', 'created_at']
     column_searchable_list = ['client_id', 'description', 'realm_value']
@@ -213,7 +240,7 @@ class ClientModelView(SecureModelView):
     column_sortable_list = ['client_id', 'realm_type', 'realm_value', 'is_active', 'created_at']
     
     column_labels = {
-        'client_id': 'Client ID',
+        'client_id': 'Client ID / Token',
         'secret_token': 'Secret Token',
         'realm_type': 'Realm Type',
         'realm_value': 'Realm Value',
@@ -314,6 +341,13 @@ class ClientModelView(SecureModelView):
         if hasattr(form, 'email_address') and form.email_address.data:
             if not validate_email(form.email_address.data):
                 raise ValidationError('Invalid email address format')
+
+        if hasattr(form, 'realm_value') and form.realm_value.data:
+            realm_value = form.realm_value.data.strip()
+            candidate = realm_value[2:] if realm_value.startswith('*.') else realm_value
+            if not validate_domain(candidate):
+                raise ValidationError('Realm value must be a valid domain (optionally starting with *.)')
+            form.realm_value.data = realm_value
         
         # Generate token for new clients
         if is_created:
@@ -337,6 +371,13 @@ class ClientModelView(SecureModelView):
         ranges = model.get_allowed_ip_ranges()
         if ranges:
             form.allowed_ip_ranges.data = '\n'.join(ranges)
+
+    @expose('/generate-token', methods=['POST'])
+    def generate_token_view(self):
+        if not self.is_accessible():
+            abort(403)
+        token = generate_token()
+        return jsonify({'token': token})
 
 
 class AuditLogModelView(SecureModelView):
@@ -436,12 +477,23 @@ class EmailConfigView(BaseView):
             action = request.form.get('action')
             
             if action == 'save':
+                sender_email = request.form.get('sender_email', '').strip()
+                admin_email_value = request.form.get('admin_email', '').strip()
+
+                if sender_email and not validate_email(sender_email):
+                    flash('Sender email address must be valid.', 'danger')
+                    return redirect(url_for('.index'))
+
+                if admin_email_value and not validate_email(admin_email_value):
+                    flash('Admin notification email address must be valid.', 'danger')
+                    return redirect(url_for('.index'))
+
                 config = {
                     'smtp_server': request.form.get('smtp_server', ''),
                     'smtp_port': int(request.form.get('smtp_port', 465)),
                     'smtp_username': request.form.get('smtp_username', ''),
                     'smtp_password': request.form.get('smtp_password', ''),
-                    'sender_email': request.form.get('sender_email', ''),
+                    'sender_email': sender_email,
                     'use_ssl': request.form.get('use_ssl') == 'on'
                 }
                 
@@ -451,7 +503,7 @@ class EmailConfigView(BaseView):
                 
                 # Also save admin email
                 admin_email_config = {
-                    'admin_email': request.form.get('admin_email', '')
+                    'admin_email': admin_email_value
                 }
                 set_system_config('admin_email_config', admin_email_config)
             
@@ -460,6 +512,8 @@ class EmailConfigView(BaseView):
                 
                 if not test_email:
                     flash('Please enter an email address to test', 'warning')
+                elif not validate_email(test_email.strip()):
+                    flash('Please enter a valid test email address.', 'danger')
                 else:
                     email_config = get_system_config('email_config')
                     if not email_config:
@@ -490,6 +544,9 @@ def setup_admin_ui(app):
     Args:
         app: Flask application instance
     """
+    # Enable Bootstrap 4 templates and dark Bootswatch theme across admin views
+    app.config.setdefault('FLASK_ADMIN_SWATCH', 'darkly')
+
     # Initialize Flask-Login
     login_manager.init_app(app)
     login_manager.login_view = 'admin.login_view'
@@ -498,6 +555,7 @@ def setup_admin_ui(app):
     admin = Admin(
         app,
         name='Netcup API Filter',
+        template_mode='bootstrap4',
         index_view=SecureAdminIndexView(name='Dashboard', url='/admin')
     )
     

@@ -1,4 +1,4 @@
-{% extends 'admin/base.html' %}
+{% extends 'admin/master.html' %}
 
 {% block body %}
 <div class="container-fluid">
@@ -6,7 +6,7 @@
     
     <div class="row mt-4">
         <div class="col-md-3">
-            <div class="card text-white bg-primary mb-3">
+            <div class="card stat-card mb-4">
                 <div class="card-header">Total Clients</div>
                 <div class="card-body">
                     <h5 class="card-title">{{ total_clients }}</h5>
@@ -16,7 +16,7 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card text-white bg-success mb-3">
+            <div class="card stat-card success mb-4">
                 <div class="card-header">Active Clients</div>
                 <div class="card-body">
                     <h5 class="card-title">{{ active_clients }}</h5>
@@ -26,7 +26,7 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card text-white bg-info mb-3">
+            <div class="card stat-card info mb-4">
                 <div class="card-header">Total Logs</div>
                 <div class="card-body">
                     <h5 class="card-title">{{ total_logs }}</h5>
@@ -36,7 +36,7 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card text-white bg-secondary mb-3">
+            <div class="card stat-card slate mb-4">
                 <div class="card-header">Quick Actions</div>
                 <div class="card-body">
                     <a href="{{ url_for('client.create_view') }}" class="btn btn-light btn-sm">Add Client</a>
@@ -48,43 +48,49 @@
     
     <div class="row mt-4">
         <div class="col-md-12">
-            <h3>Recent Activity</h3>
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Client ID</th>
-                        <th>IP Address</th>
-                        <th>Operation</th>
-                        <th>Domain</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if recent_logs %}
-                        {% for log in recent_logs %}
-                        <tr>
-                            <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else 'N/A' }}</td>
-                            <td>{{ log.client_id or 'N/A' }}</td>
-                            <td>{{ log.ip_address or 'N/A' }}</td>
-                            <td>{{ log.operation }}</td>
-                            <td>{{ log.domain }}</td>
-                            <td>
-                                {% if log.success %}
-                                    <span class="badge badge-success">Success</span>
-                                {% else %}
-                                    <span class="badge badge-danger">Failed</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    {% else %}
-                        <tr>
-                            <td colspan="6" class="text-center">No recent activity</td>
-                        </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+            <div class="card table-wrapper">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="mb-0">Recent Activity</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Client ID</th>
+                                <th>IP Address</th>
+                                <th>Operation</th>
+                                <th>Domain</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if recent_logs %}
+                                {% for log in recent_logs %}
+                                <tr>
+                                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else 'N/A' }}</td>
+                                    <td>{{ log.client_id or 'N/A' }}</td>
+                                    <td>{{ log.ip_address or 'N/A' }}</td>
+                                    <td>{{ log.operation }}</td>
+                                    <td>{{ log.domain }}</td>
+                                    <td>
+                                        {% if log.success %}
+                                            <span class="badge badge-success">Success</span>
+                                        {% else %}
+                                            <span class="badge badge-danger">Failed</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center">No recent activity</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>

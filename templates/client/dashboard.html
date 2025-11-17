@@ -1,0 +1,99 @@
+{% extends 'client/layout.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap">
+    <div>
+        <h1 class="h3 mb-1">Welcome{% if client_info and client_info.client_id %}, {{ client_info.client_id }}{% endif %}</h1>
+        <p class="text-muted mb-0">You currently have portal access scoped by your API token.</p>
+    </div>
+    <div class="text-muted small">
+        {% if login_ts %}Signed in at {{ login_ts }} UTC{% endif %}
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card portal-card ">
+            <div class="card-body">
+                <h5 class="card-title text-uppercase small text-muted">Operations</h5>
+                <p class="display-4 mb-0">{{ meta.operations|length }}</p>
+                <p class="text-muted mb-0">{{ meta.operations|join(', ') if meta.operations else 'Read-only' }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card portal-card">
+            <div class="card-body">
+                <h5 class="card-title text-uppercase small text-muted">Record Types</h5>
+                <p class="display-4 mb-0">{{ meta.record_types|length }}</p>
+                <p class="text-muted mb-0">{{ meta.record_types|join(', ') if meta.record_types else 'Scoped list' }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card portal-card">
+            <div class="card-body">
+                <h5 class="card-title text-uppercase small text-muted">Domains</h5>
+                <p class="display-4 mb-0">{{ domain_cards|length }}</p>
+                <p class="text-muted mb-0">Domains or realms you can access</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if domain_cards %}
+    {% for card in domain_cards %}
+        <div class="card portal-card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <h4 class="h5 mb-0">{{ card.domain }}</h4>
+                    {% set ttl = card.zone.get('zoneconfig', {}).get('ttl') %}
+                    {% if ttl %}
+                    <span class="text-muted small">Default TTL: {{ ttl }}</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <a class="btn btn-outline-light btn-sm" href="{{ url_for('client_portal.domain_detail', domain=card.domain) }}">Open domain</a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if card.error %}
+                    <div class="alert alert-danger">{{ card.error }}</div>
+                {% else %}
+                    <p class="text-muted small mb-3">{{ card.record_count }} record(s) visible via your token.</p>
+                    {% if card.records %}
+                        <div class="table-responsive">
+                            <table class="table table-sm table-dark mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Hostname</th>
+                                        <th>Type</th>
+                                        <th>Destination</th>
+                                        <th>State</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for record in card.records %}
+                                    <tr>
+                                        <td><code>{{ record.hostname }}</code></td>
+                                        <td>{{ record.type }}</td>
+                                        <td>{{ record.destination }}</td>
+                                        <td>{{ record.state }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted mb-0">No previewable records.</p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <div class="alert alert-info">
+        No domains are currently linked to this token. Contact your administrator if this seems incorrect.
+    </div>
+{% endif %}
+{% endblock %}

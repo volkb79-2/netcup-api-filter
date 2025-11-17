@@ -40,6 +40,7 @@ try:
     from flask import Flask
     from database import init_db
     from admin_ui import setup_admin_ui
+    import filter_proxy
     from filter_proxy import app, limiter
     from access_control import AccessControl
     from audit_logger import get_audit_logger
@@ -112,12 +113,14 @@ try:
                 api_password=netcup_config.get('api_password'),
                 api_url=netcup_config.get('api_url', 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON')
             )
+            filter_proxy.netcup_client = app.config['netcup_client']
             logger.info("Netcup client initialized from database")
         else:
             logger.warning("No Netcup configuration found in database")
         
         # Initialize access control with database mode
         app.config['access_control'] = AccessControl(use_database=True)
+        filter_proxy.access_control = app.config['access_control']
         logger.info("Access control initialized in database mode")
         
         # Initialize audit logger

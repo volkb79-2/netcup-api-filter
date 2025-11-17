@@ -3,28 +3,22 @@
 Token Generator for Netcup API Filter
 Generates cryptographically secure tokens and outputs configuration
 """
-import secrets
 import argparse
 import sys
 import yaml
+from utils import generate_token as _generate_admin_token
 
 
-def generate_secure_token(length: int = 32) -> str:
-    """
-    Generate a cryptographically secure random token
-    
-    Args:
-        length: Length of the token in bytes (default 32 = 64 hex characters)
-    
-    Returns:
-        Secure random token as hex string
-    """
-    return secrets.token_hex(length)
+def generate_secure_token(min_length: int = 63, max_length: int = 65) -> str:
+    """Generate an [a-zA-Z0-9] token that matches the requested length window."""
+    return _generate_admin_token(min_length=min_length, max_length=max_length)
 
 
 def create_token_config(description: str, domain: str, record_name: str,
                        record_types: list, operations: list,
-                       allowed_origins: list = None) -> dict:
+                       allowed_origins: list = None,
+                       min_length: int = 63,
+                       max_length: int = 65) -> dict:
     """
     Create a token configuration dictionary
     
@@ -35,11 +29,13 @@ def create_token_config(description: str, domain: str, record_name: str,
         record_types: List of allowed record types
         operations: List of allowed operations
         allowed_origins: Optional list of allowed IP addresses or domains
+        min_length: Minimum token length (inclusive)
+        max_length: Maximum token length (inclusive)
     
     Returns:
         Token configuration dictionary
     """
-    token = generate_secure_token()
+    token = generate_secure_token(min_length=min_length, max_length=max_length)
     
     config = {
         "token": token,
@@ -66,8 +62,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate a token for dynamic DNS (host updates its own A record)
-  %(prog)s --description "Host1 Dynamic DNS" --domain example.com --record-name host1 --record-types A --operations read,update
+    # Generate a token for dynamic DNS (host updates its own A record)
+    %(prog)s --description "Host1 Dynamic DNS" --domain example.com --record-name host1 --record-types A --operations read,update
 
   # Generate a read-only monitoring token
   %(prog)s --description "Monitoring" --domain example.com --record-name "*" --record-types "*" --operations read
@@ -126,7 +122,21 @@ Examples:
         "--length",
         type=int,
         default=32,
-        help="Token length in bytes (default: 32 = 64 hex characters)"
+        help="Exact token length in characters (overrides --min-length/--max-length)"
+    )
+
+    parser.add_argument(
+        "--min-length",
+        type=int,
+        default=63,
+        help="Minimum token length (default: 63)"
+    )
+
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=65,
+        help="Maximum token length (default: 65)"
     )
     
     args = parser.parse_args()
@@ -139,13 +149,21 @@ Examples:
         allowed_origins = [origin.strip() for origin in args.allowed_origins.split(",")]
     
     # Generate token configuration
+    # Determine token length window
+    min_length = args.min_length
+    max_length = args.max_length
+    if args.length:
+        min_length = max_length = args.length
+
     token_config = create_token_config(
         description=args.description,
         domain=args.domain,
         record_name=args.record_name,
         record_types=record_types,
         operations=operations,
-        allowed_origins=allowed_origins
+        allowed_origins=allowed_origins,
+        min_length=min_length,
+        max_length=max_length
     )
     
     # Output in requested format
