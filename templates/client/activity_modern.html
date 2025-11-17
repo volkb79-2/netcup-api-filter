@@ -1,0 +1,52 @@
+{% extends 'client_base.html' %}
+
+{% block page_title %}Activity Log{% endblock %}
+
+{% block client_content %}
+<h1 class="mb-4">Activity Log</h1>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">Recent Activity{% if client_id %} for {{ client_id }}{% endif %}</h2>
+        <span class="text-muted text-sm">Last 25 entries</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>IP Address</th>
+                        <th>Operation</th>
+                        <th>Domain</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if logs %}
+                        {% for log in logs %}
+                        <tr>
+                            <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else 'N/A' }}</td>
+                            <td>{{ log.ip_address or 'N/A' }}</td>
+                            <td>{{ log.operation }}</td>
+                            <td>{{ log.domain }}</td>
+                            <td>
+                                {% if log.success %}
+                                    <span class="badge badge-success">Success</span>
+                                {% else %}
+                                    <span class="badge badge-danger">Failed</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted">No activity recorded yet</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

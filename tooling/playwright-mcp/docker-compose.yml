@@ -1,19 +1,19 @@
-version: "3.9"
-
 services:
   playwright-mcp:
     build:
       context: ../../
       dockerfile: tooling/playwright-mcp/Dockerfile
     container_name: playwright-mcp
+    network_mode: host
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       MCP_SERVER_NAME: "netcup-playwright"
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8765"
       PLAYWRIGHT_START_URL: "https://naf.vxxu.de/admin/login"
       PLAYWRIGHT_HEADLESS: "true"
-    ports:
-      - "8765:8765"
+      UID: "${UID:-1000}"
+      GID: "${GID:-1000}"
     volumes:
       - ./screenshots:/screenshots
     shm_size: "2gb"

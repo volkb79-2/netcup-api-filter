@@ -78,6 +78,22 @@ try:
     
     app.config['SECRET_KEY'] = secret_key
     
+    # Configure template and static folders for deployment
+    deploy_templates = os.path.join(app_dir, 'deploy', 'templates')
+    deploy_static = os.path.join(app_dir, 'deploy', 'static')
+    
+    if os.path.exists(deploy_templates):
+        app.template_folder = deploy_templates
+        logger.info(f"Using deploy templates from: {deploy_templates}")
+    else:
+        logger.warning(f"Deploy templates not found at: {deploy_templates}")
+    
+    if os.path.exists(deploy_static):
+        app.static_folder = deploy_static
+        logger.info(f"Using deploy static files from: {deploy_static}")
+    else:
+        logger.warning(f"Deploy static files not found at: {deploy_static}")
+    
     # SECURITY: Configure secure session cookies
     app.config['SESSION_COOKIE_SECURE'] = True  # Only send over HTTPS
     app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access

@@ -92,7 +92,7 @@ class SecureAdminIndexView(AdminIndexView):
         total_logs = AuditLog.query.count()
         recent_logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(10).all()
         
-        return self.render('admin/index.html',
+        return self.render('admin/index_modern.html',
                          total_clients=total_clients,
                          active_clients=active_clients,
                          total_logs=total_logs,
@@ -120,7 +120,7 @@ class SecureAdminIndexView(AdminIndexView):
                 if datetime.utcnow() < lockout_until:
                     logger.warning(f"Login attempt from locked out IP: {client_ip}")
                     flash('Too many failed login attempts. Please try again later.', 'danger')
-                    return self.render('admin/login.html')
+                    return self.render('admin/login_modern.html')
                 else:
                     # Lockout expired, clear it
                     set_system_config(lockout_key, {})
@@ -166,7 +166,7 @@ class SecureAdminIndexView(AdminIndexView):
                 else:
                     flash('Invalid username or password', 'danger')
         
-        return self.render('admin/login.html')
+        return self.render('admin/login_modern.html')
     
     @expose('/logout')
     @login_required
@@ -187,16 +187,16 @@ class SecureAdminIndexView(AdminIndexView):
             # Validate current password
             if not verify_password(current_password, admin_user.password_hash):
                 flash('Current password is incorrect', 'danger')
-                return self.render('admin/change_password.html', must_change=admin_user.must_change_password)
+                return self.render('admin/change_password_modern.html', must_change=admin_user.must_change_password)
             
             # Validate new password
             if len(new_password) < 8:
                 flash('New password must be at least 8 characters', 'danger')
-                return self.render('admin/change_password.html', must_change=admin_user.must_change_password)
+                return self.render('admin/change_password_modern.html', must_change=admin_user.must_change_password)
             
             if new_password != confirm_password:
                 flash('New passwords do not match', 'danger')
-                return self.render('admin/change_password.html', must_change=admin_user.must_change_password)
+                return self.render('admin/change_password_modern.html', must_change=admin_user.must_change_password)
             
             # Update password
             admin_user.password_hash = hash_password(new_password)
@@ -208,7 +208,7 @@ class SecureAdminIndexView(AdminIndexView):
             
             return redirect(url_for('.index'))
         
-        return self.render('admin/change_password.html', must_change=admin_user.must_change_password)
+        return self.render('admin/change_password_modern.html', must_change=admin_user.must_change_password)
 
 
 class SecureModelView(ModelView):
@@ -322,11 +322,13 @@ class ClientModelView(SecureModelView):
     def on_model_change(self, form, model, is_created):
         """Handle model changes"""
         # Convert form data to JSON for storage
-        if hasattr(form, 'allowed_record_types') and form.allowed_record_types.data:
-            model.set_allowed_record_types(form.allowed_record_types.data)
+        if hasattr(form, 'allowed_record_types'):
+            record_types = form.allowed_record_types.data or ['A', 'AAAA', 'CNAME']  # Default to common types
+            model.set_allowed_record_types(record_types)
         
-        if hasattr(form, 'allowed_operations') and form.allowed_operations.data:
-            model.set_allowed_operations(form.allowed_operations.data)
+        if hasattr(form, 'allowed_operations'):
+            operations = form.allowed_operations.data or ['read']  # Default to read-only
+            model.set_allowed_operations(operations)
         
         if hasattr(form, 'allowed_ip_ranges') and form.allowed_ip_ranges.data:
             # Parse textarea input (one per line)
@@ -426,7 +428,7 @@ class SystemInfoView(BaseView):
         from database import get_db_path
         db_path = get_db_path()
         
-        return self.render('admin/system_info.html',
+        return self.render('admin/system_info_modern.html',
                          python_info=python_info,
                          dir_info=dir_info,
                          fs_tests=fs_tests,
@@ -459,7 +461,7 @@ class NetcupConfigView(BaseView):
         
         config = get_system_config('netcup_config') or {}
         
-        return self.render('admin/netcup_config.html', config=config)
+        return self.render('admin/netcup_config_modern.html', config=config)
 
 
 class EmailConfigView(BaseView):
@@ -532,7 +534,7 @@ class EmailConfigView(BaseView):
         email_config = get_system_config('email_config') or {}
         admin_email_config = get_system_config('admin_email_config') or {}
         
-        return self.render('admin/email_config.html',
+        return self.render('admin/email_config_modern.html',
                          email_config=email_config,
                          admin_email_config=admin_email_config)
 
@@ -544,8 +546,9 @@ def setup_admin_ui(app):
     Args:
         app: Flask application instance
     """
-    # Enable Bootstrap 4 templates and dark Bootswatch theme across admin views
-    app.config.setdefault('FLASK_ADMIN_SWATCH', 'darkly')
+    # Use modern unified dark theme
+    # Configure Flask-Admin to use our custom base template
+    app.config['FLASK_ADMIN_BASE_TEMPLATE'] = 'admin/master_modern.html'
 
     # Initialize Flask-Login
     login_manager.init_app(app)
@@ -555,7 +558,6 @@ def setup_admin_ui(app):
     admin = Admin(
         app,
         name='Netcup API Filter',
-        template_mode='bootstrap4',
         index_view=SecureAdminIndexView(name='Dashboard', url='/admin')
     )
     

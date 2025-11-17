@@ -183,7 +183,7 @@ def login():
 
     access_control = _get_access_control()
     if not access_control:
-        return render_template("client/login.html", access_control_ready=False)
+        return render_template("client/login_modern.html", access_control_ready=False)
 
     if request.method == "POST":
         token = request.form.get("token", "").strip()
@@ -203,7 +203,7 @@ def login():
                 next_url = request.args.get("next") or url_for("client_portal.dashboard")
                 return redirect(next_url)
 
-    return render_template("client/login.html", access_control_ready=True)
+    return render_template("client/login_modern.html", access_control_ready=True)
 
 
 @client_portal_bp.route("/logout")
@@ -247,7 +247,7 @@ def dashboard():
     }
 
     return render_template(
-        "client/dashboard.html",
+        "client/dashboard_modern.html",
         domain_cards=domain_cards,
         meta=meta,
         login_ts=session.get("client_login_at"),
@@ -273,7 +273,7 @@ def domain_detail(domain: str):
         flash(records_error or "Failed to load DNS records", "danger")
 
     return render_template(
-        "client/domain_detail.html",
+        "client/domain_detail_modern.html",
         domain=domain,
         zone=zone_data,
         records=records,
@@ -330,7 +330,7 @@ def new_record(domain: str):
         flash(error or "Failed to create record", "danger")
 
     return render_template(
-        "client/record_form.html",
+        "client/record_form_modern.html",
         domain=domain,
         record=None,
         record_types=_aggregate_record_types(token_info) or ["A", "AAAA", "CNAME", "TXT", "MX"],
@@ -368,7 +368,7 @@ def edit_record(domain: str, record_id: str):
         flash(error or "Failed to update record", "danger")
 
     return render_template(
-        "client/record_form.html",
+        "client/record_form_modern.html",
         domain=domain,
         record=record,
         record_types=_aggregate_record_types(token_info) or ["A", "AAAA", "CNAME", "TXT", "MX"],
@@ -427,7 +427,7 @@ def activity():
         except Exception:  # pragma: no cover - database might not be available
             logs = []
 
-    return render_template("client/activity.html", logs=logs, client_id=client_id)
+    return render_template("client/activity_modern.html", logs=logs, client_id=client_id)
 
 
 @client_portal_bp.app_context_processor

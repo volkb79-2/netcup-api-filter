@@ -1,0 +1,102 @@
+{% extends 'admin_base.html' %}
+{% import 'admin/lib.html' as lib with context %}
+{% import 'admin/model/layout.html' as model_layout with context %}
+
+{% block page_title %}{{ admin_view.name }}{% endblock %}
+
+{% block extra_head %}
+{{ super() }}
+<style>
+.list-actions-form {
+    display: inline;
+}
+</style>
+{% endblock %}
+
+{% block admin_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>{{ admin_view.name }}</h1>
+    {% if admin_view.can_create %}
+    <a href="{{ get_url('.create_view', url=return_url) }}" class="btn btn-primary">
+        Create New {{ admin_view.name | replace('Management - ', '') | replace('Logs - ', '') }}
+    </a>
+    {% endif %}
+</div>
+
+<div class="card">
+    {% if count %}
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <span class="text-muted text-sm">Total: {{ count }} records</span>
+        </div>
+        {% if search_supported %}
+        <form method="GET" action="{{ return_url }}" class="d-flex gap-2">
+            {% if sort_column %}
+            <input type="hidden" name="sort" value="{{ sort_column }}">
+            {% endif %}
+            {% if sort_desc %}
+            <input type="hidden" name="desc" value="{{ sort_desc }}">
+            {% endif %}
+            {% if page_size %}
+            <input type="hidden" name="page_size" value="{{ page_size }}">
+            {% endif %}
+            
+            {% for flt_name, flt_value in filter_args.items() %}
+            <input type="hidden" name="{{ flt_name }}" value="{{ flt_value }}">
+            {% endfor %}
+            
+            <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm search-input" placeholder="Search...">
+            <button type="submit" class="btn btn-sm btn-outline">Search</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <div class="card-body p-0">
+        {% block model_list_table %}
+        <div class="table-container">
+            {{ lib.render_list_table(
+                list_columns,
+                data,
+                get_pk_value,
+                get_value,
+                return_url,
+                admin_view.column_formatters,
+                admin_view.column_type_formatters,
+                admin_view.column_formatters_export,
+                admin_view.column_type_formatters_export,
+                admin_view.column_sortable_list,
+                sort_column,
+                sort_desc,
+                can_edit=admin_view.can_edit,
+                can_delete=admin_view.can_delete,
+                can_view_details=admin_view.can_view_details,
+                actions=actions,
+                actions_confirmation=actions_confirmation,
+                page=page,
+                page_size=page_size,
+                count=count,
+                pager_url=pager_url,
+                num_pages=num_pages,
+                extra_args=extra_args,
+                actions_form=actions_form,
+                list_row_actions=list_row_actions
+            ) }}
+        </div>
+        {% endblock %}
+    </div>
+    
+    {% if num_pages and num_pages > 1 %}
+    <div class="card-footer d-flex justify-content-center">
+        {{ lib.pager(page, num_pages, pager_url) }}
+    </div>
+    {% endif %}
+</div>
+
+{{ lib.render_actions_form(actions_form, admin_view.action_form_class) }}
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+{{ lib.model_list_table_js() }}
+{% endblock %}

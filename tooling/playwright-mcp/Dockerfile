@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 
 COPY tooling/playwright-mcp/playwright_mcp_server.py ./playwright_mcp_server.py
 
+# Ensure screenshots directory exists and has proper permissions
+RUN mkdir -p /screenshots && chmod 775 /screenshots
+
 EXPOSE 8765
 VOLUME ["/screenshots"]
 

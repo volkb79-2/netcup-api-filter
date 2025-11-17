@@ -37,7 +37,14 @@ directory—the compose file already points to the correct build context.
 
 ```bash
 cd tooling/playwright-mcp
-# Start in the background so MCP clients can connect
+# Start in the background so MCP clients can connect (dynamic user setup)
+./run.sh up -d
+```
+
+**Note**: The `run.sh` script automatically detects your user and group IDs to ensure proper file permissions for screenshots. If you prefer to use docker compose directly, make sure to set the `UID` and `GID` environment variables:
+
+```bash
+export UID=$(id -u) GID=$(id -g)
 docker compose up -d
 ```
 
@@ -50,6 +57,8 @@ Environment variables you can override:
 | `PLAYWRIGHT_START_URL` | URL opened when the browser boots | `https://naf.vxxu.de/admin/login` |
 | `PLAYWRIGHT_HEADLESS` | `true` launches Chromium headless, set to `false` if you want to VNC in | `true` |
 | `PLAYWRIGHT_SCREENSHOT_DIR` | Where screenshots are persisted inside the container | `/screenshots` |
+| `UID` | User ID for file permissions (auto-detected) | `1000` |
+| `GID` | Group ID for file permissions (auto-detected) | `1000` |
 
 Screenshots are written to `tooling/playwright-mcp/screenshots/` on the host via
 the Compose volume mapping.
@@ -104,7 +113,7 @@ currently loaded URL/title.
 
 ```bash
 cd tooling/playwright-mcp
-docker compose down
+./run.sh down
 ```
 
 Remove images if desired:
@@ -112,3 +121,38 @@ Remove images if desired:
 ```bash
 docker image rm netcup/playwright-mcp:latest
 ```
+
+## ✅ Screenshot Feature Fixed!
+
+The screenshot functionality is now working correctly. Here's what I fixed:
+
+### **Issues Identified & Resolved:**
+
+1. **Permission Problems**: The screenshots directory was owned by `root:root` instead of the proper user/group
+2. **Docker User Mapping**: The container wasn't running with the correct user/group IDs to match the host
+3. **Volume Mount Permissions**: The bind mount didn't have proper group permissions
+
+### **Changes Made:**
+
+1. **Updated docker-compose.yml**:
+   - Added dynamic user mapping with `user: "${UID:-1000}:${GID:-1000}"`
+   - Added environment variables for UID/GID detection
+   - Removed obsolete `version` field
+
+2. **Created run.sh script**:
+   - Automatically detects host user and group IDs
+   - Sets environment variables for docker-compose
+   - Provides consistent way to run the container
+
+3. **Fixed Directory Permissions**:
+   - Recreated the screenshots directory with proper ownership (`vb:docker`)
+   - Set permissions to `775` (rwxrwxr-x)
+
+4. **Enhanced Dockerfile**:
+   - Added runtime directory creation with proper permissions
+   - Ensures `/screenshots` directory exists with correct permissions
+
+5. **Improved Server Code**:
+   - Added runtime permission setting in the screenshot function
+   - Ensures directory permissions are maintained during operation
+

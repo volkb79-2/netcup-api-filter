@@ -160,6 +160,9 @@ deploy/
 deploy.zip
 deploy.zip.sha256
 
+# MCP Playwright artifacts
+tooling/playwright-mcp/screenshots/
+
 # Spyder project settings
 .spyderproject
 .spyproject

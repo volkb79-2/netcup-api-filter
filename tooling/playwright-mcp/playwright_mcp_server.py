@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -46,13 +45,6 @@ async def ensure_browser() -> Page:
     await page.goto(DEFAULT_START_URL)
     logger.info("Browser launched and navigated to %s", DEFAULT_START_URL)
     return page
-
-
-@asynccontextmanager
-def screenshot_path(prefix: str) -> Path:
-    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    path = SCREENSHOT_DIR / f"{prefix}.png"
-    yield path
 
 
 @mcp.resource("page://current")
@@ -99,8 +91,10 @@ async def text(selector: str) -> dict:
 async def screenshot(name: str = "capture") -> dict:
     """Take a screenshot and return the on-disk path."""
     browser_page = await ensure_browser()
-    async with screenshot_path(name) as path:
-        await browser_page.screenshot(path=path, full_page=True)
+    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    SCREENSHOT_DIR.chmod(0o775)
+    path = SCREENSHOT_DIR / f"{name}.png"
+    await browser_page.screenshot(path=str(path), full_page=True)
     return {"path": str(path)}
 
 
@@ -110,7 +104,7 @@ async def reset(start_url: Optional[str] = None) -> dict:
     global browser, context, page
     if page and not page.is_closed():
         await page.close()
-    if context and not context.is_closed():
+    if context:
         await context.close()
     if browser:
         await browser.close()

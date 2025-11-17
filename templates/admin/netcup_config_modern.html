@@ -1,0 +1,83 @@
+{% extends 'admin_base.html' %}
+
+{% block page_title %}Netcup API Configuration{% endblock %}
+
+{% block admin_content %}
+<h1 class="mb-4">Netcup API Configuration</h1>
+
+<div class="grid grid-cols-3 gap-4">
+    <div style="grid-column: span 2;">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">API Credentials</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="form-group">
+                        <label for="customer_id" class="form-label">Customer ID</label>
+                        <input type="text" class="form-control" id="customer_id" name="customer_id"
+                               value="{{ config.customer_id or '' }}" required>
+                        <small class="form-text">Your Netcup customer number</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="api_key" class="form-label">API Key</label>
+                        <input type="text" class="form-control" id="api_key" name="api_key"
+                               value="{{ config.api_key or '' }}" required>
+                        <small class="form-text">Your Netcup API key</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="api_password" class="form-label">API Password</label>
+                        <input type="password" class="form-control" id="api_password" name="api_password"
+                               value="{{ config.api_password or '' }}" required>
+                        <small class="form-text">Your Netcup API password</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="api_url" class="form-label">API URL</label>
+                        <input type="text" class="form-control" id="api_url" name="api_url"
+                               value="{{ config.api_url or 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON' }}">
+                        <small class="form-text">Netcup API endpoint URL</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="timeout" class="form-label">Timeout (seconds)</label>
+                        <input type="number" class="form-control" id="timeout" name="timeout"
+                               value="{{ config.timeout or 30 }}" min="5" max="120">
+                        <small class="form-text">API request timeout</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div class="alert alert-warning mb-4">
+            <strong>Security Note:</strong> These credentials provide full access to your Netcup account. Keep them secure.
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">Information</h3>
+            </div>
+            <div class="card-body">
+                <p>Configure your Netcup API credentials here. These are used to communicate with the Netcup DNS API.</p>
+                
+                <p><strong>Where to find credentials:</strong></p>
+                <ol style="padding-left: 1.5rem;">
+                    <li>Log in to Netcup CCP</li>
+                    <li>Navigate to API settings</li>
+                    <li>Generate or retrieve credentials</li>
+                </ol>
+
+                <a href="https://helpcenter.netcup.com/en/wiki/domain/our-api" target="_blank" class="btn btn-sm btn-outline w-full">
+                    View API Documentation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

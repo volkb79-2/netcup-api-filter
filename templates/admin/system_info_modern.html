@@ -1,0 +1,95 @@
+{% extends 'admin_base.html' %}
+
+{% block page_title %}System Information{% endblock %}
+
+{% block admin_content %}
+<h1 class="mb-4">System Information</h1>
+
+<div class="grid grid-cols-2 gap-4">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="mb-0">Python Environment</h2>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <td><strong>Version</strong></td>
+                        <td>{{ python_info.version }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Executable</strong></td>
+                        <td><code>{{ python_info.executable }}</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Platform</strong></td>
+                        <td>{{ python_info.platform }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2 class="mb-0">Directory Information</h2>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <td><strong>Working Directory</strong></td>
+                        <td><code>{{ dir_info.cwd }}</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Script Directory</strong></td>
+                        <td><code>{{ dir_info.script_dir }}</code></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Database Path</strong></td>
+                        <td><code>{{ db_path }}</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h2 class="mb-0">Filesystem Tests</h2>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Test</th>
+                    <th>Result</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for test in fs_tests %}
+                <tr>
+                    <td>{{ test.name }}</td>
+                    <td>
+                        {% if test.success %}
+                            <span class="badge badge-success">Success</span>
+                        {% else %}
+                            <span class="badge badge-danger">Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if test.error %}
+                            <span class="text-muted">{{ test.error }}</span>
+                        {% else %}
+                            <span class="text-muted">{{ test.message }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
