@@ -1,7 +1,7 @@
 # Build and deployment
 
 
-## to live server via webhosting
+## deploy to live server via webhosting
 
 The database will be reset and on first login the admin password needs to be changed. 
 
@@ -21,9 +21,22 @@ You can use the script `./build-and-deploy.sh` to build and deploy to the server
 
 see defined variables `NETCUP_USER`, `NETCUP_SERVER`, `REMOTE_DIR`, `PUBLIC_FQDN` how to access it.
 
-## to local docker container 
+## deploy locally 
 
-use the container address to access it 
+You can still hit the Flask server directly via the devcontainer address for
+quick smoke checks. When you need production-like HTTPS (real hostname,
+Let’s Encrypt certificates) but with full control and logging, use the local
+TLS proxy tooling under `tooling/local-proxy/`:
+
+- The README in that folder explains how to configure the reverse proxy via
+  environment files so no values are hard-coded.
+- This workflow mirrors `## deploy to live server via webhosting` but keeps all
+  traffic on your machine, making it ideal for debugging flows that are opaque
+  on the shared host.
+
+Follow the instructions in `tooling/local-proxy/README.md` to generate the
+nginx config from your `.env`, mount the Let’s Encrypt tree read-only, and
+point clients at the public FQDN of this host.
 
 # Use Playwright
 
@@ -60,7 +73,22 @@ As we use a VSC devcontainer with defined / definable environment, we do not cre
 
 CRITICAL: Avoid using compound shell statements (pipes, &&, ;, here-documents, inline environment-variable assignments, or multi-line commands) in Copilot/agent instructions. Those compound commands are hard or impossible to reliably whitelist in VS Code's auto-approve rules and often require manual approval.
 
-Instead: have the agent write a single, well-known script file and run that script. **Canonical file**: `.vscode/copilot-cmd.sh`. That script is whitelisted in the project's Copilot rules and gets a single, simple invocation that VS Code can match.
+Instead: have the agent write a single, well-known script file and run that script. **Canonical file**: `.vscode/copilot-cmd.sh`. That script is whitelisted in the project's Copilot rules and gets a single, simple invocation that VS Code can match. CRITICAL: As we lack a history of commands run, *before* executing the actual code, the script must 1. debug print the brief intention of following code (e.g. `INTENT: list domains handled by letsencrypt `) and 2. debug print the code itself that will be executed (e.g. `PLANNED: ls -l /etc/letsencrypt/live/`), e.g. like this:
+
+```bash file=.vscode/copilot-cmd.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspaces/netcup-api-filter
+
+INTENT=${INTENT:-"No action configured"}
+PLANNED=${PLANNED:-"echo 'Update .vscode/copilot-cmd.sh before running it.'"}
+
+echo "INTENT: ${INTENT}"
+echo "PLANNED: ${PLANNED}"
+
+eval "${PLANNED}"
+```
 
 Why
 - Copilot/VS Code matches the whole terminal string. Compound statements (cd ... && export=... pytest ...) and here-docs contain special characters and newlines that break pattern matching and are rejected for automatic execution.

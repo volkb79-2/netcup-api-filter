@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  local-proxy:
+    image: nginx:stable-alpine
+    container_name: local-proxy
+    restart: unless-stopped
+    networks:
+      - proxy-network
+    ports:
+      - "${LOCAL_TLS_BIND_HTTPS:-443}:443"
+      - "${LOCAL_TLS_BIND_HTTP:-80}:80"
+    volumes:
+      - "${LE_CERT_BASE}:/etc/letsencrypt:ro"
+      - "${LOCAL_PROXY_CONFIG_PATH:-./nginx.conf}:/etc/nginx/conf.d/default.conf:ro"
+    environment:
+      - NGINX_ENTRYPOINT_QUIET_LOGS=1
+
+networks:
+  proxy-network:
+    external: true
+    name: "${LOCAL_PROXY_NETWORK}"
