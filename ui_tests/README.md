@@ -50,6 +50,17 @@ credentials.
 | `UI_CLIENT_TOKEN` | `qweqweqwe-vi-readonly` | Token for the client portal |
 | `UI_CLIENT_DOMAIN` | `qweqweqwe.vi` | Domain shown for the seeded token |
 | `UI_SCREENSHOT_PREFIX` | `ui-regression` | Prefix when capturing screenshots |
+| `UI_ALLOW_WRITES` | `1` | Set to `0` to skip destructive admin flows |
+| `UI_SMOKE_BASE_URL` | _(unset)_ | Optional second target (e.g., production host) |
+| `UI_SMOKE_ALLOW_WRITES` | `0` | Controls whether smoke profile may perform writes |
+| `UI_SMOKE_ADMIN_*` etc. | inherit primary | Override credentials/domain for smoke profile |
+
+When `UI_SMOKE_BASE_URL` is provided, each test parametrizes over both the
+primary (usually local) environment and the smoke target, automatically
+reusing credentials unless the `UI_SMOKE_*` overrides are supplied. Write-heavy
+flows (client creation, Netcup config saves, etc.) automatically skip any
+profile that sets `*_ALLOW_WRITES=0`, allowing safe read-only validation
+against production.
 
 ## Running the suite
 

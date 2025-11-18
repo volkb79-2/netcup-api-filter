@@ -7,7 +7,7 @@ from ui_tests.config import settings
 pytestmark = pytest.mark.asyncio
 
 
-async def test_admin_dashboard_and_footer():
+async def test_admin_dashboard_and_footer(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         heading = await browser.text("main h1")
@@ -20,15 +20,16 @@ async def test_admin_dashboard_and_footer():
         assert screenshot_path.endswith(".png")
 
 
-async def test_admin_navigation_links():
+async def test_admin_navigation_links(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         visited = await workflows.verify_admin_nav(browser)
-        assert len(visited) == 4
-        assert visited[0][1] == "Dashboard"
+        assert len(visited) == 7
+        assert visited[0][0] == "Dashboard"
+        assert visited[-1][0] == "Logout"
 
 
-async def test_admin_clients_table_lists_preseeded_client():
+async def test_admin_clients_table_lists_preseeded_client(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_clients(browser)
@@ -41,7 +42,10 @@ async def test_admin_clients_table_lists_preseeded_client():
         assert screenshot_path.endswith(".png")
 
 
-async def test_admin_can_create_and_delete_client():
+async def test_admin_can_create_and_delete_client(active_profile):
+    if not active_profile.allow_writes:
+        pytest.skip("profile is read-only; skipping create/delete flow")
+
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_client_create(browser)
@@ -55,3 +59,33 @@ async def test_admin_can_create_and_delete_client():
 
         await workflows.delete_admin_client(browser, client_data.client_id)
         await workflows.ensure_client_absent(browser, client_data.client_id)
+
+
+async def test_admin_client_form_validation(active_profile):
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.open_admin_client_create(browser)
+        await workflows.admin_submit_invalid_client(browser)
+
+
+async def test_admin_client_form_cancel_button(active_profile):
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.open_admin_client_create(browser)
+        await workflows.admin_click_cancel_from_client_form(browser)
+
+
+async def test_admin_email_buttons_show_feedback(active_profile):
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.admin_email_save_expect_error(browser)
+        await workflows.admin_email_trigger_test_without_address(browser)
+
+
+async def test_admin_netcup_config_save_roundtrip(active_profile):
+    if not active_profile.allow_writes:
+        pytest.skip("profile is read-only for configuration changes")
+
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.admin_save_netcup_config(browser)
