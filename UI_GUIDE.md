@@ -134,7 +134,7 @@ Post-deploy smoke test checklist:
 
 ## 8. Tooling Notes
 
-- **Playwright MCP**: `cd tooling/playwright-mcp && docker compose up -d`, then register `http://localhost:8765/mcp` to drive UI checks.
+- **Playwright MCP**: `cd tooling/playwright-mcp && docker compose up -d`, then register `http://172.17.0.1:8765/mcp` (Docker host gateway inside the devcontainer) to drive UI checks. If your host uses a different gateway IP, substitute that value and keep `.vscode/mcp.json` in sync so Copilot targets the reachable address.
 - **Docs to keep handy**: `UI_GUIDE.md` (this file). All earlier UI_* references were removed.
 - **Scripts**: `test_modern_ui.sh`, `cleanup_legacy_ui.sh`, `report_ui_modernization.sh` are available for validation/reporting.
 

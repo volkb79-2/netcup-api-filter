@@ -31,8 +31,11 @@ log_exec() {
     echo -e "${BLUE}[EXEC]${YELLOW} $*${NC}"
 }
 
-log_info "pwd: $(pwd)"
-WORKSPACE_DIR="/workspaces/netcup-api-filter"
+# Dynamically determine workspace directory from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+log_info "Workspace: $WORKSPACE_DIR"
 PLAN_FILE="${PLAN_FILE:-${WORKSPACE_DIR}/.vscode/copilot-plan.sh}"
 
 if [[ -f "${PLAN_FILE}" ]]; then

@@ -125,6 +125,11 @@ shot. The helper script:
 - Renders/stages the nginx config and LetsEncrypt-style cert bundle under
   `/tmp/netcup-local-proxy/...` so Docker can mount them from inside the
   devcontainer.
+- Ensures the devcontainer itself is connected to the `${LOCAL_PROXY_NETWORK}`
+  Docker network (defaults to `naf-local`) before starting nginx so the
+  `recursing_goldberg` upstream is reachable. The script fails fast if it
+  cannot discover or attach the current container, which prevents the silent
+  SSL polling loops we hit earlier.
 - Boots `gunicorn tooling.local_proxy.local_app:app` with a SQLite database at
   `tmp/local-netcup.db` (admin/client seed applied automatically).
 - Launches the nginx proxy + Playwright harness via docker compose and installs

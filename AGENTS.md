@@ -49,6 +49,10 @@ point clients at the public FQDN of this host.
   `pytest ui_tests/tests -vv` end-to-end. Override `UI_BASE_URL`,
   `UI_MCP_URL`, or `SKIP_UI_TEST_DEPS=1` before calling the script if you need
   a custom target or want to skip dependency installation.
+  The script now also auto-attaches the current devcontainer to the
+  `naf-local` Docker network (or whatever `LOCAL_PROXY_NETWORK` is set to) so
+  nginx can reach the gunicorn backend; it aborts early if that step fails so
+  you are not left polling an unreachable proxy.
 
 # Use Playwright
 

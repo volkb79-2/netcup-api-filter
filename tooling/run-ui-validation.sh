@@ -78,6 +78,47 @@ PROXY_STARTED=0
 PLAYWRIGHT_STARTED=0
 GUNICORN_PID=""
 
+log_step() {
+    echo "[step] $*"
+}
+
+ensure_network_exists() {
+    local network_name="$1"
+    if ! docker network inspect "${network_name}" >/dev/null 2>&1; then
+        log_step "Creating docker network ${network_name}"
+        docker network create "${network_name}" >/dev/null
+    fi
+}
+
+ensure_devcontainer_on_network() {
+    local network_name="$1"
+    local container_id container_name joined_networks
+
+    container_id="$(hostname)"
+    if [[ -z "${container_id}" ]]; then
+        echo "Unable to determine devcontainer id via hostname" >&2
+        exit 1
+    fi
+
+    container_name="$(docker inspect --format '{{.Name}}' "${container_id}" 2>/dev/null | sed 's#^/##')"
+    if [[ -z "${container_name}" ]]; then
+        # fall back to container id which docker also accepts
+        container_name="${container_id}"
+    fi
+
+    joined_networks="$(docker inspect --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "${container_name}" 2>/dev/null || echo "")"
+    if [[ " ${joined_networks} " == *" ${network_name} "* ]]; then
+        log_step "Devcontainer ${container_name} already joined ${network_name}"
+        return
+    fi
+
+    log_step "Attaching devcontainer ${container_name} to ${network_name}"
+    docker network connect "${network_name}" "${container_name}" 2>/dev/null || {
+        echo "Failed to attach devcontainer ${container_name} to ${network_name}" >&2
+        exit 1
+    }
+}
+
 cleanup() {
     local exit_code=$?
     if [[ "${KEEP_UI_STACK:-0}" == "1" ]]; then
@@ -123,9 +164,8 @@ wait_for_http() {
     return 1
 }
 
-if ! docker network inspect "${LOCAL_PROXY_NETWORK}" >/dev/null 2>&1; then
-    docker network create "${LOCAL_PROXY_NETWORK}" >/dev/null
-fi
+ensure_network_exists "${LOCAL_PROXY_NETWORK}"
+ensure_devcontainer_on_network "${LOCAL_PROXY_NETWORK}"
 
 proxy_render_nginx_conf "${PROXY_ENV}"
 proxy_stage_inputs "${PROXY_ENV}"

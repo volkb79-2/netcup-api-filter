@@ -3,7 +3,8 @@
 This folder contains a containerized Model Context Protocol (MCP) server that
 wraps the latest Playwright release installed via `pip` on top of
 `python:3.13-slim-bookworm`. Once the container is running you can register its
-WebSocket endpoint (default `ws://localhost:8765/mcp`) with an MCP-aware client
+WebSocket endpoint (default `ws://172.17.0.1:8765/mcp` when using the devcontainer;
+replace the IP with your Docker host gateway if it differs) with an MCP-aware client
 such as VS Code Copilot Chat. The server launches Chromium, keeps one page
 open, and provides automation tools for login, navigation, clicks, form
 filling, text extraction, and screenshots.
@@ -75,8 +76,9 @@ To enable webpage testing via VS Code Copilot Chat using this MCP server:
    - Search for "MCP" or "Model Context Protocol"
    - Add a new MCP server with:
      - **Name**: `netcup-playwright` (or your choice)
-     - **URL**: `ws://localhost:8765/mcp` (WebSocket endpoint as per the README)
-     - If WebSocket isn't supported, try `http://localhost:8765/mcp` (HTTP endpoint)
+       - **URL**: `ws://172.17.0.1:8765/mcp` (Docker host gateway inside the devcontainer; change if your host gateway IP differs)
+       - If WebSocket isn't supported, try `http://172.17.0.1:8765/mcp` (HTTP endpoint with the same host gateway IP)
+    - Tip: inside the devcontainer you can run `ip route | awk '/default/ {print $3; exit}'` to discover the correct gateway IP if it is not `172.17.0.1`.
 
 3. **Verify Connection**:
    - Restart VS Code or reload the Copilot Chat window

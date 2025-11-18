@@ -4,21 +4,46 @@
 
 {% block header %}
 {% if current_user.is_authenticated %}
+{% set endpoint = request.endpoint or '' %}
 <header class="app-header">
     <nav class="navbar">
         <div class="container">
             <div class="navbar-content">
                 <a href="{{ url_for('admin.index') }}" class="navbar-brand">
-                    Netcup API Filter <span style="color: var(--color-text-muted); font-weight: 400; font-size: 0.875rem;">Admin</span>
+                    Netcup API Filter <span class="navbar-brand-subtitle">Admin</span>
                 </a>
                 
                 <ul class="navbar-nav">
-                    <li><a href="{{ url_for('admin.index') }}" class="nav-link {% if request.endpoint == 'admin.index' %}active{% endif %}">Dashboard</a></li>
-                    <li><a href="{{ url_for('client.index_view') }}" class="nav-link">Clients</a></li>
-                    <li><a href="{{ url_for('auditlog.index_view') }}" class="nav-link">Audit Logs</a></li>
-                    <li><a href="{{ url_for('netcup_config.index') }}" class="nav-link">Netcup API</a></li>
-                    <li><a href="{{ url_for('email_config.index') }}" class="nav-link">Email</a></li>
-                    <li><a href="{{ url_for('system_info.index') }}" class="nav-link">System</a></li>
+                    <li>
+                        <a href="{{ url_for('admin.index') }}" class="nav-link {% if endpoint == 'admin.index' %}active{% endif %}">
+                            Dashboard
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('client.index_view') }}" class="nav-link {% if endpoint.startswith('client.') %}active{% endif %}">
+                            Clients
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('auditlog.index_view') }}" class="nav-link {% if endpoint.startswith('auditlog.') %}active{% endif %}">
+                            Audit Logs
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('netcup_config.index') }}" class="nav-link {% if endpoint.startswith('netcup_config') %}active{% endif %}">
+                            Netcup API
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('email_config.index') }}" class="nav-link {% if endpoint.startswith('email_config') %}active{% endif %}">
+                            Email
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('system_info.index') }}" class="nav-link {% if endpoint.startswith('system_info') %}active{% endif %}">
+                            System
+                        </a>
+                    </li>
                 </ul>
                 
                 <div class="navbar-user">

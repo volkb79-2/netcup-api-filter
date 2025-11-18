@@ -24,6 +24,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# SSH keys to add to agent (from mounted host ~/.ssh)
+SSH_KEYS=("vb@gstammtisch.dchive.de" "vb@gstammtisch.dchive.de_202511")
+
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
 }
@@ -93,4 +96,26 @@ pip list
 
 log_info "[INFO] determined FQDN: $(dig +short -x $(curl -s  api.ipify.org))"
 log_success "[SUCCESS] Dev container setup complete!"
+
+# Add useful aliases
+echo "alias ll='ls -l'" >> ~/.bashrc
+echo "alias la='ls -la'" >> ~/.bashrc
+
+
+
+# Ensure SSH keys from host are accessible (if mounted)
+if [ -d "/home/vscode/.ssh-host" ]; then
+    log_info "[INFO] Host SSH keys mounted at /home/vscode/.ssh-host"
+    # Start ssh-agent once
+    eval "$(ssh-agent -s)"
+    # Add each key in the list
+    for key in "${SSH_KEYS[@]}"; do
+        if [ -f "/home/vscode/.ssh-host/$key" ]; then
+            log_info "[INFO] Adding SSH key: $key"
+            ssh-add "/home/vscode/.ssh-host/$key" 2>/dev/null || log_warn "Failed to add SSH key $key (possibly passphrase required)"
+        else
+            log_warn "[WARN] SSH key $key not found in mounted ~/.ssh"
+        fi
+    done
+fi
 
