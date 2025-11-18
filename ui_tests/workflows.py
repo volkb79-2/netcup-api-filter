@@ -55,8 +55,29 @@ async def wait_for_input_value(
     raise AssertionError(f"Timed out waiting for value on {selector}; last value='{last_value}'")
 
 
+async def wait_for_selector(
+    browser: Browser,
+    selector: str,
+    timeout: float = 5.0,
+    interval: float = 0.2,
+) -> None:
+    deadline = anyio.current_time() + timeout
+    last_error: ToolError | None = None
+    while anyio.current_time() <= deadline:
+        try:
+            await browser.html(selector)
+            return
+        except ToolError as exc:
+            last_error = exc
+            await anyio.sleep(interval)
+    if last_error:
+        raise AssertionError(f"Timed out waiting for selector '{selector}'") from last_error
+    raise AssertionError(f"Timed out waiting for selector '{selector}'")
+
+
 async def trigger_token_generation(browser: Browser) -> str:
     before = await browser.get_attribute("#client_id", "value")
+    await wait_for_selector(browser, ".token-generate-btn")
     await browser.click(".token-generate-btn")
     token = await wait_for_input_value(browser, "#client_id", lambda v: v and v != before)
     return token
@@ -155,7 +176,7 @@ async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
     await browser.select("select[name='allowed_operations']", data.operation_choices())
     if data.email:
         await browser.fill("#email_address", data.email)
-    await browser.click("button[type='submit']")
+    await browser.submit("form")
     return await browser.wait_for_text(".alert-success", "Client created successfully")
 
 
@@ -192,6 +213,14 @@ async def client_portal_login(browser: Browser) -> Browser:
     return browser
 
 
+async def admin_verify_audit_log_columns(browser: Browser) -> str:
+    await open_admin_audit_logs(browser)
+    header_row = await browser.text("table thead tr")
+    assert "Timestamp" in header_row
+    assert "Client ID" in header_row
+    return header_row
+
+
 async def admin_submit_invalid_client(browser: Browser) -> None:
     """Submit an invalid client form and assert validation feedback is shown."""
 
@@ -206,44 +235,63 @@ async def admin_submit_invalid_client(browser: Browser) -> None:
     await browser.fill("#realm_value", data.realm_value)
     await browser.select("select[name='allowed_record_types']", data.record_choices())
     await browser.select("select[name='allowed_operations']", data.operation_choices())
-    await browser.click("button[type='submit']")
-    await browser.expect_substring("body", "Realm value must be a valid domain")
+    await browser.submit("form")
+    await browser.wait_for_text("main h1", "Clients")
+    await browser.wait_for_text(
+        ".flash-messages",
+        "Realm value must be a valid domain",
+    )
+    current = await browser.get_attribute("#client_id", "value")
+    assert current == data.client_id
+    body_text = await browser.text("body")
+    assert "Client created successfully" not in body_text
 
 
 async def admin_click_cancel_from_client_form(browser: Browser) -> None:
-    await browser.click("a.btn.btn-outline")
+    await browser.click("text=Cancel")
     await browser.wait_for_text("main h1", "Clients")
 
 
 async def admin_save_netcup_config(browser: Browser) -> None:
     await open_admin_netcup_config(browser)
-    existing_values = {
-        "#customer_id": await browser.get_attribute("#customer_id", "value"),
-        "#api_key": await browser.get_attribute("#api_key", "value"),
-        "#api_password": await browser.get_attribute("#api_password", "value"),
-        "#api_url": await browser.get_attribute("#api_url", "value"),
-        "#timeout": await browser.get_attribute("#timeout", "value"),
+    defaults = {
+        "#customer_id": "123456",
+        "#api_key": "local-api-key",
+        "#api_password": "local-api-pass",
+        "#api_url": "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
+        "#timeout": "30",
     }
 
-    for selector, value in existing_values.items():
-        await browser.fill(selector, value or "")
+    for selector, fallback in defaults.items():
+        current = await browser.get_attribute(selector, "value")
+        await browser.fill(selector, current or fallback)
 
-    await browser.click("form button[type='submit']")
-    await browser.expect_substring(".flash-messages", "Netcup API configuration saved successfully")
+    await browser.submit("form")
+    await browser.wait_for_text(".flash-messages", "Netcup API configuration saved successfully")
 
 
 async def admin_email_save_expect_error(browser: Browser) -> None:
     await open_admin_email_settings(browser)
-    await browser.fill("#sender_email", "invalid-email")
-    await browser.click("text=Save Configuration")
-    await browser.expect_substring(".flash-messages", "Sender email address must be valid")
+    defaults = {
+        "#smtp_server": "smtp.local",
+        "#smtp_port": "465",
+        "#smtp_username": "local-user",
+        "#smtp_password": "local-pass",
+    }
+
+    for selector, value in defaults.items():
+        await browser.fill(selector, value)
+
+    await browser.fill("#sender_email", "invalid@example")
+    await browser.submit("#smtp-settings-form")
+    await browser.wait_for_text(".flash-messages", "Sender email address must be valid")
     await open_admin_email_settings(browser)
 
 
 async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     await open_admin_email_settings(browser)
-    await browser.click("text=Send Test Email")
-    await browser.expect_substring(".flash-messages", "Please enter an email address to test")
+    await browser.submit("#test-email-form")
+    await browser.wait_for_text(".flash-messages", "Please enter an email address to test")
     await open_admin_email_settings(browser)
 
 
@@ -278,3 +326,9 @@ async def client_portal_manage_all_domains(browser: Browser) -> List[str]:
 async def client_portal_logout(browser: Browser) -> None:
     await browser.click("header .navbar-user a.btn")
     await browser.wait_for_text(".login-header h1", "Client Portal")
+
+
+async def client_portal_open_activity(browser: Browser) -> str:
+    await browser.click("text=Activity")
+    await browser.wait_for_text("main h1", "Activity Log")
+    return await browser.text("table thead")

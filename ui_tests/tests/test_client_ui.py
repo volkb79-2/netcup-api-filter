@@ -37,3 +37,10 @@ async def test_client_manage_buttons_and_logout(active_profile):
         visited = await workflows.client_portal_manage_all_domains(browser)
         assert visited, "expected at least one domain to manage"
         await workflows.client_portal_logout(browser)
+
+
+async def test_client_activity_page(active_profile):
+    async with browser_session() as browser:
+        await workflows.client_portal_login(browser)
+        header = await workflows.client_portal_open_activity(browser)
+        assert "Timestamp" in header

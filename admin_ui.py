@@ -232,7 +232,6 @@ class SecureModelView(ModelView):
 
 class ClientModelView(SecureModelView):
     """Admin view for Client management"""
-    create_template = 'admin/client_create.html'
     
     column_list = ['client_id', 'description', 'realm_type', 'realm_value', 'is_active', 'email_notifications_enabled', 'created_at']
     column_searchable_list = ['client_id', 'description', 'realm_value']
@@ -336,19 +335,26 @@ class ClientModelView(SecureModelView):
             # Validate each range
             for r in ranges:
                 if not validate_ip_range(r):
-                    raise ValidationError(f'Invalid IP range format: {r}')
+                    message = f'Invalid IP range format: {r}'
+                    flash(message, 'danger')
+                    raise ValidationError(message)
             model.set_allowed_ip_ranges(ranges)
         
         # Validate email if provided
         if hasattr(form, 'email_address') and form.email_address.data:
             if not validate_email(form.email_address.data):
-                raise ValidationError('Invalid email address format')
+                message = 'Invalid email address format'
+                flash(message, 'danger')
+                raise ValidationError(message)
 
         if hasattr(form, 'realm_value') and form.realm_value.data:
             realm_value = form.realm_value.data.strip()
             candidate = realm_value[2:] if realm_value.startswith('*.') else realm_value
             if not validate_domain(candidate):
-                raise ValidationError('Realm value must be a valid domain (optionally starting with *.)')
+                message = 'Realm value must be a valid domain (optionally starting with *.)'
+                logger.warning("Rejecting client realm value: %s", realm_value)
+                flash(message, 'danger')
+                raise ValidationError(message)
             form.realm_value.data = realm_value
         
         # Generate token for new clients
@@ -378,6 +384,7 @@ class ClientModelView(SecureModelView):
     def generate_token_view(self):
         if not self.is_accessible():
             abort(403)
+        logger.info("Admin UI token generation requested")
         token = generate_token()
         return jsonify({'token': token})
 
@@ -483,11 +490,11 @@ class EmailConfigView(BaseView):
                 admin_email_value = request.form.get('admin_email', '').strip()
 
                 if sender_email and not validate_email(sender_email):
-                    flash('Sender email address must be valid.', 'danger')
+                    flash('Sender email address must be valid', 'danger')
                     return redirect(url_for('.index'))
 
                 if admin_email_value and not validate_email(admin_email_value):
-                    flash('Admin notification email address must be valid.', 'danger')
+                    flash('Admin notification email address must be valid', 'danger')
                     return redirect(url_for('.index'))
 
                 config = {
@@ -515,7 +522,7 @@ class EmailConfigView(BaseView):
                 if not test_email:
                     flash('Please enter an email address to test', 'warning')
                 elif not validate_email(test_email.strip()):
-                    flash('Please enter a valid test email address.', 'danger')
+                    flash('Please enter a valid test email address', 'danger')
                 else:
                     email_config = get_system_config('email_config')
                     if not email_config:

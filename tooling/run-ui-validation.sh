@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+### renders the local nginx proxy config, stages certs, starts gunicorn, launches the TLS proxy, brings up the Playwright MCP container, 
+### installs requirements.txt, sets UI_BASE_URL/UI_MCP_URL, and finally executes pytest ui_tests/tests -vv. That script is the “one command” 
+### prerequisite handler you’re looking for; just ensure your .env has the right host overrides before invoking it.
+
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROXY_DIR="${ROOT_DIR}/tooling/local_proxy"
 PROXY_LIB="${PROXY_DIR}/_proxy_lib.sh"
@@ -75,6 +80,10 @@ GUNICORN_PID=""
 
 cleanup() {
     local exit_code=$?
+    if [[ "${KEEP_UI_STACK:-0}" == "1" ]]; then
+        echo "[WARN] KEEP_UI_STACK=1; leaving gunicorn, proxy, and Playwright running for manual debugging" >&2
+        return
+    fi
     if [[ -n "${GUNICORN_PID}" ]] && kill -0 "${GUNICORN_PID}" 2>/dev/null; then
         kill "${GUNICORN_PID}" 2>/dev/null || true
         wait "${GUNICORN_PID}" 2>/dev/null || true
@@ -150,4 +159,5 @@ popd >/dev/null
 
 wait_for_http "Playwright MCP" "${UI_MCP_URL}" 0 40 2 1
 
-pytest ui_tests/tests -vv
+PYTEST_CMD="${UI_PYTEST_CMD:-pytest ui_tests/tests -vv}"
+eval "${PYTEST_CMD}"

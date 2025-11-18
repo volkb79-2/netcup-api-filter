@@ -29,6 +29,13 @@ async def test_admin_navigation_links(active_profile):
         assert visited[-1][0] == "Logout"
 
 
+async def test_admin_audit_logs_headers(active_profile):
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        header = await workflows.admin_verify_audit_log_columns(browser)
+        assert "Operation" in header
+
+
 async def test_admin_clients_table_lists_preseeded_client(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
@@ -76,6 +83,9 @@ async def test_admin_client_form_cancel_button(active_profile):
 
 
 async def test_admin_email_buttons_show_feedback(active_profile):
+    if not active_profile.allow_writes:
+        pytest.skip("profile is read-only; skipping email config mutations")
+
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.admin_email_save_expect_error(browser)

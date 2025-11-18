@@ -117,4 +117,3 @@ proxy_stage_inputs() {
     proxy__copy_dir_via_docker \
         "${PROXY_TOOLING_DIR}/certs" "${LE_CERT_BASE}" "cert bundle"
 }
-```}

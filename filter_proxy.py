@@ -9,6 +9,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import yaml
 from typing import Dict, Any
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from netcup_client import NetcupClient, NetcupAPIError
 from access_control import AccessControl
@@ -23,6 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.register_blueprint(client_portal_bp)
 
 

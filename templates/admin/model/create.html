@@ -12,13 +12,22 @@
 {% block admin_content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>{{ admin_view.name }}</h1>
-    <a href="{{ get_url('.index_view') }}" class="btn btn-outline">Cancel</a>
+    <div class="d-flex align-items-center gap-2">
+        {% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
+        <button type="button"
+                class="btn btn-outline-light token-generate-btn"
+                data-generate-url="{{ url_for('.generate_token_view') }}">
+            Create Token
+        </button>
+        {% endif %}
+        <a href="{{ get_url('.index_view') }}" class="btn btn-outline">Cancel</a>
+    </div>
 </div>
 
 <div class="card">
     <div class="card-body">
         {% block create_form %}
-        {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.url) }}
+        {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.full_path.rstrip('?')) }}
         {% endblock %}
     </div>
 </div>
@@ -27,4 +36,7 @@
 {% block extra_scripts %}
 {{ super() }}
 {{ lib.form_js() }}
+{% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
+<script {{ admin_csp_nonce_attribute|default('') }} src="{{ url_for('static', filename='js/client-token.js') }}" data-generate-url="{{ url_for('.generate_token_view') }}"></script>
+{% endif %}
 {% endblock %}

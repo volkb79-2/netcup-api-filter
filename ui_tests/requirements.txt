@@ -2,3 +2,4 @@ anyio>=4.6.2
 mcp>=1.21.2
 pytest>=8.3.0
 pytest-asyncio>=0.23.7
+gunicorn>=21.2.0
