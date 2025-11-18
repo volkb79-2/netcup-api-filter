@@ -20,6 +20,25 @@ HTTP endpoint.
 3. Export any environment overrides before running the suite. Defaults cover
    the current deployment documented in `AGENTS.md`.
 
+## One-command local validation
+
+When you need to spin up the seeded backend, TLS proxy, Playwright MCP harness,
+and the pytest suite in one go, run `tooling/run-ui-validation.sh` from the
+repository root. The script will:
+
+- Render/stage the nginx config and cert bundle under `/tmp/netcup-local-proxy`.
+- Start gunicorn on port `LOCAL_APP_PORT` (default 5100) with a seeded SQLite
+   database inside `tmp/local-netcup.db`.
+- Launch the nginx proxy + Playwright MCP harness via docker compose.
+- Install `ui_tests/requirements.txt` (skip via `SKIP_UI_TEST_DEPS=1`).
+- Export sensible defaults for `UI_BASE_URL` (`https://<host-gateway>:4443`)
+   and `UI_MCP_URL` (`http://<host-gateway>:8765/mcp`).
+- Execute `pytest ui_tests/tests -vv` and tear everything down afterwards.
+
+Override `UI_BASE_URL`, `PLAYWRIGHT_HEADLESS`, `UI_ADMIN_PASSWORD`, and similar
+variables before running the helper if you need to target a different host or
+credentials.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `UI_BASE_URL` | `https://naf.vxxu.de` | Target deployment root |

@@ -160,8 +160,18 @@ deploy/
 deploy.zip
 deploy.zip.sha256
 
-# VSC Copilot canonical script 
-.vscode/copilot-cmd.sh
+# Local proxy runtime assets
+tooling/local_proxy/proxy.env
+tooling/local_proxy/nginx.conf
+tooling/local_proxy/conf.d/
+tooling/local_proxy/certs/
+
+# Local workspace temp files
+tmp/*
+!tmp/restart.txt
+
+# VS Code Copilot execution plan files
+.vscode/copilot-plan.sh
 
 # MCP Playwright artifacts
 tooling/playwright-mcp/screenshots/

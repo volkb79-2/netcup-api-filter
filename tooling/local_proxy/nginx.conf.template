@@ -1,6 +1,6 @@
 server {
     listen 443 ssl;
-    server_name ${LOCAL_TLS_DOMAIN};
+    server_name ${LOCAL_TLS_DOMAIN} _;
 
     ssl_certificate     /etc/letsencrypt/live/${LOCAL_TLS_DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${LOCAL_TLS_DOMAIN}/privkey.pem;
@@ -27,6 +27,6 @@ server {
 
 server {
     listen 80;
-    server_name ${LOCAL_TLS_DOMAIN};
+    server_name ${LOCAL_TLS_DOMAIN} _;
     return 301 https://$host$request_uri;
 }

@@ -116,6 +116,28 @@ Token holders can now manage their allowed DNS records directly from the browser
 
 See [`CLIENT_USAGE.md`](CLIENT_USAGE.md) for a client-facing walkthrough and matching API examples.
 
+## Automated Local UI Validation
+
+Run `tooling/run-ui-validation.sh` to spin up the seeded gunicorn backend, the
+local TLS proxy, the Playwright MCP harness, and the pytest UI suite in one
+shot. The helper script:
+
+- Renders/stages the nginx config and LetsEncrypt-style cert bundle under
+  `/tmp/netcup-local-proxy/...` so Docker can mount them from inside the
+  devcontainer.
+- Boots `gunicorn tooling.local_proxy.local_app:app` with a SQLite database at
+  `tmp/local-netcup.db` (admin/client seed applied automatically).
+- Launches the nginx proxy + Playwright harness via docker compose and installs
+  `ui_tests/requirements.txt` unless `SKIP_UI_TEST_DEPS=1` is set.
+- Exports sensible defaults for `UI_BASE_URL`
+  (`https://<host-gateway>:4443`) and `UI_MCP_URL`
+  (`http://<host-gateway>:8765/mcp`) before running `pytest ui_tests/tests -vv`.
+
+Override `UI_BASE_URL`, `UI_MCP_URL`, `PLAYWRIGHT_HEADLESS`, or
+`UI_ADMIN_PASSWORD` before running the script if you need to target a different
+host or credentials. The script tears everything down on exit, even if pytest
+fails.
+
 ## Installation
 
 1. Clone the repository:

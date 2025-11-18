@@ -26,7 +26,7 @@ see defined variables `NETCUP_USER`, `NETCUP_SERVER`, `REMOTE_DIR`, `PUBLIC_FQDN
 You can still hit the Flask server directly via the devcontainer address for
 quick smoke checks. When you need production-like HTTPS (real hostname,
 Let’s Encrypt certificates) but with full control and logging, use the local
-TLS proxy tooling under `tooling/local-proxy/`:
+TLS proxy tooling under `tooling/local_proxy/`:
 
 - The README in that folder explains how to configure the reverse proxy via
   environment files so no values are hard-coded.
@@ -34,9 +34,21 @@ TLS proxy tooling under `tooling/local-proxy/`:
   traffic on your machine, making it ideal for debugging flows that are opaque
   on the shared host.
 
-Follow the instructions in `tooling/local-proxy/README.md` to generate the
+Follow the instructions in `tooling/local_proxy/README.md` to generate the
 nginx config from your `.env`, mount the Let’s Encrypt tree read-only, and
 point clients at the public FQDN of this host.
+
+- `tooling/local_proxy/render-nginx-conf.sh` renders the nginx config using
+  your `.env` choices, while `tooling/local_proxy/stage-proxy-inputs.sh`
+  copies the resulting config and cert bundle into `/tmp/...` so Docker can
+  mount them from inside the devcontainer. Run both before restarting the
+  proxy.
+- When you need the whole local stack (backend + TLS proxy + Playwright MCP)
+  just for validating UI changes, use `tooling/run-ui-validation.sh`. It
+  starts gunicorn, launches the proxy, brings up the MCP container, and runs
+  `pytest ui_tests/tests -vv` end-to-end. Override `UI_BASE_URL`,
+  `UI_MCP_URL`, or `SKIP_UI_TEST_DEPS=1` before calling the script if you need
+  a custom target or want to skip dependency installation.
 
 # Use Playwright
 
@@ -50,6 +62,18 @@ etc.). The quick steps are:
 
 The detailed build (including `docker buildx`) and troubleshooting notes are in
 `tooling/playwright-mcp/README.md`.
+
+## Automated local UI validation
+
+- Prefer `tooling/run-ui-validation.sh` when you want a single command that
+  renders/stages the proxy config, spins up the TLS proxy and MCP harness,
+  installs the UI test dependencies, and executes `pytest ui_tests/tests -vv`.
+- The script writes backend logs to `tmp/local_app.log` and tears down the
+  containers automatically (trap on `EXIT`).
+- Customize the run by exporting environment variables beforehand:
+  `UI_BASE_URL` to point at a different host, `PLAYWRIGHT_HEADLESS=false` to
+  VNC into Chromium, or `SKIP_UI_TEST_DEPS=1` if your environment already has
+  the UI testing requirements installed.
 
 # Webhosting constraints
 
@@ -73,19 +97,54 @@ As we use a VSC devcontainer with defined / definable environment, we do not cre
 
 CRITICAL: Avoid using compound shell statements (pipes, &&, ;, here-documents, inline environment-variable assignments, or multi-line commands) in Copilot/agent instructions. Those compound commands are hard or impossible to reliably whitelist in VS Code's auto-approve rules and often require manual approval.
 
-Instead: have the agent write a single, well-known script file and run that script. **Canonical file**: `.vscode/copilot-cmd.sh`. That script is whitelisted in the project's Copilot rules and gets a single, simple invocation that VS Code can match. CRITICAL: As we lack a history of commands run, *before* executing the actual code, the script must 1. debug print the brief intention of following code (e.g. `INTENT: list domains handled by letsencrypt `) and 2. debug print the code itself that will be executed (e.g. `PLANNED: ls -l /etc/letsencrypt/live/`), e.g. like this:
+Instead: have the agent write a single, well-known script file and run that script. **Canonical file**: `.vscode/copilot-cmd.sh`. That script is whitelisted in the project's Copilot rules and gets a single, simple invocation that VS Code can match. CRITICAL: As we lack a history of commands run, *before* executing the actual code, the script must 1. debug print the brief intention of following code (e.g. `INTENT: list domains handled by letsencrypt `) and 2. debug print the code itself that will be executed (e.g. `PLANNED: ls -l /etc/letsencrypt/live/`). To *not* call the script with variables on the command line (prevent compound statement) use `.vscode/copilot-plan.sh` to define variables. e.g. like this:
+
+```bash file=.vscode/copilot-plan.sh
+INTENT="Tail backend log"
+PLANNED="tail -n 50 /tmp/local_app.log"
+```
 
 ```bash file=.vscode/copilot-cmd.sh
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /workspaces/netcup-api-filter
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-INTENT=${INTENT:-"No action configured"}
-PLANNED=${PLANNED:-"echo 'Update .vscode/copilot-cmd.sh before running it.'"}
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $*"
+}
 
-echo "INTENT: ${INTENT}"
-echo "PLANNED: ${PLANNED}"
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $*"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $*"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $*" >&2
+}
+
+log_intent() {
+    echo -e "${BLUE}[INTENT]${NC} $*"
+}
+log_planned() {
+    echo -e "${BLUE}[PLANNED]${NC} $*"
+}
+
+cd /workspaces/dstdns
+
+INTENT="Audit repository for hardcoded vault URLs"
+PLANNED="rg -n \"http://vault\""
+
+log_intent "${INTENT}"
+log_planned "${PLANNED}"
 
 eval "${PLANNED}"
 ```
@@ -109,6 +168,10 @@ Don't:
 ```bash
 # compound command — brittle, not whitelisted
 cd /workspaces/netcup-api-filter && UI_ADMIN_PASSWORD=Admin123! pytest ui_tests/tests
+```
+Don't
+```bash
+cd /workspaces/netcup-api-filter && INTENT="create tmp directory" PLANNED="mkdir -p /workspaces/netcup-api-filter/tmp" bash ./.vscode/copilot-cmd.sh
 ```
 
 Do:
