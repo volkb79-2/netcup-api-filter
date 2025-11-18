@@ -2,10 +2,10 @@
 
 This folder contains the tooling required to run a local reverse proxy that
 terminates TLS for the host's public Fully Qualified Domain Name (FQDN) while
+ts certificates, secure cookies) but also want full observability that is not
 forwarding traffic to a locally running instance of the Netcup API Filter.
 Use this when you need production-like HTTPS behaviour (real hostname,
-Let23
-ts certificates, secure cookies) but also want full observability that is not
+Let's Encrypt certificates, secure cookies) but also want full observability that is not
 available on the shared webhosting setup.
 
 ## When to use this project
@@ -72,10 +72,12 @@ Otherwise, spin up this local proxy and point clients at it.
    docker compose --env-file proxy.env down
    ```
 
+ts tree read-only (already configured) so the proxy cannot alter certificates.
 ## Safety notes
 
-- Mount the Let23
-ts tree read-only (already configured) so the proxy cannot alter certificates.
+- Mount the Let's Encrypt tree read-only (already configured) so the proxy cannot alter certificates.
+- The rendered nginx config sets `disable_symlinks off;` so the container can follow the
+  standard `live/ → archive/` symlink layout provided by certbot.
 - Never check the populated `.env` or rendered `nginx.conf` file into source
   control; they contain machine-specific paths.
 - Ensure the devcontainer and proxy share the same Docker network so the proxy
