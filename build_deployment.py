@@ -20,6 +20,8 @@ import tempfile
 import zipfile
 import hashlib
 import logging
+import json
+from datetime import datetime
 from pathlib import Path
 
 # Configure logging
@@ -28,6 +30,17 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+DEFAULT_TEST_CLIENT = {
+    "client_id": "test_qweqweqwe_vi",
+    "token": "qweqweqwe-vi-readonly",
+    "description": "Sample read-only client for qweqweqwe.vi",
+    "realm_type": "host",
+    "realm_value": "qweqweqwe.vi",
+    "record_types": ["A"],
+    "operations": ["read"],
+}
 
 
 def create_directory_structure(deploy_dir):
@@ -155,6 +168,39 @@ def copy_application_files(deploy_dir):
         logger.info("Copied static assets")
 
 
+def write_build_metadata(deploy_dir):
+    """Write build metadata (timestamp, git info) to deploy directory."""
+    logger.info("Recording build metadata...")
+
+    def git_output(*args, default="unknown"):
+        try:
+            result = subprocess.run([
+                "git", *args
+            ], capture_output=True, text=True, check=True)
+            return result.stdout.strip() or default
+        except Exception:
+            return default
+
+    build_info = {
+        "built_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "git_commit": git_output("rev-parse", "HEAD", default="unknown"),
+        "git_short": git_output("rev-parse", "--short", "HEAD", default="unknown"),
+        "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
+        "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
+        "source": "build_deployment.py"
+    }
+
+    metadata_path = Path(deploy_dir) / "build_info.json"
+    with open(metadata_path, "w", encoding="utf-8") as fh:
+        json.dump(build_info, fh, indent=2)
+
+    logger.info(
+        "Build metadata written: commit %s @ %s",
+        build_info["git_short"],
+        build_info["built_at"],
+    )
+
+
 def initialize_database(deploy_dir):
     """Create and initialize SQLite database with admin user."""
     logger.info("Initializing database...")
@@ -177,7 +223,7 @@ def initialize_database(deploy_dir):
         
         # Import required modules
         from flask import Flask
-        from database import db, AdminUser, init_db
+        from database import db, AdminUser, Client
         from utils import hash_password
         
         # Create Flask app with template_folder in deploy directory
@@ -207,6 +253,29 @@ def initialize_database(deploy_dir):
                 logger.info("Admin user created (username: admin, password: admin)")
             else:
                 logger.info("Admin user already exists")
+
+            # Create default test client for UI/API smoke testing
+            client = Client.query.filter_by(client_id=DEFAULT_TEST_CLIENT["client_id"]).first()
+            if not client:
+                client = Client(
+                    client_id=DEFAULT_TEST_CLIENT["client_id"],
+                    secret_token=hash_password(DEFAULT_TEST_CLIENT["token"]),
+                    description=DEFAULT_TEST_CLIENT["description"],
+                    realm_type=DEFAULT_TEST_CLIENT["realm_type"],
+                    realm_value=DEFAULT_TEST_CLIENT["realm_value"],
+                    is_active=1
+                )
+                client.set_allowed_record_types(DEFAULT_TEST_CLIENT["record_types"])
+                client.set_allowed_operations(DEFAULT_TEST_CLIENT["operations"])
+                db.session.add(client)
+                db.session.commit()
+                logger.info(
+                    "Default test client '%s' created for %s",
+                    DEFAULT_TEST_CLIENT["client_id"],
+                    DEFAULT_TEST_CLIENT["realm_value"],
+                )
+            else:
+                logger.info("Default test client already exists")
         
         logger.info(f"Database initialized at {db_path}")
         
@@ -548,6 +617,9 @@ def main():
         
         # Copy application files
         copy_application_files(deploy_dir)
+
+        # Record build metadata for runtime display
+        write_build_metadata(deploy_dir)
         
         # Initialize database
         initialize_database(deploy_dir)

@@ -1,102 +1,181 @@
 {% extends 'admin_base.html' %}
 {% import 'admin/lib.html' as lib with context %}
 {% import 'admin/model/layout.html' as model_layout with context %}
+{% import 'admin/actions.html' as actionlib with context %}
+{% import 'admin/model/row_actions.html' as row_actions with context %}
 
 {% block page_title %}{{ admin_view.name }}{% endblock %}
 
 {% block extra_head %}
 {{ super() }}
-<style>
-.list-actions-form {
-    display: inline;
-}
-</style>
+{{ lib.form_css() }}
 {% endblock %}
 
 {% block admin_content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>{{ admin_view.name }}</h1>
-    {% if admin_view.can_create %}
-    <a href="{{ get_url('.create_view', url=return_url) }}" class="btn btn-primary">
-        Create New {{ admin_view.name | replace('Management - ', '') | replace('Logs - ', '') }}
-    </a>
-    {% endif %}
-</div>
-
-<div class="card">
-    {% if count %}
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <div>
-            <span class="text-muted text-sm">Total: {{ count }} records</span>
-        </div>
-        {% if search_supported %}
-        <form method="GET" action="{{ return_url }}" class="d-flex gap-2">
-            {% if sort_column %}
-            <input type="hidden" name="sort" value="{{ sort_column }}">
-            {% endif %}
-            {% if sort_desc %}
-            <input type="hidden" name="desc" value="{{ sort_desc }}">
-            {% endif %}
-            {% if page_size %}
-            <input type="hidden" name="page_size" value="{{ page_size }}">
-            {% endif %}
-            
-            {% for flt_name, flt_value in filter_args.items() %}
-            <input type="hidden" name="{{ flt_name }}" value="{{ flt_value }}">
-            {% endfor %}
-            
-            <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm search-input" placeholder="Search...">
-            <button type="submit" class="btn btn-sm btn-outline">Search</button>
-        </form>
+<div class="page-header-with-actions">
+    <div>
+        <p class="eyebrow">Management</p>
+        <h1>{{ admin_view.name }}</h1>
+        {% if count is not none %}
+        <p class="text-muted">{{ count }} total record{{ '' if count == 1 else 's' }}</p>
         {% endif %}
     </div>
-    {% endif %}
-    
-    <div class="card-body p-0">
-        {% block model_list_table %}
-        <div class="table-container">
-            {{ lib.render_list_table(
-                list_columns,
-                data,
-                get_pk_value,
-                get_value,
-                return_url,
-                admin_view.column_formatters,
-                admin_view.column_type_formatters,
-                admin_view.column_formatters_export,
-                admin_view.column_type_formatters_export,
-                admin_view.column_sortable_list,
-                sort_column,
-                sort_desc,
-                can_edit=admin_view.can_edit,
-                can_delete=admin_view.can_delete,
-                can_view_details=admin_view.can_view_details,
-                actions=actions,
-                actions_confirmation=actions_confirmation,
-                page=page,
-                page_size=page_size,
-                count=count,
-                pager_url=pager_url,
-                num_pages=num_pages,
-                extra_args=extra_args,
-                actions_form=actions_form,
-                list_row_actions=list_row_actions
-            ) }}
+    <div class="header-actions">
+        {% if search_supported %}
+        <div class="search-inline">
+            {{ model_layout.search_form(input_class="search-input") }}
         </div>
-        {% endblock %}
+        {% endif %}
+        {% if admin_view.can_create %}
+        {% if admin_view.create_modal %}
+        {{ lib.add_modal_button(url=get_url('.create_view', url=return_url, modal=True), btn_class='btn btn-primary', title=_gettext('Create New Record'), content=_gettext('Add')) }}
+        {% else %}
+        <a href="{{ get_url('.create_view', url=return_url) }}" class="btn btn-primary">{{ _gettext('Add New') }}</a>
+        {% endif %}
+        {% endif %}
     </div>
-    
-    {% if num_pages and num_pages > 1 %}
-    <div class="card-footer d-flex justify-content-center">
-        {{ lib.pager(page, num_pages, pager_url) }}
-    </div>
-    {% endif %}
 </div>
 
-{{ lib.render_actions_form(actions_form, admin_view.action_form_class) }}
+<div class="toolbar-card">
+    <div class="toolbar-actions">
+        {% if filters %}
+        <div class="dropdown">
+            {{ model_layout.filter_options('btn btn-outline-secondary dropdown-toggle') }}
+        </div>
+        {% endif %}
+        {% if can_set_page_size %}
+        <div class="dropdown">
+            {{ model_layout.page_size_form(page_size_url, admin_view.page_size_options, 'btn btn-outline-secondary dropdown-toggle') }}
+        </div>
+        {% endif %}
+        {% if admin_view.can_export %}
+        <div class="dropdown">
+            {{ model_layout.export_options('btn btn-outline-secondary dropdown-toggle') }}
+        </div>
+        {% endif %}
+        {% if actions %}
+        <div class="dropdown">
+            {{ actionlib.dropdown(actions) }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if filters %}
+<div class="filter-panel">
+    {{ model_layout.filter_form() }}
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-modern">
+                <thead>
+                    <tr>
+                        {% if actions %}
+                        <th class="list-checkbox-column">
+                            <input type="checkbox" name="rowtoggle" class="action-rowtoggle" title="{{ _gettext('Select all records') }}" />
+                        </th>
+                        {% endif %}
+                        {% if admin_view.column_display_actions %}
+                        <th class="list-actions-column">&nbsp;</th>
+                        {% endif %}
+                        {% for c, name in list_columns %}
+                        {% set column = loop.index0 %}
+                        <th class="column-header col-{{ c }}">
+                            {% if admin_view.is_sortable(c) %}
+                                {% if sort_column == column %}
+                                    <a href="{{ sort_url(column, True) }}" title="{{ _gettext('Sort by %(name)s', name=name) }}">
+                                        {{ name }}
+                                        {% if sort_desc %}
+                                            <span class="fa fa-chevron-up glyphicon glyphicon-chevron-up"></span>
+                                        {% else %}
+                                            <span class="fa fa-chevron-down glyphicon glyphicon-chevron-down"></span>
+                                        {% endif %}
+                                    </a>
+                                {% else %}
+                                    <a href="{{ sort_url(column) }}" title="{{ _gettext('Sort by %(name)s', name=name) }}">{{ name }}</a>
+                                {% endif %}
+                            {% else %}
+                                {{ name }}
+                            {% endif %}
+                            {% if admin_view.column_descriptions.get(c) %}
+                            <a class="fa fa-question-circle glyphicon glyphicon-question-sign"
+                               title="{{ admin_view.column_descriptions[c] }}"
+                               href="javascript:void(0)" data-role="tooltip"></a>
+                            {% endif %}
+                        </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data %}
+                    <tr>
+                        {% if actions %}
+                        <td>
+                            <input type="checkbox" name="rowid" class="action-checkbox" value="{{ get_pk_value(row) }}" title="{{ _gettext('Select record') }}" />
+                        </td>
+                        {% endif %}
+                        {% if admin_view.column_display_actions %}
+                        <td class="list-buttons-column">
+                            {% for action in list_row_actions %}
+                                {{ action.render_ctx(get_pk_value(row), row) }}
+                            {% endfor %}
+                        </td>
+                        {% endif %}
+                        {% for c, name in list_columns %}
+                        <td class="col-{{ c }}">
+                            {% if admin_view.is_editable(c) %}
+                                {% set form = list_forms[get_pk_value(row)] %}
+                                {% if form.csrf_token is defined and form.csrf_token %}
+                                    {{ form[c](pk=get_pk_value(row), display_value=get_value(row, c), csrf=form.csrf_token._value()) }}
+                                {% elif csrf_token is defined and csrf_token %}
+                                    {{ form[c](pk=get_pk_value(row), display_value=get_value(row, c), csrf=csrf_token()) }}
+                                {% else %}
+                                    {{ form[c](pk=get_pk_value(row), display_value=get_value(row, c)) }}
+                                {% endif %}
+                            {% else %}
+                                {{ get_value(row, c) }}
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="999">
+                            <div class="empty-state text-center">
+                                {{ admin_view.get_empty_list_message() }}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-center">
+        {% if num_pages is not none %}
+            {{ lib.pager(page, num_pages, pager_url) }}
+        {% else %}
+            {{ lib.simple_pager(page, data|length == page_size, pager_url) }}
+        {% endif %}
+    </div>
+</div>
+
+{% if actions %}
+{{ actionlib.form(actions, get_url('.action_view')) }}
+{% endif %}
+
+{% if admin_view.edit_modal or admin_view.create_modal or admin_view.details_modal %}
+    {{ lib.add_modal_window() }}
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
 {{ super() }}
-{{ lib.model_list_table_js() }}
+{{ lib.form_js() }}
+{% if actions %}
+{{ actionlib.script(_gettext('Please select at least one record.'), actions, actions_confirmation) }}
+{% endif %}
 {% endblock %}

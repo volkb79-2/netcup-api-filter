@@ -13,6 +13,7 @@ from typing import Dict, Any
 from netcup_client import NetcupClient, NetcupAPIError
 from access_control import AccessControl
 from client_portal import client_portal_bp
+from utils import get_build_info
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +24,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.register_blueprint(client_portal_bp)
+
+
+@app.context_processor
+def inject_build_metadata():
+    """Expose build metadata to every Jinja template."""
+    return {'build_info': get_build_info()}
 
 # Security: Set maximum content length (10MB)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB

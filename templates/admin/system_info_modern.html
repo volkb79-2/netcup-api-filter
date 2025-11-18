@@ -15,7 +15,7 @@
                 <tbody>
                     <tr>
                         <td><strong>Version</strong></td>
-                        <td>{{ python_info.version }}</td>
+                        <td>{{ python_info.python_version }}</td>
                     </tr>
                     <tr>
                         <td><strong>Executable</strong></td>
@@ -24,6 +24,10 @@
                     <tr>
                         <td><strong>Platform</strong></td>
                         <td>{{ python_info.platform }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Implementation</strong></td>
+                        <td>{{ python_info.python_implementation }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -71,7 +75,10 @@
             <tbody>
                 {% for test in fs_tests %}
                 <tr>
-                    <td>{{ test.name }}</td>
+                    <td>
+                        <div>{{ test.name }}</div>
+                        <div><code class="text-muted">{{ test.path }}</code></div>
+                    </td>
                     <td>
                         {% if test.success %}
                             <span class="badge badge-success">Success</span>

@@ -160,6 +160,9 @@ deploy/
 deploy.zip
 deploy.zip.sha256
 
+# VSC Copilot canonical script 
+.vscode/copilot-cmd.sh
+
 # MCP Playwright artifacts
 tooling/playwright-mcp/screenshots/
 

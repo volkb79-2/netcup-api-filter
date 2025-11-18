@@ -8,7 +8,10 @@ import os
 import logging
 import ipaddress
 import re
-from typing import List, Tuple
+import json
+from datetime import datetime
+from functools import lru_cache
+from typing import List, Dict
 import string
 
 logger = logging.getLogger(__name__)
@@ -70,49 +73,41 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def test_filesystem_access() -> List[Tuple[str, bool, str]]:
+def test_filesystem_access() -> List[Dict[str, str]]:
     """
     Test filesystem access for various paths
     
     Returns:
-        List of tuples (path, can_write, message)
+        List of dicts describing each test result
     """
     results = []
-    
-    # Test current directory
-    cwd = os.getcwd()
-    test_file = os.path.join(cwd, '.write_test_netcup_filter')
-    try:
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        results.append((cwd, True, "Current directory is writable"))
-    except Exception as e:
-        results.append((cwd, False, f"Current directory not writable: {e}"))
-    
-    # Test /tmp directory
-    tmp_dir = '/tmp'
-    test_file = os.path.join(tmp_dir, '.write_test_netcup_filter')
-    try:
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        results.append((tmp_dir, True, "/tmp directory is writable"))
-    except Exception as e:
-        results.append((tmp_dir, False, f"/tmp directory not writable: {e}"))
-    
-    # Test home directory if available
+
+    def check_path(path: str, label: str):
+        record = {
+            'name': label,
+            'path': path,
+            'success': False,
+            'message': '',
+            'error': ''
+        }
+        test_file = os.path.join(path, '.write_test_netcup_filter')
+        try:
+            with open(test_file, 'w', encoding='utf-8') as handle:
+                handle.write('test')
+            os.remove(test_file)
+            record['success'] = True
+            record['message'] = f"{path} is writable"
+        except Exception as exc:  # pragma: no cover - environment dependent
+            record['error'] = f"{path} not writable: {exc}"
+        results.append(record)
+
+    check_path(os.getcwd(), 'Working Directory')
+    check_path('/tmp', '/tmp Directory')
+
     home_dir = os.path.expanduser('~')
     if home_dir != '~':
-        test_file = os.path.join(home_dir, '.write_test_netcup_filter')
-        try:
-            with open(test_file, 'w') as f:
-                f.write('test')
-            os.remove(test_file)
-            results.append((home_dir, True, "Home directory is writable"))
-        except Exception as e:
-            results.append((home_dir, False, f"Home directory not writable: {e}"))
-    
+        check_path(home_dir, 'Home Directory')
+
     return results
 
 
@@ -278,3 +273,35 @@ def get_current_directory_info() -> dict:
         'script_dir': os.path.dirname(os.path.abspath(__file__)),
         'home': os.path.expanduser('~'),
     }
+
+
+@lru_cache(maxsize=1)
+def get_build_info() -> Dict[str, str]:
+    """Return build metadata loaded from build_info.json if present."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    fallback = {
+        'environment': 'development',
+        'built_at': datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+        'git_commit': 'local',
+        'git_branch': 'local',
+        'source': 'runtime-generated'
+    }
+
+    candidates = [
+        os.environ.get('NETCUP_BUILD_INFO_PATH'),
+        os.path.join(base_dir, 'build_info.json')
+    ]
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, 'r', encoding='utf-8') as handle:
+                    data = json.load(handle)
+                    if isinstance(data, dict):
+                        return data
+            except Exception as exc:
+                logger.warning('Failed to read build info from %s: %s', candidate, exc)
+
+    return fallback

@@ -1,0 +1,39 @@
+{
+  "name": "netcup-api-filter",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false,
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+  "containerEnv": {
+    "DOCKER_HOST": "unix:///var/run/docker.sock"
+  },
+  "runArgs": [
+  ],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/local/bin/python3.13"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "ms-vscode.docker",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml",
+        "samuelcolvin.jinjahtml"
+      ]
+    }
+  }
+}
+

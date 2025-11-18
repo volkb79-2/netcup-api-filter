@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from functools import wraps
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 from flask import (
     Blueprint,
@@ -28,10 +29,68 @@ client_portal_bp = Blueprint(
     url_prefix="/client",
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _get_access_control():
     """Return the active AccessControl instance if available."""
     return current_app.config.get("access_control")
+
+
+def _normalize_token_info(token_info: Any) -> Optional[Dict[str, Any]]:
+    """Ensure token info behaves like a dict, even if an ORM object is returned."""
+
+    if token_info is None:
+        return None
+
+    if isinstance(token_info, dict):
+        return token_info
+
+    normalized: Dict[str, Any] = {}
+    simple_attrs = [
+        "client_id",
+        "description",
+        "realm_type",
+        "realm_value",
+        "email_address",
+    ]
+
+    for attr in simple_attrs:
+        if hasattr(token_info, attr):
+            normalized[attr] = getattr(token_info, attr)
+
+    if hasattr(token_info, "get_allowed_record_types"):
+        normalized["allowed_record_types"] = token_info.get_allowed_record_types()
+    elif hasattr(token_info, "allowed_record_types"):
+        normalized["allowed_record_types"] = getattr(token_info, "allowed_record_types")
+    else:
+        normalized.setdefault("allowed_record_types", [])
+
+    if hasattr(token_info, "get_allowed_operations"):
+        normalized["allowed_operations"] = token_info.get_allowed_operations()
+    elif hasattr(token_info, "allowed_operations"):
+        normalized["allowed_operations"] = getattr(token_info, "allowed_operations")
+    else:
+        normalized.setdefault("allowed_operations", [])
+
+    if hasattr(token_info, "get_allowed_ip_ranges"):
+        normalized["allowed_origins"] = token_info.get_allowed_ip_ranges()
+    elif hasattr(token_info, "allowed_origins"):
+        normalized["allowed_origins"] = getattr(token_info, "allowed_origins")
+    else:
+        normalized.setdefault("allowed_origins", [])
+
+    if "email_notifications_enabled" not in normalized:
+        value = getattr(token_info, "email_notifications_enabled", None)
+        if value is not None:
+            normalized["email_notifications_enabled"] = bool(value)
+
+    if not normalized:
+        logger.warning("Received unexpected token_info payload of type %s", type(token_info).__name__)
+        return None
+
+    logger.debug("Normalized token_info from %s to dict", type(token_info).__name__)
+    return normalized
 
 
 def _load_token_from_session() -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
@@ -45,7 +104,7 @@ def _load_token_from_session() -> Tuple[Optional[str], Optional[Dict[str, Any]]]
         session.pop(SESSION_KEY, None)
         return None, None
 
-    token_info = access_control.get_token_info(token)
+    token_info = _normalize_token_info(access_control.get_token_info(token))
     if not token_info:
         session.pop(SESSION_KEY, None)
         return None, None

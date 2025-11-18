@@ -49,6 +49,12 @@
         <footer class="app-footer">
             <div class="container">
                 <p class="mb-0">Netcup API Filter · Admin & Client Portal</p>
+                {% if build_info %}
+                <p class="mb-0 text-muted small">
+                    Build {{ build_info.get('git_short', build_info.get('git_commit', 'unknown')) }} ·
+                    {{ build_info.get('built_at', 'n/a') }}
+                </p>
+                {% endif %}
             </div>
         </footer>
         {% endblock %}
