@@ -95,13 +95,13 @@ As we use a VSC devcontainer with defined / definable environment, we do not cre
 
 # Running commands via Copilot / Agents — safe pattern
 
-CRITICAL: Avoid using compound shell statements (pipes, &&, ;, here-documents, inline environment-variable assignments, or multi-line commands) in Copilot/agent instructions. Those compound commands are hard or impossible to reliably whitelist in VS Code's auto-approve rules and often require manual approval.
+CRITICAL: Do not use compound shell statements (pipes, &&, ;, here-documents, inline environment-variable assignments, or multi-line commands) in Copilot/agent instructions. Those compound commands are hard or impossible to reliably whitelist in VS Code's auto-approve rules and often require manual approval.
 
-Instead: have the agent write a single, well-known script file and run that script. **Canonical file**: `.vscode/copilot-cmd.sh`. That script is whitelisted in the project's Copilot rules and gets a single, simple invocation that VS Code can match. CRITICAL: As we lack a history of commands run, *before* executing the actual code, the script must 1. debug print the brief intention of following code (e.g. `INTENT: list domains handled by letsencrypt `) and 2. debug print the code itself that will be executed (e.g. `PLANNED: ls -l /etc/letsencrypt/live/`). To *not* call the script with variables on the command line (prevent compound statement) use `.vscode/copilot-plan.sh` to define variables. e.g. like this:
+Instead: have the agent write a single, well-known script file and run that script. **Canonical file**: `.vscode/copilot-cmd.sh`. That script is whitelisted in the project's Copilot rules and gets a single, simple invocation that VS Code can match. CRITICAL: As we lack a history of commands run, *before* executing the actual code, the script must 1. debug print the brief intention of following code (e.g. `[PLAN] list domains handled by letsencrypt `) and 2. debug print the code itself that will be executed (e.g. `[EXEC] ls -l /etc/letsencrypt/live/`). To *not* call the script with variables on the command line (prevent compound statement) use `.vscode/copilot-plan.sh` to define variables. e.g. like this:
 
 ```bash file=.vscode/copilot-plan.sh
-INTENT="Tail backend log"
-PLANNED="tail -n 50 /tmp/local_app.log"
+COPILOT_PLAN="Idle placeholder"
+COPILOT_EXEC="true"
 ```
 
 ```bash file=.vscode/copilot-cmd.sh
@@ -131,22 +131,33 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
-log_intent() {
-    echo -e "${BLUE}[INTENT]${NC} $*"
+log_plan() {
+    echo -e "${BLUE}[PLAN]${NC} $*"
 }
-log_planned() {
-    echo -e "${BLUE}[PLANNED]${NC} $*"
+log_exec() {
+    echo -e "${BLUE}[EXEC]${YELLOW} $*${NC}"
 }
 
-cd /workspaces/dstdns
+log_info "pwd: $(pwd)"
+WORKSPACE_DIR="/workspaces/netcup-api-filter"
+PLAN_FILE="${PLAN_FILE:-${WORKSPACE_DIR}/.vscode/copilot-plan.sh}"
 
-INTENT="Audit repository for hardcoded vault URLs"
-PLANNED="rg -n \"http://vault\""
+if [[ -f "${PLAN_FILE}" ]]; then
+    # shellcheck source=/dev/null
+    source "${PLAN_FILE}"
+fi
 
-log_intent "${INTENT}"
-log_planned "${PLANNED}"
+if [[ -z "${COPILOT_PLAN:-}" || -z "${COPILOT_EXEC:-}" ]]; then
+    echo "COPILOT_PLAN or COPILOT_EXEC command not set" >&2
+    exit 1
+fi
 
-eval "${PLANNED}"
+log_plan "${COPILOT_PLAN}"
+log_exec "${COPILOT_EXEC}"
+
+cd "${WORKSPACE_DIR}"
+
+eval "${COPILOT_EXEC}"
 ```
 
 Why

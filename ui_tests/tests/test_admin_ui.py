@@ -39,3 +39,19 @@ async def test_admin_clients_table_lists_preseeded_client():
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-clients")
         assert screenshot_path.endswith(".png")
+
+
+async def test_admin_can_create_and_delete_client():
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.open_admin_client_create(browser)
+
+        generated_token = await workflows.trigger_token_generation(browser)
+        assert len(generated_token) >= 10
+
+        client_data = workflows.generate_client_data()
+        await workflows.submit_client_form(browser, client_data)
+        await workflows.ensure_client_visible(browser, client_data.client_id)
+
+        await workflows.delete_admin_client(browser, client_data.client_id)
+        await workflows.ensure_client_absent(browser, client_data.client_id)

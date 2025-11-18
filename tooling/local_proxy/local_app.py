@@ -17,8 +17,8 @@ from typing import Any, Dict, List
 import filter_proxy
 from access_control import AccessControl
 from admin_ui import setup_admin_ui
-from database import Client, AdminUser, db, init_db
-from utils import hash_password
+from bootstrap import AdminSeedOptions, ClientSeedOptions, seed_default_entities
+from database import init_db
 
 DEFAULT_SECRET_KEY = os.environ.get("LOCAL_SECRET_KEY", "local-dev-secret-key")
 
@@ -67,34 +67,25 @@ class FakeNetcupClient:
 
 
 def _seed_database() -> None:
+    record_types = [item.strip() for item in DEFAULT_CLIENT_RECORD_TYPES if item.strip()] or None
+    operations = [item.strip() for item in DEFAULT_CLIENT_OPERATIONS if item.strip()] or None
     with filter_proxy.app.app_context():
-        admin = AdminUser.query.filter_by(username=DEFAULT_ADMIN_USERNAME).first()
-        if not admin:
-            admin = AdminUser(
+        seed_default_entities(
+            AdminSeedOptions(
                 username=DEFAULT_ADMIN_USERNAME,
-                password_hash=hash_password(DEFAULT_ADMIN_PASSWORD),
-                must_change_password=0,
-            )
-            db.session.add(admin)
-        else:
-            admin.password_hash = hash_password(DEFAULT_ADMIN_PASSWORD)
-            admin.must_change_password = 0
-
-        client = Client.query.filter_by(client_id=DEFAULT_CLIENT_ID).first()
-        if not client:
-            client = Client(
+                password=DEFAULT_ADMIN_PASSWORD,
+                must_change_password=False,
+            ),
+            ClientSeedOptions(
                 client_id=DEFAULT_CLIENT_ID,
-                secret_token=hash_password(DEFAULT_CLIENT_TOKEN),
+                token=DEFAULT_CLIENT_TOKEN,
                 description="Local test client",
                 realm_type="host",
                 realm_value=DEFAULT_CLIENT_DOMAIN,
-                is_active=1,
-            )
-            client.set_allowed_record_types([item.strip() for item in DEFAULT_CLIENT_RECORD_TYPES if item.strip()])
-            client.set_allowed_operations([item.strip() for item in DEFAULT_CLIENT_OPERATIONS if item.strip()])
-            db.session.add(client)
-
-        db.session.commit()
+                record_types=record_types or ("A",),
+                operations=operations or ("read",),
+            ),
+        )
 
 
 def _configure_app() -> Any:

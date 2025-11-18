@@ -66,13 +66,29 @@ class Browser:
         self.current_url = data.get("url", self.current_url)
         return data
 
+    async def select(self, selector: str, value: str | list[str]) -> Dict[str, Any]:
+        return await self._call("select_option", selector=selector, value=value)
+
     async def text(self, selector: str) -> str:
         data = await self._call("text", selector=selector)
         return data.get("text", "")
 
+    async def get_attribute(self, selector: str, attribute: str) -> str:
+        data = await self._call("get_attribute", selector=selector, attribute=attribute)
+        return data.get("value", "")
+
+    async def html(self, selector: str) -> str:
+        data = await self._call("inner_html", selector=selector)
+        return data.get("html", "")
+
     async def screenshot(self, name: str) -> str:
         data = await self._call("screenshot", name=name)
         return data.get("path", "")
+
+    async def submit(self, selector: str) -> Dict[str, Any]:
+        data = await self._call("submit_form", selector=selector)
+        self.current_url = data.get("url", self.current_url)
+        return data
 
     async def wait_for_text(self, selector: str, expected: str, timeout: float = 10.0, interval: float = 0.5) -> str:
         """Poll for text content until it contains the expected substring."""

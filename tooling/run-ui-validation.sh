@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROXY_DIR="${ROOT_DIR}/tooling/local_proxy"
+PROXY_LIB="${PROXY_DIR}/_proxy_lib.sh"
 PLAYWRIGHT_DIR="${ROOT_DIR}/tooling/playwright-mcp"
 UI_TEST_DIR="${ROOT_DIR}/ui_tests"
 TMP_DIR="${ROOT_DIR}/tmp"
@@ -13,6 +14,14 @@ if [[ ! -f "${PROXY_ENV}" ]]; then
     echo "Missing ${PROXY_ENV}. Copy proxy.env.example and update values." >&2
     exit 1
 fi
+
+if [[ ! -f "${PROXY_LIB}" ]]; then
+    echo "Missing ${PROXY_LIB}." >&2
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source "${PROXY_LIB}"
 
 if [[ ! -x "${PLAYWRIGHT_RUN}" ]]; then
     echo "Missing executable ${PLAYWRIGHT_RUN}." >&2
@@ -109,10 +118,8 @@ if ! docker network inspect "${LOCAL_PROXY_NETWORK}" >/dev/null 2>&1; then
     docker network create "${LOCAL_PROXY_NETWORK}" >/dev/null
 fi
 
-pushd "${PROXY_DIR}" >/dev/null
-./render-nginx-conf.sh
-./stage-proxy-inputs.sh
-popd >/dev/null
+proxy_render_nginx_conf "${PROXY_ENV}"
+proxy_stage_inputs "${PROXY_ENV}"
 
 if [[ "${SKIP_UI_TEST_DEPS:-0}" != "1" ]]; then
     pip install -r "${UI_TEST_DIR}/requirements.txt"

@@ -32,17 +32,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_TEST_CLIENT = {
-    "client_id": "test_qweqweqwe_vi",
-    "token": "qweqweqwe-vi-readonly",
-    "description": "Sample read-only client for qweqweqwe.vi",
-    "realm_type": "host",
-    "realm_value": "qweqweqwe.vi",
-    "record_types": ["A"],
-    "operations": ["read"],
-}
-
-
 def create_directory_structure(deploy_dir):
     """Create the deployment directory structure."""
     logger.info("Creating deployment directory structure...")
@@ -167,6 +156,10 @@ def copy_application_files(deploy_dir):
         shutil.copytree("static", deploy_path / "static", dirs_exist_ok=True)
         logger.info("Copied static assets")
 
+    if os.path.exists("bootstrap"):
+        shutil.copytree("bootstrap", deploy_path / "bootstrap", dirs_exist_ok=True)
+        logger.info("Copied bootstrap helpers")
+
 
 def write_build_metadata(deploy_dir):
     """Write build metadata (timestamp, git info) to deploy directory."""
@@ -223,8 +216,8 @@ def initialize_database(deploy_dir):
         
         # Import required modules
         from flask import Flask
-        from database import db, AdminUser, Client
-        from utils import hash_password
+        from database import db
+        from bootstrap import AdminSeedOptions, DEFAULT_TEST_CLIENT_OPTIONS, seed_default_entities
         
         # Create Flask app with template_folder in deploy directory
         app = Flask(__name__, template_folder=str(deploy_path / "templates"))
@@ -239,43 +232,15 @@ def initialize_database(deploy_dir):
             # Create all tables
             db.create_all()
             logger.info("Database tables created")
-            
-            # Create admin user with admin/admin credentials
-            admin = AdminUser.query.filter_by(username='admin').first()
-            if not admin:
-                admin = AdminUser(
-                    username='admin',
-                    password_hash=hash_password('admin'),
-                    must_change_password=1
-                )
-                db.session.add(admin)
-                db.session.commit()
-                logger.info("Admin user created (username: admin, password: admin)")
-            else:
-                logger.info("Admin user already exists")
 
-            # Create default test client for UI/API smoke testing
-            client = Client.query.filter_by(client_id=DEFAULT_TEST_CLIENT["client_id"]).first()
-            if not client:
-                client = Client(
-                    client_id=DEFAULT_TEST_CLIENT["client_id"],
-                    secret_token=hash_password(DEFAULT_TEST_CLIENT["token"]),
-                    description=DEFAULT_TEST_CLIENT["description"],
-                    realm_type=DEFAULT_TEST_CLIENT["realm_type"],
-                    realm_value=DEFAULT_TEST_CLIENT["realm_value"],
-                    is_active=1
-                )
-                client.set_allowed_record_types(DEFAULT_TEST_CLIENT["record_types"])
-                client.set_allowed_operations(DEFAULT_TEST_CLIENT["operations"])
-                db.session.add(client)
-                db.session.commit()
-                logger.info(
-                    "Default test client '%s' created for %s",
-                    DEFAULT_TEST_CLIENT["client_id"],
-                    DEFAULT_TEST_CLIENT["realm_value"],
-                )
-            else:
-                logger.info("Default test client already exists")
+            seed_default_entities(
+                AdminSeedOptions(username="admin", password="admin", must_change_password=True),
+                DEFAULT_TEST_CLIENT_OPTIONS,
+            )
+            logger.info(
+                "Database seeded with default admin and client %s",
+                DEFAULT_TEST_CLIENT_OPTIONS.client_id,
+            )
         
         logger.info(f"Database initialized at {db_path}")
         
@@ -594,9 +559,11 @@ def main():
     logger.info("Netcup API Filter - Deployment Package Builder")
     logger.info("=" * 60)
     
+    requirements_path = "./requirements.webhosting.txt"
+
     # Check if running from repository root
-    if not os.path.exists("requirements.txt"):
-        logger.error("requirements.txt not found. Run this script from the repository root.")
+    if not os.path.exists(requirements_path):
+        logger.error(f"{requirements_path} not found. Run this script from the repository root.")
         sys.exit(1)
     
     if not os.path.exists("passenger_wsgi.py"):
@@ -613,7 +580,7 @@ def main():
         deploy_path, vendor_dir = create_directory_structure(deploy_dir)
         
         # Download and extract dependencies
-        download_and_extract_dependencies(vendor_dir, "requirements.txt")
+        download_and_extract_dependencies(vendor_dir, requirements_path)
         
         # Copy application files
         copy_application_files(deploy_dir)

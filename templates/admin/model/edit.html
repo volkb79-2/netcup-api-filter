@@ -17,9 +17,7 @@
 <div class="card">
     <div class="card-body">
         {% block edit_form %}
-        <form action="{{ return_url }}" method="POST" class="admin-form" enctype="multipart/form-data">
-            {{ lib.render_form(form, return_url, extra_args, form_opts) }}
-        </form>
+        {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.url) }}
         {% endblock %}
     </div>
 </div>

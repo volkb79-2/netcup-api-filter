@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from loguru import logger
 from fastmcp import FastMCP
@@ -80,11 +80,59 @@ async def fill(selector: str, value: str, press_enter: bool = False) -> dict:
 
 
 @mcp.tool()
+async def select_option(selector: str, value: str | Sequence[str]) -> dict:
+    """Select option(s) for a <select> element, supporting multi-selects."""
+
+    browser_page = await ensure_browser()
+    selected = await browser_page.select_option(selector, value)  # returns list of selected values
+    return {"selector": selector, "value": selected}
+
+
+@mcp.tool()
 async def text(selector: str) -> dict:
     """Return the inner text for the first matching selector."""
     browser_page = await ensure_browser()
     content = await browser_page.inner_text(selector, timeout=15000)
     return {"selector": selector, "text": content}
+
+
+@mcp.tool()
+async def get_attribute(selector: str, attribute: str) -> dict:
+    """Return a specific attribute from the first matching element."""
+
+    browser_page = await ensure_browser()
+    handle = await browser_page.query_selector(selector)
+    if handle is None:
+        raise ValueError(f"Selector {selector} not found")
+    value = await handle.get_attribute(attribute)
+    return {"selector": selector, "attribute": attribute, "value": value}
+
+
+@mcp.tool()
+async def inner_html(selector: str) -> dict:
+    """Capture the inner HTML for debugging complex widgets."""
+
+    browser_page = await ensure_browser()
+    handle = await browser_page.query_selector(selector)
+    if handle is None:
+        raise ValueError(f"Selector {selector} not found")
+    html = await handle.inner_html()
+    return {"selector": selector, "html": html}
+
+
+@mcp.tool()
+async def submit_form(selector: str) -> dict:
+    """Submit a form element without clicking its buttons."""
+
+    browser_page = await ensure_browser()
+    handle = await browser_page.query_selector(selector)
+    if handle is None:
+        raise ValueError(f"Selector {selector} not found")
+    await handle.evaluate(
+        "form => (typeof form.requestSubmit === 'function') ? form.requestSubmit() : form.submit()"
+    )
+    await browser_page.wait_for_load_state()
+    return {"selector": selector, "url": browser_page.url}
 
 
 @mcp.tool()

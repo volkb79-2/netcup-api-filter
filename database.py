@@ -223,17 +223,11 @@ def init_db(app):
         logger.info("Database tables created/verified")
         
         # Create default admin user if none exists
-        from utils import hash_password
-        admin = AdminUser.query.filter_by(username='admin').first()
-        if not admin:
-            admin = AdminUser(
-                username='admin',
-                password_hash=hash_password('admin'),
-                must_change_password=1
-            )
-            db.session.add(admin)
-            db.session.commit()
-            logger.info("Default admin user created (admin/admin)")
+        from bootstrap import AdminSeedOptions, ensure_admin_user
+
+        ensure_admin_user(AdminSeedOptions())
+        db.session.commit()
+        logger.info("Default admin user ensured (admin/admin)")
 
 
 def get_client_by_token(token: str) -> Optional[Client]:

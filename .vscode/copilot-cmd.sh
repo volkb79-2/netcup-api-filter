@@ -24,13 +24,14 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
-log_intent() {
-    echo -e "${BLUE}[INTENT] ${NC} $*"
+log_plan() {
+    echo -e "${BLUE}[PLAN]${NC} $*"
 }
-log_planned() {
-    echo -e "${BLUE}[PLANNED]${YELLOW} $*${NC}"
+log_exec() {
+    echo -e "${BLUE}[EXEC]${YELLOW} $*${NC}"
 }
 
+log_info "pwd: $(pwd)"
 WORKSPACE_DIR="/workspaces/netcup-api-filter"
 PLAN_FILE="${PLAN_FILE:-${WORKSPACE_DIR}/.vscode/copilot-plan.sh}"
 
@@ -39,14 +40,14 @@ if [[ -f "${PLAN_FILE}" ]]; then
     source "${PLAN_FILE}"
 fi
 
-if [[ -z "${INTENT:-}" || -z "${PLANNED:-}" ]]; then
-    echo "INTENT or PLANNED command not set" >&2
+if [[ -z "${COPILOT_PLAN:-}" || -z "${COPILOT_EXEC:-}" ]]; then
+    echo "COPILOT_PLAN or COPILOT_EXEC command not set" >&2
     exit 1
 fi
 
-log_intent "${INTENT}"
-log_planned "${PLANNED}"
+log_plan "${COPILOT_PLAN}"
+log_exec "${COPILOT_EXEC}"
 
 cd "${WORKSPACE_DIR}"
 
-eval "${PLANNED}"
+eval "${COPILOT_EXEC}"
