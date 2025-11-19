@@ -25,7 +25,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # SSH keys to add to agent (from mounted host ~/.ssh)
-SSH_KEYS=("vb@gstammtisch.dchive.de" "vb@gstammtisch.dchive.de_202511")
+SSH_KEYS=("netcup-hosting218629-ed25519")
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
@@ -102,19 +102,20 @@ echo "alias ll='ls -l'" >> ~/.bashrc
 echo "alias la='ls -la'" >> ~/.bashrc
 
 
+ssh_dir="/home/vscode/.ssh-host"
 
 # Ensure SSH keys from host are accessible (if mounted)
-if [ -d "/home/vscode/.ssh-host" ]; then
-    log_info "[INFO] Host SSH keys mounted at /home/vscode/.ssh-host"
+if [ -d "$ssh_dir" ]; then
+    log_info "[INFO] Host SSH keys mounted at $ssh_dir"
     # Start ssh-agent once
     eval "$(ssh-agent -s)"
     # Add each key in the list
     for key in "${SSH_KEYS[@]}"; do
-        if [ -f "/home/vscode/.ssh-host/$key" ]; then
+        if [ -f "$ssh_dir/$key" ]; then
             log_info "[INFO] Adding SSH key: $key"
-            ssh-add "/home/vscode/.ssh-host/$key" 2>/dev/null || log_warn "Failed to add SSH key $key (possibly passphrase required)"
+            ssh-add "$ssh_dir/$key" 2>/dev/null || log_warn "Failed to add SSH key $key (possibly passphrase required)"
         else
-            log_warn "[WARN] SSH key $key not found in mounted ~/.ssh"
+            log_warn "[WARN] SSH key $key not found in mounted directory $ssh_dir"
         fi
     done
 fi
