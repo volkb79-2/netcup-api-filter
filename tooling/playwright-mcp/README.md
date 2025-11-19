@@ -111,18 +111,60 @@ The MCP server exposes the following tool names:
 A resource called `page://current` is also published so clients can query the
 currently loaded URL/title.
 
-## Stopping and Cleanup
+## Standalone Deployment (Shared Service)
 
+For a shared MCP service accessible from multiple projects/machines:
+
+### Basic Standalone Setup
 ```bash
 cd tooling/playwright-mcp
-./run.sh down
+# Remove network_mode host for portability
+docker compose up -d
 ```
 
-Remove images if desired:
+The service will be available at `http://localhost:8765/mcp`
 
-```bash
-docker image rm netcup/playwright-mcp:latest
-```
+### Secure Remote Access
+For internet-accessible deployment with authentication:
+
+1. **Generate SSL certificates** (replace `your-mcp-host.com`):
+   ```bash
+   mkdir ssl auth
+   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+     -keyout ssl/mcp.key -out ssl/mcp.crt
+   ```
+
+2. **Create basic auth**:
+   ```bash
+   # Install apache2-utils or httpd-tools
+   htpasswd -c auth/.htpasswd yourusername
+   ```
+
+3. **Deploy with security**:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+   ```
+
+4. **Access remotely**:
+   - URL: `https://your-mcp-host.com/mcp`
+   - VS Code will prompt for basic auth credentials
+
+### Multiple Sessions
+The server now supports multiple concurrent browser sessions. Each MCP client connection gets its own isolated browser context and page, preventing interference between users.
+
+- **Session Isolation**: Each client has a private browser context
+- **Automatic Cleanup**: Sessions are cleaned up when pages close or on server shutdown
+- **Screenshot Namespacing**: Screenshots include session IDs to avoid conflicts
+- **Resource Usage**: Monitor memory usage with multiple concurrent sessions
+
+For high-traffic deployments, consider:
+- Resource limits per context
+- Session timeouts
+- Load balancing across multiple server instances
+
+## MCP Protocol Support
+- **HTTP**: Primary transport (FastMCP)
+- **WebSocket**: Mentioned in docs but not implemented; stick with HTTP for now
 
 ## ✅ Screenshot Feature Fixed!
 

@@ -15,7 +15,7 @@
     <div class="d-flex align-items-center gap-2">
         {% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
         <button type="button"
-                class="btn btn-outline-light token-generate-btn"
+                class="btn btn-secondary token-generate-btn"
                 data-generate-url="{{ url_for('.generate_token_view') }}">
             Create Token
         </button>

@@ -1,7 +1,7 @@
 {
 	"servers": {
 		"my-mcp-server-04437336": {
-			"url": "http://172.17.0.1:8765/mcp",
+			"url": "https://your-mcp-host.com/mcp",
 			"type": "http"
 		}
 	},

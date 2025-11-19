@@ -4,13 +4,15 @@ services:
       context: ../../
       dockerfile: tooling/playwright-mcp/Dockerfile
     container_name: playwright-mcp
-    network_mode: host
+    # network_mode: host  # Removed for standalone deployment
+    ports:
+      - "${MCP_PORT:-8765}:${MCP_PORT:-8765}"
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       MCP_SERVER_NAME: "${MCP_SERVER_NAME:-netcup-playwright}"
       MCP_HOST: "${MCP_HOST:-0.0.0.0}"
       MCP_PORT: "${MCP_PORT:-8765}"
-      PLAYWRIGHT_START_URL: "${PLAYWRIGHT_START_URL:-https://naf.vxxu.de/admin/login}"
+      PLAYWRIGHT_START_URL: "${PLAYWRIGHT_START_URL:-https://example.com}"
       PLAYWRIGHT_HEADLESS: "${PLAYWRIGHT_HEADLESS:-true}"
       UID: "${UID:-1000}"
       GID: "${GID:-1000}"

@@ -1,0 +1,17 @@
+services:
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: mcp-nginx-proxy
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl/certs:ro
+      - ./auth:/etc/nginx/auth:ro
+    depends_on:
+      - playwright-mcp
+    restart: unless-stopped
+
+  playwright-mcp:
+    environment:
+      MCP_HOST: playwright-mcp  # Use container name for internal networking

@@ -27,7 +27,7 @@
                         <label for="type" class="form-label">Record Type</label>
                         <select class="form-control" id="type" name="type" required>
                             {% for rt in record_types %}
-                            <option value="{{ rt }}" {% if record and record.type == rt %}selected{% endif %}>{{ rt }}</option>
+                            <option value="{{ rt }}" {% if record and record.type == rt %}selected{% elif not record and rt == 'A' %}selected{% endif %}>{{ rt }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -62,7 +62,7 @@
                         </select>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-full">
+                    <button type="submit" class="btn btn-important w-full">
                         {% if mode == 'create' %}Create Record{% else %}Update Record{% endif %}
                     </button>
                 </form>
