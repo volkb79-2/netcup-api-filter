@@ -1,6 +1,7 @@
+// this is JSONC format, so you can add comments
 {
   // Display name in VS Code UI (includes username for uniqueness)
-  "name": "netcup-api-filter-${localEnv:USER}",
+  "name": "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
   "build": {
     "dockerfile": "Dockerfile"
   },
@@ -10,6 +11,7 @@
       "dockerDashComposeVersion": "v2"
     }
   },
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "remoteUser": "vscode",
   "mounts": [
     // Mount Docker socket for container management
@@ -22,9 +24,9 @@
   },
   "runArgs": [
     // Set container hostname (used by validation scripts)
-    "--hostname", "netcup-api-filter-devcontainer",
+    "--hostname", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
     // Set Docker container name (visible in docker ps)
-    "--name", "netcup-api-filter-devcontainer"
+    "--name", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}"
   ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {

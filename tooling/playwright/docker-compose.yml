@@ -1,0 +1,64 @@
+services:
+  playwright-init:
+    image: alpine:latest
+    container_name: playwright-init
+    user: "root:root"  # Override - needs root to chown
+    command: >
+      sh -c "
+      mkdir -p /screenshots &&
+      chown -R ${DOCKER_UID:-1000}:${DOCKER_GID:-1000} /screenshots &&
+      chmod -R 775 /screenshots &&
+      echo 'Screenshots directory initialized with ownership ${DOCKER_UID:-1000}:${DOCKER_GID:-1000} and group write permissions'
+      "
+    volumes:
+      - ${PHYSICAL_PLAYWRIGHT_DIR:-./vol-playwright-screenshots}/vol-playwright-screenshots:/screenshots
+
+  playwright:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: playwright
+    image: generic-playwright:latest
+    depends_on:
+      playwright-init:
+        condition: service_completed_successfully
+    
+    environment:
+      # Playwright settings
+      PLAYWRIGHT_HEADLESS: "${PLAYWRIGHT_HEADLESS:-true}"
+      PLAYWRIGHT_BROWSER: "${PLAYWRIGHT_BROWSER:-chromium}"
+      
+      # Container user permissions
+      DOCKER_UID: "${DOCKER_UID:-1000}"
+      DOCKER_GID: "${DOCKER_GID:-1000}"
+      
+      # Optional: MCP server settings (if MCP_ENABLED=true)
+      MCP_ENABLED: "${MCP_ENABLED:-false}"
+      MCP_PORT: "${MCP_PORT:-8765}"
+      MCP_SERVER_NAME: "${MCP_SERVER_NAME:-playwright}"
+    
+    ports:
+      # WebSocket port for Playwright connections
+      - "3000:3000"
+      # MCP port (only if MCP_ENABLED=true)
+      - "${MCP_PORT:-8765}:${MCP_PORT:-8765}"
+    
+    volumes:
+      # Mount parent directory as workspace (adjust path as needed)
+      # For netcup-api-filter: mounts project root
+      # For other projects: adjust the path
+      - ../../:/workspace:ro  # Read-only mount recommended
+      
+      # Screenshots output - writable, initialized by playwright-init
+      # Uses physical host path so files are accessible from devcontainer
+      - ${PHYSICAL_PLAYWRIGHT_DIR:-./vol-playwright-screenshots}/vol-playwright-screenshots:/screenshots
+    
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    
+    # Keep container running for exec commands
+    command: tail -f /dev/null
+    
+    restart: unless-stopped
+    
+    # Shared memory for browser
+    shm_size: "2gb"

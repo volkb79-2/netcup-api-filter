@@ -1,31 +1,27 @@
 #!/bin/bash
-# Dev Container post-create script
-# Automatically sets up Python environment with required dependencies
+# ============================================================================
+# DST-DNS Devcontainer Post-Create Setup
+# ============================================================================
+# Runs after devcontainer is created to set up the development environment
 #
-# Changes:
-# - Avoid hard-coded /workspaces/DST-DNS path.
-# - Introduce WORKSPACE_DIR top-level variable which defaults to the current repo root (dynamic).
-# - All references to the workspace path now use WORKSPACE_DIR and can be overridden by exporting WORKSPACE_DIR before running this script.
-#
-# If you prefer a static path instead of using the dynamic default, set:
-#   export WORKSPACE_DIR="/workspaces/dstdns"
-#
-set -e
+# Philosophy:
+# - Dynamic environment detection
+# - Global Python packages (no venv required)
+# - Fail-fast with clear error messages
+# - Path management for Docker bind mounts
+# ============================================================================
 
-# Top-level, easily-changeable workspace path:
-# - By default, use the directory the script runs in (dynamic behavior).
-# - You may override by exporting WORKSPACE_DIR in the environment before running the script,
-#   or edit this value here to force a specific path.
+set -euo pipefail
+
+# Trap to catch any errors and provide debugging info
+trap 'log_error "Script failed at line $LINENO with exit code $?"; log_error "Last command: $BASH_COMMAND"; exit 1' ERR
 
 # Colors for output
-RED='\033[0;31m'
+BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# SSH keys to add to agent (from mounted host ~/.ssh)
-SSH_KEYS=("netcup-hosting218629-ed25519")
+RED='\033[0;31m'
+NC='\033[0m'
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
@@ -43,80 +39,798 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
-
-
-# Function to get physical host path (for devcontainer environments)
-get_physical_host_path() {
-    local current_path="$1"
-    
-    # Check if we're in a devcontainer by looking for the local_folder label
-    local host_path=""
-    host_path=$(docker ps --format '{{.ID}} {{.Label "devcontainer.local_folder"}}' 2>/dev/null | awk '$2 != "" {print $2; exit}') || true
-    
-    if [ -n "$host_path" ] && [ "$host_path" != "$current_path" ]; then
-        # We're in a devcontainer and found the physical host path
-        # Log to stderr to avoid interfering with return value
-        log_info "Detected devcontainer environment" >&2
-        log_info "  devcontainer repo-path: $current_path" >&2
-        log_info "  physical repo-root: $host_path" >&2
-        echo "$host_path"
-        return 0
-    fi
-    
-    # Not in devcontainer or couldn't detect, use current path
-    echo "$current_path"
+log_debug() {
+    echo -e "${BLUE}[DEBUG]${NC} $*"
 }
 
-WORKSPACE_DIR="${WORKSPACE_DIR:-$(pwd)}"
+# ============================================================================
+# ENVIRONMENT DETECTION (DYNAMIC)
+# ============================================================================
+# Dynamically determine all environment characteristics
+# No hardcoded values - everything detected at runtime
 
-log_info "[INFO] Using WORKSPACE_DIR: $WORKSPACE_DIR"
+detect_environment() {
+    log_info "Detecting environment characteristics..."
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PHYSICAL_REPO_ROOT=$(get_physical_host_path "$REPO_ROOT")
+    # Environment type detection
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        ENV_TYPE="github_actions"
+        log_debug "GITHUB_ACTIONS='${GITHUB_ACTIONS}' → GitHub Actions environment"
+    elif [[ -f "/.dockerenv" ]] && [[ -n "${REMOTE_CONTAINERS:-}" ]]; then
+        ENV_TYPE="devcontainer"
+        log_debug "REMOTE_CONTAINERS='${REMOTE_CONTAINERS}' → Dev Container environment"
+    else
+        ENV_TYPE="local"
+        log_debug "No special environment variables → Local environment"
+    fi
 
-get_physical_host_path "$REPO_ROOT"
+    # Dynamic user detection
+    USER_NAME="$(whoami)"
+    USER_UID="$(id -u)"
+    USER_GID="$(id -g)"
 
+    # Dynamic Docker group detection
+    DOCKER_GID="$(getent group docker | cut -d: -f3 2>/dev/null || echo '118')"
+    if [[ "$DOCKER_GID" == "118" ]] && ! getent group docker >/dev/null 2>&1; then
+        log_warn "Docker group not found, using default GID 118"
+    fi
 
-log_info "[INFO] Python: Upgrading pip..."
-### upgrade core packages without redundant new version message
-pip install --upgrade pip setuptools wheel  --disable-pip-version-check
+    # Dynamic workspace detection
+    WORKSPACE_DIR="$(pwd)"
+    if [[ ! -f "global-config.defaults.toml" ]]; then
+        log_error "Not in DST-DNS repository root (missing global-config.defaults.toml)"
+        exit 1
+    fi
 
-log_info "[INFO] Python: Installing packages..."
-### we run as normal user thus pip: `Defaulting to user installation because normal site-packages is not writeable`
-pip install --user -r .devcontainer/requirements.txt 
+    # Export for use by other functions
+    export ENV_TYPE USER_NAME USER_UID USER_GID DOCKER_GID WORKSPACE_DIR
 
+    log_debug "Environment: $ENV_TYPE"
+    log_debug "User: $USER_NAME (UID=$USER_UID, GID=$USER_GID)"
+    log_debug "Docker Group GID: $DOCKER_GID"
+    log_debug "Workspace: $WORKSPACE_DIR"
+}
 
-log_info "[INFO] Python environment setup complete!"
-log_info "[INFO]   Virtual environment (or not): $(which python)"
-log_info "[INFO]   Python version: $(python --version)"
-log_info "[INFO]   Installed packages:"
-pip list 
+# ============================================================================
+# PYTHON ENVIRONMENT SETUP (GLOBAL PACKAGES)
+# ============================================================================
+# Install Python packages globally as current user (not root)
+# Provides immediate availability without venv activation
+# Works across all environments: devcontainer, GitHub Actions, local
 
+setup_python_environment() {
+    log_info "Setting up Python environment (global packages)..."
+    log_debug "Python version: $(python --version 2>&1)"
+    log_debug "Pip version: $(pip --version 2>&1)"
 
-log_info "[INFO] determined FQDN: $(dig +short -x $(curl -s  api.ipify.org))"
-log_success "[SUCCESS] Dev container setup complete!"
+    # Upgrade pip/setuptools first
+    log_debug "Upgrading pip, setuptools, wheel..."
+    if ! pip install --user --upgrade pip setuptools wheel --disable-pip-version-check; then
+        log_error "Failed to upgrade pip/setuptools"
+        return 1
+    fi
+    log_debug "Pip upgrade completed"
 
-# Add useful aliases
-echo "alias ll='ls -l'" >> ~/.bashrc
-echo "alias la='ls -la'" >> ~/.bashrc
+    # Core packages needed for DST-DNS development and deployment
+    local packages=(
+        # Configuration and templating
+        "PyYAML>=6.0.1"  # 6.0.1+ supports Python 3.13
+        "jinja2"
 
+        # Data validation and CLI
+        "pydantic"
+        "click"
+        "rich"
 
-ssh_dir="/home/vscode/.ssh-host"
+        # Testing and development
+        "pytest"
+        "pytest-asyncio"
+        "ipython"
 
-# Ensure SSH keys from host are accessible (if mounted)
-if [ -d "$ssh_dir" ]; then
-    log_info "[INFO] Host SSH keys mounted at $ssh_dir"
-    # Start ssh-agent once
-    eval "$(ssh-agent -s)"
-    # Add each key in the list
-    for key in "${SSH_KEYS[@]}"; do
-        if [ -f "$ssh_dir/$key" ]; then
-            log_info "[INFO] Adding SSH key: $key"
-            ssh-add "$ssh_dir/$key" 2>/dev/null || log_warn "Failed to add SSH key $key (possibly passphrase required)"
+        # HTTP and async clients
+        "requests"
+        "aiohttp"
+
+        # Database and cache clients
+        "asyncpg"
+        "redis"
+
+        # Vault and secrets
+        "hvac"
+
+        # Logging
+        "structlog"
+    )
+
+    # Environment-specific packages
+    case "$ENV_TYPE" in
+        "devcontainer")
+            packages+=(
+                # Development tools
+                "black"
+                "isort"
+                "mypy"
+            )
+            ;;
+        "github_actions")
+            packages+=(
+                # CI/CD tools
+                "coverage"
+                "pytest-cov"
+            )
+            ;;
+        "local")
+            # Minimal set for local development
+            ;;
+    esac
+
+    # Install all packages
+    log_info "Installing ${#packages[@]} Python packages globally..."
+    log_debug "Packages to install: ${packages[*]}"
+    
+    local install_output
+    if ! install_output=$(printf '%s\n' "${packages[@]}" | xargs pip install --user --disable-pip-version-check 2>&1); then
+        log_error "Failed to install Python packages"
+        log_error "Install output: $install_output"
+        log_error "Check pip version and network connectivity"
+        log_error "You may need to run: pip install --user --upgrade pip"
+        return 1
+    fi
+    log_debug "Package installation completed"
+
+    # Verify installation
+    log_debug "Verifying package installations..."
+    local installed_count=0
+    local total_count=${#packages[@]}
+    local failed_packages=()
+    
+    # Mapping for packages with different import names than package names
+    declare -A import_names=(
+        ["PyYAML"]="yaml"
+        ["ipython"]="IPython"
+        ["pytest-asyncio"]="pytest_asyncio"
+        ["pytest-cov"]="pytest_cov"
+    )
+    
+    for pkg in "${packages[@]}"; do
+        pkg_name="${pkg%%==*}"  # Remove version specifier
+        pkg_name="${pkg_name%%>=*}"  # Remove >= specifier
+        pkg_name="${pkg_name%%>*}"   # Remove > specifier
+        
+        # Use mapped import name if available, otherwise convert - to _
+        import_name="${import_names[$pkg_name]:-${pkg_name//-/_}}"
+        
+        log_debug "Verifying $pkg_name (importing as $import_name)..."
+        
+        if python -c "import $import_name" 2>/dev/null; then
+            ((installed_count++))
         else
-            log_warn "[WARN] SSH key $key not found in mounted directory $ssh_dir"
+            # Try the original package name as fallback
+            if python -c "import ${pkg_name//-/_}" 2>/dev/null; then
+                log_debug "Package $pkg_name imported as ${pkg_name//-/_} (fallback)"
+                ((installed_count++))
+            else
+                failed_packages+=("$pkg_name")
+                log_debug "Failed to import $pkg_name as $import_name or ${pkg_name//-/_}"
+            fi
         fi
     done
-fi
 
+    if [[ ${#failed_packages[@]} -gt 0 ]]; then
+        log_error "Failed to verify packages: ${failed_packages[*]}"
+        log_error "This may be due to import name mismatches or installation issues"
+        log_error "Try reinstalling with: pip install --user --force-reinstall ${failed_packages[*]}"
+        log_error "Or check if packages are installed in user site-packages: python -m site --user-site"
+        return 1
+    fi
+
+    log_success "Python environment ready: $installed_count/$total_count packages available"
+}
+
+# ============================================================================
+# REPOSITORY PATH MANAGEMENT (CENTRALIZED)
+# ============================================================================
+# Set canonical repository paths for ALL downstream scripts and tools
+# These are detected ONCE and exported for consistent use
+
+setup_repository_paths() {
+    log_info "Setting up repository path management..."
+
+    export REPO_ROOT="$WORKSPACE_DIR"
+
+    # Function to detect physical host path for Docker bind mounts
+    detect_physical_repo_root() {
+        # Priority 1: Manual override (for testing/debugging)
+        if [[ -n "${PHYSICAL_REPO_ROOT:-}" ]]; then
+            log_debug "Using manual PHYSICAL_REPO_ROOT override: $PHYSICAL_REPO_ROOT"
+            echo "$PHYSICAL_REPO_ROOT"
+            return
+        fi
+
+        # Priority 2: devcontainer.local_folder label (VS Code devcontainer)
+        local host_path
+        host_path=$(docker ps --format '{{.ID}} {{.Label "devcontainer.local_folder"}}' 2>/dev/null \
+            | awk -v pwd="$WORKSPACE_DIR" '$2 != "" {
+                print $2
+                exit
+            }' | head -1)
+
+        if [[ -n "$host_path" ]]; then
+            log_debug "Detected via devcontainer.local_folder label: $host_path"
+            echo "$host_path"
+            return
+        fi
+
+        # Priority 3: Fallback to workspace dir (bare metal, SSH, CI/CD)
+        log_debug "No devcontainer label found, using workspace dir: $WORKSPACE_DIR"
+        echo "$WORKSPACE_DIR"
+    }
+
+    export PHYSICAL_REPO_ROOT="$(detect_physical_repo_root)"
+
+    if [[ -z "$PHYSICAL_REPO_ROOT" ]]; then
+        log_error "Failed to determine PHYSICAL_REPO_ROOT"
+        log_error "Check Docker daemon access and devcontainer configuration"
+        return 1
+    fi
+
+    # Persist for future script invocations
+    cat > "$WORKSPACE_DIR/.env.workspace" << EOF
+# DST-DNS Workspace Environment (Auto-generated)
+# Do not edit manually - regenerated by post-create.sh
+export ENV_TYPE="$ENV_TYPE"
+export USER_NAME="$USER_NAME"
+export USER_UID="$USER_UID"
+export USER_GID="$USER_GID"
+export DOCKER_GID="$DOCKER_GID"
+export REPO_ROOT="$REPO_ROOT"
+export PHYSICAL_REPO_ROOT="$PHYSICAL_REPO_ROOT"
+EOF
+
+    # Also append to ~/.bashrc for future shells
+    if ! grep -q "PHYSICAL_REPO_ROOT" ~/.bashrc 2>/dev/null; then
+        cat >> ~/.bashrc << EOF
+
+# DST-DNS Repository Paths (Auto-added by post-create.sh)
+export REPO_ROOT="$REPO_ROOT"
+export PHYSICAL_REPO_ROOT="$PHYSICAL_REPO_ROOT"
+EOF
+    fi
+
+    log_success "Repository paths configured"
+    echo ""
+    echo "==================================================="
+    echo "Repository Paths (Available to All Scripts):"
+    echo "==================================================="
+    echo "  REPO_ROOT:          $REPO_ROOT"
+    echo "  PHYSICAL_REPO_ROOT: $PHYSICAL_REPO_ROOT"
+    if [[ "$REPO_ROOT" != "$PHYSICAL_REPO_ROOT" ]]; then
+        echo ""
+        echo "  ✓ Devcontainer environment detected (path mapping active)"
+    else
+        echo ""
+        echo "  ℹ️  Local environment (no path mapping)"
+    fi
+    echo "==================================================="
+    echo ""
+}
+
+# ============================================================================
+# NETWORK CONNECTIVITY (DEVCONTAINER ONLY)
+# ============================================================================
+# Auto-connect devcontainer to deployment network for hostname resolution
+
+setup_network_connectivity() {
+    if [[ "$ENV_TYPE" != "devcontainer" ]]; then
+        log_debug "Skipping network setup (not devcontainer)"
+        return
+    fi
+
+    log_info "Setting up network connectivity..."
+    log_debug "Docker version: $(docker --version 2>&1 || echo 'Docker not available')"
+
+    # Read network name from config
+    if [[ ! -f "global-config.active.toml" ]]; then
+        if [[ -f "global-config.defaults.toml" ]]; then
+            log_info "Auto-generating global-config.active.toml..."
+            if ! cp global-config.defaults.toml global-config.active.toml; then
+                log_error "Failed to copy global-config.defaults.toml"
+                return 1
+            fi
+        else
+            log_error "Missing global-config.defaults.toml"
+            return 1
+        fi
+    fi
+
+    log_debug "Reading network name from config..."
+    local network_name
+    network_name=$(timeout 10 python3 -c "
+import tomllib
+from jinja2 import Template
+import sys
+
+try:
+    with open('global-config.active.toml', 'rb') as f:
+        config = tomllib.load(f)
+    
+    deployment = config.get('deployment', {})
+    network_template = deployment.get('docker_network_name_template') or deployment.get('docker_network_name')
+    if not network_template:
+        print('dstdns-network', file=sys.stderr)  # fallback
+        sys.exit(1)
+    
+    if '{{' in network_template:
+        template = Template(network_template)
+        result = template.render(deployment=deployment)
+        print(result)
+    else:
+        print(network_template)
+except Exception as e:
+    print(f'Error reading network: {e}', file=sys.stderr)
+    print('dstdns-network', file=sys.stderr)  # fallback
+    sys.exit(1)
+" 2>&1 | tail -1)
+
+    if [[ $? -ne 0 ]]; then
+        log_error "Python script execution failed or timed out"
+        return 1
+    fi
+
+    if [[ -z "$network_name" ]]; then
+        log_error "Failed to determine network name from config"
+        log_error "Check global-config.active.toml for deployment.docker_network_name_template"
+        return 1
+    fi
+
+    log_debug "Network name: $network_name"
+
+    # Create network if needed
+    log_debug "Checking if network exists..."
+    if ! docker network inspect "$network_name" &>/dev/null; then
+        log_info "Creating network: $network_name"
+        if ! docker network create "$network_name" 2>/dev/null; then
+            log_error "Failed to create Docker network '$network_name'"
+            log_error "Check Docker daemon permissions and network name"
+            return 1
+        fi
+    else
+        log_debug "Network $network_name already exists"
+    fi
+
+    # Connect devcontainer to network
+    log_debug "Finding devcontainer container..."
+    local container_name
+    container_name=$(docker ps --format '{{.Names}}' --filter volume="$WORKSPACE_DIR" 2>/dev/null | head -1)
+
+    if [[ -z "$container_name" ]]; then
+        log_error "Could not detect devcontainer container"
+        log_error "Check Docker daemon access and workspace volume mounting"
+        return 1
+    fi
+
+    log_debug "Devcontainer container: $container_name"
+
+    if docker network inspect "$network_name" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -q "$container_name"; then
+        log_success "Devcontainer already connected to $network_name"
+    else
+        log_info "Connecting devcontainer to $network_name..."
+        if docker network connect "$network_name" "$container_name" 2>/dev/null; then
+            log_success "Devcontainer connected to $network_name"
+            echo "  You can now access services via hostname:"
+            echo "  - curl http://controller:8080/health"
+            echo "  - psql -h postgres -U postgres"
+        else
+            log_error "Failed to connect devcontainer to network '$network_name'"
+            log_error "Check Docker daemon permissions and container name"
+            return 1
+        fi
+    fi
+}
+
+# ============================================================================
+# VS CODE CONFIGURATION
+# ============================================================================
+# Configure VS Code to use system Python (global packages)
+
+setup_vscode_config() {
+    if [[ "$ENV_TYPE" != "devcontainer" ]]; then
+        return
+    fi
+
+    log_info "Configuring VS Code settings..."
+
+    mkdir -p .vscode
+
+    if [[ ! -f ".vscode/settings.json" ]]; then
+        cat > .vscode/settings.json << EOF
+{
+  "python.defaultInterpreterPath": "python",
+  "python.terminal.activateEnvironment": false
+}
+EOF
+        log_success "Created .vscode/settings.json"
+    else
+        log_debug ".vscode/settings.json already exists"
+    fi
+}
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Add compose-init-up to PATH for convenience
+
+setup_path() {
+    local scripts_path="$WORKSPACE_DIR/scripts/compose-init-up"
+
+    if [[ ":$PATH:" != *":$scripts_path:"* ]]; then
+        export PATH="$scripts_path:$PATH"
+        log_success "Added compose-init-up to PATH"
+    else
+        log_debug "compose-init-up already in PATH"
+    fi
+}
+
+# ============================================================================
+# SSH KEYS AND ALIASES SETUP
+# ============================================================================
+# Configure SSH agent and useful bash aliases
+
+setup_ssh_and_aliases() {
+    log_info "Setting up SSH keys and bash aliases..."
+
+    # Add useful aliases
+    if ! grep -q "alias ll=" ~/.bashrc 2>/dev/null; then
+        echo "alias ll='ls -l'" >> ~/.bashrc
+        echo "alias la='ls -la'" >> ~/.bashrc
+        echo "alias lt='tree -L 2'" >> ~/.bashrc
+        echo "alias cat='bat --paging=never'" >> ~/.bashrc
+        echo "alias grep='rg'" >> ~/.bashrc
+        echo "alias find='fd'" >> ~/.bashrc
+        echo "alias ps='htop'" >> ~/.bashrc
+        log_debug "Added bash aliases (ll, la, lt, cat, grep, find, ps)"
+    else
+        log_debug "Bash aliases already configured"
+    fi
+
+    # SSH keys to add to agent (from mounted host ~/.ssh)
+    local SSH_KEYS=("netcup-hosting218629-ed25519")
+    local ssh_dir="/home/vscode/.ssh-host"
+
+    # Ensure SSH keys from host are accessible (if mounted)
+    if [[ -d "$ssh_dir" ]]; then
+        log_info "Host SSH keys mounted at $ssh_dir"
+
+        # Start ssh-agent once
+        if [[ -z "${SSH_AGENT_PID:-}" ]]; then
+            log_debug "Starting SSH agent..."
+            eval "$(ssh-agent -s)" >/dev/null 2>&1
+            if [[ $? -eq 0 ]]; then
+                log_debug "SSH agent started (PID: $SSH_AGENT_PID)"
+            else
+                log_warn "Failed to start SSH agent"
+                return 1
+            fi
+        else
+            log_debug "SSH agent already running (PID: $SSH_AGENT_PID)"
+        fi
+
+        # Add each key in the list
+        local keys_added=0
+        for key in "${SSH_KEYS[@]}"; do
+            if [[ -f "$ssh_dir/$key" ]]; then
+                # Check if key is already loaded
+                if ssh-add -l 2>/dev/null | grep -q "$key"; then
+                    log_debug "SSH key $key already loaded in agent"
+                    ((keys_added++))
+                else
+                    log_info "Adding SSH key: $key"
+                    if ssh-add "$ssh_dir/$key" 2>/dev/null; then
+                        ((keys_added++))
+                        log_debug "Successfully added SSH key: $key"
+                    else
+                        log_warn "Failed to add SSH key $key (possibly passphrase required or already added)"
+                    fi
+                fi
+            else
+                log_warn "SSH key $key not found in mounted directory $ssh_dir"
+            fi
+        done
+
+        if [[ $keys_added -gt 0 ]]; then
+            log_success "Added $keys_added SSH key(s) to agent"
+        else
+            log_warn "No SSH keys were successfully added"
+        fi
+    else
+        log_debug "SSH directory not mounted at $ssh_dir - skipping SSH key setup"
+    fi
+}
+
+# ============================================================================
+# DEVELOPMENT TOOLS CONFIGURATION
+# ============================================================================
+# Configure additional development tools like Midnight Commander
+
+setup_development_tools() {
+    log_info "Configuring development tools..."
+
+    # Configure Midnight Commander (mc)
+    local mc_config_dir="$HOME/.config/mc"
+    if command -v mc &> /dev/null; then
+        if [[ ! -d "$mc_config_dir" ]]; then
+            mkdir -p "$mc_config_dir"
+            log_debug "Created Midnight Commander config directory"
+        fi
+
+        # Create basic mc configuration
+        if [[ ! -f "$mc_config_dir/ini" ]]; then
+            cat > "$mc_config_dir/ini" << 'EOF'
+[Midnight-Commander]
+verbose=1
+shell_patterns=1
+auto_save_setup=1
+preallocate_space=0
+auto_menu=0
+use_internal_view=1
+use_internal_edit=1
+clear_before_exec=1
+confirm_delete=1
+confirm_overwrite=1
+confirm_execute=0
+confirm_history_cleanup=1
+confirm_exit=0
+confirm_directory_hotlist_delete=1
+confirm_view_dir=0
+safe_delete=0
+safe_overwrite=0
+auto_overwrite=0
+use_8th_bit_as_meta=0
+mouse_move_pages_viewer=1
+mouse_close_dialog=0
+fast_refresh=0
+drop_menus=0
+wrap_mode=1
+old_esc_mode=0
+cd_symlinks=1
+show_all_if_ambiguous=0
+mark_moves_down=1
+show_output_starts_shell=0
+xtree_mode=0
+file_op_compute_totals=1
+classic_progressbar=0
+use_netrc=1
+ftpfs_always_use_proxy=0
+ftpfs_use_passive_connections=1
+ftpfs_use_passive_connections_over_proxy=0
+ftpfs_use_unix_list_options=1
+ftpfs_first_cd_then_ls=1
+ignore_ftp_chattr_errors=1
+editor_fill_tabs_with_spaces=0
+editor_return_does_auto_indent=1
+editor_backspace_through_tabs=0
+editor_fake_half_tabs=1
+editor_option_save_mode=0
+editor_option_save_position=1
+editor_option_auto_para_formatting=0
+editor_option_typewriter_wrap=0
+editor_edit_confirm_save=1
+editor_syntax_highlighting=1
+editor_persistent_selections=1
+editor_drop_selection_on_copy=1
+editor_cursor_beyond_eol=0
+editor_visible_tabs=1
+editor_visible_spaces=1
+editor_line_state=1
+editor_simple_statusbar=0
+editor_check_new_line=0
+editor_show_right_margin=0
+editor_group_undo=1
+editor_state_full_filename=0
+view_with_aixterm=0
+view_with_hexedit=0
+find_ignore_dirs=
+find_grep_i=0
+find_grep_n=0
+find_grep_v=0
+find_grep_w=0
+find_source_pattern=*
+find_file_pattern=*
+find_with=0
+panel_scroll_pages=1
+panel_scroll_center=0
+panel_scroll_margin=0
+panel_show_mini_info=1
+panel_show_free_space=1
+filetype_mode=1
+permission_mode=0
+ext_mode=0
+panel_smart_wrap=0
+panel_hidefiles_mode=2
+mix_all_files=0
+show_backups=0
+show_dot_files=1
+select_flags=6
+panel_compare_mode=0
+panel_compare_case=1
+panel_compare_torenamed=0
+panel_compare_tosize=0
+panel_quick_search_mode=2
+statusbar_mode=0
+highlight_mode=1
+panel_layout=horizontal_equal
+panel_split=horizontal
+message_visible=1
+input_line_size=60
+output_lines_shown=1
+col_dlg_mode=0
+col_dlg_num=0
+layout=0
+skin=default
+EOF
+            log_debug "Created Midnight Commander configuration"
+        fi
+
+        # Add mc alias if not present
+        if ! grep -q "alias mc=" ~/.bashrc 2>/dev/null; then
+            echo "alias mc='mc --nosubshell'" >> ~/.bashrc
+            log_debug "Added mc alias to prevent subshell issues"
+        fi
+
+        log_success "Midnight Commander configured"
+    else
+        log_debug "Midnight Commander not available"
+    fi
+
+    # Configure bat (cat replacement)
+    if command -v bat &> /dev/null; then
+        # Create bat config if it doesn't exist
+        local bat_config_dir="$HOME/.config/bat"
+        if [[ ! -d "$bat_config_dir" ]]; then
+            mkdir -p "$bat_config_dir"
+            cat > "$bat_config_dir/config" << 'EOF'
+# Bat configuration
+--theme="Dracula"
+--style="numbers,changes,header"
+EOF
+            log_debug "Created bat configuration"
+        fi
+    fi
+
+    # Configure fd (find replacement)
+    if command -v fd &> /dev/null; then
+        # fd is installed as fd-find on Debian/Ubuntu
+        if ! grep -q "alias fd=" ~/.bashrc 2>/dev/null; then
+            echo "alias fd='fdfind'" >> ~/.bashrc
+            log_debug "Added fd alias for fdfind"
+        fi
+    fi
+
+    # Configure fzf if available
+    if command -v fzf &> /dev/null; then
+        # Add fzf key bindings and completion
+        if [[ -f "/usr/share/bash-completion/completions/fzf" ]]; then
+            source /usr/share/bash-completion/completions/fzf
+            log_debug "Loaded fzf bash completion"
+        fi
+    fi
+
+    log_success "Development tools configured"
+}
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+main() {
+    log_info "Starting DST-DNS environment setup..."
+    log_debug "Script PID: $$"
+    log_debug "Working directory: $(pwd)"
+    log_debug "User: $(whoami) (UID: $(id -u), GID: $(id -g))"
+    log_debug "Arguments: $@"
+
+    # Check for required tools
+    log_debug "Checking for required tools..."
+    local required_tools=("python" "pip" "docker")
+    for tool in "${required_tools[@]}"; do
+        if ! command -v "$tool" &> /dev/null; then
+            log_error "Required tool not found: $tool"
+            exit 1
+        fi
+    done
+    log_debug "All required tools available"
+
+    # Set up error handling
+    set -e  # Exit on any error
+    trap 'log_error "Setup failed at line $LINENO with exit code $?"; exit 1' ERR
+
+    log_debug "Calling detect_environment..."
+    detect_environment
+    log_debug "detect_environment completed"
+
+    log_debug "Calling setup_python_environment..."
+    if ! setup_python_environment; then
+        log_error "Python environment setup failed"
+        exit 1
+    fi
+    log_debug "setup_python_environment completed"
+
+    log_debug "Calling setup_repository_paths..."
+    if ! setup_repository_paths; then
+        log_error "Repository path setup failed"
+        exit 1
+    fi
+    log_debug "setup_repository_paths completed"
+
+    log_debug "Calling setup_network_connectivity..."
+    if ! setup_network_connectivity; then
+        log_error "Network connectivity setup failed"
+        exit 1
+    fi
+    log_debug "setup_network_connectivity completed"
+
+    log_debug "Calling setup_vscode_config..."
+    if ! setup_vscode_config; then
+        log_error "VS Code configuration failed"
+        exit 1
+    fi
+    log_debug "setup_vscode_config completed"
+
+    log_debug "Calling setup_path..."
+    if ! setup_path; then
+        log_error "PATH setup failed"
+        exit 1
+    fi
+    log_debug "setup_path completed"
+
+    log_debug "Calling setup_ssh_and_aliases..."
+    if ! setup_ssh_and_aliases; then
+        log_warn "SSH and aliases setup had issues (non-critical)"
+        # Don't exit - SSH setup failure shouldn't break devcontainer
+    fi
+    log_debug "setup_ssh_and_aliases completed"
+
+    log_debug "Calling setup_development_tools..."
+    if ! setup_development_tools; then
+        log_warn "Development tools setup had issues (non-critical)"
+        # Don't exit - tool setup failure shouldn't break devcontainer
+    fi
+    log_debug "setup_development_tools completed"
+
+    log_success "Environment setup complete!"
+    echo ""
+    echo "=== DST-DNS Environment Configuration ==="
+    echo "Environment: $ENV_TYPE"
+    echo "User: $USER_NAME (UID=$USER_UID, GID=$USER_GID)"
+    echo "Docker Group GID: $DOCKER_GID"
+    echo "Workspace: $WORKSPACE_DIR"
+    echo "Python: $(python --version 2>&1 | head -1)"
+    echo ""
+
+    if [[ "$ENV_TYPE" == "devcontainer" ]]; then
+        echo "Next steps:"
+        echo "  1. Build images: docker buildx bake all-services --load"
+        echo "  2. Start services: python3 scripts/start-2node-deployment.py"
+        echo "  3. Access services: curl http://controller:8080/health"
+        echo ""
+        echo "Available aliases: ll, la, lt (tree), cat (bat), grep (rg), find (fd), ps (htop)"
+        echo "Available tools: mc (Midnight Commander), yq (YAML processor), fzf, tldr, httpie"
+        echo "SSH keys loaded and ready for Git operations"
+        echo ""
+        echo "For project-specific venv: python3 -m venv .venv && source .venv/bin/activate"
+    fi
+
+    log_debug "main() completed successfully"
+}
+
+# Catch any unhandled errors in main()
+if ! main "$@"; then
+    log_error "DST-DNS environment setup failed"
+    log_error "Check the output above for specific error messages"
+    log_error "Common issues:"
+    log_error "  - Missing Docker daemon access"
+    log_error "  - Network connectivity issues"
+    log_error "  - Python package installation failures"
+    log_error "  - Permission issues with Docker group"
+    exit 1
+fi

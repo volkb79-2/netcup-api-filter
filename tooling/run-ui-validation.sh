@@ -70,7 +70,8 @@ export UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX:-ui-regression}"
 PLAYWRIGHT_START_URL="${UI_BASE_URL%/}/admin/login"
 export PLAYWRIGHT_START_URL
 export PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS:-true}"
-export MCP_PORT="${MCP_PORT:-8765}"
+export MCP_HTTP_PORT="${MCP_HTTP_PORT:-8765}"
+export MCP_WS_PORT="${MCP_WS_PORT:-3000}"
 export MCP_HOST="${MCP_HOST:-0.0.0.0}"
 
 PROXY_COMPOSE_ARGS=(-f "${PROXY_DIR}/docker-compose.yml" --env-file "${PROXY_ENV}")

@@ -90,7 +90,7 @@ class Browser:
         self.current_url = data.get("url", self.current_url)
         return data
 
-    async def wait_for_text(self, selector: str, expected: str, timeout: float = 10.0, interval: float = 0.5) -> str:
+    async def wait_for_text(self, selector: str, expected: str, timeout: float = 3.0, interval: float = 0.5) -> str:
         """Poll for text content until it contains the expected substring."""
         deadline = anyio.current_time() + timeout
         last_error: ToolError | None = None

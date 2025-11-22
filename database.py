@@ -301,3 +301,128 @@ def set_system_config(key: str, value: Dict[str, Any]):
         db.session.add(config)
     
     db.session.commit()
+
+
+def create_app(config_path: str = "config.yaml"):
+    """
+    Create and configure the Flask application
+    
+    Args:
+        config_path: Path to the configuration file
+        
+    Returns:
+        Configured Flask application instance
+    """
+    from flask import Flask
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    import yaml
+    import os
+    
+    # Import here to avoid circular imports
+    from filter_proxy import load_config as load_filter_config
+    from admin_ui import setup_admin_ui
+    from access_control import AccessControl
+    from audit_logger import get_audit_logger
+    from netcup_client import NetcupClient
+    from client_portal import client_portal_bp
+    from utils import get_build_info
+    
+    app = Flask(__name__)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    
+    # Register blueprints
+    app.register_blueprint(client_portal_bp)
+    
+    # Context processor for build metadata
+    @app.context_processor
+    def inject_build_metadata():
+        return {'build_info': get_build_info()}
+    
+    # Security: Set maximum content length (10MB)
+    app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
+    
+    # Security: Rate limiting
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per hour", "50 per minute"],
+        storage_uri="memory://",
+    )
+    
+    # Set up secret key for Flask sessions
+    secret_key = os.environ.get('SECRET_KEY')
+    if not secret_key:
+        # Generate a persistent secret key and store it
+        secret_file = os.path.join(os.getcwd(), '.secret_key')
+        try:
+            if os.path.exists(secret_file):
+                with open(secret_file, 'r') as f:
+                    secret_key = f.read().strip()
+            else:
+                secret_key = os.urandom(24).hex()
+                with open(secret_file, 'w') as f:
+                    f.write(secret_key)
+                os.chmod(secret_file, 0o600)  # Restrict permissions
+        except Exception:
+            secret_key = os.urandom(24).hex()
+    
+    app.config['SECRET_KEY'] = secret_key
+    
+    # Configure template and static folders for deployment
+    deploy_templates = os.path.join(os.getcwd(), 'deploy', 'templates')
+    deploy_static = os.path.join(os.getcwd(), 'deploy', 'static')
+    
+    if os.path.exists(deploy_templates):
+        app.template_folder = deploy_templates
+    if os.path.exists(deploy_static):
+        app.static_folder = deploy_static
+    
+    # SECURITY: Configure secure session cookies
+    app.config['SESSION_COOKIE_SECURE'] = True  # Only send over HTTPS
+    app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session timeout
+    
+    # Initialize database
+    init_db(app)
+    
+    # Setup admin UI
+    setup_admin_ui(app)
+    
+    # Load configuration and initialize components
+    try:
+        load_filter_config(config_path)
+        
+        # Initialize components within app context
+        with app.app_context():
+            # Load Netcup configuration from database
+            netcup_config = get_system_config('netcup_config')
+            if netcup_config:
+                from filter_proxy import netcup_client as fp_netcup_client
+                app.config['netcup_client'] = NetcupClient(
+                    customer_id=netcup_config.get('customer_id'),
+                    api_key=netcup_config.get('api_key'),
+                    api_password=netcup_config.get('api_password'),
+                    api_url=netcup_config.get('api_url', 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON')
+                )
+                fp_netcup_client = app.config['netcup_client']
+            
+            # Initialize access control with database mode
+            from filter_proxy import access_control as fp_access_control
+            app.config['access_control'] = AccessControl(use_database=True)
+            fp_access_control = app.config['access_control']
+            
+            # Initialize audit logger
+            log_file_path = os.path.join(os.getcwd(), 'netcup_filter_audit.log')
+            app.config['audit_logger'] = get_audit_logger(log_file_path=log_file_path, enable_db=True)
+            
+            # Initialize email notifier (lazy loaded when needed)
+            app.config['email_notifier'] = None
+    
+    except Exception as e:
+        logger.warning(f"Failed to load configuration from {config_path}: {e}")
+        # Continue with minimal configuration for testing
+    
+    return app

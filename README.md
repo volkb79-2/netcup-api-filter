@@ -116,32 +116,51 @@ Token holders can now manage their allowed DNS records directly from the browser
 
 See [`CLIENT_USAGE.md`](CLIENT_USAGE.md) for a client-facing walkthrough and matching API examples.
 
-## Automated Local UI Validation
+## Testing Infrastructure
 
-Run `tooling/run-ui-validation.sh` to spin up the seeded gunicorn backend, the
-local TLS proxy, the Playwright MCP harness, and the pytest UI suite in one
-shot. The helper script:
+### Automated UI Testing
 
-- Renders/stages the nginx config and LetsEncrypt-style cert bundle under
-  `/tmp/netcup-local-proxy/...` so Docker can mount them from inside the
-  devcontainer.
-- Ensures the devcontainer itself is connected to the `${LOCAL_PROXY_NETWORK}`
-  Docker network (defaults to `naf-local`) before starting nginx so the
-  `recursing_goldberg` upstream is reachable. The script fails fast if it
-  cannot discover or attach the current container, which prevents the silent
-  SSL polling loops we hit earlier.
-- Boots `gunicorn tooling.local_proxy.local_app:app` with a SQLite database at
-  `tmp/local-netcup.db` (admin/client seed applied automatically).
-- Launches the nginx proxy + Playwright harness via docker compose and installs
-  `ui_tests/requirements.txt` unless `SKIP_UI_TEST_DEPS=1` is set.
-- Exports sensible defaults for `UI_BASE_URL`
-  (`https://<host-gateway>:4443`) and `UI_MCP_URL`
-  (`http://<host-gateway>:8765/mcp`) before running `pytest ui_tests/tests -vv`.
+This project uses a **dual-mode Playwright architecture** for browser automation:
 
-Override `UI_BASE_URL`, `UI_MCP_URL`, `PLAYWRIGHT_HEADLESS`, or
-`UI_ADMIN_PASSWORD` before running the script if you need to target a different
-host or credentials. The script tears everything down on exit, even if pytest
-fails.
+- **WebSocket Mode (Port 3000)**: Full Playwright API for automated tests with form submission support
+- **MCP Mode (Port 8765)**: Simplified API for AI agent exploration (read-only operations)
+
+**Quick Start**:
+```bash
+./tooling/setup-playwright.sh  # Start server and run validation
+```
+
+**Documentation**:
+- 📘 [tooling/QUICK-REFERENCE.md](tooling/QUICK-REFERENCE.md) - Quick start guide with examples
+- 📖 [tooling/IMPLEMENTATION-GUIDE.md](tooling/IMPLEMENTATION-GUIDE.md) - Complete implementation guide
+- 📝 [tooling/LESSONS-LEARNED.md](tooling/LESSONS-LEARNED.md) - Why dual-mode architecture
+- 🔧 [ui_tests/playwright_client.py](ui_tests/playwright_client.py) - WebSocket client library
+
+**Writing Tests**:
+```python
+from ui_tests.playwright_client import playwright_session
+
+async def test_admin_login():
+    async with playwright_session() as page:
+        await page.goto("https://naf.vxxu.de/admin/login")
+        await page.fill("#username", "admin")
+        await page.fill("#password", "admin123")
+        await page.click("button[type='submit']")  # ✅ Works with WebSocket!
+        await page.wait_for_url("**/admin/**")
+```
+
+**Run Tests**:
+```bash
+pytest ui_tests/tests -v
+```
+
+### Full Stack Validation
+
+Run `tooling/run-ui-validation.sh` to spin up the complete testing environment (seeded backend, 
+TLS proxy, Playwright server) and execute the full test suite automatically. The script tears 
+everything down on exit.
+
+Override `UI_BASE_URL`, `PLAYWRIGHT_HEADLESS`, or `UI_ADMIN_PASSWORD` before running if needed.
 
 ## Installation
 

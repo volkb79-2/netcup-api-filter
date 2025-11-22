@@ -11,14 +11,16 @@ portal can load without calling the real API.  Run it via:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import filter_proxy
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from database import create_app
 from access_control import AccessControl
-from admin_ui import setup_admin_ui
 from bootstrap import AdminSeedOptions, ClientSeedOptions, seed_default_entities
-from database import init_db
 
 DEFAULT_SECRET_KEY = os.environ.get("LOCAL_SECRET_KEY", "local-dev-secret-key")
 
@@ -66,15 +68,15 @@ class FakeNetcupClient:
         return {"status": "noop", "domainname": domain, "payload": payload}
 
 
-def _seed_database() -> None:
+def _seed_database(app) -> None:
     record_types = [item.strip() for item in DEFAULT_CLIENT_RECORD_TYPES if item.strip()] or None
     operations = [item.strip() for item in DEFAULT_CLIENT_OPERATIONS if item.strip()] or None
-    with filter_proxy.app.app_context():
+    with app.app_context():
         seed_default_entities(
             AdminSeedOptions(
                 username=DEFAULT_ADMIN_USERNAME,
                 password=DEFAULT_ADMIN_PASSWORD,
-                must_change_password=False,
+                must_change_password=True,  # Enable password change flow for testing
             ),
             ClientSeedOptions(
                 client_id=DEFAULT_CLIENT_ID,
@@ -89,21 +91,20 @@ def _seed_database() -> None:
 
 
 def _configure_app() -> Any:
+    # Set database path
     os.environ.setdefault("NETCUP_FILTER_DB_PATH", str(DEFAULT_DB_PATH))
-
-    app = filter_proxy.app
-    init_db(app)
-    app.secret_key = DEFAULT_SECRET_KEY  # local dev sessions need a key
-    setup_admin_ui(app)
-    _seed_database()
-
-    access_control = AccessControl(use_database=True)
-    app.config["access_control"] = access_control
-    filter_proxy.access_control = access_control
-
+    
+    # Create the full app with admin UI
+    app = create_app()
+    
+    # Override with fake Netcup client for local testing
     fake_client = FakeNetcupClient()
     app.config["netcup_client"] = fake_client
+    import filter_proxy
     filter_proxy.netcup_client = fake_client
+    
+    # Seed the database with test data
+    _seed_database(app)
 
     return app
 

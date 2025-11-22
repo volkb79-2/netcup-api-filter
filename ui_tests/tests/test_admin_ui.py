@@ -7,13 +7,25 @@ from ui_tests.config import settings
 pytestmark = pytest.mark.asyncio
 
 
+async def test_admin_authentication_flow(active_profile):
+    """Test the complete admin authentication flow including password change."""
+    async with browser_session() as browser:
+        new_password = await workflows.perform_admin_authentication_flow(browser)
+        # Verify we're on the dashboard after successful authentication
+        heading = await browser.text("main h1")
+        assert "Dashboard" in heading
+        
+        screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-auth-flow")
+        assert screenshot_path.endswith(".png")
+
+
 async def test_admin_dashboard_and_footer(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         heading = await browser.text("main h1")
         assert "Dashboard" in heading
 
-        footer_text = await browser.expect_substring("footer .text-muted.small", "Build")
+        footer_text = await browser.expect_substring("footer", "Netcup API Filter")
         assert len(footer_text) > 10
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-dashboard")
@@ -64,6 +76,20 @@ async def test_admin_can_create_and_delete_client(active_profile):
         await workflows.submit_client_form(browser, client_data)
         await workflows.ensure_client_visible(browser, client_data.client_id)
 
+        # Verify edit and delete icons are present
+        await workflows.verify_client_list_has_icons(browser)
+
+        # Test client login with the new token (should succeed)
+        await workflows.test_client_login_with_token(browser, generated_token, should_succeed=True, expected_client_id=client_data.client_id)
+
+        # Disable the client
+        await workflows.disable_admin_client(browser, client_data.client_id)
+        await workflows.ensure_client_visible(browser, client_data.client_id)  # Still visible but disabled
+
+        # Test client login with disabled token (should fail)
+        await workflows.test_client_login_with_token(browser, generated_token, should_succeed=False)
+
+        # Delete the client
         await workflows.delete_admin_client(browser, client_data.client_id)
         await workflows.ensure_client_absent(browser, client_data.client_id)
 

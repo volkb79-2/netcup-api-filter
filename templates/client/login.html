@@ -1,0 +1,36 @@
+{% extends 'base_modern.html' %}
+
+{% block title %}Sign In · Client Portal · {{ super() }}{% endblock %}
+
+{% block content_wrapper %}
+<div class="login-container">
+    <div class="login-card card">
+        <div class="card-body">
+            <div class="login-header">
+                <h1>Client Portal</h1>
+                <p>Netcup API Filter</p>
+            </div>
+
+            {% block flash_messages %}{{ super() }}{% endblock %}
+
+            {% if not access_control_ready %}
+                <div class="alert alert-warning">
+                    The server is not fully configured yet. Please contact the administrator.
+                </div>
+            {% else %}
+            <form method="POST">
+                <div class="form-group">
+                    <label for="token" class="form-label">API Token</label>
+                    <input type="password" class="form-control" id="token" name="token" 
+                           placeholder="Paste your token here" required autofocus>
+                    <small class="form-text">Your token never leaves this browser session.</small>
+                </div>
+
+                <button type="submit" class="btn btn-important w-full">Sign In</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+

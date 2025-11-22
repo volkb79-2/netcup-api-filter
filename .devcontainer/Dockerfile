@@ -19,11 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     vim \
     less \
-    jq \
     bash-completion \
-    ripgrep \
-    fd-find \
-    httpie \
     # Network tools (matching base)
     netcat-traditional \
     iputils-ping \
@@ -31,21 +27,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Database clients (matching base)
     postgresql-client \
     redis-tools \
+    # Additional development tools
+    ripgrep \
+    jq \
+    tree \
+    htop \
+    bat \
+    fd-find \
+    fzf \
+    tldr \
+    httpie \
+    mc \
     shellcheck \
     && rm -rf /var/lib/apt/lists/*
+
+# Install yq (YAML processor)
+RUN wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+    && chmod +x /usr/local/bin/yq
 
 # Switch to vscode user for Poetry installation
 USER vscode
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 - \
-    && echo 'export PATH="/home/vscode/.local/bin:$PATH"' >> /home/vscode/.bashrc
+# # Install Poetry
+# RUN curl -sSL https://install.python-poetry.org | python3 - \
+#     && echo 'export PATH="/home/vscode/.local/bin:$PATH"' >> /home/vscode/.bashrc
 
-# Configure Poetry
-RUN /home/vscode/.local/bin/poetry config virtualenvs.create false
+# # Configure Poetry
+# RUN /home/vscode/.local/bin/poetry config virtualenvs.create false
 
-# Set PATH for Poetry
-ENV PATH="/home/vscode/.local/bin:$PATH"
+# # Set PATH for Poetry
+# ENV PATH="/home/vscode/.local/bin:$PATH"
 
 # NOTE: Python dependencies are installed via post-create.sh
 # This prevents build failures from requirements.txt issues

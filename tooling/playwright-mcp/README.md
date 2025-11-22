@@ -1,13 +1,39 @@
 # Playwright MCP Test Harness
 
+**⚠️ IMPORTANT: Form submission limitations discovered with MCP mode. See [Dual-Mode Architecture](#dual-mode-architecture) below.**
+
 This folder contains a containerized Model Context Protocol (MCP) server that
 wraps the latest Playwright release installed via `pip` on top of
-`python:3.13-slim-bookworm`. Once the container is running you can register its
-WebSocket endpoint (default `ws://172.17.0.1:8765/mcp` when using the devcontainer;
-replace the IP with your Docker host gateway if it differs) with an MCP-aware client
-such as VS Code Copilot Chat. The server launches Chromium, keeps one page
-open, and provides automation tools for login, navigation, clicks, form
-filling, text extraction, and screenshots.
+`python:3.13-slim-bookworm`. The server runs in **dual-mode**:
+
+- **HTTP/MCP (Port 8765)**: Simplified API for AI agent exploration (VS Code Copilot)
+- **WebSocket/CDP (Port 3000)**: Full Playwright API for automated tests
+
+Once the container is running you can register the MCP endpoint (default 
+`http://172.17.0.1:8765/mcp` when using the devcontainer) with an MCP-aware client
+such as VS Code Copilot Chat. For automated tests, connect to the WebSocket endpoint
+at `ws://localhost:3000` using the Python client in `ui_tests/playwright_client.py`.
+
+## Dual-Mode Architecture
+
+After 10 iterations of testing, we discovered that **MCP mode cannot handle form submissions**.
+The dual-mode architecture solves this:
+
+| Feature | WebSocket (3000) | MCP (8765) |
+|---------|------------------|------------|
+| **Form Submit** | ✅ Works | ❌ Broken |
+| **Navigation** | ✅ Works | ✅ Works |
+| **Screenshots** | ✅ Works | ✅ Works |
+| **JavaScript** | ✅ Available | ❌ Missing |
+| **Use For** | **Automated Tests** | AI Exploration |
+
+**Documentation**:
+- 📘 [QUICK-REFERENCE.md](../QUICK-REFERENCE.md) - Quick start guide
+- 📖 [IMPLEMENTATION-GUIDE.md](../IMPLEMENTATION-GUIDE.md) - Complete implementation
+- 📝 [LESSONS-LEARNED.md](../LESSONS-LEARNED.md) - Why dual-mode exists
+- 🔧 [playwright_client.py](../../ui_tests/playwright_client.py) - WebSocket client
+
+**Quick Test**: Run `python3 tooling/validate-playwright-websocket.py` after starting the server.
 
 ## Prerequisites
 
@@ -54,9 +80,10 @@ Environment variables you can override:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `MCP_SERVER_NAME` | Name reported to MCP clients | `netcup-playwright` |
-| `MCP_PORT` | WebSocket port exposed from the container | `8765` |
-| `PLAYWRIGHT_START_URL` | URL opened when the browser boots | `https://naf.vxxu.de/admin/login` |
-| `PLAYWRIGHT_HEADLESS` | `true` launches Chromium headless, set to `false` if you want to VNC in | `true` |
+| `MCP_HTTP_PORT` | HTTP port exposed from the container | `8765` |
+| `MCP_WS_PORT` | WebSocket port exposed from the container | `3000` |
+| `PLAYWRIGHT_START_URL` | URL opened when the browser boots | `http://172.17.0.1:8000/admin/login` |
+| `PLAYWRIGHT_HEADLESS` | `true` launches Chromium headless, set to `false` for visual debugging | `false` |
 | `PLAYWRIGHT_SCREENSHOT_DIR` | Where screenshots are persisted inside the container | `/screenshots` |
 | `UID` | User ID for file permissions (auto-detected) | `1000` |
 | `GID` | Group ID for file permissions (auto-detected) | `1000` |
@@ -76,9 +103,10 @@ To enable webpage testing via VS Code Copilot Chat using this MCP server:
    - Search for "MCP" or "Model Context Protocol"
    - Add a new MCP server with:
      - **Name**: `netcup-playwright` (or your choice)
-       - **URL**: `ws://172.17.0.1:8765/mcp` (Docker host gateway inside the devcontainer; change if your host gateway IP differs)
-       - If WebSocket isn't supported, try `http://172.17.0.1:8765/mcp` (HTTP endpoint with the same host gateway IP)
-    - Tip: inside the devcontainer you can run `ip route | awk '/default/ {print $3; exit}'` to discover the correct gateway IP if it is not `172.17.0.1`.
+     - **URL**: `http://172.17.0.1:8765/mcp` (HTTP endpoint; default port)
+     - **Alternative**: `ws://172.17.0.1:3000/mcp` (WebSocket endpoint)
+     - If you're using a different gateway IP, run: `ip route | awk '/default/ {print $3; exit}'` inside the devcontainer
+   - Tip: Both HTTP and WebSocket transports are supported simultaneously
 
 3. **Verify Connection**:
    - Restart VS Code or reload the Copilot Chat window
@@ -122,7 +150,9 @@ cd tooling/playwright-mcp
 docker compose up -d
 ```
 
-The service will be available at `http://localhost:8765/mcp`
+The service will be available at:
+- HTTP: `http://localhost:8765/mcp`
+- WebSocket: `ws://localhost:3000/mcp`
 
 ### Secure Remote Access
 For internet-accessible deployment with authentication:

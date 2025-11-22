@@ -30,11 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Auto-detect database location if not explicitly set
 if 'NETCUP_FILTER_DB_PATH' not in os.environ:
-    # Try application directory first
+    # Always use application directory for database
     db_path = os.path.join(app_dir, 'netcup_filter.db')
-    if os.path.exists(db_path):
-        os.environ['NETCUP_FILTER_DB_PATH'] = db_path
-        logger.info(f"Auto-detected database at: {db_path}")
+    os.environ['NETCUP_FILTER_DB_PATH'] = db_path
+    logger.info(f"Using database at: {db_path}")
 
 try:
     from flask import Flask
@@ -104,6 +103,19 @@ try:
     try:
         init_db(app)
         logger.info("Database initialized successfully")
+        
+        # DEBUG: Check admin user state
+        with app.app_context():
+            from database import AdminUser
+            from utils import verify_password
+            admin = AdminUser.query.filter_by(username='admin').first()
+            if admin:
+                logger.info(f"Admin user found: {admin.username}, must_change={admin.must_change_password}")
+                password_valid = verify_password('admin', admin.password_hash)
+                logger.info(f"Admin password verification: {password_valid}")
+            else:
+                logger.error("Admin user not found in database!")
+        
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
