@@ -46,12 +46,12 @@ def ensure_admin_user(options: AdminSeedOptions) -> AdminUser:
     admin = AdminUser.query.filter_by(username=options.username).first()
     if not admin:
         admin = AdminUser(username=options.username)
+        admin.password_hash = hash_password(options.password)
+        admin.must_change_password = 1 if options.must_change_password else 0
         db.session.add(admin)
-        logger.info("Created admin user %s", options.username)
+        logger.info("Created admin user %s with default password", options.username)
     else:
-        logger.info("Refreshed admin user %s", options.username)
-    admin.password_hash = hash_password(options.password)
-    admin.must_change_password = 1 if options.must_change_password else 0
+        logger.info("Admin user %s already exists, keeping existing password", options.username)
     return admin
 
 

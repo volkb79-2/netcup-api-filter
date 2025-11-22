@@ -2,10 +2,11 @@
 # shell helpers shared by local proxy scripts
 
 PROXY_TOOLING_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROXY_DEFAULT_ENV_FILE="${PROXY_ENV_FILE:-${PROXY_TOOLING_DIR}/proxy.env}"
+# No default - fail fast if not set
+PROXY_DEFAULT_ENV_FILE="${PROXY_ENV_FILE:?PROXY_ENV_FILE must be set}"
 
 proxy__require_env_file() {
-    local env_file="${1:-${PROXY_DEFAULT_ENV_FILE}}"
+    local env_file="${1:?env_file parameter required}"
     if [[ ! -f "${env_file}" ]]; then
         echo "proxy env file not found: ${env_file}" >&2
         echo "Copy proxy.env.example first and fill in values." >&2
@@ -14,7 +15,7 @@ proxy__require_env_file() {
 }
 
 proxy__source_env() {
-    local env_file="${1:-${PROXY_DEFAULT_ENV_FILE}}"
+    local env_file="${1:?env_file parameter required}"
     proxy__require_env_file "${env_file}"
     set -a
     # shellcheck disable=SC1090
@@ -23,7 +24,7 @@ proxy__source_env() {
 }
 
 proxy_render_nginx_conf() {
-    local env_file="${1:-${PROXY_DEFAULT_ENV_FILE}}"
+    local env_file="${1:?env_file parameter required}"
     local template="${PROXY_TOOLING_DIR}/nginx.conf.template"
     local output="${PROXY_TOOLING_DIR}/conf.d/default.conf"
 
@@ -58,7 +59,7 @@ proxy_render_nginx_conf() {
 proxy__require_tmp_path() {
     local label="$1"
     local path_value="$2"
-    if [[ "${ALLOW_PROXY_ASSET_STAGE_ANYWHERE:-0}" == "1" ]]; then
+    if [[ "${ALLOW_PROXY_ASSET_STAGE_ANYWHERE:?ALLOW_PROXY_ASSET_STAGE_ANYWHERE must be set (0 or 1)}\" == "1" ]]; then
         return 0
     fi
     if [[ "${path_value}" != /tmp/* ]]; then
@@ -89,7 +90,7 @@ proxy__copy_dir_via_docker() {
 }
 
 proxy_stage_inputs() {
-    local env_file="${1:-${PROXY_DEFAULT_ENV_FILE}}"
+    local env_file="${1:?env_file parameter required}"
     local override_config="${LOCAL_PROXY_CONFIG_PATH:-}"
     local override_cert="${LE_CERT_BASE:-}"
 

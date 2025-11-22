@@ -173,8 +173,9 @@ tmp/*
 # VS Code Copilot execution plan files
 .vscode/copilot-plan.sh
 
-# MCP Playwright artifacts
-tooling/playwright-mcp/screenshots/
+# Playwright artifacts
+tooling/playwright/screenshots/
+tooling/playwright/vol-playwright-screenshots/
 
 # Spyder project settings
 .spyderproject

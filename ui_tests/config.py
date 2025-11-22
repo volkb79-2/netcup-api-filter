@@ -27,7 +27,7 @@ class UiTestConfig:
     """Environment-driven configuration with optional smoke targets."""
 
     def __init__(self) -> None:
-        self.mcp_url: str = os.getenv("UI_MCP_URL", "http://172.17.0.1:8765/mcp")
+        self.playwright_headless: bool = os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() in {"true", "1"}
         self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "ui-regression")
 
         primary_allow_writes = os.getenv("UI_ALLOW_WRITES", "1") not in {"0", "false", "False"}

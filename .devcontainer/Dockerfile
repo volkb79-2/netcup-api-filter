@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Database clients (matching base)
     postgresql-client \
     redis-tools \
+    sqlite3 \
     # Additional development tools
     ripgrep \
     jq \
@@ -39,6 +40,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     httpie \
     mc \
     shellcheck \
+    # allow remote filesystem access in VSCode
+    #fuse \ # Do not attempt to install `fuse` package inside the devcontainer. The devcontainer only needs `sshfs`
+    sshfs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install yq (YAML processor)

@@ -1,6 +1,9 @@
 #!/bin/bash
-# Automated deployment, testing, and fixing loop for netcup-api-filter
-# Runs build-and-deploy.sh, tests against live URL, and fixes issues until all pass
+# Automated deployment and testing for netcup-api-filter
+# Prerequisites check → deploy → test (fail-fast) → agent-driven fixes
+#
+# FAIL-FAST POLICY: No defaults, no fallbacks - missing configuration = immediate error
+# Agents fix issues iteratively by re-running this script after applying fixes
 
 set -euo pipefail
 
@@ -33,18 +36,148 @@ log_header() {
     echo -e "${BLUE}================================================================================${NC}"
 }
 
-# Configuration
-LIVE_URL="https://naf.vxxu.de"
-MAX_ITERATIONS=1  # Script runs once; rerun manually after applying fixes.
-ITERATION=1
-ISSUES_FOUND=true
-MCP_CONTAINER_NAME="${MCP_CONTAINER_NAME:-playwright-mcp}"
-KEEP_MCP_RUNNING="${KEEP_MCP_RUNNING:-1}"
-MCP_STARTED_BY_SCRIPT=false
+# REQUIRED Configuration - no defaults, fail fast
+LIVE_URL="${LIVE_URL:?LIVE_URL must be set (e.g., https://naf.vxxu.de)}"
+PLAYWRIGHT_CONTAINER_NAME="${PLAYWRIGHT_CONTAINER_NAME:?PLAYWRIGHT_CONTAINER_NAME must be set}"
+KEEP_PLAYWRIGHT_RUNNING="${KEEP_PLAYWRIGHT_RUNNING:?KEEP_PLAYWRIGHT_RUNNING must be set (0 or 1)}"
 
-# Function to run deployment
+# Runtime state
+PLAYWRIGHT_STARTED_BY_SCRIPT=false
+
+# ============================================================================
+# PREREQUISITE CHECKS (fail-fast)
+# ============================================================================
+
+check_prerequisites() {
+    log_header "PREREQUISITE CHECKS"
+    local all_checks_passed=true
+
+    # Check 1: Required environment variables
+    log_info "Checking required environment variables..."
+    local required_vars=(
+        "LIVE_URL"
+        "PLAYWRIGHT_CONTAINER_NAME"
+        "KEEP_PLAYWRIGHT_RUNNING"
+        "UI_BASE_URL"
+        "UI_ADMIN_USERNAME"
+        "UI_ADMIN_PASSWORD"
+        "UI_CLIENT_ID"
+        "UI_CLIENT_TOKEN"
+        "UI_CLIENT_DOMAIN"
+    )
+    
+    for var in "${required_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            log_error "Missing required variable: $var"
+            all_checks_passed=false
+        else
+            log_info "✓ $var is set"
+        fi
+    done
+
+    # Check 2: Docker availability
+    log_info "Checking Docker availability..."
+    if ! command -v docker &>/dev/null; then
+        log_error "Docker command not found"
+        all_checks_passed=false
+    elif ! docker info &>/dev/null; then
+        log_error "Docker daemon not accessible"
+        all_checks_passed=false
+    else
+        log_success "✓ Docker is available"
+    fi
+
+    # Check 3: Docker network
+    log_info "Checking Docker network..."
+    if [[ -z "${DOCKER_NETWORK_INTERNAL:-}" ]]; then
+        log_error "DOCKER_NETWORK_INTERNAL not set (source .env.workspace)"
+        all_checks_passed=false
+    elif ! docker network inspect "$DOCKER_NETWORK_INTERNAL" &>/dev/null; then
+        log_error "Docker network '$DOCKER_NETWORK_INTERNAL' does not exist"
+        all_checks_passed=false
+    else
+        log_success "✓ Docker network '$DOCKER_NETWORK_INTERNAL' exists"
+    fi
+
+    # Check 4: build-and-deploy.sh exists and is executable
+    log_info "Checking build-and-deploy.sh..."
+    if [[ ! -f "./build-and-deploy.sh" ]]; then
+        log_error "build-and-deploy.sh not found in current directory"
+        all_checks_passed=false
+    elif [[ ! -x "./build-and-deploy.sh" ]]; then
+        log_error "build-and-deploy.sh is not executable"
+        all_checks_passed=false
+    else
+        log_success "✓ build-and-deploy.sh is executable"
+    fi
+
+    # Check 5: SSH connectivity to deployment target
+    log_info "Checking SSH connectivity..."
+    local ssh_config_vars=(
+        "NETCUP_USER"
+        "NETCUP_SERVER"
+    )
+    
+    local ssh_configured=true
+    for var in "${ssh_config_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            log_warn "$var not set - cannot verify SSH connectivity"
+            ssh_configured=false
+        fi
+    done
+    
+    if [[ "$ssh_configured" == "true" ]]; then
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes "$NETCUP_USER@$NETCUP_SERVER" "exit" &>/dev/null; then
+            log_success "✓ SSH connectivity verified"
+        else
+            log_error "Cannot connect to $NETCUP_USER@$NETCUP_SERVER (check SSH keys)"
+            all_checks_passed=false
+        fi
+    fi
+
+    # Check 6: Playwright docker-compose.yml exists
+    log_info "Checking Playwright docker-compose.yml..."
+    if [[ ! -f "tooling/playwright/docker-compose.yml" ]]; then
+        log_error "tooling/playwright/docker-compose.yml not found"
+        all_checks_passed=false
+    else
+        log_success "✓ Playwright docker-compose.yml exists"
+    fi
+
+    # Check 7: UI tests directory exists
+    log_info "Checking UI tests directory..."
+    if [[ ! -d "ui_tests/tests" ]]; then
+        log_error "ui_tests/tests directory not found"
+        all_checks_passed=false
+    else
+        log_success "✓ UI tests directory exists"
+    fi
+
+    # Check 8: .env.workspace sourced
+    log_info "Checking .env.workspace..."
+    if [[ -f ".env.workspace" ]]; then
+        log_success "✓ .env.workspace exists"
+    else
+        log_error ".env.workspace not found (run post-create.sh)"
+        all_checks_passed=false
+    fi
+
+    # Final verdict
+    if [[ "$all_checks_passed" == "false" ]]; then
+        log_error "Prerequisites check FAILED - fix issues above before continuing"
+        return 1
+    fi
+
+    log_success "All prerequisites passed!"
+    return 0
+}
+
+# ============================================================================
+# DEPLOYMENT PHASE
+# ============================================================================
+
 run_deployment() {
-    log_header "ITERATION $ITERATION: DEPLOYMENT PHASE"
+    log_header "DEPLOYMENT PHASE"
     log_info "Building and deploying to live server..."
 
     if ! ./build-and-deploy.sh; then
@@ -79,311 +212,195 @@ wait_for_deployment() {
     return 1
 }
 
-# Function to run UI tests against live URL with timeout
+# ============================================================================
+# TESTING PHASE
+# ============================================================================
+
 run_ui_tests() {
-    log_header "ITERATION $ITERATION: TESTING PHASE"
-    log_info "Running UI tests against live URL: $LIVE_URL (with 60-second timeout)"
+    log_header "TESTING PHASE"
+    log_info "Running UI tests against: $UI_BASE_URL"
 
-    # Set environment variables for live testing
-    export UI_BASE_URL="$LIVE_URL"
-    export UI_MCP_URL="http://172.17.0.1:8765/mcp"  # Use host IP for MCP in dev container
-    export UI_ADMIN_USERNAME="admin"
-    export UI_ADMIN_PASSWORD="admin"
-    export UI_CLIENT_ID="test_qweqweqwe_vi"
-    export UI_CLIENT_TOKEN="qweqweqwe-vi-readonly"
-    export UI_CLIENT_DOMAIN="qweqweqwe.vi"
-    export UI_SCREENSHOT_PREFIX="live-regression-iteration-$ITERATION"
-    export UI_ALLOW_WRITES="1"
-    export PLAYWRIGHT_HEADLESS="true"
+    # Verify all test environment variables are set (fail-fast)
+    local test_vars=(
+        "UI_BASE_URL"
+        "UI_ADMIN_USERNAME"
+        "UI_ADMIN_PASSWORD"
+        "UI_CLIENT_ID"
+        "UI_CLIENT_TOKEN"
+        "UI_CLIENT_DOMAIN"
+    )
+    
+    for var in "${test_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            log_error "Missing required test variable: $var"
+            return 1
+        fi
+    done
 
-    # Ensure local MCP server for testing is running (can be reused across iterations)
-    log_info "Ensuring local Playwright MCP server is running..."
-    pushd tooling/playwright-mcp >/dev/null
+    # Optional variables with explicit checks
+    export UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX:?UI_SCREENSHOT_PREFIX must be set}"
+    export UI_ALLOW_WRITES="${UI_ALLOW_WRITES:?UI_ALLOW_WRITES must be set (0 or 1)}"
+    export PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS:?PLAYWRIGHT_HEADLESS must be set (true or false)}"
 
-    # Create .env for MCP
-    cat > .env << EOF
-MCP_HTTP_PORT=8765
-MCP_WS_PORT=3000
-PLAYWRIGHT_START_URL=$LIVE_URL/admin/login
-PLAYWRIGHT_HEADLESS=true
-EOF
+    # Ensure Playwright container is running (can be reused across iterations)
+    log_info "Ensuring Playwright container is running..."
+    
+    # Source workspace environment to get PHYSICAL_REPO_ROOT
+    if [[ -f ".env.workspace" ]]; then
+        source .env.workspace
+        log_info "Using PHYSICAL_REPO_ROOT: ${PHYSICAL_REPO_ROOT}"
+    fi
+    
+    pushd tooling/playwright >/dev/null
 
-    local existing_mcp
-    existing_mcp=$(docker ps -q --filter "name=^${MCP_CONTAINER_NAME}$")
-    if [[ -n "$existing_mcp" ]]; then
-        log_info "Reusing existing MCP container '$MCP_CONTAINER_NAME'"
+    local existing_playwright
+    existing_playwright=$(docker ps -q --filter "name=^${PLAYWRIGHT_CONTAINER_NAME}$")
+    if [[ -n "$existing_playwright" ]]; then
+        log_info "Reusing existing Playwright container '$PLAYWRIGHT_CONTAINER_NAME'"
     else
-        log_info "Starting MCP container '$MCP_CONTAINER_NAME'"
-        if ./quick-start.sh up -d; then
-            log_success "MCP container started"
-            MCP_STARTED_BY_SCRIPT=true
+        log_info "Starting Playwright container '$PLAYWRIGHT_CONTAINER_NAME'"
+        if docker compose up -d; then
+            log_success "Playwright container started"
+            PLAYWRIGHT_STARTED_BY_SCRIPT=true
         else
-            log_error "Failed to start MCP container"
+            log_error "Failed to start Playwright container"
             popd >/dev/null
             return 1
         fi
     fi
 
     popd >/dev/null
-    if [[ "$KEEP_MCP_RUNNING" == "1" ]]; then
-        log_info "KEEP_MCP_RUNNING=1 (container will be left running after tests)"
+    if [[ "$KEEP_PLAYWRIGHT_RUNNING" == "1" ]]; then
+        log_info "KEEP_PLAYWRIGHT_RUNNING=1 (container will be left running after tests)"
     fi
 
-    # Wait for MCP to be ready with timeout
-    log_info "Waiting for MCP to be ready (30s timeout)..."
-    local mcp_attempts=15  # 30 seconds
-    local mcp_attempt=1
-    while [[ $mcp_attempt -le $mcp_attempts ]]; do
-        if curl -s --max-time 2 "http://172.17.0.1:8765/mcp" >/dev/null 2>&1; then
-            log_success "MCP server is ready"
+    # Wait for Playwright to be ready with timeout
+    log_info "Waiting for Playwright container to be ready (30s timeout)..."
+    local playwright_attempts=15  # 30 seconds
+    local playwright_attempt=1
+    while [[ $playwright_attempt -le $playwright_attempts ]]; do
+        if docker exec "${PLAYWRIGHT_CONTAINER_NAME}" python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
+            log_success "Playwright container is ready"
             break
         fi
         sleep 2
-        ((mcp_attempt++))
+        ((playwright_attempt++))
     done
 
-    if [[ $mcp_attempt -gt $mcp_attempts ]]; then
-        log_error "MCP server failed to start within timeout"
+    if [[ $playwright_attempt -gt $playwright_attempts ]]; then
+        log_error "Playwright container failed to be ready within timeout"
         return 1
     fi
 
-    # Run the UI tests with timeout
-    log_info "Running pytest UI tests (60-second timeout)..."
-    cd ui_tests
+    # Run the UI tests inside the Playwright container
+    log_info "Running pytest UI tests inside Playwright container..."
+    cd /workspaces/netcup-api-filter
 
-    # Install test dependencies if needed (with timeout)
-    timeout 30 pip install -q -r requirements.txt || {
-        log_warn "Test dependency installation timed out or failed"
-    }
+    # Install test dependencies - use the requirements from the devcontainer location
+    log_info "Installing UI test dependencies in Playwright container..."
+    if ! docker exec -u root "${PLAYWRIGHT_CONTAINER_NAME}" pip install -q anyio playwright >/dev/null 2>&1; then
+        log_warn "Test dependency installation may have issues"
+    fi
 
-    # Run tests with timeout and capture output
-    if timeout 60 pytest tests -v --tb=short 2>&1; then
+    # Run tests inside container (fail-fast - no retries, no analysis)
+    log_info "Running pytest UI tests inside Playwright container..."
+    if docker exec \
+        -e UI_BASE_URL="$UI_BASE_URL" \
+        -e UI_ADMIN_USERNAME="$UI_ADMIN_USERNAME" \
+        -e UI_ADMIN_PASSWORD="$UI_ADMIN_PASSWORD" \
+        -e UI_CLIENT_ID="$UI_CLIENT_ID" \
+        -e UI_CLIENT_TOKEN="$UI_CLIENT_TOKEN" \
+        -e UI_CLIENT_DOMAIN="$UI_CLIENT_DOMAIN" \
+        -e UI_SCREENSHOT_PREFIX="$UI_SCREENSHOT_PREFIX" \
+        -e UI_ALLOW_WRITES="$UI_ALLOW_WRITES" \
+        -e PLAYWRIGHT_HEADLESS="$PLAYWRIGHT_HEADLESS" \
+        -e PYTHONPATH="/workspace" \
+        "${PLAYWRIGHT_CONTAINER_NAME}" \
+        bash -c "cd /workspace && python3 -m pytest ui_tests/tests -v --tb=short" 2>&1; then
         log_success "All UI tests passed!"
-        ISSUES_FOUND=false
-        cd ..
         return 0
     else
-        log_warn "UI tests failed or timed out - issues detected"
-        cd ..
+        log_error "UI tests FAILED - see output above for details"
+        log_info "Agent should analyze failures and re-run this script after fixes"
         return 1
     fi
 }
 
-# Function to analyze test failures and suggest fixes
-analyze_failures() {
-    log_header "ANALYSIS PHASE - ITERATION $ITERATION"
-    log_info "Analyzing test failures and identifying issues..."
+# ============================================================================
+# CLEANUP
+# ============================================================================
 
-    # Check for common issues
-    local screenshot_dir="tooling/playwright-mcp/screenshots"
-    if [[ -d "$screenshot_dir" ]]; then
-        local screenshot_count=$(find "$screenshot_dir" -name "*.png" | wc -l)
-        log_info "Found $screenshot_count screenshots for analysis"
-        if [[ $screenshot_count -gt 0 ]]; then
-            log_info "Recent screenshots:"
-            find "$screenshot_dir" -name "*.png" -mtime -1 | head -5 | while read -r screenshot; do
-                log_info "  - $screenshot"
-            done
-        fi
-    fi
+cleanup() {
+    log_info "Cleaning up..."
 
-    # Check for error patterns in recent logs
-    if [[ -f "tmp/local_app.log" ]]; then
-        log_info "Checking application logs for errors..."
-        local error_count=$(grep -i "error\|exception\|failed\|traceback" tmp/local_app.log | wc -l)
-        if [[ $error_count -gt 0 ]]; then
-            log_warn "Found $error_count errors/exceptions in application logs"
-            grep -i "error\|exception\|failed\|traceback" tmp/local_app.log | tail -5
-        else
-            log_info "No obvious errors in application logs"
-        fi
-    fi
-
-    # Check database connectivity
-    log_info "Checking database connectivity..."
-    python - <<'PY'
-import sys
-from sqlalchemy import create_engine, text
-sys.path.insert(0, '.')
-try:
-    from database import get_db_path
-    engine = create_engine(f"sqlite:///{get_db_path()}")
-    with engine.connect() as conn:
-        admin_count = conn.execute(text('SELECT COUNT(*) FROM admin_users')).scalar() or 0
-    print(f'✓ Database reachable, {admin_count} admin users found')
-except Exception as exc:
-    print(f'✗ Database error: {exc}')
-PY
-
-    # Check for template compilation issues
-    log_info "Checking for template compilation issues..."
-    python -c "
-import os
-import sys
-sys.path.insert(0, '.')
-from flask import Flask
-from jinja2 import Environment, FileSystemLoader
-
-app = Flask(__name__)
-app.template_folder = 'templates'
-
-try:
-    with app.app_context():
-        # Try to load main templates
-        env = Environment(loader=FileSystemLoader(app.template_folder))
-        templates = ['admin/login.html', 'admin/dashboard.html', 'client/login.html', 'admin_base.html', 'base_modern.html']
-        for template in templates:
-            template_path = os.path.join(app.template_folder, template)
-            if os.path.exists(template_path):
-                try:
-                    env.get_template(template)
-                    print(f'✓ {template} compiles successfully')
-                except Exception as e:
-                    print(f'✗ {template} compilation error: {e}')
-            else:
-                print(f'✗ {template} not found')
-except Exception as e:
-    print(f'✗ Template system error: {e}')
-"
-
-    # Check for CSS/JS compilation issues
-    log_info "Checking static assets..."
-    if [[ -f "static/css/app.css" ]]; then
-        if grep -q "error\|invalid\|undefined" static/css/app.css; then
-            log_warn "Found potential CSS issues"
-            grep -n "error\|invalid\|undefined" static/css/app.css | head -3
-        else
-            log_info "CSS appears valid"
-        fi
-    else
-        log_warn "static/css/app.css not found"
-    fi
-
-    # Check for authentication issues
-    log_info "Checking authentication setup..."
-    python - <<'PY'
-import sys
-from sqlalchemy import create_engine, text
-sys.path.insert(0, '.')
-try:
-    from database import get_db_path
-    engine = create_engine(f"sqlite:///{get_db_path()}")
-    with engine.connect() as conn:
-        row = conn.execute(text("""
-            SELECT id, username, LENGTH(password_hash) AS pwd_len
-            FROM admin_users
-            WHERE username = 'admin'
-            LIMIT 1
-        """)).first()
-    if row:
-        print(f'✓ Admin user exists (ID: {row.id})')
-        print(f'  Password hash length: {row.pwd_len or 0}')
-    else:
-        print('✗ Admin user not found')
-except Exception as exc:
-    print(f'✗ Authentication check error: {exc}')
-PY
-
-    # Check MCP server logs
-    log_info "Checking MCP server status..."
-    if docker ps | grep -q playwright-mcp; then
-        log_info "✓ MCP container is running"
-        # Check MCP logs for errors
-        if docker logs playwright-mcp 2>&1 | grep -i "error\|failed" | tail -3 >/dev/null; then
-            log_warn "Found errors in MCP logs:"
-            docker logs playwright-mcp 2>&1 | grep -i "error\|failed" | tail -3
-        fi
-    else
-        log_warn "✗ MCP container not running"
-    fi
-
-    log_info "Analysis complete - review output above for issues to fix"
-}
-
-# Function to cleanup after testing
-cleanup_iteration() {
-    log_info "Cleaning up after testing..."
-
-    if [[ "$KEEP_MCP_RUNNING" != "1" && "$MCP_STARTED_BY_SCRIPT" == "true" ]]; then
-        pushd tooling/playwright-mcp >/dev/null
-        ./quick-start.sh down >/dev/null 2>&1 || true
+    if [[ "$KEEP_PLAYWRIGHT_RUNNING" != "1" && "$PLAYWRIGHT_STARTED_BY_SCRIPT" == "true" ]]; then
+        log_info "Stopping Playwright container..."
+        pushd tooling/playwright >/dev/null
+        docker compose down >/dev/null 2>&1 || true
         popd >/dev/null
-        MCP_STARTED_BY_SCRIPT=false
-    elif [[ "$KEEP_MCP_RUNNING" == "1" ]]; then
-        log_info "KEEP_MCP_RUNNING=1 - leaving MCP container running for reuse"
-    fi
-
-    # Clean up screenshots from this iteration
-    if [[ -d "tooling/playwright-mcp/screenshots" ]]; then
-        rm -f tooling/playwright-mcp/screenshots/live-regression-iteration-$ITERATION-*.png 2>/dev/null || true
+        PLAYWRIGHT_STARTED_BY_SCRIPT=false
+    elif [[ "$KEEP_PLAYWRIGHT_RUNNING" == "1" ]]; then
+        log_info "KEEP_PLAYWRIGHT_RUNNING=1 - leaving Playwright container running"
     fi
 
     log_info "Cleanup complete"
 }
 
-# Main loop
+# ============================================================================
+# MAIN EXECUTION (simplified - no loops, no analysis)
+# ============================================================================
+
 main() {
-    log_header "DEPLOY-TEST-ANALYZE TOOL"
+    log_header "DEPLOY-TEST TOOL (FAIL-FAST MODE)"
     log_info "Target URL: $LIVE_URL"
-    log_info "This tool deploys, tests, and analyzes failures once per invocation"
-    log_info "Max iterations: $MAX_ITERATIONS"
-    log_info "KEEP_MCP_RUNNING=$KEEP_MCP_RUNNING (1=reuse MCP container, 0=tear down after run)"
+    log_info "Policy: Check prerequisites → Deploy → Test → Exit"
+    log_info "         Agent re-runs after applying fixes"
+    log_info ""
+    log_info "KEEP_PLAYWRIGHT_RUNNING=$KEEP_PLAYWRIGHT_RUNNING"
 
-    local iteration=1
-    while [[ $iteration -le $MAX_ITERATIONS ]]; do
-        ITERATION=$iteration
-        log_header "ITERATION $ITERATION START"
+    # Phase 1: Prerequisites (fail-fast)
+    if ! check_prerequisites; then
+        log_error "Prerequisites check failed - fix issues above"
+        exit 1
+    fi
 
-        # Phase 1: Deploy
-        if ! run_deployment; then
-            log_error "Deployment failed in iteration $iteration"
-            ((iteration++))
-            continue
-        fi
+    # Phase 2: Deploy
+    if ! run_deployment; then
+        log_error "Deployment failed"
+        cleanup
+        exit 1
+    fi
 
-        # Phase 2: Wait for deployment
-        if ! wait_for_deployment; then
-            log_error "Deployment verification failed in iteration $iteration"
-            ((iteration++))
-            continue
-        fi
+    # Phase 3: Wait for deployment
+    if ! wait_for_deployment; then
+        log_error "Deployment verification failed"
+        cleanup
+        exit 1
+    fi
 
-        # Phase 3: Test
-        if run_ui_tests; then
-            log_success "All tests passed in iteration $iteration!"
-            ISSUES_FOUND=false
-            cleanup_iteration
-            break
-        else
-            log_warn "Tests failed in iteration $iteration - analyzing and retrying"
-            ISSUES_FOUND=true
-        fi
-
-        # Phase 4: Analyze (only if tests failed)
-        if [[ $ISSUES_FOUND == true ]]; then
-            analyze_failures
-        fi
-
-        # Phase 5: Cleanup
-        cleanup_iteration
-
-        ((iteration++))
-    done
-
-    # Final result
-    if [[ $ISSUES_FOUND == false ]]; then
+    # Phase 4: Test (fail-fast - no retries)
+    if run_ui_tests; then
         log_header "SUCCESS: ALL TESTS PASSED"
-        log_success "Deployment and testing completed successfully after $((iteration-1)) iterations"
+        log_success "Deployment and testing completed successfully"
         log_info "Live application is working correctly at $LIVE_URL"
+        cleanup
+        exit 0
     else
-        log_header "MAX ITERATIONS REACHED: MANUAL FIXES REQUIRED"
-        log_warn "Tests failed after $MAX_ITERATIONS iterations - review the analysis output above for issues to fix"
-        log_info "After making fixes, re-run this tool to test again"
+        log_header "TESTS FAILED"
+        log_error "UI tests failed - see pytest output above"
+        log_info ""
+        log_info "Agent workflow:"
+        log_info "  1. Analyze pytest output and error messages"
+        log_info "  2. Analyze screenshots in: tooling/playwright/vol-playwright-screenshots/"
+        log_info "  3. Apply fixes to code/templates/config"
+        log_info "  4. Re-run this script: ./.vscode/deploy-test-fix-loop.sh"
+        log_info ""
         log_info "Common fix locations:"
         log_info "  - ui_tests/workflows.py (test logic)"
-        log_info "  - admin_ui.py (authentication/password change)"
+        log_info "  - admin_ui.py (authentication/routes)"
         log_info "  - templates/ (UI templates)"
-        log_info "  - database.py (database setup)"
+        log_info "  - database.py (database schema)"
+        cleanup
         exit 1
     fi
 }

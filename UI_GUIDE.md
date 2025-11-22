@@ -106,7 +106,7 @@ function tableSort() {
 
 1. **Local preview**
    - Run Flask (or preferred WSGI entrypoint) locally.
-   - Use the Playwright MCP harness in `tooling/playwright-mcp/` for scripted UI checks.
+   - Use the Playwright container in `tooling/playwright/` for scripted UI checks.
 2. **Styling**
    - Update `static/css/app.css` (respect variables & utilities; keep ASCII comments concise).
    - Prefer utility classes over ad-hoc inline styles.
@@ -134,7 +134,7 @@ Post-deploy smoke test checklist:
 
 ## 8. Tooling Notes
 
-- **Playwright MCP**: `cd tooling/playwright-mcp && docker compose up -d`, then register `http://172.17.0.1:8765/mcp` (Docker host gateway inside the devcontainer) to drive UI checks. If your host uses a different gateway IP, substitute that value and keep `.vscode/mcp.json` in sync so Copilot targets the reachable address.
+- **Playwright**: `cd tooling/playwright && docker compose up -d`, then run tests with `docker exec playwright pytest /workspace/ui_tests/tests -v`. For MCP access, use SSH tunnel to expose port 8765 internally.
 - **Docs to keep handy**: `UI_GUIDE.md` (this file). All earlier UI_* references were removed.
 - **Scripts**: `test_modern_ui.sh`, `cleanup_legacy_ui.sh`, `report_ui_modernization.sh` are available for validation/reporting.
 

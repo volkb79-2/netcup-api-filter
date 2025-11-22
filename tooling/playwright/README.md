@@ -15,17 +15,31 @@ A reusable Docker container providing Playwright browser automation with dual ac
 
 ## Quick Start
 
-### 1. Build Container
+### 1. Configure Environment (Optional)
 
 ```bash
 cd tooling/playwright
+cp .env.example .env
+# Edit .env to customize network name, MCP settings, etc.
+```
+
+### 2. Build Container
+
+```bash
 docker compose build
 ```
 
-### 2. Start Container
+### 3. Start Container
 
 ```bash
+# Option 1: Use helper script (recommended - auto-loads workspace config)
+./start-mcp.sh
+
+# Option 2: Use docker compose directly
 docker compose up -d
+
+# Option 3: Enable MCP server explicitly
+MCP_ENABLED=true docker compose up -d
 ```
 
 ### 3. Run Tests
@@ -89,6 +103,24 @@ MCP_ENABLED=true docker compose up -d
 
 **Recommendation**: Use Mode 1 (Direct Playwright) for all testing.
 
+#### Accessing MCP Server
+
+**From Devcontainer:**
+- VS Code MCP client: `http://172.17.0.1:8765/mcp` (Docker host IP, configured in `.vscode/mcp.json`)
+- Shell/scripts: `http://playwright:8765/mcp` (Docker network name)
+
+The devcontainer automatically connects to the shared Docker network (`naf-local` by default) via `.devcontainer/post-create.sh`.
+
+**From Remote Machine:**
+For security, the MCP port (8765) is not exposed publicly on production hosts. Use an SSH tunnel:
+
+```bash
+# On your local machine, create SSH tunnel to the server
+ssh -L 8765:localhost:8765 user@your-server.com -N
+
+# Now MCP is accessible at http://127.0.0.1:8765/mcp
+```
+
 ## Directory Structure
 
 ```
@@ -105,18 +137,37 @@ tooling/playwright/
 
 ### Environment Variables
 
+Create a `.env` file from `.env.example` or set these variables:
+
 ```bash
+# Network configuration (shared with devcontainer)
+SHARED_DOCKER_NETWORK=naf-local   # Docker network name (must match .devcontainer/post-create.sh)
+
 # Container settings
 PLAYWRIGHT_HEADLESS=true          # Run browsers headless
 PLAYWRIGHT_BROWSER=chromium       # Browser: chromium, firefox, webkit
-UID=1000                          # User ID for file permissions
-GID=1000                          # Group ID for file permissions
+DOCKER_UID=1000                   # User ID for file permissions
+DOCKER_GID=1000                   # Group ID for file permissions
 
 # MCP server (optional)
 MCP_ENABLED=false                 # Enable MCP server
 MCP_PORT=8765                     # MCP server port
 MCP_SERVER_NAME=playwright        # MCP server name
+
+# Volume paths (set automatically by post-create.sh)
+PHYSICAL_REPO_ROOT=/workspaces/netcup-api-filter  # Host path to repo
+PHYSICAL_PLAYWRIGHT_DIR=./vol-playwright-screenshots  # Screenshots directory
 ```
+
+### Shared Network Configuration
+
+This Playwright container uses a **shared Docker network** that's also used by the devcontainer:
+- **Network name**: `naf-local` (netcup-api-filter local network) by default
+- **Configured in**: `.devcontainer/post-create.sh` via `get_shared_network_name()`
+- **Environment variable**: `SHARED_DOCKER_NETWORK`
+- **Purpose**: Allows devcontainer to access Playwright by hostname (`playwright`)
+
+The network is automatically created and connected by `.devcontainer/post-create.sh` when the devcontainer starts.
 
 ### Volume Mounts
 

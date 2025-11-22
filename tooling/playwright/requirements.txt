@@ -1,14 +1,16 @@
 # Core dependencies for Playwright browser automation
 playwright>=1.56.0
+anyio>=4.11.0
+
 
 # Testing frameworks (optional - install if needed)
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 
-# Optional: MCP server dependencies (only if MCP mode is enabled)
-# Uncomment these lines if you need MCP server functionality:
-# fastmcp>=0.9.0
-# fastapi>=0.110.0
-# uvicorn[standard]>=0.30.0
-# pydantic>=2.7.0
-# loguru>=0.7.2
+
+# MCP server dependencies (enabled for MCP mode)
+fastapi>=0.110.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+# implement MCP protocol for VSC integration (required)
+mcp>=1.22.0

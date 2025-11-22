@@ -9,11 +9,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROXY_DIR="${ROOT_DIR}/tooling/local_proxy"
 PROXY_LIB="${PROXY_DIR}/_proxy_lib.sh"
-PLAYWRIGHT_DIR="${ROOT_DIR}/tooling/playwright-mcp"
+PLAYWRIGHT_DIR="${ROOT_DIR}/tooling/playwright"
 UI_TEST_DIR="${ROOT_DIR}/ui_tests"
 TMP_DIR="${ROOT_DIR}/tmp"
 PROXY_ENV="${PROXY_DIR}/proxy.env"
-PLAYWRIGHT_RUN="${PLAYWRIGHT_DIR}/run.sh"
 
 if [[ ! -f "${PROXY_ENV}" ]]; then
     echo "Missing ${PROXY_ENV}. Copy proxy.env.example and update values." >&2
@@ -28,8 +27,8 @@ fi
 # shellcheck source=/dev/null
 source "${PROXY_LIB}"
 
-if [[ ! -x "${PLAYWRIGHT_RUN}" ]]; then
-    echo "Missing executable ${PLAYWRIGHT_RUN}." >&2
+if [[ ! -d "${PLAYWRIGHT_DIR}" ]]; then
+    echo "Missing Playwright directory ${PLAYWRIGHT_DIR}." >&2
     exit 1
 fi
 
@@ -58,23 +57,17 @@ HOST_GATEWAY_IP="${HOST_GATEWAY_IP// /}"
 HOST_GATEWAY_IP="${HOST_GATEWAY_IP:-172.17.0.1}"
 
 DEFAULT_BASE="https://${HOST_GATEWAY_IP}:${LOCAL_TLS_BIND_HTTPS}"
-export UI_BASE_URL="${UI_BASE_URL:-${DEFAULT_BASE}}"
-export UI_MCP_URL="${UI_MCP_URL:-http://${HOST_GATEWAY_IP}:8765/mcp}"
-export UI_ADMIN_USERNAME="${UI_ADMIN_USERNAME:-admin}"
-export UI_ADMIN_PASSWORD="${UI_ADMIN_PASSWORD:-admin}"
-export UI_CLIENT_ID="${UI_CLIENT_ID:-test_qweqweqwe_vi}"
-export UI_CLIENT_TOKEN="${UI_CLIENT_TOKEN:-qweqweqwe-vi-readonly}"
-export UI_CLIENT_DOMAIN="${UI_CLIENT_DOMAIN:-qweqweqwe.vi}"
-export UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX:-ui-regression}"
-
-PLAYWRIGHT_START_URL="${UI_BASE_URL%/}/admin/login"
-export PLAYWRIGHT_START_URL
-export PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS:-true}"
-export MCP_HTTP_PORT="${MCP_HTTP_PORT:-8765}"
-export MCP_WS_PORT="${MCP_WS_PORT:-3000}"
-export MCP_HOST="${MCP_HOST:-0.0.0.0}"
+export UI_BASE_URL="${UI_BASE_URL:?UI_BASE_URL must be set}"
+export UI_ADMIN_USERNAME="${UI_ADMIN_USERNAME:?UI_ADMIN_USERNAME must be set}"
+export UI_ADMIN_PASSWORD="${UI_ADMIN_PASSWORD:?UI_ADMIN_PASSWORD must be set}"
+export UI_CLIENT_ID="${UI_CLIENT_ID:?UI_CLIENT_ID must be set}"
+export UI_CLIENT_TOKEN="${UI_CLIENT_TOKEN:?UI_CLIENT_TOKEN must be set}"
+export UI_CLIENT_DOMAIN="${UI_CLIENT_DOMAIN:?UI_CLIENT_DOMAIN must be set}"
+export UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX:?UI_SCREENSHOT_PREFIX must be set}"
+export PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS:?PLAYWRIGHT_HEADLESS must be set}"
 
 PROXY_COMPOSE_ARGS=(-f "${PROXY_DIR}/docker-compose.yml" --env-file "${PROXY_ENV}")
+PLAYWRIGHT_COMPOSE_ARGS=(-f "${PLAYWRIGHT_DIR}/docker-compose.yml")
 PROXY_STARTED=0
 PLAYWRIGHT_STARTED=0
 GUNICORN_PID=""
@@ -122,7 +115,7 @@ ensure_devcontainer_on_network() {
 
 cleanup() {
     local exit_code=$?
-    if [[ "${KEEP_UI_STACK:-0}" == "1" ]]; then
+    if [[ "${KEEP_UI_STACK:?KEEP_UI_STACK must be set (0 or 1)}" == "1" ]]; then
         echo "[WARN] KEEP_UI_STACK=1; leaving gunicorn, proxy, and Playwright running for manual debugging" >&2
         return
     fi
@@ -134,7 +127,7 @@ cleanup() {
         docker compose "${PROXY_COMPOSE_ARGS[@]}" down >/dev/null 2>&1 || true
     fi
     if [[ "${PLAYWRIGHT_STARTED}" == "1" ]]; then
-        (cd "${PLAYWRIGHT_DIR}" && ./run.sh down) >/dev/null 2>&1 || true
+        (cd "${PLAYWRIGHT_DIR}" && docker compose down) >/dev/null 2>&1 || true
     fi
     exit "${exit_code}"
 }
@@ -143,10 +136,10 @@ trap cleanup EXIT
 wait_for_http() {
     local name="$1"
     local url="$2"
-    local insecure="${3:-0}"
-    local max_attempts="${4:-40}"
-    local delay="${5:-2}"
-    local allow_errors="${6:-0}"
+    local insecure="${3:?insecure parameter required (0 or 1)}"
+    local max_attempts="${4:?max_attempts parameter required}"
+    local delay="${5:?delay parameter required}"
+    local allow_errors="${6:?allow_errors parameter required (0 or 1)}"
     local args=("--silent" "--show-error" "--max-time" "5")
     if [[ "${allow_errors}" != "1" ]]; then
         args+=("--fail")
@@ -171,12 +164,12 @@ ensure_devcontainer_on_network "${LOCAL_PROXY_NETWORK}"
 proxy_render_nginx_conf "${PROXY_ENV}"
 proxy_stage_inputs "${PROXY_ENV}"
 
-if [[ "${SKIP_UI_TEST_DEPS:-0}" != "1" ]]; then
+if [[ "${SKIP_UI_TEST_DEPS:?SKIP_UI_TEST_DEPS must be set (0 or 1)}" != "1" ]]; then
     pip install -r "${UI_TEST_DIR}/requirements.txt"
 fi
 
 cd "${ROOT_DIR}"
-LOCAL_DB_PATH="${LOCAL_DB_PATH:-${TMP_DIR}/local-netcup.db}"
+LOCAL_DB_PATH="${LOCAL_DB_PATH:?LOCAL_DB_PATH must be set}"
 export LOCAL_DB_PATH
 
 gunicorn tooling.local_proxy.local_app:app \
@@ -194,11 +187,30 @@ PROXY_STARTED=1
 wait_for_http "Local TLS proxy" "https://${HOST_GATEWAY_IP}:${LOCAL_TLS_BIND_HTTPS}/admin/login" 1
 
 pushd "${PLAYWRIGHT_DIR}" >/dev/null
-./run.sh up -d
+docker compose up -d
 PLAYWRIGHT_STARTED=1
 popd >/dev/null
 
-wait_for_http "Playwright MCP" "${UI_MCP_URL}" 0 40 2 1
+# Wait for Playwright container to be ready
+log_step "Waiting for Playwright container to be ready..."
+for attempt in $(seq 1 30); do
+    if docker exec playwright python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
+        echo "[ready] Playwright container"
+        break
+    fi
+    sleep 1
+done
 
-PYTEST_CMD="${UI_PYTEST_CMD:-pytest ui_tests/tests -vv}"
-eval "${PYTEST_CMD}"
+# Run tests inside Playwright container
+PYTEST_CMD="${UI_PYTEST_CMD:?UI_PYTEST_CMD must be set}"
+docker exec \
+    -e UI_BASE_URL="${UI_BASE_URL}" \
+    -e UI_ADMIN_USERNAME="${UI_ADMIN_USERNAME}" \
+    -e UI_ADMIN_PASSWORD="${UI_ADMIN_PASSWORD}" \
+    -e UI_CLIENT_ID="${UI_CLIENT_ID}" \
+    -e UI_CLIENT_TOKEN="${UI_CLIENT_TOKEN}" \
+    -e UI_CLIENT_DOMAIN="${UI_CLIENT_DOMAIN}" \
+    -e UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX}" \
+    -e PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS}" \
+    playwright \
+    bash -c "cd /workspace && ${PYTEST_CMD}"

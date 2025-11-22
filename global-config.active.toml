@@ -1,7 +1,8 @@
 [deployment]
 # Project identity
-project_name = "dstdns"
+project_name = "naf"
 environment_tag = "dev"
 # repo_path is auto-detected (CWD) or set via --repo-root argument
 docker_network_name_template = "{{deployment.project_name}}-{{deployment.environment_tag}}-network"
+#docker_network_name = "naf-dev-network"
 log_level = "DEBUG"

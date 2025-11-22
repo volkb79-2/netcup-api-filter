@@ -1,16 +1,15 @@
 # UI Regression Tests
 
-Automated UI coverage is implemented on top of the Playwright MCP harness that
-already runs under `tooling/playwright-mcp`. The tests are written in Python
-with `pytest` + `pytest-asyncio` and drive the remote browser through the MCP
-HTTP endpoint.
+Automated UI coverage is implemented using the Playwright container that
+runs under `tooling/playwright`. The tests are written in Python with
+`pytest` + `pytest-asyncio` and execute inside the container.
 
 ## Prerequisites
 
-1. Start the MCP Playwright container and ensure screenshots are writable:
+1. Start the Playwright container:
    ```bash
-   cd tooling/playwright-mcp
-   ./run.sh up -d
+   cd tooling/playwright
+   docker compose up -d
    ```
 2. Install the test dependencies (this intentionally lives in a standalone file
    so production dependencies are untouched):
@@ -22,18 +21,17 @@ HTTP endpoint.
 
 ## One-command local validation
 
-When you need to spin up the seeded backend, TLS proxy, Playwright MCP harness,
+When you need to spin up the seeded backend, TLS proxy, Playwright container,
 and the pytest suite in one go, run `tooling/run-ui-validation.sh` from the
 repository root. The script will:
 
 - Render/stage the nginx config and cert bundle under `/tmp/netcup-local-proxy`.
 - Start gunicorn on port `LOCAL_APP_PORT` (default 5100) with a seeded SQLite
    database inside `tmp/local-netcup.db`.
-- Launch the nginx proxy + Playwright MCP harness via docker compose.
+- Launch the nginx proxy + Playwright container via docker compose.
 - Install `ui_tests/requirements.txt` (skip via `SKIP_UI_TEST_DEPS=1`).
-- Export sensible defaults for `UI_BASE_URL` (`https://<host-gateway>:4443`)
-   and `UI_MCP_URL` (`http://<host-gateway>:8765/mcp`).
-- Execute `pytest ui_tests/tests -vv` and tear everything down afterwards.
+- Export sensible defaults for `UI_BASE_URL` (`https://<host-gateway>:443`).
+- Execute `pytest ui_tests/tests -vv` inside the Playwright container and tear everything down afterwards.
 
 Override `UI_BASE_URL`, `PLAYWRIGHT_HEADLESS`, `UI_ADMIN_PASSWORD`, and similar
 variables before running the helper if you need to target a different host or
@@ -42,7 +40,6 @@ credentials.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `UI_BASE_URL` | `https://naf.vxxu.de` | Target deployment root |
-| `UI_MCP_URL` | `http://172.17.0.1:8765/mcp` | MCP HTTP endpoint inside the devcontainer |
 | `UI_ADMIN_USERNAME` | `admin` | Admin login |
 | `UI_ADMIN_PASSWORD` | `admin` | Current admin password |
 | `UI_ADMIN_NEW_PASSWORD` | _(unset)_ | Provide if the server still forces password rotation |
@@ -65,9 +62,9 @@ against production.
 ## Running the suite
 
 ```bash
-pytest ui_tests/tests -q
+docker exec playwright pytest /workspace/ui_tests/tests -q
 ```
 
 Screenshots stay inside the Playwright container under `/screenshots`; copy any
-artifacts out with `docker cp playwright-mcp:/screenshots/<file> ./screenshots/`
+artifacts out with `docker cp playwright:/screenshots/<file> ./screenshots/`
 if you need to attach them to an issue or PR.

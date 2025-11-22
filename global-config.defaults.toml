@@ -1,7 +1,13 @@
+# TEMPLATE FILE - Copy to global-config.active.toml and customize
+# This is a template showing available configuration options.
+# The active configuration is read from global-config.active.toml
+# NO DEFAULTS in runtime - all values must be explicitly set
+
 [deployment]
 # Project identity
-project_name = "dstdns"
+project_name = "naf"
 environment_tag = "dev"
 # repo_path is auto-detected (CWD) or set via --repo-root argument
 docker_network_name_template = "{{deployment.project_name}}-{{deployment.environment_tag}}-network"
+#docker_network_name = "naf-dev-network"
 log_level = "DEBUG"

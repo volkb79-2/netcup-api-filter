@@ -50,8 +50,8 @@ cleanup() {
         wait "${FLASK_PID}" 2>/dev/null || true
     fi
     if [[ "${MCP_STARTED}" == "1" ]]; then
-        log_info "Stopping Playwright MCP"
-        (cd tooling/playwright-mcp && ./quick-start.sh down) >/dev/null 2>&1 || true
+        log_info "Stopping Playwright"
+        (cd tooling/playwright && docker compose down) >/dev/null 2>&1 || true
     fi
 }
 
@@ -98,31 +98,24 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Start Playwright MCP
-log_info "Starting Playwright MCP (HTTP: ${MCP_HTTP_PORT}, WS: ${MCP_WS_PORT})"
-cd tooling/playwright-mcp
+# Start Playwright
+log_info "Starting Playwright container"
+cd tooling/playwright
 
-# Create/update .env for MCP
-cat > .env << EOF
-MCP_HTTP_PORT=${MCP_HTTP_PORT}
-MCP_WS_PORT=${MCP_WS_PORT}
-PLAYWRIGHT_START_URL=http://${GATEWAY_IP}:${FLASK_PORT}/admin/login
-PLAYWRIGHT_HEADLESS=false
-EOF
-
-./quick-start.sh up -d
+# Start container
+docker compose up -d
 MCP_STARTED=1
 cd "${ROOT_DIR}"
 
-# Wait for MCP to be ready
-log_info "Waiting for Playwright MCP to be ready..."
+# Wait for Playwright to be ready
+log_info "Waiting for Playwright container to be ready..."
 for i in {1..30}; do
-    if curl -s "http://127.0.0.1:${MCP_HTTP_PORT}/mcp" >/dev/null 2>&1; then
-        log_success "Playwright MCP is ready"
+    if docker exec playwright python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
+        log_success "Playwright container is ready"
         break
     fi
     if [[ $i -eq 30 ]]; then
-        log_error "Playwright MCP failed to start"
+        log_error "Playwright container failed to start"
         exit 1
     fi
     sleep 1
@@ -135,16 +128,14 @@ echo
 log_info "Flask Backend:    http://127.0.0.1:${FLASK_PORT}"
 log_info "                  http://${GATEWAY_IP}:${FLASK_PORT}"
 echo
-log_info "Playwright MCP:   http://127.0.0.1:${MCP_HTTP_PORT}/mcp (HTTP)"
-log_info "                  http://${GATEWAY_IP}:${MCP_HTTP_PORT}/mcp"
-log_info "                  ws://127.0.0.1:${MCP_WS_PORT} (WebSocket)"
-log_info "                  ws://${GATEWAY_IP}:${MCP_WS_PORT}"
+log_info "Playwright:       Ready for exec-based testing"
+log_info "                  docker exec playwright pytest /workspace/ui_tests/tests -v"
 echo
 log_info "Default Login:    admin / admin"
 log_info "Test Client:      test_qweqweqwe_vi"
 log_info "Test Token:       qweqweqwe-vi-readonly"
 echo
-log_success "Connect Copilot to: http://${GATEWAY_IP}:${MCP_HTTP_PORT}/mcp"
+log_success "Run tests: docker exec playwright pytest /workspace/ui_tests/tests -v"
 echo
 log_info "Press Ctrl+C to stop all services"
 echo

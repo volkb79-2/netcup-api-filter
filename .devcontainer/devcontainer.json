@@ -26,7 +26,10 @@
     // Set container hostname (used by validation scripts)
     "--hostname", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
     // Set Docker container name (visible in docker ps)
-    "--name", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}"
+    "--name", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
+    // Enable FUSE for sshfs support
+    "--cap-add", "SYS_ADMIN",
+    "--device", "/dev/fuse"
   ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {

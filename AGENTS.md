@@ -1,11 +1,31 @@
 # Build and deployment
 
+## Fail-Fast Policy
+
+**CRITICAL**: This project enforces NO DEFAULTS, NO FALLBACKS. Missing configuration = immediate error.
+
+- All scripts use `${VAR:?VAR must be set}` instead of `${VAR:-default}`
+- Docker Compose requires all environment variables explicitly
+- Clear error messages guide fixes: "NETWORK: must be set (source .env.workspace)"
+- See `FAIL_FAST_POLICY.md` for complete documentation
+
+**Agent workflow:**
+1. Run script → see clear error about missing variable
+2. Read error message for fix hint
+3. Apply fix (source .env.workspace, export variable, etc.)
+4. Re-run script → next error or success
+5. Iterate until all prerequisites met
 
 ## deploy to live server via webhosting
 
 The database will be reset and on first login the admin password needs to be changed. 
 
-**Default credentials**: 'admin' / 'admin' 
+**Default credentials**: 'admin' / 'admin'
+
+**Testing workflow**: After deployment, tests must go through the initial password change
+flow (admin/admin → TestAdmin123!). Subsequent test runs use TestAdmin123! and don't
+reset the password. This is by design - the database persists state between test runs
+while code changes are deployed without database resets. 
 
 ## Preseeded Test Client
 
@@ -56,27 +76,26 @@ point clients at the public FQDN of this host.
 
 # Use Playwright
 
-Use the Playwright MCP harness under `tooling/playwright-mcp/` whenever you
-need to interact with the deployed UI (login, create clients, inspect logs,
-etc.). The quick steps are:
+Use the Playwright container under `tooling/playwright/` for browser automation
+and UI testing. The quick steps are:
 
-1. `cd tooling/playwright-mcp`
+1. `cd tooling/playwright`
 2. `docker compose up -d`
-3. Register `http://172.17.0.1:8765/mcp` in your MCP-enabled chat client
+3. `docker exec playwright pytest /workspace/ui_tests/tests -v`
 
-The detailed build (including `docker buildx`) and troubleshooting notes are in
-`tooling/playwright-mcp/README.md`.
+For MCP access (optional), use SSH tunnel to expose port 8765 internally.
+See `tooling/playwright/README.md` for detailed setup and usage.
 
 ## Automated local UI validation
 
 - Prefer `tooling/run-ui-validation.sh` when you want a single command that
-  renders/stages the proxy config, spins up the TLS proxy and MCP harness,
+  renders/stages the proxy config, spins up the TLS proxy and Playwright container,
   installs the UI test dependencies, and executes `pytest ui_tests/tests -vv`.
 - The script writes backend logs to `tmp/local_app.log` and tears down the
   containers automatically (trap on `EXIT`).
 - Customize the run by exporting environment variables beforehand:
-  `UI_BASE_URL` to point at a different host, `PLAYWRIGHT_HEADLESS=false` to
-  VNC into Chromium, or `SKIP_UI_TEST_DEPS=1` if your environment already has
+  `UI_BASE_URL` to point at a different host, `PLAYWRIGHT_HEADLESS=false` for
+  headed browser mode, or `SKIP_UI_TEST_DEPS=1` if your environment already has
   the UI testing requirements installed.
 
 # Webhosting constraints
@@ -96,6 +115,43 @@ The detailed build (including `docker buildx`) and troubleshooting notes are in
 # python 
 
 As we use a VSC devcontainer with defined / definable environment, we do not create a separate `venv` on purpose, but install all modules directly for the user `vscode`.
+
+# FUSE / sshfs for remote file access
+
+The devcontainer includes `sshfs` for mounting remote filesystems. However, FUSE requires kernel module support from the Docker **host**, not the container.
+
+## Host Setup (One-time, requires host root access)
+
+FUSE was already installed on the host:
+
+```bash
+# On the Docker host (outside container) - already completed
+sudo apt-get install -y fuse
+sudo modprobe fuse
+
+# Verify FUSE device exists
+ls -l /dev/fuse
+```
+
+**Important**: The `fuse` package installation on the host does NOT require a reboot. The kernel module is loaded automatically via `modprobe fuse` during package installation. The devcontainer can immediately use `/dev/fuse` after the host installation completes.
+
+## Usage in Devcontainer
+
+Once the host has FUSE installed, you can use `sshfs` from inside the devcontainer:
+
+```bash
+# Mount remote filesystem
+mkdir -p /tmp/netcup-webspace
+sshfs user@netcup-server.com:/path/to/remote /tmp/netcup-webspace
+
+# Access files
+ls /tmp/netcup-webspace
+
+# Unmount when done
+fusermount -u /tmp/netcup-webspace
+```
+
+**Note**: Do not attempt to install `fuse` package inside the devcontainer. The devcontainer only needs `sshfs` (already installed in Dockerfile) and access to the host's `/dev/fuse` device.
 
 # Running commands via Copilot / Agents — safe pattern
 

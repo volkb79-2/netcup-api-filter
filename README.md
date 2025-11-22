@@ -2,6 +2,24 @@
 
 A security proxy for the Netcup DNS API that provides granular access control.
 
+## ⚡ Important: Fail-Fast Configuration Policy
+
+This project enforces **NO DEFAULTS, NO FALLBACKS**. Missing configuration causes immediate errors with clear guidance.
+
+**Quick start:** See `FAIL_FAST_POLICY.md` for details.
+
+**Common pattern:**
+```bash
+# All scripts require explicit configuration
+source .env.workspace  # Load environment
+./build-and-deploy.sh  # Now has required variables
+```
+
+**Error example:**
+```
+NETWORK: NETWORK must be set (source .env.workspace)
+```
+
 ## Problem
 
 The Netcup API uses credentials (API key, password, customer ID) that provide full access to all DNS operations including:
@@ -244,6 +262,20 @@ See `DEPLOY_README.md` (included in the package) for detailed step-by-step instr
 6. Create a client in "Clients" menu
 7. Copy the generated token (shown only once!)
 8. Use the token to make API requests
+
+## Development Environment
+
+### VS Code Devcontainer
+
+This project includes a fully configured devcontainer with:
+- ✅ **Pre-installed dependencies** - All Python packages ready to use
+- ✅ **Persistent SSH agent** - SSH keys loaded once, available in all terminals
+- ✅ **Docker network setup** - Containers can communicate by hostname
+- ✅ **Development tools** - bat, ripgrep, fd, fzf, htop, Midnight Commander
+
+**SSH Key Persistence**: SSH keys mounted from host `~/.ssh/` are automatically loaded on devcontainer creation and persist across all terminal sessions. No need to re-enter passphrases! See `SSH_AGENT_PERSISTENCE.md` for details.
+
+**Fail-Fast Configuration**: All scripts require explicit configuration (no silent defaults). See `FAIL_FAST_POLICY.md`.
 
 ## Configuration
 

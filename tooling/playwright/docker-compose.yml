@@ -5,13 +5,16 @@ services:
     user: "root:root"  # Override - needs root to chown
     command: >
       sh -c "
+      test -n \"${DOCKER_UID}\" || { echo 'ERROR: DOCKER_UID not set' >&2; exit 1; };
+      test -n \"${DOCKER_GID}\" || { echo 'ERROR: DOCKER_GID not set' >&2; exit 1; };
       mkdir -p /screenshots &&
-      chown -R ${DOCKER_UID:-1000}:${DOCKER_GID:-1000} /screenshots &&
+      chown -R ${DOCKER_UID}:${DOCKER_GID} /screenshots &&
       chmod -R 775 /screenshots &&
-      echo 'Screenshots directory initialized with ownership ${DOCKER_UID:-1000}:${DOCKER_GID:-1000} and group write permissions'
+      echo \"Screenshots directory initialized with ownership ${DOCKER_UID}:${DOCKER_GID} and group write permissions\"
       "
     volumes:
-      - ${PHYSICAL_PLAYWRIGHT_DIR:-./vol-playwright-screenshots}/vol-playwright-screenshots:/screenshots
+      # No default - must be set explicitly
+      - ${PHYSICAL_PLAYWRIGHT_DIR:?PHYSICAL_PLAYWRIGHT_DIR must be set}/vol-playwright-screenshots:/screenshots
 
   playwright:
     build:
@@ -24,41 +27,63 @@ services:
         condition: service_completed_successfully
     
     environment:
-      # Playwright settings
-      PLAYWRIGHT_HEADLESS: "${PLAYWRIGHT_HEADLESS:-true}"
-      PLAYWRIGHT_BROWSER: "${PLAYWRIGHT_BROWSER:-chromium}"
+      # Playwright settings - no defaults, must be explicitly set
+      PLAYWRIGHT_HEADLESS: "${PLAYWRIGHT_HEADLESS:?PLAYWRIGHT_HEADLESS must be set}"
+      PLAYWRIGHT_BROWSER: "${PLAYWRIGHT_BROWSER:?PLAYWRIGHT_BROWSER must be set}"
       
       # Container user permissions
-      DOCKER_UID: "${DOCKER_UID:-1000}"
-      DOCKER_GID: "${DOCKER_GID:-1000}"
+      DOCKER_UID: "${DOCKER_UID:?DOCKER_UID must be set}"
+      DOCKER_GID: "${DOCKER_GID:?DOCKER_GID must be set}"
       
       # Optional: MCP server settings (if MCP_ENABLED=true)
-      MCP_ENABLED: "${MCP_ENABLED:-false}"
-      MCP_PORT: "${MCP_PORT:-8765}"
-      MCP_SERVER_NAME: "${MCP_SERVER_NAME:-playwright}"
+      MCP_ENABLED: "${MCP_ENABLED:?MCP_ENABLED must be set (true or false)}"
+      MCP_PORT: "${MCP_PORT:?MCP_PORT must be set}"
+      MCP_SERVER_NAME: "${MCP_SERVER_NAME:?MCP_SERVER_NAME must be set}"
     
-    ports:
-      # WebSocket port for Playwright connections
-      - "3000:3000"
-      # MCP port (only if MCP_ENABLED=true)
-      - "${MCP_PORT:-8765}:${MCP_PORT:-8765}"
+    # NO ports directive needed! Containers on same Docker network can communicate
+    # directly without port exposure. This keeps MCP server private.
+    # If you need host access for debugging: ports: ["127.0.0.1:8765:8765"]
+    
+    networks:
+      - default
     
     volumes:
       # Mount parent directory as workspace (adjust path as needed)
-      # For netcup-api-filter: mounts project root
+      # For netcup-api-filter: mounts project root using PHYSICAL_REPO_ROOT from post-create.sh
       # For other projects: adjust the path
-      - ../../:/workspace:ro  # Read-only mount recommended
+      # Uses physical host path set by .devcontainer/post-create.sh
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}:/workspace:ro  # Read-only mount recommended
       
       # Screenshots output - writable, initialized by playwright-init
       # Uses physical host path so files are accessible from devcontainer
-      - ${PHYSICAL_PLAYWRIGHT_DIR:-./vol-playwright-screenshots}/vol-playwright-screenshots:/screenshots
+      - ${PHYSICAL_PLAYWRIGHT_DIR:?PHYSICAL_PLAYWRIGHT_DIR must be set}/vol-playwright-screenshots:/screenshots
     
-    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    user: "${DOCKER_UID:?DOCKER_UID must be set}:${DOCKER_GID:?DOCKER_GID must be set}"
     
-    # Keep container running for exec commands
-    command: tail -f /dev/null
+    # Keep container running - run MCP server if enabled, otherwise just tail
+    command: >
+      sh -c '
+      test -n "${MCP_ENABLED}" || { echo "ERROR: MCP_ENABLED not set" >&2; exit 1; };
+      test -n "${MCP_PORT}" || { echo "ERROR: MCP_PORT not set" >&2; exit 1; };
+      if [ "${MCP_ENABLED}" = "true" ]; then
+        echo "Starting MCP server on port ${MCP_PORT}...";
+        python3 /app/mcp_server.py;
+      else
+        echo "MCP disabled - container running in background mode";
+        tail -f /dev/null;
+      fi
+      '
     
     restart: unless-stopped
     
     # Shared memory for browser
     shm_size: "2gb"
+
+# Use existing network created by devcontainer
+# Network name from DOCKER_NETWORK_INTERNAL (read from global-config.active.toml)
+# IMPORTANT: Use 'external: true' to connect to existing network
+# No default - must be explicitly set via environment
+networks:
+  default:
+    name: ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (source .env.workspace)}
+    external: true

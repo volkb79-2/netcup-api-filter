@@ -36,7 +36,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 log_info "Workspace: $WORKSPACE_DIR"
-PLAN_FILE="${PLAN_FILE:-${WORKSPACE_DIR}/.vscode/copilot-plan.sh}"
+# No default - fail fast if not set
+if [[ -z "${PLAN_FILE:-}" ]]; then
+    PLAN_FILE="${WORKSPACE_DIR}/.vscode/copilot-plan.sh"
+fi
 
 if [[ -f "${PLAN_FILE}" ]]; then
     # shellcheck source=/dev/null

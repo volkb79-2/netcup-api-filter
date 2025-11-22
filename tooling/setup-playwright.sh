@@ -40,17 +40,13 @@ log_header "╚═════════════════════�
 echo
 
 # Step 1: Start Playwright server
-log_header "Step 1: Starting Playwright Server"
-log_info "Starting dual-mode server (WebSocket:3000, MCP:8765)..."
+log_header "Step 1: Starting Playwright Container"
+log_info "Starting Playwright container for browser automation..."
 
-cd tooling/playwright-mcp
-if [[ -f "./run.sh" ]]; then
-    ./run.sh up -d
-else
-    export UID=$(id -u)
-    export GID=$(id -g)
-    docker compose up -d
-fi
+cd tooling/playwright
+export UID=$(id -u)
+export GID=$(id -g)
+docker compose up -d
 
 if [[ $? -eq 0 ]]; then
     log_success "Playwright server started"
@@ -62,17 +58,17 @@ fi
 cd "${WORKSPACE_DIR}"
 echo
 
-# Step 2: Wait for server to be ready
-log_header "Step 2: Waiting for Server to be Ready"
-log_info "Checking WebSocket endpoint (ws://localhost:3000)..."
+# Step 2: Wait for container to be ready
+log_header "Step 2: Waiting for Container to be Ready"
+log_info "Checking Playwright availability..."
 
 MAX_RETRIES=30
 RETRY_COUNT=0
-SERVER_READY=false
+CONTAINER_READY=false
 
 while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
-    if curl -s --max-time 2 http://localhost:8765/health > /dev/null 2>&1; then
-        SERVER_READY=true
+    if docker exec playwright python3 -c "from playwright.async_api import async_playwright; print('OK')" > /dev/null 2>&1; then
+        CONTAINER_READY=true
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -81,25 +77,36 @@ while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
 done
 echo
 
-if [[ "$SERVER_READY" == "true" ]]; then
-    log_success "Server is ready"
+if [[ "$CONTAINER_READY" == "true" ]]; then
+    log_success "Container is ready"
 else
-    log_error "Server failed to start within ${MAX_RETRIES} seconds"
-    log_info "Check logs: docker logs playwright-mcp"
+    log_error "Container failed to start within ${MAX_RETRIES} seconds"
+    log_info "Check logs: docker logs playwright"
     exit 1
 fi
 
 echo
 
-# Step 3: Validate WebSocket client
-log_header "Step 3: Validating WebSocket Client"
-log_info "Running validation suite (6 tests)..."
+# Step 3: Validate Playwright
+log_header "Step 3: Validating Playwright"
+log_info "Running basic Playwright test..."
 echo
 
-if python3 tooling/validate-playwright-websocket.py; then
-    log_success "All validation tests passed!"
+if docker exec playwright python3 -c "import asyncio
+from playwright.async_api import async_playwright
+
+async def test():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto('https://example.com')
+        print(f'✅ Navigated to: {page.url}')
+        await browser.close()
+
+asyncio.run(test())"; then
+    log_success "Playwright validation passed!"
 else
-    log_error "Some validation tests failed"
+    log_error "Playwright validation failed"
     log_info "Check output above for details"
     exit 1
 fi
@@ -112,34 +119,28 @@ log_header "║  Setup Complete!                                                
 log_header "╚════════════════════════════════════════════════════════════════════╝"
 echo
 
-log_success "Playwright dual-mode server is running"
+log_success "Playwright container is running"
 echo
-log_info "WebSocket endpoint: ws://localhost:3000 (for automated tests)"
-log_info "MCP endpoint: http://172.17.0.1:8765/mcp (for AI agents)"
+log_info "Container: playwright (ready for exec-based commands)"
 echo
 
 log_header "Next Steps:"
 echo
-echo "  1. Write tests using WebSocket client:"
-echo "     ${GREEN}from ui_tests.playwright_client import playwright_session${NC}"
+echo "  1. Run tests inside container:"
+echo "     ${GREEN}docker exec playwright pytest /workspace/ui_tests/tests -v${NC}"
 echo
-echo "  2. Run existing tests:"
-echo "     ${GREEN}pytest ui_tests/tests -v${NC}"
+echo "  2. Run Python scripts:"
+echo "     ${GREEN}docker exec playwright python3 /workspace/my_script.py${NC}"
 echo
-echo "  3. Use AI exploration with Copilot:"
-echo "     ${GREEN}Register http://172.17.0.1:8765/mcp in VS Code MCP settings${NC}"
+echo "  3. Interactive shell:"
+echo "     ${GREEN}docker exec -it playwright bash${NC}"
 echo
-echo "  4. Stop server when done:"
-echo "     ${GREEN}cd tooling/playwright-mcp && docker compose down${NC}"
+echo "  4. Stop container when done:"
+echo "     ${GREEN}cd tooling/playwright && docker compose down${NC}"
 echo
 
 log_header "Documentation:"
-echo "  📘 tooling/QUICK-REFERENCE.md       - Quick start guide"
-echo "  📖 tooling/IMPLEMENTATION-GUIDE.md  - Complete implementation"
-echo "  📝 tooling/LESSONS-LEARNED.md       - Why dual-mode exists"
-echo "  🔧 ui_tests/playwright_client.py    - WebSocket client library"
-echo
-
-log_header "Validation Script:"
-echo "  Run anytime: ${GREEN}python3 tooling/validate-playwright-websocket.py${NC}"
+echo "  📘 tooling/playwright/README.md     - Container documentation"
+echo "  📖 tooling/PLAYWRIGHT-TESTING.md    - Testing guide"
+echo "  🔧 ui_tests/tests/                  - Test suite"
 echo

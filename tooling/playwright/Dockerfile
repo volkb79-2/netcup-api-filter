@@ -21,9 +21,8 @@ RUN apt-get update && \
 RUN mkdir -p /screenshots && chmod 777 /screenshots && \
     mkdir -p /workspace && chmod 777 /workspace
 
-# Optional: Copy MCP server script if it exists
-# (Will be created during setup if MCP mode is needed)
-RUN touch /app/mcp_server.py
+# Copy MCP server script
+COPY mcp_server.py /app/mcp_server.py
 
 # Default to running bash (for exec commands)
 # If MCP_ENABLED=true, docker-compose will override to run MCP server

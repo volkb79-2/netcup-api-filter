@@ -3,8 +3,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-import mcp
-from mcp.client.streamable_http import streamablehttp_client
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -12,19 +10,20 @@ if str(ROOT) not in sys.path:
 
 from ui_tests.browser import Browser
 from ui_tests.config import UiTargetProfile, settings
+from ui_tests.playwright_client import PlaywrightClient
 
 
 @pytest_asyncio.fixture()
-async def mcp_session():
-    async with streamablehttp_client(settings.mcp_url) as (read, write, _):
-        async with mcp.ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+async def playwright_client():
+    """Create a Playwright client instance."""
+    async with PlaywrightClient(headless=settings.playwright_headless) as client:
+        yield client
 
 
 @pytest_asyncio.fixture()
-async def browser(mcp_session):
-    browser = Browser(mcp_session)
+async def browser(playwright_client):
+    """Create a Browser instance with the Playwright page."""
+    browser = Browser(playwright_client.page)
     await browser.reset()
     return browser
 

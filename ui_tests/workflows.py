@@ -84,7 +84,13 @@ async def trigger_token_generation(browser: Browser) -> str:
 
 
 async def ensure_admin_dashboard(browser: Browser) -> Browser:
-    """Log into the admin UI and land on the dashboard, handling the full authentication flow."""
+    """Log into the admin UI and land on the dashboard, handling the full authentication flow.
+    
+    This function adapts to the current database state:
+    - If password is 'admin' (initial state), logs in and changes to 'TestAdmin123!'
+    - If password is already 'TestAdmin123!', just logs in
+    - Updates global settings.admin_password so subsequent tests use the correct password
+    """
     import anyio
     
     # Try to login with current password first
@@ -92,31 +98,31 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", settings.admin_password)
     
-    # Fill password field again and press Enter to submit form
-    print("[DEBUG] Pressing Enter on password field to submit...")
-    await browser.fill("#password", settings.admin_password + "\n")
+    # Submit form by clicking the submit button and let Playwright handle navigation
+    print("[DEBUG] Submitting login form...")
+    print(f"[DEBUG] Current URL: {browser.current_url}")
+    print(f"[DEBUG] Credentials: {settings.admin_username}/{settings.admin_password}")
     
-    # Wait for page to load after redirect (allow up to 5 seconds for full navigation)
-    print("[DEBUG] Waiting for navigation after login...")
-    deadline = anyio.current_time() + 5.0
-    elapsed = 0
-    while anyio.current_time() < deadline:
-        await anyio.sleep(0.5)
-        elapsed += 0.5
-        current_h1 = await browser.text("main h1")
-        print(f"[DEBUG] After {elapsed}s: h1='{current_h1}', URL={browser.current_url}")
-        if "Admin Login" not in current_h1:
-            # We've navigated away from login page
-            print(f"[DEBUG] Detected navigation after {elapsed}s")
-            break
+    # Click submit button and wait for navigation with Playwright's built-in mechanism
+    try:
+        async with browser._page.expect_navigation(timeout=10000):
+            await browser._page.click("button[type='submit']")
+        print(f"[DEBUG] Navigation completed to: {browser.current_url}")
+    except Exception as e:
+        print(f"[WARN] Navigation did not complete: {e}")
+        print(f"[DEBUG] Current URL after timeout: {browser.current_url}")
+    
+    await anyio.sleep(0.5)  # Give page time to fully load
+    print(f"[DEBUG] Final URL after navigation: {browser.current_url}")
     
     # Check if we're on change password page or dashboard
     current_h1 = await browser.text("main h1")
     print(f"[DEBUG] Final h1 after login: '{current_h1}'")
     if "Change Password" in current_h1:
         print("[DEBUG] On password change page, filling form...")
-        # Perform the password change flow using the original password
-        original_password = "admin"  # The preseeded password
+        # Perform the password change flow using the current password
+        # Use settings.admin_password which may already be updated from previous test
+        original_password = settings.admin_password
         new_password = "TestAdmin123!"
         await browser.fill("#current_password", original_password)
         await browser.fill("#new_password", new_password)
@@ -136,9 +142,10 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
                 print(f"[DEBUG] Detected dashboard after {elapsed}s")
                 break
         
-        # Update settings with new password for future logins
-        settings.admin_password = new_password
-        settings.note_password_change()
+        # CRITICAL: Update global settings so subsequent tests use new password
+        print(f"[DEBUG] Updating admin_password from '{settings.admin_password}' to '{new_password}'")
+        settings._active.admin_password = new_password
+        settings._active.admin_new_password = new_password
     
     # Final verification - ensure we're on dashboard
     current_h1 = await browser.text("main h1")
@@ -298,6 +305,11 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.fill("#password", new_password)
     await browser.submit("form")
     await browser.wait_for_text("main h1", "Dashboard")
+    
+    # CRITICAL: Update global settings so subsequent tests use new password
+    print(f"[DEBUG] Updating global admin_password from '{settings.admin_password}' to '{new_password}'")
+    settings._active.admin_password = new_password
+    settings._active.admin_new_password = new_password
     
     return new_password
 
