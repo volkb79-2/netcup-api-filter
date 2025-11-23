@@ -216,6 +216,60 @@ wait_for_deployment() {
 # TESTING PHASE
 # ============================================================================
 
+start_mock_servers() {
+    log_info "Starting mock servers for E2E testing..."
+
+    # Start mock Netcup API server in background
+    log_info "Starting mock Netcup API server on port 5555..."
+    docker exec -d "${PLAYWRIGHT_CONTAINER_NAME}" \
+        bash -c "cd /workspace && python3 -m ui_tests.mock_netcup_api" >/dev/null 2>&1 || {
+        log_warn "Mock Netcup API may already be running or failed to start"
+    }
+
+    # Start mock SMTP server in background
+    log_info "Starting mock SMTP server on port 1025..."
+    docker exec -d "${PLAYWRIGHT_CONTAINER_NAME}" \
+        bash -c "cd /workspace && python3 -c 'import asyncio; from ui_tests.mock_smtp_server import MockSMTPServer; \
+                  s = MockSMTPServer(\"127.0.0.1\", 1025); \
+                  asyncio.run(s.start()); \
+                  asyncio.get_event_loop().run_forever()'" >/dev/null 2>&1 || {
+        log_warn "Mock SMTP server may already be running or failed to start"
+    }
+
+    # Give servers time to start
+    sleep 2
+
+    # Verify mock servers are accessible
+    log_info "Verifying mock servers..."
+    if docker exec "${PLAYWRIGHT_CONTAINER_NAME}" \
+        python3 -c "import requests; r=requests.get('http://127.0.0.1:5555', timeout=5); assert r.status_code" >/dev/null 2>&1; then
+        log_success "✓ Mock Netcup API is responding on port 5555"
+    else
+        log_warn "Mock Netcup API may not be responding (tests may skip DNS operations)"
+    fi
+
+    # SMTP check uses telnet-style connection test
+    if docker exec "${PLAYWRIGHT_CONTAINER_NAME}" \
+        python3 -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('127.0.0.1', 1025)); s.close()" >/dev/null 2>&1; then
+        log_success "✓ Mock SMTP server is listening on port 1025"
+    else
+        log_warn "Mock SMTP server may not be listening (tests may skip email operations)"
+    fi
+}
+
+stop_mock_servers() {
+    log_info "Stopping mock servers..."
+    
+    # Kill mock servers by port (they run as background processes)
+    docker exec "${PLAYWRIGHT_CONTAINER_NAME}" bash -c \
+        "pkill -f 'mock_netcup_api' || true; \
+         pkill -f 'mock_smtp_server' || true; \
+         fuser -k 5555/tcp 2>/dev/null || true; \
+         fuser -k 1025/tcp 2>/dev/null || true" >/dev/null 2>&1 || true
+    
+    log_info "Mock servers stopped"
+}
+
 run_ui_tests() {
     log_header "TESTING PHASE"
     log_info "Running UI tests against: $UI_BASE_URL"
@@ -296,14 +350,23 @@ run_ui_tests() {
     log_info "Running pytest UI tests inside Playwright container..."
     cd /workspaces/netcup-api-filter
 
-    # Install test dependencies - use the requirements from the devcontainer location
-    log_info "Installing UI test dependencies in Playwright container..."
-    if ! docker exec -u root "${PLAYWRIGHT_CONTAINER_NAME}" pip install -q anyio playwright >/dev/null 2>&1; then
-        log_warn "Test dependency installation may have issues"
+    # Install test dependencies (all requirements should be in Dockerfile now)
+    log_info "Verifying UI test dependencies in Playwright container..."
+    if ! docker exec -u root "${PLAYWRIGHT_CONTAINER_NAME}" \
+        bash -c "pip list | grep -q Flask && pip list | grep -q aiosmtpd && pip list | grep -q httpx" >/dev/null 2>&1; then
+        log_warn "Some test dependencies may be missing - installing from requirements.root.txt"
+        docker exec -u root "${PLAYWRIGHT_CONTAINER_NAME}" \
+            bash -c "cd /workspace && pip install -q -r /app/requirements.root.txt" || log_warn "Dependency installation had warnings"
+    else
+        log_success "✓ Test dependencies verified"
     fi
+
+    # Start mock servers for E2E tests
+    start_mock_servers
 
     # Run tests inside container (fail-fast - no retries, no analysis)
     log_info "Running pytest UI tests inside Playwright container..."
+    local test_result=0
     if docker exec \
         -e UI_BASE_URL="$UI_BASE_URL" \
         -e UI_ADMIN_USERNAME="$UI_ADMIN_USERNAME" \
@@ -318,12 +381,17 @@ run_ui_tests() {
         "${PLAYWRIGHT_CONTAINER_NAME}" \
         bash -c "cd /workspace && python3 -m pytest ui_tests/tests -v --tb=short" 2>&1; then
         log_success "All UI tests passed!"
-        return 0
+        test_result=0
     else
         log_error "UI tests FAILED - see output above for details"
         log_info "Agent should analyze failures and re-run this script after fixes"
-        return 1
+        test_result=1
     fi
+
+    # Stop mock servers
+    stop_mock_servers
+
+    return $test_result
 }
 
 # ============================================================================
@@ -332,6 +400,11 @@ run_ui_tests() {
 
 cleanup() {
     log_info "Cleaning up..."
+
+    # Always stop mock servers (they're cheap to restart)
+    if docker ps --format '{{.Names}}' | grep -q "^${PLAYWRIGHT_CONTAINER_NAME}$"; then
+        stop_mock_servers
+    fi
 
     if [[ "$KEEP_PLAYWRIGHT_RUNNING" != "1" && "$PLAYWRIGHT_STARTED_BY_SCRIPT" == "true" ]]; then
         log_info "Stopping Playwright container..."

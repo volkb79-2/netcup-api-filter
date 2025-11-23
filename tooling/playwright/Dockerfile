@@ -9,12 +9,12 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Copy requirements and install Python packages
-COPY requirements.txt ./
+COPY requirements.root.txt ./
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/* && \
     pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements.root.txt && \
     python -m playwright install --with-deps chromium
 
 # Create directories with world-writable permissions (will be mounted anyway)

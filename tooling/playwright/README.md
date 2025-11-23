@@ -125,12 +125,12 @@ ssh -L 8765:localhost:8765 user@your-server.com -N
 
 ```
 tooling/playwright/
-├── README.md              # This file
-├── Dockerfile             # Container definition
-├── docker-compose.yml     # Container orchestration
-├── requirements.txt       # Python dependencies
-├── mcp_server.py          # Optional MCP server
-└── screenshots/           # Screenshot output directory
+├── README.md                 # This file
+├── Dockerfile                # Container definition
+├── docker-compose.yml        # Container orchestration
+├── requirements.root.txt     # Python dependencies
+├── mcp_server.py             # Optional MCP server
+└── screenshots/              # Screenshot output directory
 ```
 
 ## Configuration
@@ -197,7 +197,7 @@ docker compose -f tooling/playwright/docker-compose.yml run --rm playwright \
 
 ## Dependencies
 
-All Python packages are defined in `requirements.txt`:
+All Python packages are defined in `requirements.root.txt`:
 
 ```
 playwright>=1.56.0       # Browser automation

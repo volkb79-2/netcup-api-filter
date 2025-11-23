@@ -224,8 +224,8 @@ def api_proxy():
             "message": "Authentication token required"
         }), 401
     
-    # Security: Validate token format (should be hex string)
-    if not re.match(r'^[a-fA-F0-9]{32,128}$', token):
+    # Security: Validate token format (alphanumeric + hyphen/underscore, minimum 20 chars)
+    if not re.match(r'^[a-zA-Z0-9_-]{20,128}$', token):
         logger.warning(f"Invalid token format attempted from {request.remote_addr}")
         send_admin_alert("AUTHENTICATION_FAILURE", "Invalid token format")
         return jsonify({
