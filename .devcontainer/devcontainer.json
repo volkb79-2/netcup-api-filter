@@ -29,7 +29,10 @@
     "--name", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
     // Enable FUSE for sshfs support
     "--cap-add", "SYS_ADMIN",
-    "--device", "/dev/fuse"
+    "--device", "/dev/fuse",
+    // Relax Docker security profiles so fusermount3 can call mount(2)
+    "--security-opt", "apparmor=unconfined",
+    "--security-opt", "seccomp=unconfined"
   ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {

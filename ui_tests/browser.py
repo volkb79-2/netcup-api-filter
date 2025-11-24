@@ -107,7 +107,15 @@ class Browser:
     async def screenshot(self, name: str) -> str:
         """Take screenshot."""
         try:
-            path = f"/screenshots/{name}.png"
+            import os
+            # Use /screenshots mounted by Playwright container (writable)
+            # Fallback to tmp/screenshots for local runs
+            if os.path.exists("/screenshots") and os.access("/screenshots", os.W_OK):
+                screenshot_dir = "/screenshots"
+            else:
+                screenshot_dir = os.path.join(os.getcwd(), "tmp", "screenshots")
+                os.makedirs(screenshot_dir, exist_ok=True)
+            path = os.path.join(screenshot_dir, f"{name}.png")
             await self._page.screenshot(path=path)
             return path
         except Exception as exc:
@@ -168,6 +176,20 @@ class Browser:
         content = await self.text(selector)
         assert expected in content, f"'{expected}' not found in '{content}'"
         return content
+
+    async def query_selector(self, selector: str):
+        """Get element handle for selector (exposes Playwright ElementHandle API)."""
+        try:
+            return await self._page.query_selector(selector)
+        except Exception as exc:
+            raise ToolError(name="query_selector", payload={"selector": selector}, message=str(exc))
+
+    async def query_selector_all(self, selector: str):
+        """Get all element handles matching selector (exposes Playwright ElementHandle API)."""
+        try:
+            return await self._page.query_selector_all(selector)
+        except Exception as exc:
+            raise ToolError(name="query_selector_all", payload={"selector": selector}, message=str(exc))
 
 
 @asynccontextmanager

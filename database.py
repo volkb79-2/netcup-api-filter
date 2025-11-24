@@ -17,12 +17,12 @@ db = SQLAlchemy()
 
 
 class Client(db.Model):
-    """Client token configuration"""
+    """Client configuration with two-factor authentication (client_id + secret_key)"""
     __tablename__ = 'clients'
     
     id = db.Column(db.Integer, primary_key=True)
-    client_id = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    secret_token = db.Column(db.String(255), nullable=False)  # hashed with bcrypt
+    client_id = db.Column(db.String(255), unique=True, nullable=False, index=True)  # Cleartext identifier, manageable in UI
+    secret_key_hash = db.Column(db.String(255), nullable=False)  # Hashed secret key (bcrypt), never retrievable
     description = db.Column(db.Text)
     realm_type = db.Column(db.String(20), nullable=False)  # 'host' or 'subdomain'
     realm_value = db.Column(db.String(255), nullable=False)
@@ -222,30 +222,54 @@ def init_db(app):
         db.create_all()
         logger.info("Database tables created/verified")
         
-        # Create default admin user if none exists
-        from bootstrap import AdminSeedOptions, ensure_admin_user
+        # Seed default admin user and test client
+        from bootstrap import seed_default_entities
 
-        ensure_admin_user(AdminSeedOptions())
-        db.session.commit()
-        logger.info("Default admin user ensured (admin/admin)")
+        seed_default_entities()
+        logger.info("Default admin user and test client seeded")
 
 
 def get_client_by_token(token: str) -> Optional[Client]:
-    """Get client by secret token (hashed comparison)"""
+    """
+    Get client by authentication token (client_id:secret_key format).
+    
+    Args:
+        token: Authentication token in format "client_id:secret_key"
+        
+    Returns:
+        Client object if valid, None otherwise
+    """
     from utils import verify_password
     
-    # Get all active clients
-    clients = Client.query.filter_by(is_active=1).all()
+    # Parse two-factor format: client_id:secret_key
+    if ':' not in token:
+        logger.warning("Invalid token format - expected client_id:secret_key")
+        return None
     
-    for client in clients:
-        if verify_password(token, client.secret_token):
-            # Check expiration
-            if client.token_expires_at and client.token_expires_at < datetime.utcnow():
-                logger.warning(f"Client {client.client_id} token expired")
-                return None
-            return client
+    parts = token.split(':', 1)
+    if len(parts) != 2:
+        logger.warning("Invalid token format - expected exactly one colon separator")
+        return None
     
-    return None
+    client_id, secret_key = parts
+    
+    # Fast O(1) lookup by client_id
+    client = Client.query.filter_by(client_id=client_id, is_active=1).first()
+    
+    if not client:
+        logger.debug(f"Client not found: {client_id}")
+        return None
+    
+    if not verify_password(secret_key, client.secret_key_hash):
+        logger.warning(f"Invalid secret key for client: {client_id}")
+        return None
+    
+    # Check expiration
+    if client.token_expires_at and client.token_expires_at < datetime.utcnow():
+        logger.warning(f"Client {client.client_id} token expired")
+        return None
+    
+    return client
 
 
 def get_client_by_id(client_id: str) -> Optional[Client]:

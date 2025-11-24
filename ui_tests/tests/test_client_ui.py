@@ -42,5 +42,6 @@ async def test_client_manage_buttons_and_logout(active_profile):
 async def test_client_activity_page(active_profile):
     async with browser_session() as browser:
         await workflows.client_portal_login(browser)
-        header = await workflows.client_portal_open_activity(browser)
-        assert "Timestamp" in header
+        result = await workflows.client_portal_open_activity(browser)
+        # Activity page should either show table headers or "no activity" message
+        assert "Timestamp" in result or "No activity recorded yet" in result

@@ -65,6 +65,7 @@ class PlaywrightClient:
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
+        self._page: Optional[Page] = None
         
     async def __aenter__(self):
         """Async context manager entry."""
@@ -90,6 +91,9 @@ class PlaywrightClient:
         # Create default context
         self._context = await self._browser.new_context()
         self._context.set_default_timeout(self.timeout)
+        
+        # Create default page for convenience
+        self._page: Optional[Page] = await self._context.new_page()
     
     async def new_page(self) -> Page:
         """
@@ -122,6 +126,10 @@ class PlaywrightClient:
     
     async def close(self):
         """Close all connections and cleanup resources."""
+        if self._page:
+            await self._page.close()
+            self._page = None
+        
         if self._context:
             await self._context.close()
             self._context = None
@@ -147,6 +155,13 @@ class PlaywrightClient:
         if not self._context:
             raise RuntimeError("Client not connected")
         return self._context
+    
+    @property
+    def page(self) -> Page:
+        """Get the default page."""
+        if not self._page:
+            raise RuntimeError("Client not connected or page not created")
+        return self._page
 
 
 @asynccontextmanager

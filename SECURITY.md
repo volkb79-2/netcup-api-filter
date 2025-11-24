@@ -475,7 +475,7 @@ default-src 'none'; frame-ancestors 'none'
 
 Before exposing admin UI to the internet:
 
-- [ ] Changed default admin password (`admin`/`admin`)
+- [ ] Changed default admin password (see `.env.defaults` for initial credentials)
 - [ ] Set strong `SECRET_KEY` environment variable
 - [ ] Configured HTTPS with valid SSL certificate
 - [ ] Verified secure cookie settings are applied

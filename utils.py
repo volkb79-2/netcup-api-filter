@@ -39,6 +39,36 @@ def generate_token(min_length: int = 63, max_length: int = 65) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
+def generate_client_credentials(client_id_length: int = 20, secret_key_length: int = 40) -> tuple[str, str]:
+    """
+    Generate two-factor client authentication credentials.
+    
+    Creates a client_id (cleartext, manageable in UI) and secret_key (to be hashed).
+    The complete authentication token format is: "client_id:secret_key"
+    
+    Args:
+        client_id_length: Length of the client_id (default 20 chars)
+        secret_key_length: Length of the secret_key (default 40 chars)
+        
+    Returns:
+        Tuple of (client_id, secret_key, full_token)
+        - client_id: Cleartext identifier for admin UI management
+        - secret_key: Secret to be hashed and stored (never shown again)
+        - full_token: Complete "client_id:secret_key" for client usage
+        
+    Example:
+        >>> client_id, secret_key, full_token = generate_client_credentials()
+        >>> # client_id: "AbC123xYz456PqRs7890"
+        >>> # secret_key: "sK7mN2pQ9rT4vW1xZ5aB8cD3eF6gH0jK2lM4nP7"
+        >>> # full_token: "AbC123xYz456PqRs7890:sK7mN2pQ9rT4vW1xZ5aB8cD3eF6gH0jK2lM4nP7"
+    """
+    client_id = generate_token(min_length=client_id_length, max_length=client_id_length)
+    secret_key = generate_token(min_length=secret_key_length, max_length=secret_key_length)
+    full_token = f"{client_id}:{secret_key}"
+    
+    return client_id, secret_key, full_token
+
+
 def hash_password(password: str, cost: int = 12) -> str:
     """
     Hash a password using bcrypt
@@ -273,6 +303,104 @@ def get_current_directory_info() -> dict:
         'script_dir': os.path.dirname(os.path.abspath(__file__)),
         'home': os.path.expanduser('~'),
     }
+
+
+def test_filesystem_access() -> dict:
+    """
+    Test filesystem write/read access in various locations
+    
+    Returns:
+        Dictionary with test results for different locations and file types
+    """
+    import tempfile
+    from datetime import datetime
+    
+    results = {}
+    test_content = f"Test write at {datetime.utcnow().isoformat()}"
+    
+    # Test locations to try
+    test_locations = [
+        ('cwd', os.getcwd()),
+        ('tmp_subdir', os.path.join(os.getcwd(), 'tmp')),
+        ('system_tmp', tempfile.gettempdir()),
+        ('parent', os.path.dirname(os.getcwd())),
+    ]
+    
+    for loc_name, loc_path in test_locations:
+        result = {
+            'path': loc_path,
+            'exists': os.path.exists(loc_path),
+            'writable': False,
+            'readable': False,
+            'file_test': None,
+            'sqlite_test': None,
+            'error': None
+        }
+        
+        try:
+            # Check if directory is accessible
+            if result['exists']:
+                result['writable'] = os.access(loc_path, os.W_OK)
+                result['readable'] = os.access(loc_path, os.R_OK)
+            
+            # Test regular file write/read
+            if result['exists'] and result['writable']:
+                test_file = os.path.join(loc_path, f'write_test_{loc_name}.txt')
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write(test_content)
+                    
+                    with open(test_file, 'r') as f:
+                        read_content = f.read()
+                    
+                    if read_content == test_content:
+                        result['file_test'] = 'SUCCESS'
+                        # Clean up
+                        os.remove(test_file)
+                    else:
+                        result['file_test'] = 'CONTENT_MISMATCH'
+                except Exception as e:
+                    result['file_test'] = f'FAILED: {str(e)}'
+                
+                # Test SQLite database write
+                db_test_file = os.path.join(loc_path, f'test_db_{loc_name}.db')
+                try:
+                    import sqlite3
+                    conn = sqlite3.connect(db_test_file)
+                    cursor = conn.cursor()
+                    cursor.execute('CREATE TABLE test (id INTEGER PRIMARY KEY, data TEXT)')
+                    cursor.execute('INSERT INTO test (data) VALUES (?)', (test_content,))
+                    conn.commit()
+                    cursor.execute('SELECT data FROM test WHERE id = 1')
+                    row = cursor.fetchone()
+                    conn.close()
+                    
+                    if row and row[0] == test_content:
+                        result['sqlite_test'] = 'SUCCESS'
+                        # Clean up
+                        os.remove(db_test_file)
+                    else:
+                        result['sqlite_test'] = 'DATA_MISMATCH'
+                except Exception as e:
+                    result['sqlite_test'] = f'FAILED: {str(e)}'
+        
+        except Exception as e:
+            result['error'] = str(e)
+        
+        results[loc_name] = result
+    
+    # Test if we can list parent directories
+    try:
+        parent = os.path.dirname(os.getcwd())
+        results['parent_listing'] = {
+            'path': parent,
+            'contents': os.listdir(parent) if os.path.exists(parent) else None,
+            'accessible': os.access(parent, os.R_OK) if os.path.exists(parent) else False
+        }
+    except Exception as e:
+        results['parent_listing'] = {'error': str(e)}
+    
+    return results
 
 
 @lru_cache(maxsize=1)

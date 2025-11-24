@@ -130,41 +130,34 @@ def client_login_required(view):
 
 
 def _call_internal_api(action: str, param: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
-    """Call the existing /api endpoint using the client's token.
+    """Call Netcup API directly, bypassing the internal API endpoint.
 
     Returns (success, data, error_message).
     """
-    token = getattr(g, "client_token", None)
-    if not token:
-        token, _ = _load_token_from_session()
-    if not token:
-        return False, None, "Missing client session"
-
-    payload = {"action": action, "param": param}
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-    }
-    remote_addr = request.remote_addr or "127.0.0.1"
-
-    with current_app.test_client() as client:
-        response = client.post(
-            "/api",
-            json=payload,
-            headers=headers,
-            environ_overrides={"REMOTE_ADDR": remote_addr},
-        )
-
     try:
-        data = response.get_json()
-    except Exception:  # pragma: no cover - defensive fallback
-        data = None
-
-    if response.status_code != 200 or not data or data.get("status") != "success":
-        message = (data or {}).get("message", "Request failed")
-        return False, data, message
-
-    return True, data.get("responsedata"), None
+        logger.info(f"_call_internal_api: action={action}, param={param}")
+        
+        # Get Netcup client from app config
+        netcup_client = current_app.config.get("netcup_client")
+        if not netcup_client:
+            logger.warning("_call_internal_api: Netcup API not configured")
+            return False, None, "Netcup API not configured"
+        
+        # Call Netcup API directly
+        logger.info(f"_call_internal_api: Calling netcup_client.{action}")
+        result = netcup_client.call(action, param)
+        logger.info(f"_call_internal_api: Call completed, status={result.get('status') if result else 'None'}")
+        
+        if not result or result.get("status") != "success":
+            message = result.get("longmessage") or result.get("shortmessage") or "Request failed"
+            logger.warning(f"_call_internal_api: Request failed - message={message}")
+            return False, None, message
+        
+        logger.info(f"_call_internal_api: Success!")
+        return True, result.get("responsedata"), None
+    except Exception as e:
+        logger.error(f"_call_internal_api: Exception: {type(e).__name__}: {str(e)}", exc_info=True)
+        return False, None, f"Internal error: {str(e)}"
 
 
 def _allowed_domains(token_info: Dict[str, Any]) -> List[str]:
@@ -278,67 +271,92 @@ def logout():
 @client_login_required
 def dashboard():
     """Client dashboard with allowed domains and recent stats."""
-    token_info = g.client_token_info
-    domains = _allowed_domains(token_info)
-    domain_cards = []
+    try:
+        token_info = g.client_token_info
+        domains = _allowed_domains(token_info)
+        domain_cards = []
 
-    for domain in domains:
-        card = {"domain": domain, "records": [], "record_count": 0, "zone": {}, "error": None}
-        zone_ok, zone_data, zone_error = _load_zone(domain)
-        if zone_ok:
-            card["zone"] = zone_data
-        else:
-            card["error"] = zone_error or "Unable to load zone"
+        for domain in domains:
+            card = {"domain": domain, "records": [], "record_count": 0, "zone": {}, "error": None}
+            try:
+                zone_ok, zone_data, zone_error = _load_zone(domain)
+                if zone_ok:
+                    card["zone"] = zone_data
+                else:
+                    card["error"] = zone_error or "Unable to load zone"
 
-        records_ok, records, records_error = _load_records(domain)
-        if records_ok:
-            card["record_count"] = len(records)
-            card["records"] = records[:5]  # preview
-        else:
-            card["error"] = records_error or card["error"]
-        domain_cards.append(card)
+                records_ok, records, records_error = _load_records(domain)
+                if records_ok:
+                    card["record_count"] = len(records)
+                    card["records"] = records[:5]  # preview
+                else:
+                    card["error"] = records_error or card["error"]
+            except Exception as e:
+                logger.error(f"Error loading domain {domain}: {e}")
+                card["error"] = "Failed to load domain data"
+            domain_cards.append(card)
 
-    meta = {
-        "operations": _aggregate_operations(token_info),
-        "record_types": _aggregate_record_types(token_info),
-        "description": token_info.get("description"),
-        "client_id": token_info.get("client_id"),
-    }
+        meta = {
+            "operations": _aggregate_operations(token_info),
+            "record_types": _aggregate_record_types(token_info),
+            "description": token_info.get("description"),
+            "client_id": token_info.get("client_id"),
+        }
 
-    return render_template(
-        "client/dashboard_modern.html",
-        domain_cards=domain_cards,
-        meta=meta,
-        login_ts=session.get("client_login_at"),
-    )
+        return render_template(
+            "client/dashboard_modern.html",
+            domain_cards=domain_cards,
+            meta=meta,
+            login_ts=session.get("client_login_at"),
+        )
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}", exc_info=True)
+        flash(f"Dashboard error: {str(e)}", "danger")
+        return redirect(url_for("client_portal.login"))
 
 
 @client_portal_bp.route("/domains/<string:domain>")
 @client_login_required
 def domain_detail(domain: str):
     """Detailed view of DNS records for a domain."""
-    domain = domain.strip()
-    token_info = g.client_token_info
-    domains = _allowed_domains(token_info)
-    if domain not in domains:
-        abort(404)
+    try:
+        logger.info(f"domain_detail: Starting for domain={domain}")
+        domain = domain.strip()
+        token_info = g.client_token_info
+        logger.info(f"domain_detail: token_info type={type(token_info)}")
+        
+        domains = _allowed_domains(token_info)
+        logger.info(f"domain_detail: allowed_domains={domains}")
+        
+        if domain not in domains:
+            logger.warning(f"domain_detail: domain {domain} not in allowed domains")
+            abort(404)
 
-    zone_ok, zone_data, zone_error = _load_zone(domain)
-    records_ok, records, records_error = _load_records(domain)
+        logger.info(f"domain_detail: Calling _load_zone for {domain}")
+        zone_ok, zone_data, zone_error = _load_zone(domain)
+        logger.info(f"domain_detail: zone_ok={zone_ok}, zone_error={zone_error}")
+        
+        logger.info(f"domain_detail: Calling _load_records for {domain}")
+        records_ok, records, records_error = _load_records(domain)
+        logger.info(f"domain_detail: records_ok={records_ok}, records_error={records_error}, records_count={len(records)}")
 
-    if not zone_ok:
-        flash(zone_error or "Failed to load zone info", "danger")
-    if not records_ok:
-        flash(records_error or "Failed to load DNS records", "danger")
+        if not zone_ok:
+            flash(zone_error or "Failed to load zone info", "danger")
+        if not records_ok:
+            flash(records_error or "Failed to load DNS records", "danger")
 
-    return render_template(
-        "client/domain_detail_modern.html",
-        domain=domain,
-        zone=zone_data,
-        records=records,
-        operations=_aggregate_operations(token_info),
-        record_types=_aggregate_record_types(token_info),
-    )
+        logger.info(f"domain_detail: About to render template")
+        return render_template(
+            "client/domain_detail_modern.html",
+            domain=domain,
+            zone=zone_data,
+            records=records,
+            operations=_aggregate_operations(token_info),
+            record_types=_aggregate_record_types(token_info),
+        )
+    except Exception as e:
+        logger.error(f"domain_detail: Exception occurred: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise
 
 
 def _build_record_payload(form_data: Dict[str, Any], record_id: Optional[str] = None, delete: bool = False) -> Dict[str, Any]:
@@ -477,19 +495,31 @@ def activity():
         try:
             from database import AuditLog
 
-            logs = (
+            log_objects = (
                 AuditLog.query.filter_by(client_id=client_id)
                 .order_by(AuditLog.timestamp.desc())
                 .limit(25)
                 .all()
             )
+            
+            # Convert AuditLog objects to dictionaries for JSON serialization in template
+            logs = [
+                {
+                    "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                    "ip_address": log.ip_address,
+                    "operation": log.operation,
+                    "domain": log.domain,
+                    "success": log.success,
+                }
+                for log in log_objects
+            ]
         except Exception:  # pragma: no cover - database might not be available
             logs = []
 
     return render_template("client/activity_modern.html", logs=logs, client_id=client_id)
 
 
-@client_portal_bp.app_context_processor
+@client_portal_bp.context_processor
 def inject_client_info() -> Dict[str, Any]:
     """Expose client info to Jinja templates within the portal."""
     return {"client_info": getattr(g, "client_token_info", None)}

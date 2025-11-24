@@ -1,5 +1,126 @@
 # Build and deployment
 
+## Configuration-Driven Architecture (CRITICAL)
+
+**DIRECTIVE**: This project enforces 100% config-driven approach. **NO HARDCODED VALUES** in code.
+
+All configuration MUST come from:
+1. **`.env.defaults`** - Single source of truth for defaults (version-controlled)
+2. **Environment variables** - Override defaults per environment (dev/staging/production)
+3. **Database settings** - Runtime configuration via admin UI
+
+Examples of config-driven values:
+- Flask session settings (cookie flags, lifetime, SameSite policy)
+- Admin/client credentials (username, password, tokens)
+- Rate limiting (requests per minute/hour, max content size)
+- Timeouts (HTTP requests, SMTP, API calls)
+- TLS proxy settings (domain, ports, certificate paths)
+
+**Before** (hardcoded ❌):
+```python
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Hardcoded!
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Magic number!
+```
+
+**After** (config-driven ✅):
+```python
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('FLASK_SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['PERMANENT_SESSION_LIFETIME'] = int(os.environ.get('FLASK_SESSION_LIFETIME', '3600'))
+```
+
+See `CONFIG_DRIVEN_ARCHITECTURE.md` for complete guidelines and migration plan.
+
+## Local Testing with Production Parity
+
+**Quick command (HTTP testing):**
+```bash
+./run-local-tests.sh
+```
+
+**Quick command (HTTPS testing with real Let's Encrypt certificates):**
+```bash
+cd tooling/local_proxy && ./auto-detect-fqdn.sh && cd ../.. && ./run-local-tests.sh
+```
+
+This runs the complete test suite (90 tests: 27 comprehensive UI, 10 admin, 4 client, 8 API proxy, and more) against a deployment that **exactly mirrors production**:
+
+### What It Does
+
+1. **Builds deployment package** - Same `deploy.zip` that goes to production
+2. **Extracts locally** - `deploy-local/` contains exact production structure (gitignored, regenerated each run)
+3. **Preseeded database** - `admin`/`admin` credentials, test client ready
+4. **Starts Flask** - Same `passenger_wsgi:application` entry point
+5. **Runs all tests** - 26 functional + 21 E2E tests
+6. **Cleans up** - Kills Flask automatically
+
+### Key Files
+
+- **`build-and-deploy-local.sh`** - Builds and extracts deployment locally
+- **`run-local-tests.sh`** - Complete automated test runner (BUILD + RUN + CLEANUP)
+- **`LOCAL_TESTING_GUIDE.md`** - Full documentation
+
+### Why This Matters
+
+- ✅ **No surprises** - If tests pass locally, production deployment will work
+- ✅ **Fast iteration** - Full test suite runs in ~1 minute
+- ✅ **True parity** - Same code, same database, same workflows as production
+- ✅ **Session cookies work** - Fixed via `FLASK_ENV=local_test` flag
+
+### Session Cookie Configuration
+
+**Session cookies are now 100% config-driven** (no hardcoded values in code):
+
+```bash
+# .env.defaults (single source of truth)
+FLASK_SESSION_COOKIE_SECURE=auto
+FLASK_SESSION_COOKIE_HTTPONLY=True
+FLASK_SESSION_COOKIE_SAMESITE=Lax
+FLASK_SESSION_LIFETIME=3600
+```
+
+**`FLASK_SESSION_COOKIE_SECURE=auto` behavior**:
+- **Production** (no FLASK_ENV): Secure=True → HTTPS enforced
+- **Local testing** (FLASK_ENV=local_test): Secure=False → HTTP allowed
+- **HTTPS local** (HTTPS proxy): Secure=True → HTTPS enforced (100% production parity)
+
+See `LOCAL_TESTING_GUIDE.md` and `CONFIG_DRIVEN_ARCHITECTURE.md` for complete details.
+
+## HTTPS Local Testing with Let's Encrypt Certificates (NEW)
+
+**Test with real TLS certificates and 100% production parity:**
+
+```bash
+cd tooling/local_proxy
+
+# Auto-detect public FQDN from external IP + reverse DNS
+./auto-detect-fqdn.sh --verify-certs
+
+# Start HTTPS proxy with Let's Encrypt certificates
+./render-nginx-conf.sh && ./stage-proxy-inputs.sh
+docker compose --env-file proxy.env up -d
+
+# Run tests against HTTPS endpoint
+FQDN=$(grep LOCAL_TLS_DOMAIN proxy.env | cut -d= -f2)
+UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
+```
+
+### What This Provides
+
+- **Real certificates**: Let's Encrypt CA (same as production webhosting)
+- **True HTTPS**: Secure cookies work identically to production
+- **Full observability**: Access Flask logs, database, internal state
+- **Auto-detection**: Automatically finds public FQDN from external IP
+- **No self-signed**: Browsers accept certificates without warnings
+
+**Architecture**:
+```
+Browser → nginx:443 (TLS termination, Let's Encrypt cert)
+  → Flask:5100 (HTTP, X-Forwarded-Proto: https)
+    → Secure cookies work (Secure=True, HTTPS protocol)
+```
+
+See `HTTPS_LOCAL_TESTING.md` for complete setup, debugging, and integration guides.
+
 ## Fail-Fast Policy
 
 **CRITICAL**: This project enforces NO DEFAULTS, NO FALLBACKS. Missing configuration = immediate error.
@@ -18,28 +139,54 @@
 
 ## deploy to live server via webhosting
 
-The database will be reset and on first login the admin password needs to be changed. 
+**CRITICAL: ALWAYS use `./build-and-deploy.sh` for deployments**
 
-**Default credentials**: 'admin' / 'admin'
+DO NOT manually copy files, use scp directly, or touch `passenger_wsgi.py`. The deployment script is the ONLY supported deployment method.
+
+The deployment script:
+- Builds the deployment package with `build_deployment.py` (includes fresh preseeded database)
+- Uploads `deploy.zip` to the server
+- Cleans old deployment (including dotfiles AND database)
+- Extracts the new package
+- **Restarts Passenger by touching `tmp/restart.txt`** (required for code changes to take effect)
+
+**Every deployment resets the database to fresh state with default credentials** from `.env.defaults` (typically `admin` / `admin`).
+
+On first login after deployment, you must change the admin password. Tests handle this automatically and persist the new password to `/screenshots/.env.webhosting` (writable Playwright container mount).
+
+**Default credentials are defined in `.env.defaults`** (single source of truth). The build process reads these values and writes them to `/screenshots/.env.webhosting` representing the live deployment state.
+
+See `ENV_DEFAULTS.md` for complete documentation on the environment defaults system.
 
 **Testing workflow**: After deployment, tests must go through the initial password change
-flow (admin/admin → TestAdmin123!). Subsequent test runs use TestAdmin123! and don't
-reset the password. This is by design - the database persists state between test runs
-while code changes are deployed without database resets. 
+flow (default credentials from `.env.defaults` → TestAdmin123!). The password change is persisted to `.env.webhosting`
+(stored in Playwright's writable `/screenshots/` mount) so subsequent test runs automatically
+use the new password. Database resets are only needed when you want to start fresh.
 
 ## Preseeded Test Client
 
-Every freshly built deployment now ships with a ready-to-use client for quick smoke testing:
+Every freshly built deployment now ships with a ready-to-use client for quick smoke testing (credentials defined in `.env.defaults`):
 
-- Client ID: `test_qweqweqwe_vi`
-- Token: `qweqweqwe-vi-readonly`
-- Scope: host `qweqweqwe.vi`, record type `A`, operation `read`
+- Client ID: (from `DEFAULT_TEST_CLIENT_ID`)
+- Token: (from `DEFAULT_TEST_CLIENT_TOKEN`)
+- Scope: Configured via `DEFAULT_TEST_CLIENT_REALM_*`, `DEFAULT_TEST_CLIENT_RECORD_TYPES`, `DEFAULT_TEST_CLIENT_OPERATIONS`
 
 Use this token in the `Authorization: Bearer ...` header to exercise read-only flows or to validate UI/API plumbing before creating real clients. Rotate or delete it on production installs once your own clients exist.
 
-You can use the script `./build-and-deploy.sh` to build and deploy to the server and directoy defined in the script.
+**Deployment Command:**
+```bash
+./build-and-deploy.sh
+```
 
-see defined variables `NETCUP_USER`, `NETCUP_SERVER`, `REMOTE_DIR`, `PUBLIC_FQDN` how to access it.
+This is the ONLY supported deployment method. Do not manually scp files.
+
+**Live Server Access Credentials** (from `./build-and-deploy.sh`):
+- SSH: `hosting218629@hosting218629.ae98d.netcup.net`
+- Remote Directory: `/netcup-api-filter`
+- Public URL: `https://naf.vxxu.de/`
+- Log File: `/netcup-api-filter/netcup_filter.log`
+- Database: `/netcup-api-filter/netcup_filter.db`
+- Restart: `touch /netcup-api-filter/tmp/restart.txt` (Passenger reload)
 
 ## deploy locally 
 

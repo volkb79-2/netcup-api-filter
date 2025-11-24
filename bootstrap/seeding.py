@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from database import AdminUser, Client, db, set_system_config
@@ -11,11 +13,63 @@ from utils import hash_password
 logger = logging.getLogger(__name__)
 
 
+def _load_env_defaults() -> dict:
+    """Load default values from .env.defaults file.
+    
+    Returns dict with DEFAULT_* keys loaded from .env.defaults.
+    Falls back to hardcoded values if file not found.
+    """
+    defaults = {
+        "DEFAULT_ADMIN_USERNAME": "admin",
+        "DEFAULT_ADMIN_PASSWORD": "admin",
+        "DEFAULT_TEST_CLIENT_ID": "test_qweqweqwe_vi",
+        "DEFAULT_TEST_CLIENT_SECRET_KEY": "qweqweqwe_vi_readonly_secret_key_12345",
+        "DEFAULT_TEST_CLIENT_DESCRIPTION": "Sample read-only client",
+        "DEFAULT_TEST_CLIENT_REALM_TYPE": "host",
+        "DEFAULT_TEST_CLIENT_REALM_VALUE": "qweqweqwe.vi",
+        "DEFAULT_TEST_CLIENT_RECORD_TYPES": "A",
+        "DEFAULT_TEST_CLIENT_OPERATIONS": "read",
+    }
+    
+    # Try to find .env.defaults
+    env_paths = [
+        Path.cwd() / ".env.defaults",
+        Path(__file__).parent.parent / ".env.defaults",
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            try:
+                with open(env_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            defaults[key.strip()] = value.strip()
+                logger.info("Loaded defaults from %s", env_path)
+                break
+            except Exception as e:
+                logger.warning("Failed to read %s: %s", env_path, e)
+    
+    return defaults
+
+
+_ENV_DEFAULTS = _load_env_defaults()
+
+
 @dataclass
 class AdminSeedOptions:
-    username: str = "admin"
-    password: str = "admin"
+    username: str = None
+    password: str = None
     must_change_password: bool = True
+    
+    def __post_init__(self):
+        if self.username is None:
+            self.username = _ENV_DEFAULTS.get("DEFAULT_ADMIN_USERNAME", "admin")
+        if self.password is None:
+            self.password = _ENV_DEFAULTS.get("DEFAULT_ADMIN_PASSWORD", "admin")
 
 
 @dataclass
@@ -31,15 +85,20 @@ class ClientSeedOptions:
     is_active: bool = True
 
 
-DEFAULT_TEST_CLIENT_OPTIONS = ClientSeedOptions(
-    client_id="test_qweqweqwe_vi",
-    token="qweqweqwe-vi-readonly",
-    description="Sample read-only client for qweqweqwe.vi",
-    realm_type="host",
-    realm_value="qweqweqwe.vi",
-    record_types=("A",),
-    operations=("read",),
-)
+def _get_default_test_client_options() -> ClientSeedOptions:
+    """Create default test client options from .env.defaults."""
+    return ClientSeedOptions(
+        client_id=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_ID", "test_qweqweqwe_vi"),
+        token=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_SECRET_KEY", "qweqweqwe_vi_readonly_secret_key_12345"),
+        description=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_DESCRIPTION", "Sample read-only client"),
+        realm_type=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_REALM_TYPE", "host"),
+        realm_value=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_REALM_VALUE", "qweqweqwe.vi"),
+        record_types=tuple(_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_RECORD_TYPES", "A").split(',')),
+        operations=tuple(_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_OPERATIONS", "read").split(',')),
+    )
+
+
+DEFAULT_TEST_CLIENT_OPTIONS = _get_default_test_client_options()
 
 
 def ensure_admin_user(options: AdminSeedOptions) -> AdminUser:
@@ -69,7 +128,9 @@ def ensure_client(options: ClientSeedOptions) -> Client:
         logger.info("Created client %s", options.client_id)
     else:
         logger.info("Refreshed client %s", options.client_id)
-    client.secret_token = hash_password(options.token)
+    
+    # Store hashed secret key (token parameter contains just the secret_key part)
+    client.secret_key_hash = hash_password(options.token)
     client.description = options.description
     client.realm_type = options.realm_type
     client.realm_value = options.realm_value

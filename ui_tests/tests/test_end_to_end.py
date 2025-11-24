@@ -6,6 +6,10 @@ This test verifies the complete workflow:
 3. Client views their allowed domains
 4. Client manages DNS records (create/edit/delete) with Netcup API mocked
 5. Permission boundaries are enforced
+
+NOTE: This test uses mocking at the Python level, but still requires the
+Flask app to be accessible. When running against production, some features
+may not work as expected. Consider running against local deployment.
 """
 import pytest
 import json
@@ -15,7 +19,13 @@ from ui_tests.config import settings
 from ui_tests import workflows
 
 
-pytestmark = pytest.mark.asyncio
+# Mark all tests in this module as e2e_local and asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.e2e_local]
+
+
+# Skip all tests in this module if running against production
+if settings.base_url and not any(host in settings.base_url for host in ['localhost', '127.0.0.1', '0.0.0.0']):
+    pytestmark.append(pytest.mark.skip(reason="E2E tests with mocking require local deployment for proper mock injection"))
 
 
 # Mock DNS data for testing

@@ -30,7 +30,8 @@ DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 DEFAULT_ADMIN_USERNAME = os.environ.get("LOCAL_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("LOCAL_ADMIN_PASSWORD", "admin")
 DEFAULT_CLIENT_ID = os.environ.get("LOCAL_CLIENT_ID", "test_qweqweqwe_vi")
-DEFAULT_CLIENT_TOKEN = os.environ.get("LOCAL_CLIENT_TOKEN", "qweqweqwe-vi-readonly")
+DEFAULT_CLIENT_SECRET_KEY = os.environ.get("LOCAL_CLIENT_SECRET_KEY", "qweqweqwe_vi_readonly_secret_key_12345")
+DEFAULT_CLIENT_TOKEN = f"{DEFAULT_CLIENT_ID}:{DEFAULT_CLIENT_SECRET_KEY}"  # Two-factor format: client_id:secret_key
 DEFAULT_CLIENT_DOMAIN = os.environ.get("LOCAL_CLIENT_DOMAIN", "qweqweqwe.vi")
 DEFAULT_CLIENT_RECORD_TYPES = os.environ.get("LOCAL_CLIENT_RECORD_TYPES", "A").split(",")
 DEFAULT_CLIENT_OPERATIONS = os.environ.get("LOCAL_CLIENT_OPERATIONS", "read").split(",")
@@ -68,33 +69,20 @@ class FakeNetcupClient:
         return {"status": "noop", "domainname": domain, "payload": payload}
 
 
-def _seed_database(app) -> None:
-    record_types = [item.strip() for item in DEFAULT_CLIENT_RECORD_TYPES if item.strip()] or None
-    operations = [item.strip() for item in DEFAULT_CLIENT_OPERATIONS if item.strip()] or None
-    with app.app_context():
-        seed_default_entities(
-            AdminSeedOptions(
-                username=DEFAULT_ADMIN_USERNAME,
-                password=DEFAULT_ADMIN_PASSWORD,
-                must_change_password=True,  # Enable password change flow for testing
-            ),
-            ClientSeedOptions(
-                client_id=DEFAULT_CLIENT_ID,
-                token=DEFAULT_CLIENT_TOKEN,
-                description="Local test client",
-                realm_type="host",
-                realm_value=DEFAULT_CLIENT_DOMAIN,
-                record_types=record_types or ("A",),
-                operations=operations or ("read",),
-            ),
-        )
-
-
 def _configure_app() -> Any:
     # Set database path
     os.environ.setdefault("NETCUP_FILTER_DB_PATH", str(DEFAULT_DB_PATH))
     
-    # Create the full app with admin UI
+    # Set seeding defaults via environment variables (create_app will seed automatically)
+    os.environ.setdefault("DEFAULT_ADMIN_USERNAME", DEFAULT_ADMIN_USERNAME)
+    os.environ.setdefault("DEFAULT_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
+    os.environ.setdefault("DEFAULT_TEST_CLIENT_ID", DEFAULT_CLIENT_ID)
+    os.environ.setdefault("DEFAULT_TEST_CLIENT_SECRET_KEY", DEFAULT_CLIENT_SECRET_KEY)
+    os.environ.setdefault("DEFAULT_TEST_CLIENT_REALM_VALUE", DEFAULT_CLIENT_DOMAIN)
+    os.environ.setdefault("DEFAULT_TEST_CLIENT_RECORD_TYPES", ",".join(DEFAULT_CLIENT_RECORD_TYPES))
+    os.environ.setdefault("DEFAULT_TEST_CLIENT_OPERATIONS", ",".join(DEFAULT_CLIENT_OPERATIONS))
+    
+    # Create the full app with admin UI (will seed automatically using env vars)
     app = create_app()
     
     # Override with fake Netcup client for local testing
@@ -102,9 +90,6 @@ def _configure_app() -> Any:
     app.config["netcup_client"] = fake_client
     import filter_proxy
     filter_proxy.netcup_client = fake_client
-    
-    # Seed the database with test data
-    _seed_database(app)
 
     return app
 

@@ -2,21 +2,30 @@
 
 These tests validate complete workflows including DNS operations
 without requiring real Netcup API credentials.
+
+NOTE: These tests require a LOCAL app deployment where the Flask app can
+reach the mock Netcup API server running in the Playwright container network.
+They will be skipped when running against production deployments.
 """
 import pytest
 import httpx
 from ui_tests.config import settings
 from ui_tests import workflows
-from ui_tests.conftest import browser_session, active_profile
+from ui_tests.browser import browser_session
 
 
-pytestmark = pytest.mark.asyncio
+# Mark all tests in this module as e2e_local and asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.e2e_local]
+
+
+# Skip all tests in this module if running against production
+if settings.base_url and not any(host in settings.base_url for host in ['localhost', '127.0.0.1', '0.0.0.0']):
+    pytestmark.append(pytest.mark.skip(reason="E2E mock API tests require local deployment with accessible mock Netcup API"))
 
 
 async def test_e2e_with_mock_api_read_dns_records(
     mock_netcup_api_server,
     mock_netcup_credentials,
-    browser_session,
     active_profile
 ):
     """Test complete E2E workflow: Admin creates client → client reads DNS records.
@@ -161,7 +170,7 @@ async def test_e2e_with_mock_api_read_dns_records(
 async def test_e2e_with_mock_api_update_dns_record(
     mock_netcup_api_server,
     mock_netcup_credentials,
-    browser_session,
+
     active_profile
 ):
     """Test complete E2E workflow: Admin creates client → client updates DNS record.

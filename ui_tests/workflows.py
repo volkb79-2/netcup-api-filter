@@ -2,13 +2,91 @@
 from __future__ import annotations
 
 import anyio
+import os
 import re
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable, List, Tuple
 
 from ui_tests.browser import Browser, ToolError
 from ui_tests.config import settings
+
+
+def _update_deployment_state(**kwargs) -> None:
+    """Update .env.webhosting with current deployment state.
+    
+    This persists test-driven changes (like password updates) so subsequent
+    test runs use the correct credentials without needing database resets.
+    
+    Args:
+        **kwargs: Key-value pairs to update (e.g., admin_password="NewPass123!")
+    """
+    import os.path
+    
+    # Try writable locations: /screenshots (Playwright container), then workspace
+    possible_paths = [
+        '/screenshots/.env.webhosting',  # Playwright container writable mount
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.webhosting'),
+    ]
+    
+    env_file = None
+    for path in possible_paths:
+        try:
+            # Test if writable by attempting to open in append mode
+            with open(path, 'a'):
+                pass
+            env_file = path
+            break
+        except (OSError, IOError):
+            continue
+    
+    if not env_file:
+        print("[CONFIG] WARNING: Could not find writable location for .env.webhosting")
+        return
+    
+    # Read existing content
+    lines = []
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            lines = f.readlines()
+    
+    # Update/add values
+    updated_keys = set()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        if '=' in stripped:
+            key = stripped.split('=', 1)[0]
+            # Check if we need to update this key
+            for kwarg_key, kwarg_value in kwargs.items():
+                env_key = f"DEPLOYED_{kwarg_key.upper()}"
+                if key == env_key:
+                    lines[i] = f"{env_key}={kwarg_value}\n"
+                    updated_keys.add(env_key)
+    
+    # Add new keys that weren't found
+    for kwarg_key, kwarg_value in kwargs.items():
+        env_key = f"DEPLOYED_{kwarg_key.upper()}"
+        if env_key not in updated_keys:
+            lines.append(f"{env_key}={kwarg_value}\n")
+    
+    # Add deployment timestamp
+    timestamp_updated = False
+    for i, line in enumerate(lines):
+        if line.startswith('DEPLOYED_AT='):
+            lines[i] = f"DEPLOYED_AT={datetime.utcnow().isoformat()}Z\n"
+            timestamp_updated = True
+            break
+    if not timestamp_updated:
+        lines.append(f"DEPLOYED_AT={datetime.utcnow().isoformat()}Z\n")
+    
+    # Write back
+    with open(env_file, 'w') as f:
+        f.writelines(lines)
+    
+    print(f"[CONFIG] Updated {env_file}: {', '.join(f'{k}={v}' for k, v in kwargs.items())}")
 
 
 @dataclass
@@ -140,8 +218,10 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
                 print(f"[DEBUG] Detected dashboard after {elapsed}s")
                 break
         
-        # CRITICAL: Update global settings so subsequent tests use new password
-        print(f"[DEBUG] Updating admin_password from '{settings.admin_password}' to '{new_password}'")
+        # CRITICAL: Persist password change for subsequent test runs
+        _update_deployment_state(admin_password=new_password)
+        
+        # Update in-memory settings for this test session
         settings._active.admin_password = new_password
         settings._active.admin_new_password = new_password
     
@@ -306,8 +386,10 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await anyio.sleep(1.0)
     await browser.wait_for_text("main h1", "Dashboard")
     
-    # CRITICAL: Update global settings so subsequent tests use new password
-    print(f"[DEBUG] Updating global admin_password from '{settings.admin_password}' to '{new_password}'")
+    # CRITICAL: Persist password change to .env.webhosting for subsequent test runs
+    _update_deployment_state(admin_password=new_password)
+    
+    # Update in-memory settings for this test session
     settings._active.admin_password = new_password
     settings._active.admin_new_password = new_password
     
@@ -376,6 +458,7 @@ async def open_admin_client_create(browser: Browser) -> Browser:
 
 
 async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
+    """Submit client creation form and return the generated token from flash message."""
     await browser.fill("#client_id", data.client_id)
     await browser.fill("#description", data.description)
     await browser.select("select[name='realm_type']", data.realm_type)
@@ -385,7 +468,30 @@ async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
     if data.email:
         await browser.fill("#email_address", data.email)
     await browser.submit("form")
-    return await browser.wait_for_text(".alert-success", "Client created successfully")
+    
+    # Wait for success message and extract token
+    success_msg = await browser.wait_for_text(".alert-success", "Client created successfully")
+    
+    # Extract token from message - token is in <code> tag after "Authentication token"
+    # Token format is client_id:secret_key (two-factor authentication)
+    import re
+    
+    # Look for text inside code tag: <code ...>actual_token_here</code>
+    code_match = re.search(r'<code[^>]*>([^<]+)</code>', success_msg)
+    if code_match:
+        token = code_match.group(1)
+    else:
+        # Fallback: try to extract after colon (but before any HTML)
+        match = re.search(r'Authentication token[^:]*:\s*([A-Za-z0-9_:]+)(?=\s|<|$)', success_msg)
+        if not match:
+            raise AssertionError(f"Could not extract token from success message: {success_msg}")
+        token = match.group(1)
+    
+    # Verify token format (should contain exactly one colon)
+    if ':' not in token:
+        raise AssertionError(f"Token should be in client_id:secret_key format, got: {token}")
+    
+    return token
 
 
 async def ensure_client_visible(browser: Browser, client_id: str) -> None:
@@ -401,10 +507,22 @@ async def ensure_client_absent(browser: Browser, client_id: str) -> None:
 
 
 async def delete_admin_client(browser: Browser, client_id: str) -> None:
+    """Delete a client via the admin UI."""
     await open_admin_clients(browser)
+    
+    # Find the delete form in the row and submit it
     row_selector = f"tr:has-text('{client_id}')"
-    form_selector = f"{row_selector} form[action='/admin/client/delete/']"
-    await browser.submit(form_selector)
+    form_selector = f"{row_selector} form[action*='/admin/client/delete/']"
+    
+    # Check if form exists
+    try:
+        # Flask-Admin delete forms typically have a submit input
+        submit_selector = f"{form_selector} input[type='submit']"
+        await browser._page.click(submit_selector, force=True, timeout=5000)
+    except Exception:
+        # If clicking fails, try to submit the form directly
+        await browser._page.locator(form_selector).evaluate("form => form.submit()")
+    
     await browser.wait_for_text("main h1", "Clients")
 
 
@@ -458,6 +576,38 @@ async def admin_submit_invalid_client(browser: Browser) -> None:
 async def admin_click_cancel_from_client_form(browser: Browser) -> None:
     await browser.click("text=Cancel")
     await browser.wait_for_text("main h1", "Clients")
+
+
+async def admin_configure_netcup_api(
+    browser: Browser,
+    customer_id: str,
+    api_key: str,
+    api_password: str,
+    api_url: str,
+    timeout: str = "30"
+) -> None:
+    """Configure Netcup API credentials for E2E testing with mock server."""
+    await open_admin_netcup_config(browser)
+    
+    await browser.fill('input[name="customer_id"]', customer_id)
+    await browser.fill('input[name="api_key"]', api_key)
+    await browser.fill('input[name="api_password"]', api_password)
+    await browser.fill('input[name="api_url"]', api_url)
+    await browser.fill('input[name="timeout"]', timeout)
+    
+    await browser.submit("form")
+    await browser.wait_for_text(".flash-messages", "Netcup API configuration saved successfully")
+
+
+async def admin_create_client_and_extract_token(browser: Browser, data: ClientFormData) -> str:
+    """Create a new client and extract the token from the success message.
+    
+    Returns the complete authentication token in client_id:secret_key format.
+    """
+    await open_admin_client_create(browser)
+    # submit_client_form already extracts and validates the token
+    token = await submit_client_form(browser, data)
+    return token
 
 
 async def admin_save_netcup_config(browser: Browser) -> None:
@@ -536,6 +686,21 @@ async def client_portal_logout(browser: Browser) -> None:
     await browser.wait_for_text(".login-header h1", "Client Portal")
 
 
+async def client_portal_open_activity(browser: Browser) -> str:
+    """Navigate to client activity page and return the table header text or empty message."""
+    await browser.goto(settings.url("/client/activity"))
+    await browser.wait_for_text("main h1", "Activity Log")
+    
+    # Check if there are any logs by looking for the table or empty message
+    body_html = await browser.html("body")
+    if "No activity recorded yet" in body_html:
+        return "No activity recorded yet"
+    else:
+        # Return the table header text to verify columns are present
+        header_row = await browser.text("table thead tr")
+        return header_row
+
+
 async def test_client_login_with_token(browser: Browser, token: str, should_succeed: bool = True, expected_client_id: str | None = None) -> None:
     """Test client login with a specific token."""
     await browser.goto(settings.url("/client/login"))
@@ -567,10 +732,16 @@ async def disable_admin_client(browser: Browser, client_id: str) -> None:
     """Disable a client by editing it and setting is_active to False."""
     await open_admin_clients(browser)
     
-    # Find the row containing this client_id and click the edit link in that row
+    # Find the row containing this client_id and get the edit link href
     row_selector = f"tr:has-text('{client_id}')"
     edit_link_selector = f"{row_selector} a[href*='/admin/client/edit/']"
-    await browser.click(edit_link_selector)
+    
+    # Get the href and navigate directly (avoids viewport issues with small icons)
+    edit_href = await browser._page.get_attribute(edit_link_selector, "href")
+    if not edit_href:
+        raise AssertionError(f"Could not find edit link for client {client_id}")
+    
+    await browser.goto(settings.url(edit_href))
     
     # Wait for edit form
     await browser.wait_for_text("main h1", "Clients")

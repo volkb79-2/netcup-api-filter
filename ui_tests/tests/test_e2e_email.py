@@ -7,6 +7,10 @@ Tests verify that the application sends correct emails for various events:
 - Permission violation notifications
 
 Uses mock SMTP server to capture and inspect emails.
+
+NOTE: These tests require a LOCAL app deployment where the Flask app can
+reach the mock SMTP server running in the Playwright container network.
+They will be skipped when running against production deployments.
 """
 import pytest
 import asyncio
@@ -17,10 +21,16 @@ from ui_tests.config import settings
 from ui_tests import workflows
 
 
-pytestmark = pytest.mark.asyncio
+# Mark all tests in this module as e2e_local and asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.e2e_local]
 
 
-async def test_e2e_admin_sends_test_email(browser_session, mock_smtp_server):
+# Skip all tests in this module if running against production
+if settings.base_url and not any(host in settings.base_url for host in ['localhost', '127.0.0.1', '0.0.0.0']):
+    pytestmark.append(pytest.mark.skip(reason="E2E email tests require local deployment with accessible mock SMTP server"))
+
+
+async def test_e2e_admin_sends_test_email(mock_smtp_server):
     """Test admin can send test email through UI."""
     
     async with browser_session() as browser:
@@ -80,7 +90,7 @@ async def test_e2e_admin_sends_test_email(browser_session, mock_smtp_server):
         assert 'Test Email' in email.body_html
 
 
-async def test_e2e_client_creation_email_notification(browser_session, mock_smtp_server):
+async def test_e2e_client_creation_email_notification(mock_smtp_server):
     """Test that creating a client sends notification email if configured."""
     
     async with browser_session() as browser:
@@ -158,7 +168,7 @@ async def test_e2e_client_creation_email_notification(browser_session, mock_smtp
             assert 'token' in email.body_text.lower() or 'access' in email.body_text.lower()
 
 
-async def test_e2e_email_filter_by_recipient(browser_session, mock_smtp_server):
+async def test_e2e_email_filter_by_recipient(mock_smtp_server):
     """Test filtering captured emails by recipient."""
     
     async with browser_session() as browser:
@@ -219,7 +229,7 @@ async def test_e2e_email_filter_by_recipient(browser_session, mock_smtp_server):
             assert 'bob@example.com' in email.recipients
 
 
-async def test_e2e_email_html_content(browser_session, mock_smtp_server):
+async def test_e2e_email_html_content(mock_smtp_server):
     """Test that emails contain both text and HTML versions."""
     
     async with browser_session() as browser:
@@ -276,7 +286,7 @@ async def test_e2e_email_html_content(browser_session, mock_smtp_server):
         assert len(email.body_html) > len(email.body_text)
 
 
-async def test_e2e_email_headers_captured(browser_session, mock_smtp_server):
+async def test_e2e_email_headers_captured(mock_smtp_server):
     """Test that email headers are properly captured."""
     
     async with browser_session() as browser:
@@ -334,7 +344,7 @@ async def test_e2e_email_headers_captured(browser_session, mock_smtp_server):
         assert 'multipart' in email.headers['Content-Type'].lower()
 
 
-async def test_e2e_email_timestamps(browser_session, mock_smtp_server):
+async def test_e2e_email_timestamps(mock_smtp_server):
     """Test that email timestamps are properly recorded."""
     
     async with browser_session() as browser:
@@ -387,7 +397,7 @@ async def test_e2e_email_timestamps(browser_session, mock_smtp_server):
 
 
 @pytest.mark.skip(reason="Permission violations need API proxy integration - implement when ready")
-async def test_e2e_email_permission_violation_alert(browser_session, mock_smtp_server, mock_netcup_api_server):
+async def test_e2e_email_permission_violation_alert(mock_smtp_server, mock_netcup_api_server):
     """Test that permission violations trigger admin email alerts.
     
     This test requires the API proxy to be configured and a client attempting
@@ -413,7 +423,7 @@ async def test_e2e_email_permission_violation_alert(browser_session, mock_smtp_s
         # assert 'security' in admin_emails[0].subject.lower() or 'violation' in admin_emails[0].subject.lower()
 
 
-async def test_e2e_email_reset_between_tests(browser_session, mock_smtp_server):
+async def test_e2e_email_reset_between_tests(mock_smtp_server):
     """Test that mock SMTP server can be reset between tests."""
     
     async with browser_session() as browser:

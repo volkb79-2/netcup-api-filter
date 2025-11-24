@@ -12,10 +12,19 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from filter_proxy import app, load_config
+from database import init_db
+from admin_ui import setup_admin_ui
+
+# Initialize database (sets up secret key and creates tables)
+init_db(app)
+
+# Setup admin UI
+setup_admin_ui(app)
 
 # Load configuration
 config_path = os.environ.get("NETCUP_FILTER_CONFIG", "config.yaml")
-load_config(config_path)
+if os.path.exists(config_path):
+    load_config(config_path)
 
 # WSGI application
 application = app

@@ -1,7 +1,7 @@
 services:
   local-proxy:
     image: nginx:stable-alpine
-    container_name: local-proxy
+    container_name: netcup-api-filter-proxy
     restart: unless-stopped
     networks:
       - proxy-network

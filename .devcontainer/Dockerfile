@@ -41,8 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mc \
     shellcheck \
     # allow remote filesystem access in VSCode
-    #fuse \ # Do not attempt to install `fuse` package inside the devcontainer. The devcontainer only needs `sshfs`
-    sshfs \
+    fuse3 sshfs  \
+    && echo "user_allow_other" >> /etc/fuse.conf \
     && rm -rf /var/lib/apt/lists/*
 
 # Install yq (YAML processor)

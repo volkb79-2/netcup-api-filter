@@ -204,6 +204,75 @@ def index():
     })
 
 
+@app.route("/debug/filesystem", methods=["GET"])
+@limiter.exempt
+def debug_filesystem():
+    """Debug endpoint to test filesystem access"""
+    from utils import test_filesystem_access
+    try:
+        results = test_filesystem_access()
+        return jsonify(results)
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@app.route("/debug/logging", methods=["GET"])
+@limiter.exempt
+def debug_logging():
+    """Debug endpoint to test logging functionality"""
+    import logging as log_module
+    import os
+    
+    results = {
+        "cwd": os.getcwd(),
+        "log_handlers": [],
+        "write_tests": {}
+    }
+    
+    # List all handlers
+    root_logger = log_module.getLogger()
+    for handler in root_logger.handlers:
+        handler_info = {
+            "type": type(handler).__name__,
+            "level": handler.level,
+        }
+        if isinstance(handler, log_module.FileHandler):
+            handler_info["filename"] = handler.baseFilename
+            handler_info["mode"] = handler.mode
+            try:
+                handler_info["file_exists"] = os.path.exists(handler.baseFilename)
+                if os.path.exists(handler.baseFilename):
+                    handler_info["file_size"] = os.path.getsize(handler.baseFilename)
+                    handler_info["file_writable"] = os.access(handler.baseFilename, os.W_OK)
+            except Exception as e:
+                handler_info["error"] = str(e)
+        results["log_handlers"].append(handler_info)
+    
+    # Test direct write
+    test_msg = f"Direct write test at {__import__('datetime').datetime.utcnow().isoformat()}"
+    try:
+        with open('netcup_filter.log', 'a') as f:
+            f.write(f"{test_msg}\n")
+            f.flush()
+        results["write_tests"]["direct_write"] = "SUCCESS"
+    except Exception as e:
+        results["write_tests"]["direct_write"] = f"FAILED: {str(e)}"
+    
+    # Test logger.info
+    try:
+        logger.info(test_msg)
+        results["write_tests"]["logger_info"] = "CALLED"
+    except Exception as e:
+        results["write_tests"]["logger_info"] = f"FAILED: {str(e)}"
+    
+    return jsonify(results)
+
+
 @app.route("/api", methods=["POST"])
 @limiter.limit("10 per minute")  # Stricter limit for API endpoint
 def api_proxy():
@@ -224,8 +293,10 @@ def api_proxy():
             "message": "Authentication token required"
         }), 401
     
-    # Security: Validate token format (alphanumeric + hyphen/underscore, minimum 20 chars)
-    if not re.match(r'^[a-zA-Z0-9_-]{20,128}$', token):
+    # Security: Validate token format (client_id:secret_key format)
+    # Format: alphanumeric_underscore_hyphen : alphanumeric_underscore_hyphen
+    # Example: test_client:abc123def456xyz
+    if not re.match(r'^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+$', token):
         logger.warning(f"Invalid token format attempted from {request.remote_addr}")
         send_admin_alert("AUTHENTICATION_FAILURE", "Invalid token format")
         return jsonify({
@@ -324,6 +395,20 @@ def handle_info_dns_zone(token: str, param: Dict[str, Any]):
             "status": "error",
             "message": "Permission denied"
         }), 403
+        # Check if Netcup API is configured
+    if netcup_client is None:
+        log_request(token, "infoDnsRecords", domain, False, "Netcup API not configured")
+        return jsonify({
+            "status": "error",
+            "message": "Netcup API not configured"
+        }), 503
+        # Check if Netcup API is configured
+    if netcup_client is None:
+        log_request(token, "infoDnsZone", domain, False, "Netcup API not configured")
+        return jsonify({
+            "status": "error",
+            "message": "Netcup API not configured"
+        }), 503
     
     try:
         # Forward to Netcup API
@@ -466,8 +551,17 @@ def handle_update_dns_records(token: str, param: Dict[str, Any]):
         send_admin_alert("PERMISSION_DENIED", f"updateDnsRecords on {domain}: {error_msg}")
         return jsonify({
             "status": "error",
-            "message": error_msg
+            "message": "Permission denied"
         }), 403
+    
+    # Check if Netcup API is configured
+    if netcup_client is None:
+        log_request(token, "updateDnsRecords", domain, False, "Netcup API not configured",
+                   record_details={"records_count": len(dns_records)})
+        return jsonify({
+            "status": "error",
+            "message": "Netcup API not configured"
+        }), 503
     
     try:
         # Forward to Netcup API

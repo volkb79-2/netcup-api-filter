@@ -106,7 +106,7 @@ def main():
     parser.add_argument("--url", default="http://localhost:5000", 
                        help="Base URL of the filter proxy")
     parser.add_argument("--token", required=True, 
-                       help="Authentication token")
+                       help="Authentication token (format: client_id:secret_key)")
     parser.add_argument("--domain", required=True, 
                        help="Domain name to test with")
     parser.add_argument("--test", choices=["zone", "records", "update", "unauthorized", "all"],

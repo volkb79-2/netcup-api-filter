@@ -59,7 +59,7 @@ proxy_render_nginx_conf() {
 proxy__require_tmp_path() {
     local label="$1"
     local path_value="$2"
-    if [[ "${ALLOW_PROXY_ASSET_STAGE_ANYWHERE:?ALLOW_PROXY_ASSET_STAGE_ANYWHERE must be set (0 or 1)}\" == "1" ]]; then
+    if [[ "${ALLOW_PROXY_ASSET_STAGE_ANYWHERE:-0}" == "1" ]]; then
         return 0
     fi
     if [[ "${path_value}" != /tmp/* ]]; then

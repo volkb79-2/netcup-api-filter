@@ -108,6 +108,9 @@ class SecureAdminIndexView(AdminIndexView):
             password = request.form.get('password')
             client_ip = request.remote_addr
             
+            # DEBUG: Log login attempt
+            logger.info(f"[DEBUG] Login attempt - username: '{username}', password length: {len(password) if password else 0}, client_ip: {client_ip}")
+            
             # SECURITY: Check for too many failed attempts from this IP
             from database import get_system_config, set_system_config
             failed_attempts_key = f'failed_login_attempts_{client_ip}'
@@ -127,6 +130,13 @@ class SecureAdminIndexView(AdminIndexView):
                     set_system_config(failed_attempts_key, {'count': 0})
             
             admin_user = AdminUser.query.filter_by(username=username).first()
+            
+            # DEBUG: Log query result and verification
+            logger.info(f"[DEBUG] Admin user found: {bool(admin_user)}")
+            if admin_user:
+                logger.info(f"[DEBUG] Has password_hash: {bool(admin_user.password_hash)}, hash starts with: {admin_user.password_hash[:20] if admin_user.password_hash else 'None'}")
+                verify_result = verify_password(password, admin_user.password_hash)
+                logger.info(f"[DEBUG] Password verification result: {verify_result}")
             
             if admin_user and verify_password(password, admin_user.password_hash):
                 # Successful login - clear failed attempts
@@ -239,8 +249,8 @@ class ClientModelView(SecureModelView):
     column_sortable_list = ['client_id', 'realm_type', 'realm_value', 'is_active', 'created_at']
     
     column_labels = {
-        'client_id': 'Client ID / Token',
-        'secret_token': 'Secret Token',
+        'client_id': 'Client ID',
+        'secret_key_hash': 'Secret Key (Hashed)',
         'realm_type': 'Realm Type',
         'realm_value': 'Realm Value',
         'allowed_record_types': 'Allowed Record Types',
@@ -252,7 +262,7 @@ class ClientModelView(SecureModelView):
     }
     
     column_descriptions = {
-        'client_id': 'Unique identifier for this client',
+        'client_id': 'Cleartext identifier (visible in UI, used in authentication as client_id:secret_key)',
         'realm_type': 'host = exact domain match, subdomain = *.subdomain pattern',
         'realm_value': 'Domain name (e.g., example.com or subdomain.example.com)',
         'allowed_record_types': 'DNS record types this client can modify (A, AAAA, CNAME, NS)',
@@ -265,7 +275,7 @@ class ClientModelView(SecureModelView):
                    'allowed_record_types', 'allowed_operations', 'allowed_ip_ranges',
                    'email_address', 'email_notifications_enabled', 'token_expires_at', 'is_active']
     
-    form_excluded_columns = ['secret_token', 'created_at', 'updated_at']
+    form_excluded_columns = ['secret_key_hash', 'created_at', 'updated_at']
     
     # Custom form fields
     form_overrides = {
@@ -357,13 +367,27 @@ class ClientModelView(SecureModelView):
                 raise ValidationError(message)
             form.realm_value.data = realm_value
         
-        # Generate token for new clients
+        # Generate secret key for new clients
         if is_created:
-            new_token = generate_token()
-            model.secret_token = hash_password(new_token)
+            from utils import generate_token
             
-            # Flash the token to user (only shown once)
-            flash(f'Client created successfully! Secret token (save this - it cannot be retrieved later): {new_token}', 'success')
+            # Admin provides client_id in form, we generate secret_key
+            # Generate secret key (40 chars by default)
+            secret_key = generate_token(min_length=40, max_length=40)
+            
+            # Store hashed secret_key
+            model.secret_key_hash = hash_password(secret_key)
+            
+            # Build complete authentication token
+            full_token = f"{model.client_id}:{secret_key}"
+            
+            # Flash the complete token to user (only shown once)
+            flash(
+                f'Client created successfully! '
+                f'Authentication token (save this - it cannot be retrieved later): '
+                f'<code style="background:#f5f5f5;padding:4px 8px;border-radius:3px;font-family:monospace;">{full_token}</code>',
+                'success'
+            )
         
         model.updated_at = datetime.utcnow()
     
@@ -382,11 +406,43 @@ class ClientModelView(SecureModelView):
 
     @expose('/generate-token', methods=['POST'])
     def generate_token_view(self):
+        """Generate a random token (for client_id suggestion)"""
         if not self.is_accessible():
             abort(403)
         logger.info("Admin UI token generation requested")
-        token = generate_token()
+        token = generate_token(min_length=20, max_length=20)
         return jsonify({'token': token})
+    
+    @expose('/regenerate-secret/<int:client_id>', methods=['POST'])
+    def regenerate_secret_view(self, client_id):
+        """Regenerate secret key for an existing client (keeps same client_id)"""
+        if not self.is_accessible():
+            abort(403)
+        
+        client = self.get_one(client_id)
+        if not client:
+            flash('Client not found', 'danger')
+            return redirect(url_for('.index_view'))
+        
+        # Generate new secret key
+        new_secret_key = generate_token(min_length=40, max_length=40)
+        client.secret_key_hash = hash_password(new_secret_key)
+        client.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        # Build complete authentication token
+        full_token = f"{client.client_id}:{new_secret_key}"
+        
+        logger.info(f"Admin regenerated secret key for client: {client.client_id}")
+        flash(
+            f'Secret key regenerated successfully! '
+            f'New authentication token (save this - it cannot be retrieved later): '
+            f'<code style="background:#f5f5f5;padding:4px 8px;border-radius:3px;font-family:monospace;">{full_token}</code>',
+            'success'
+        )
+        
+        return redirect(url_for('.edit_view', id=client_id))
 
 
 class AuditLogModelView(SecureModelView):

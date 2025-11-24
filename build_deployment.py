@@ -5,9 +5,10 @@ Build deployment package for netcup webhosting FTP-only deployment.
 This script creates a ready-to-deploy package containing:
 - All application files
 - Vendored dependencies (no pip install needed)
-- Pre-initialized SQLite database with admin/admin credentials
+- Pre-initialized SQLite database with default credentials from .env.defaults
 - .htaccess configuration file
 - DEPLOY_README.md with upload instructions
+- .env.webhosting with initial deployment state
 
 Output: deploy.zip and deploy.zip.sha256
 """
@@ -134,6 +135,7 @@ def copy_application_files(deploy_dir):
         "requirements.txt",
         "config.example.yaml",
         ".env.example",
+        ".env.defaults",  # Default credentials (single source of truth)
         ".htaccess.hello-world",  # Test .htaccess for hello world
         "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
         "DEBUG_QUICK_START.md",  # Quick debugging reference
@@ -194,6 +196,46 @@ def write_build_metadata(deploy_dir):
     )
 
 
+def create_initial_env_webhosting(deploy_dir):
+    """Create .env.webhosting with initial deployment state from .env.defaults.
+    
+    This file represents the live state after deployment and gets updated by tests
+    when passwords change. It should be written to a writable location like
+    /screenshots/.env.webhosting in the Playwright container.
+    """
+    logger.info("Creating initial .env.webhosting...")
+    
+    # Load defaults from .env.defaults
+    defaults = {}
+    env_defaults_path = Path(".env.defaults")
+    if env_defaults_path.exists():
+        with open(env_defaults_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    defaults[key.strip()] = value.strip()
+    else:
+        logger.warning(".env.defaults not found, using hardcoded fallbacks")
+        defaults = {
+            "DEFAULT_ADMIN_USERNAME": "admin",
+            "DEFAULT_ADMIN_PASSWORD": "admin",
+        }
+    
+    # Create .env.webhosting with deployment state
+    env_webhosting_path = Path(deploy_dir) / ".env.webhosting"
+    with open(env_webhosting_path, 'w') as f:
+        f.write("# Deployment state - updated by tests when passwords change\n")
+        f.write("# This file should be written to /screenshots/.env.webhosting in Playwright container\n\n")
+        f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', 'admin')}\n")
+        f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', 'admin')}\n")
+        f.write(f"DEPLOYED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z\n")
+    
+    logger.info(f"Created {env_webhosting_path} with initial deployment state")
+
+
 def initialize_database(deploy_dir):
     """Create and initialize SQLite database with admin user."""
     logger.info("Initializing database...")
@@ -233,10 +275,8 @@ def initialize_database(deploy_dir):
             db.create_all()
             logger.info("Database tables created")
 
-            seed_default_entities(
-                AdminSeedOptions(username="admin", password="admin", must_change_password=True),
-                DEFAULT_TEST_CLIENT_OPTIONS,
-            )
+            # Seed with defaults from .env.defaults (AdminSeedOptions loads them automatically)
+            seed_default_entities()
             logger.info(
                 "Database seeded with default admin and client %s",
                 DEFAULT_TEST_CLIENT_OPTIONS.client_id,
@@ -588,6 +628,9 @@ def main():
         # Record build metadata for runtime display
         write_build_metadata(deploy_dir)
         
+        # Create initial deployment state file
+        create_initial_env_webhosting(deploy_dir)
+        
         # Initialize database
         initialize_database(deploy_dir)
         
@@ -611,7 +654,7 @@ def main():
         logger.info("1. Download deploy.zip")
         logger.info("2. Extract and upload contents via FTP to your webhosting")
         logger.info("3. Edit .htaccess with your actual paths")
-        logger.info("4. Access /admin and login with admin/admin")
+        logger.info("4. Access /admin and login with credentials from .env.defaults")
         logger.info("5. Read DEPLOY_README.md for detailed instructions")
         logger.info("=" * 60)
         

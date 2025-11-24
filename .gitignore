@@ -137,6 +137,8 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+.env.webhosting
+!.env.defaults
 .venv
 env/
 venv/
@@ -157,6 +159,7 @@ netcup_filter.log
 
 # Deployment artifacts
 deploy/
+deploy-local/
 deploy.zip
 deploy.zip.sha256
 

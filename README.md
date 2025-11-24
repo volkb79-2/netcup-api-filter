@@ -2,6 +2,16 @@
 
 A security proxy for the Netcup DNS API that provides granular access control.
 
+## 🎯 Configuration-Driven Architecture
+
+This project follows a **100% config-driven approach** with NO hardcoded values:
+
+- **`.env.defaults`** - Version-controlled single source of truth for all defaults
+- **Environment variables** - Override defaults per environment (dev/staging/production)
+- **Database settings** - Runtime configuration via admin UI
+
+All Flask settings (session cookies, timeouts), credentials (admin/client), rate limits, and proxy settings are configurable. See `CONFIG_DRIVEN_ARCHITECTURE.md` for complete guidelines.
+
 ## ⚡ Important: Fail-Fast Configuration Policy
 
 This project enforces **NO DEFAULTS, NO FALLBACKS**. Missing configuration causes immediate errors with clear guidance.
@@ -72,7 +82,7 @@ The filter includes a comprehensive admin web interface for managing clients, vi
 
 **Access:** Navigate to `/admin` after starting the application.
 
-**Default credentials:** `admin` / `admin` (you will be forced to change this on first login)
+**Default credentials:** Defined in `.env.defaults` (typically `admin` / `admin` - you will be forced to change this on first login)
 
 ### Admin UI Features:
 
@@ -180,6 +190,19 @@ everything down on exit.
 
 Override `UI_BASE_URL`, `PLAYWRIGHT_HEADLESS`, or `UI_ADMIN_PASSWORD` before running if needed.
 
+### Local HTTPS Testing with Real Certificates
+
+Test with production-parity TLS using real Let's Encrypt certificates:
+
+```bash
+cd tooling/local_proxy
+./auto-detect-fqdn.sh --verify-certs  # Auto-detect public FQDN
+./render-nginx-conf.sh && ./stage-proxy-inputs.sh
+docker compose --env-file proxy.env up -d
+```
+
+See `HTTPS_LOCAL_TESTING.md` for complete setup and debugging guide.
+
 ## Installation
 
 1. Clone the repository:
@@ -198,7 +221,7 @@ pip install -r requirements.txt
 **Option A: Using Admin UI (Recommended)**
 
 Start the application with Passenger or standalone mode, then:
-- Navigate to `/admin` and login with `admin`/`admin`
+- Navigate to `/admin` and login with credentials from `.env.defaults`
 - Configure Netcup API credentials through the UI
 - Create clients with tokens through the UI
 - Configure email settings if desired
@@ -225,6 +248,8 @@ See [WEBHOSTING_DEPLOYMENT.md](WEBHOSTING_DEPLOYMENT.md) for detailed instructio
 
 **Perfect for netcup webhosting without SSH/command line access:**
 
+**Note:** All default configurations come from `.env.defaults` (version-controlled). Override any setting via environment variables or admin UI after deployment.
+
 1. **Build the deployment package:**
    ```bash
    python build_deployment.py
@@ -244,7 +269,7 @@ See [WEBHOSTING_DEPLOYMENT.md](WEBHOSTING_DEPLOYMENT.md) for detailed instructio
 
 5. **Access and configure:**
    - Navigate to `https://yourdomain.com/admin`
-   - Login with `admin` / `admin`
+   - Login with credentials from `.env.defaults`
    - Configure your Netcup API credentials
    - Create client tokens
 
@@ -257,7 +282,7 @@ See `DEPLOY_README.md` (included in the package) for detailed step-by-step instr
 1. Install dependencies: `pip install -r requirements.txt`
 2. Start the application: `python passenger_wsgi.py` (or use Passenger)
 3. Open browser to `http://localhost:5000/admin`
-4. Login with `admin` / `admin` (change password when prompted)
+4. Login with credentials from `.env.defaults` (change password when prompted)
 5. Configure Netcup API credentials in "Netcup API" menu
 6. Create a client in "Clients" menu
 7. Copy the generated token (shown only once!)

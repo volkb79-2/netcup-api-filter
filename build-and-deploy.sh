@@ -19,3 +19,11 @@ scp deploy.zip ${NETCUP_USER}@${NETCUP_SERVER}:/ && \
 ssh ${NETCUP_USER}@${NETCUP_SERVER} \
     "cd / && rm -rf ${REMOTE_DIR}/* ${REMOTE_DIR}/.[!.]* ${REMOTE_DIR}/..?* && mkdir -p ${REMOTE_DIR}/tmp/ && unzip -o -u deploy.zip -d ${REMOTE_DIR}/ && touch ${REMOTE_DIR}/tmp/restart.txt"
     
+
+if [ ! -d "/home/vscode/sshfs-$NETCUP_USER@$NETCUP_SERVER" ]; then
+    echo "Mounting remote filesystem via SSHFS..."
+    mkdir -p "/home/vscode/sshfs-${NETCUP_USER}@${NETCUP_SERVER}"
+    sshfs "${NETCUP_USER}@${NETCUP_SERVER}:/netcup-api-filter" "/home/vscode/sshfs-${NETCUP_USER}@${NETCUP_SERVER}" -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3
+else
+    echo "Remote filesystem already mounted."
+fi

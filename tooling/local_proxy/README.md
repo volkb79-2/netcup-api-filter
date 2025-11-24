@@ -35,31 +35,76 @@ Otherwise, spin up this local proxy and point clients at it.
 
 ## Configuration
 
-1. Copy the example environment file and edit it with your values:
-   ```bash
-   cp proxy.env.example proxy.env
-   # Edit proxy.env with the host FQDN, target port, and desired network name
-   ```
-   - `LOCAL_TLS_DOMAIN` must match the reverse DNS name of this host (e.g.
-     `gstammtisch.dchive.de`).
-   - `LOCAL_APP_HOST` and `LOCAL_APP_PORT` describe the HTTP endpoint where your
-     Flask/Gunicorn server listens. Use the devcontainer hostname (output of
-     `hostname`) if both run on the same Docker network. When running
-     `tooling/run-ui-validation.sh` you can leave `LOCAL_APP_HOST` empty or set
-     it to `__auto__` and the script will inject the correct value at runtime.
-   - `LOCAL_PROXY_NETWORK` is an existing user-defined Docker network that both
-     the devcontainer and the proxy will join.
-   - `LE_CERT_BASE` points to the parent directory that holds the `live/` and
-     `archive/` trees (typically `/etc/letsencrypt`). When you run inside a
-     devcontainer/Codespace, prefer a directory under `/tmp/...` because the
-     Docker daemon cannot see `/workspaces/...` directly.
+### Recommended: Auto-Detection (Zero Configuration)
 
-2. Render the nginx configuration so it contains the selected values:
-   ```bash
-   source proxy.env
-   envsubst < nginx.conf.template > nginx.conf
-   ```
-  Rerun the `envsubst` command whenever you change the `.env` values.
+```bash
+# Automatically detect public FQDN and generate proxy.env
+./auto-detect-fqdn.sh [--verify-certs] [--output proxy.env]
+
+# What it does:
+# 1. Queries external IP from ipify.org, icanhazip.com, etc.
+# 2. Performs reverse DNS lookup on detected IP
+# 3. Constructs Let's Encrypt certificate paths
+# 4. Generates proxy.env with all values populated
+# 5. Optional: Verifies certificates exist on host (--verify-certs)
+```
+
+**When to use auto-detection:**
+- ✅ You have Let's Encrypt certificates for your public IP's reverse DNS
+- ✅ You want 100% production parity (same certificates as webhosting)
+- ✅ You need HTTPS testing with real CA-signed certificates
+
+### Manual: Copy and Edit (Fallback)
+
+```bash
+# Copy template and manually configure
+cp proxy.env.example proxy.env
+# Edit proxy.env with your values
+```
+
+**Configuration Variables:**
+
+- **`LOCAL_TLS_DOMAIN`** (auto-detected or manual)
+  - Public FQDN where nginx accepts HTTPS connections
+  - Auto-detected via reverse DNS of external IP
+  - Example: `gstammtisch.dchive.de`
+  - Used to construct certificate paths: `/etc/letsencrypt/live/${LOCAL_TLS_DOMAIN}/`
+  - Fallback: `naf.localtest.me` (uses self-signed certs in `./certs/`)
+
+- **`LOCAL_APP_HOST`** and **`LOCAL_APP_PORT`**
+  - Backend Flask/Gunicorn endpoint (HTTP, not HTTPS)
+  - Use devcontainer hostname: `$(hostname)` or `netcup-api-filter-devcontainer`
+  - Set `LOCAL_APP_HOST=__auto__` if using `tooling/run-ui-validation.sh`
+  - Must be reachable from nginx container via `LOCAL_PROXY_NETWORK`
+
+- **`LOCAL_PROXY_NETWORK`**
+  - Docker network for proxy ↔ backend communication
+  - Must exist: `docker network create naf-local`
+  - Both nginx and devcontainer must join this network
+
+- **`LE_CERT_BASE`**
+  - **Option 1 (Recommended):** `/etc/letsencrypt` - Real Let's Encrypt certificates
+    - Auto-detected by `./auto-detect-fqdn.sh`
+    - Requires certificates on Docker host (not devcontainer)
+    - 100% production parity (same CA as webhosting)
+  - **Option 2 (Fallback):** `/tmp/netcup-local-proxy/certs` - Self-signed test certs
+    - Uses pre-generated certs from `./certs/` directory
+    - For testing when Let's Encrypt unavailable
+    - Browsers will show security warnings
+
+- **`LOCAL_PROXY_CONFIG_PATH`**
+  - Host-visible path for nginx configs (required in devcontainer)
+  - Default: `/tmp/netcup-local-proxy/conf.d`
+  - Docker daemon can't read `/workspaces/` directly
+
+### Render nginx Configuration
+
+```bash
+# Render nginx.conf from template (uses values from proxy.env)
+./render-nginx-conf.sh
+```
+
+Rerun whenever you change proxy.env values.
 
 3. (Devcontainer/local Docker tip) Stage the rendered config and bundled test
   certificates into a host-visible directory so Docker can mount them:

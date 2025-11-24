@@ -2,6 +2,15 @@
 
 This guide helps you get the Netcup API Filter Proxy up and running in minutes.
 
+## 🎯 Configuration-Driven Architecture
+
+All configuration comes from:
+- **`.env.defaults`** - Version-controlled defaults (admin credentials, Flask settings)
+- **Environment variables** - Override any default per environment
+- **Admin UI** - Runtime configuration (Netcup API, clients, email settings)
+
+No hardcoded values in code! See `CONFIG_DRIVEN_ARCHITECTURE.md` for complete details.
+
 ## Prerequisites
 
 - Python 3.7 or higher
@@ -19,7 +28,38 @@ cd netcup-api-filter
 pip install -r requirements.txt
 ```
 
-## Step 2: Configuration
+## Step 2: Start the Application
+
+```bash
+# Start in standalone mode
+python passenger_wsgi.py
+```
+
+The application starts with default credentials from `.env.defaults`:
+- Default admin username: `admin`
+- Default admin password: `admin`
+- You'll be forced to change the password on first login
+
+## Step 3: Configure via Admin UI (Recommended)
+
+1. **Open browser** to `http://localhost:5000/admin`
+2. **Login** with credentials from `.env.defaults`
+3. **Change password** when prompted
+4. **Configure Netcup API:**
+   - Go to "Configuration" → "Netcup API"
+   - Enter your customer ID, API key, and API password
+   - Click "Save"
+5. **Create client tokens:**
+   - Go to "Management" → "Clients"
+   - Click "Create"
+   - Set permissions (domain, operations, record types)
+   - Copy the generated token (shown only once!)
+
+**Done!** Your proxy is configured and ready to use.
+
+## Alternative: YAML Configuration (Legacy)
+
+You can also bootstrap from YAML if preferred:
 
 ```bash
 # Copy the example configuration
@@ -29,7 +69,7 @@ cp config.example.yaml config.yaml
 nano config.yaml  # or use your favorite editor
 ```
 
-### Minimal Configuration
+### Minimal YAML Configuration
 
 Edit `config.yaml` and fill in your Netcup credentials:
 

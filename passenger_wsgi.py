@@ -18,15 +18,28 @@ if os.path.isdir(vendor_dir):
     sys.path.insert(0, vendor_dir)
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('netcup_filter.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+try:
+    log_file_path = os.path.join(app_dir, 'netcup_filter.log')
+    file_handler = logging.FileHandler(log_file_path, mode='a')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging initialized to {log_file_path}")
+except Exception as e:
+    # Fallback to just stdout if file logging fails
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.error(f"Failed to setup file logging: {e}")
 
 # Auto-detect database location if not explicitly set
 if 'NETCUP_FILTER_DB_PATH' not in os.environ:
@@ -93,11 +106,19 @@ try:
     else:
         logger.warning(f"Deploy static files not found at: {deploy_static}")
     
-    # SECURITY: Configure secure session cookies
-    app.config['SESSION_COOKIE_SECURE'] = True  # Only send over HTTPS
-    app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
-    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session timeout
+    # SECURITY: Configure secure session cookies (100% config-driven from environment)
+    # Read from .env.defaults (NO HARDCODED VALUES!)
+    secure_cookie = os.environ.get('FLASK_SESSION_COOKIE_SECURE', 'auto')
+    if secure_cookie == 'auto':
+        # Auto-detect: disable Secure flag only for local_test environment
+        app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') != 'local_test'
+    else:
+        # Explicit override from config
+        app.config['SESSION_COOKIE_SECURE'] = secure_cookie.lower() in ('true', '1', 'yes')
+    
+    app.config['SESSION_COOKIE_HTTPONLY'] = os.environ.get('FLASK_SESSION_COOKIE_HTTPONLY', 'True').lower() in ('true', '1', 'yes')
+    app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('FLASK_SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config['PERMANENT_SESSION_LIFETIME'] = int(os.environ.get('FLASK_SESSION_LIFETIME', '3600'))
     
     # Initialize database
     try:
@@ -160,6 +181,10 @@ try:
         app.config['email_notifier'] = None
     
     logger.info("Netcup API Filter started successfully with Passenger")
+    
+    # NOTE: ProxyFix middleware is already applied in filter_proxy.py (line 27)
+    # No need to apply it again here - doing so would create double-wrapping
+    # and trust 2 proxies instead of 1, which is a security issue.
     
     # WSGI application
     application = app

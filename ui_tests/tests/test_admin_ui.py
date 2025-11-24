@@ -69,11 +69,10 @@ async def test_admin_can_create_and_delete_client(active_profile):
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_client_create(browser)
 
-        generated_token = await workflows.trigger_token_generation(browser)
-        assert len(generated_token) >= 10
-
         client_data = workflows.generate_client_data()
-        await workflows.submit_client_form(browser, client_data)
+        generated_token = await workflows.submit_client_form(browser, client_data)
+        assert len(generated_token) >= 10
+        
         await workflows.ensure_client_visible(browser, client_data.client_id)
 
         # Verify edit and delete icons are present
