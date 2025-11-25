@@ -432,6 +432,9 @@ except Exception as e:
     fi
 
     log_debug "Devcontainer container: $container_name"
+    
+    # Export for use in scripts (e.g., for URLs like http://DEVCONTAINER_NAME:5100)
+    export DEVCONTAINER_NAME="$container_name"
 
     if docker network inspect "$network_name" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -q "$container_name"; then
         log_success "Devcontainer already connected to $network_name"
@@ -448,6 +451,7 @@ except Exception as e:
     export DOCKER_NETWORK_INTERNAL="$network_name"
     cat >> "$WORKSPACE_DIR/.env.workspace" << EOF
 export DOCKER_NETWORK_INTERNAL="$network_name"
+export DEVCONTAINER_NAME="$DEVCONTAINER_NAME"
 EOF
 }
 

@@ -1,0 +1,198 @@
+"""
+Visual regression tests with screenshot comparison.
+
+These tests capture screenshots and compare them with baselines
+to detect unintended visual changes.
+"""
+
+import os
+import asyncio
+from pathlib import Path
+from PIL import Image, ImageChops
+import pytest
+
+from ui_tests.workflows import admin_login, client_login
+from ui_tests.settings import UI_BASE_URL
+
+
+# Baseline screenshot directory
+BASELINE_DIR = Path(__file__).parent.parent / "baselines"
+CURRENT_DIR = Path("/tmp/ui_screenshots_current")
+
+# Create current screenshot directory
+CURRENT_DIR.mkdir(exist_ok=True)
+
+
+def compare_images(baseline_path: Path, current_path: Path, threshold: float = 0.95) -> tuple[bool, float]:
+    """
+    Compare two images and return (is_similar, similarity_score).
+    
+    Args:
+        baseline_path: Path to baseline image
+        current_path: Path to current screenshot
+        threshold: Similarity threshold (0.0-1.0), default 0.95 = 95% similar
+    
+    Returns:
+        Tuple of (is_similar: bool, similarity_score: float)
+    """
+    if not baseline_path.exists():
+        return False, 0.0
+    
+    baseline = Image.open(baseline_path)
+    current = Image.open(current_path)
+    
+    # Ensure same size
+    if baseline.size != current.size:
+        return False, 0.0
+    
+    # Calculate difference
+    diff = ImageChops.difference(baseline, current)
+    
+    # Get histogram and calculate similarity
+    histogram = diff.histogram()
+    total_pixels = sum(histogram)
+    
+    # Count identical pixels (all channels = 0)
+    identical_pixels = histogram[0]  # Pixels where R=0 (in grayscale after difference)
+    
+    # For RGB images, we need to check all channels
+    if diff.mode == "RGB":
+        # Sum all zero values across RGB channels
+        identical_pixels = sum(histogram[i] for i in range(0, len(histogram), 256))
+        total_pixels = baseline.size[0] * baseline.size[1] * 3  # width * height * channels
+    
+    similarity = identical_pixels / total_pixels if total_pixels > 0 else 0.0
+    
+    return similarity >= threshold, similarity
+
+
+@pytest.mark.asyncio
+async def test_admin_login_page_visual(page):
+    """Visual regression: Admin login page appearance."""
+    await page.goto(f"{UI_BASE_URL}/admin/login")
+    await page.wait_for_load_state("networkidle")
+    
+    screenshot_path = CURRENT_DIR / "admin_login.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "admin_login.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"Admin login page visual regression detected (similarity: {score:.2%})"
+    else:
+        pytest.skip(f"No baseline found at {baseline_path}. Run with --update-baselines to create.")
+
+
+@pytest.mark.asyncio
+async def test_client_login_page_visual(page):
+    """Visual regression: Client login page with 'Client Credentials' terminology."""
+    await page.goto(f"{UI_BASE_URL}/client/login")
+    await page.wait_for_load_state("networkidle")
+    
+    screenshot_path = CURRENT_DIR / "client_login.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "client_login.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"Client login page visual regression detected (similarity: {score:.2%})"
+    else:
+        pytest.skip(f"No baseline found at {baseline_path}. Run with --update-baselines to create.")
+
+
+@pytest.mark.asyncio
+async def test_admin_system_info_visual(page):
+    """Visual regression: Admin system info with filesystem tests."""
+    await admin_login(page)
+    await page.goto(f"{UI_BASE_URL}/admin/system_info")
+    await page.wait_for_load_state("networkidle")
+    
+    screenshot_path = CURRENT_DIR / "admin_system_info.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "admin_system_info.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"System info page visual regression detected (similarity: {score:.2%})"
+
+
+@pytest.mark.asyncio
+async def test_admin_client_list_visual(page):
+    """Visual regression: Client list with labeled toolbar and badges."""
+    await admin_login(page)
+    await page.goto(f"{UI_BASE_URL}/admin/client/")
+    await page.wait_for_load_state("networkidle")
+    
+    screenshot_path = CURRENT_DIR / "admin_client_list.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "admin_client_list.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"Client list page visual regression detected (similarity: {score:.2%})"
+
+
+@pytest.mark.asyncio
+async def test_admin_audit_logs_visual(page):
+    """Visual regression: Audit logs page accessibility."""
+    await admin_login(page)
+    await page.goto(f"{UI_BASE_URL}/admin/auditlog/")
+    await page.wait_for_load_state("networkidle")
+    
+    screenshot_path = CURRENT_DIR / "admin_audit_logs.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "admin_audit_logs.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"Audit logs page visual regression detected (similarity: {score:.2%})"
+
+
+@pytest.mark.asyncio
+async def test_client_dashboard_visual(page):
+    """Visual regression: Client dashboard with demo DNS data."""
+    await client_login(page)
+    await page.goto(f"{UI_BASE_URL}/client/dashboard")
+    await page.wait_for_load_state("networkidle")
+    
+    screenshot_path = CURRENT_DIR / "client_dashboard.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "client_dashboard.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"Client dashboard visual regression detected (similarity: {score:.2%})"
+
+
+@pytest.mark.asyncio
+async def test_client_activity_log_visual(page):
+    """Visual regression: Client activity log without template code spillage."""
+    await client_login(page)
+    await page.goto(f"{UI_BASE_URL}/client/activity")
+    await page.wait_for_load_state("networkidle")
+    
+    # Wait for Alpine.js to render
+    await asyncio.sleep(0.5)
+    
+    screenshot_path = CURRENT_DIR / "client_activity_log.png"
+    await page.screenshot(path=screenshot_path, full_page=True)
+    
+    baseline_path = BASELINE_DIR / "client_activity_log.png"
+    
+    if baseline_path.exists():
+        is_similar, score = compare_images(baseline_path, screenshot_path)
+        assert is_similar, f"Activity log visual regression detected (similarity: {score:.2%})"
+
+
+# Helper function to update baselines (run manually with pytest flag)
+def pytest_configure(config):
+    """Add custom pytest option for updating baselines."""
+    config.addinivalue_line(
+        "markers", "update_baselines: mark test to update baseline screenshots"
+    )

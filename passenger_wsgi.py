@@ -156,16 +156,26 @@ try:
         # Load Netcup configuration from database
         netcup_config = get_system_config('netcup_config')
         if netcup_config:
-            app.config['netcup_client'] = NetcupClient(
+            # Use get_netcup_client factory to support mock mode
+            from netcup_client_mock import get_netcup_client
+            app.config['netcup_client'] = get_netcup_client(
                 customer_id=netcup_config.get('customer_id'),
                 api_key=netcup_config.get('api_key'),
                 api_password=netcup_config.get('api_password'),
                 api_url=netcup_config.get('api_url', 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON')
             )
             filter_proxy.netcup_client = app.config['netcup_client']
-            logger.info("Netcup client initialized from database")
+            logger.info("Netcup client initialized from database (mock=%s)", os.environ.get('MOCK_NETCUP_API', 'false'))
         else:
-            logger.warning("No Netcup configuration found in database")
+            # Provide a comprehensive mock Netcup client for testing without real API
+            logger.warning("No Netcup configuration found in database - using comprehensive mock client")
+            from netcup_client_mock import MockNetcupClient
+            app.config['netcup_client'] = MockNetcupClient(
+                customer_id='demo',
+                api_key='demo',
+                api_password='demo'
+            )
+            filter_proxy.netcup_client = app.config['netcup_client']
         
         # Initialize access control with database mode
         app.config['access_control'] = AccessControl(use_database=True)

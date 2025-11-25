@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, Tuple
 
 from database import AdminUser, Client, db, set_system_config
 from utils import hash_password
@@ -22,11 +23,9 @@ def _load_env_defaults() -> dict:
     defaults = {
         "DEFAULT_ADMIN_USERNAME": "admin",
         "DEFAULT_ADMIN_PASSWORD": "admin",
-        "DEFAULT_TEST_CLIENT_ID": "test_qweqweqwe_vi",
-        "DEFAULT_TEST_CLIENT_SECRET_KEY": "qweqweqwe_vi_readonly_secret_key_12345",
         "DEFAULT_TEST_CLIENT_DESCRIPTION": "Sample read-only client",
         "DEFAULT_TEST_CLIENT_REALM_TYPE": "host",
-        "DEFAULT_TEST_CLIENT_REALM_VALUE": "qweqweqwe.vi",
+        "DEFAULT_TEST_CLIENT_REALM_VALUE": "example.com",
         "DEFAULT_TEST_CLIENT_RECORD_TYPES": "A",
         "DEFAULT_TEST_CLIENT_OPERATIONS": "read",
     }
@@ -85,20 +84,36 @@ class ClientSeedOptions:
     is_active: bool = True
 
 
-def _get_default_test_client_options() -> ClientSeedOptions:
-    """Create default test client options from .env.defaults."""
+def generate_test_client_credentials() -> Tuple[str, str]:
+    """Generate secure random credentials for test client.
+    
+    Returns:
+        Tuple of (client_id, secret_key)
+    """
+    # Generate random client_id: test_<8_random_chars>
+    random_suffix = secrets.token_urlsafe(6)[:8]  # Get 8 URL-safe chars
+    client_id = f"test_{random_suffix}"
+    
+    # Generate random secret key: <random>_readonly_secret_<random>
+    secret_part1 = secrets.token_urlsafe(12)
+    secret_part2 = secrets.token_urlsafe(8)
+    secret_key = f"{secret_part1}_readonly_secret_{secret_part2}"
+    
+    return client_id, secret_key
+
+
+def create_default_test_client_options() -> ClientSeedOptions:
+    """Create default test client options with generated credentials."""
+    client_id, secret_key = generate_test_client_credentials()
     return ClientSeedOptions(
-        client_id=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_ID", "test_qweqweqwe_vi"),
-        token=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_SECRET_KEY", "qweqweqwe_vi_readonly_secret_key_12345"),
+        client_id=client_id,
+        token=secret_key,
         description=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_DESCRIPTION", "Sample read-only client"),
         realm_type=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_REALM_TYPE", "host"),
-        realm_value=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_REALM_VALUE", "qweqweqwe.vi"),
+        realm_value=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_REALM_VALUE", "example.com"),
         record_types=tuple(_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_RECORD_TYPES", "A").split(',')),
         operations=tuple(_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_OPERATIONS", "read").split(',')),
     )
-
-
-DEFAULT_TEST_CLIENT_OPTIONS = _get_default_test_client_options()
 
 
 def ensure_admin_user(options: AdminSeedOptions) -> AdminUser:
@@ -144,14 +159,187 @@ def ensure_client(options: ClientSeedOptions) -> Client:
     return client
 
 
+def seed_demo_audit_logs() -> None:
+    """Seed demo audit logs for empty database."""
+    from database import AuditLog
+    from datetime import datetime, timedelta
+    import json
+    
+    # Only seed if no logs exist
+    if AuditLog.query.first():
+        logger.info("Audit logs already exist, skipping demo seed")
+        return
+    
+    logger.info("Seeding demo audit logs")
+    base_time = datetime.utcnow() - timedelta(hours=2)
+    
+    demo_logs = [
+        {"client_id": "test_qweqweqwe_vi", "operation": "infoDnsZone", "domain": "test.example.com", 
+         "success": True, "ip": "192.168.1.100", "minutes_ago": 120},
+        {"client_id": "test_qweqweqwe_vi", "operation": "infoDnsRecords", "domain": "test.example.com",
+         "success": True, "ip": "192.168.1.100", "minutes_ago": 115},
+        {"client_id": "test_qweqweqwe_vi", "operation": "updateDnsRecords", "domain": "test.example.com",
+         "success": True, "ip": "192.168.1.100", "minutes_ago": 110},
+        {"client_id": "monitoring_client", "operation": "infoDnsRecords", "domain": "example.com",
+         "success": True, "ip": "10.0.0.50", "minutes_ago": 90},
+        {"client_id": "test_qweqweqwe_vi", "operation": "infoDnsRecords", "domain": "test.example.com",
+         "success": True, "ip": "192.168.1.100", "minutes_ago": 60},
+        {"client_id": "invalid_client", "operation": "infoDnsZone", "domain": "unauthorized.com",
+         "success": False, "ip": "203.0.113.42", "minutes_ago": 45},
+        {"client_id": "test_qweqweqwe_vi", "operation": "updateDnsRecords", "domain": "test.example.com",
+         "success": True, "ip": "192.168.1.100", "minutes_ago": 30},
+        {"client_id": "monitoring_client", "operation": "infoDnsZone", "domain": "example.com",
+         "success": True, "ip": "10.0.0.50", "minutes_ago": 15},
+    ]
+    
+    for log_data in demo_logs:
+        timestamp = base_time + timedelta(minutes=log_data["minutes_ago"])
+        log = AuditLog(
+            timestamp=timestamp,
+            client_id=log_data["client_id"],
+            ip_address=log_data["ip"],
+            operation=log_data["operation"],
+            domain=log_data["domain"],
+            request_data=json.dumps({"action": log_data["operation"], "param": {"domainname": log_data["domain"]}}),
+            response_data=json.dumps({"status": "success" if log_data["success"] else "error"}),
+            success=log_data["success"],
+            error_message=None if log_data["success"] else "Permission denied"
+        )
+        db.session.add(log)
+    
+    db.session.commit()
+    logger.info("Seeded %d demo audit logs", len(demo_logs))
+
+
+def seed_demo_clients() -> list[Tuple[str, str, str]]:
+    """Seed multiple demo clients with different permission configurations.
+    
+    Returns:
+        List of tuples (client_id, secret_key, description)
+    """
+    clients = []
+    
+    # 1. Read-only host client (basic monitoring)
+    client_id_1, secret_1 = generate_test_client_credentials()
+    ensure_client(ClientSeedOptions(
+        client_id=client_id_1,
+        token=secret_1,
+        description="Read-only monitoring for example.com",
+        realm_type="host",
+        realm_value="example.com",
+        record_types=["A", "AAAA"],
+        operations=["read"],
+    ))
+    clients.append((client_id_1, secret_1, "Read-only host"))
+    logger.info(f"Created read-only host client: {client_id_1}")
+    
+    # 2. Full control host client (can update DNS records)
+    client_id_2, secret_2 = generate_test_client_credentials()
+    ensure_client(ClientSeedOptions(
+        client_id=client_id_2,
+        token=secret_2,
+        description="Full DNS management for api.example.com",
+        realm_type="host",
+        realm_value="api.example.com",
+        record_types=["A", "AAAA", "CNAME"],
+        operations=["read", "update", "create", "delete"],
+    ))
+    clients.append((client_id_2, secret_2, "Full control host"))
+    logger.info(f"Created full-control host client: {client_id_2}")
+    
+    # 3. Subdomain wildcard read-only (monitoring all subdomains)
+    client_id_3, secret_3 = generate_test_client_credentials()
+    ensure_client(ClientSeedOptions(
+        client_id=client_id_3,
+        token=secret_3,
+        description="Monitor all *.example.com subdomains",
+        realm_type="subdomain",
+        realm_value="example.com",
+        record_types=["A", "AAAA", "CNAME"],
+        operations=["read"],
+    ))
+    clients.append((client_id_3, secret_3, "Subdomain read-only"))
+    logger.info(f"Created subdomain read-only client: {client_id_3}")
+    
+    # 4. Subdomain wildcard with update (dynamic DNS service)
+    client_id_4, secret_4 = generate_test_client_credentials()
+    ensure_client(ClientSeedOptions(
+        client_id=client_id_4,
+        token=secret_4,
+        description="Dynamic DNS for *.dyn.example.com",
+        realm_type="subdomain",
+        realm_value="dyn.example.com",
+        record_types=["A", "AAAA"],
+        operations=["read", "update", "create"],
+    ))
+    clients.append((client_id_4, secret_4, "Subdomain with update"))
+    logger.info(f"Created subdomain update client: {client_id_4}")
+    
+    # 5. Multi-record type client (DNS provider integration)
+    client_id_5, secret_5 = generate_test_client_credentials()
+    ensure_client(ClientSeedOptions(
+        client_id=client_id_5,
+        token=secret_5,
+        description="DNS provider for services.example.com",
+        realm_type="host",
+        realm_value="services.example.com",
+        record_types=["A", "AAAA", "CNAME", "NS"],
+        operations=["read", "update", "create", "delete"],
+    ))
+    clients.append((client_id_5, secret_5, "Multi-record full control"))
+    logger.info(f"Created multi-record client: {client_id_5}")
+    
+    db.session.commit()
+    logger.info(f"Seeded {len(clients)} demo clients with varied permissions")
+    return clients
+
+
 def seed_default_entities(
     admin_options: AdminSeedOptions | None = None,
     client_options: ClientSeedOptions | None = None,
-) -> None:
+    seed_demo_clients_flag: bool = True,
+) -> Tuple[str, str, list]:
+    """Seed default admin and test clients.
+    
+    Args:
+        admin_options: Optional admin user configuration
+        client_options: Optional single test client (backward compatibility)
+        seed_demo_clients_flag: Whether to seed multiple demo clients (default True)
+    
+    Returns:
+        Tuple of (primary_client_id, primary_secret_key, all_demo_clients)
+        where all_demo_clients is list of (client_id, secret_key, description) tuples
+    """
     ensure_admin_user(admin_options or AdminSeedOptions())
-    ensure_client(client_options or DEFAULT_TEST_CLIENT_OPTIONS)
-    logger.info("Seeded default admin user and test client")
+    
+    all_demo_clients = []
+    
+    # For backward compatibility: if client_options provided, use it
+    if client_options is not None:
+        ensure_client(client_options)
+        primary_client_id = client_options.client_id
+        primary_secret = client_options.token
+        all_demo_clients = [(primary_client_id, primary_secret, client_options.description)]
+    else:
+        # Create multiple demo clients with different configurations
+        if seed_demo_clients_flag:
+            all_demo_clients = seed_demo_clients()
+            # Return first client as primary (for backward compatibility)
+            primary_client_id, primary_secret, _ = all_demo_clients[0]
+        else:
+            # Fallback: create single default client
+            client_options = create_default_test_client_options()
+            ensure_client(client_options)
+            primary_client_id = client_options.client_id
+            primary_secret = client_options.token
+            all_demo_clients = [(primary_client_id, primary_secret, client_options.description)]
+    
+    seed_demo_audit_logs()
+    logger.info("Seeded default admin user, test clients, and demo audit logs")
     db.session.commit()
+    
+    # Return the primary client credentials and all demo clients
+    return primary_client_id, primary_secret, all_demo_clients
 
 
 def seed_from_config(config: dict) -> None:

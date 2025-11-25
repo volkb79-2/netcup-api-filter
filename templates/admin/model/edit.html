@@ -9,16 +9,76 @@
 {% endblock %}
 
 {% block admin_content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>Edit {{ admin_view.name }}</h1>
-    <a href="{{ return_url }}" class="btn btn-outline">Cancel</a>
+<div class="page-header-with-actions">
+    <div>
+        <div class="eyebrow">{{ admin_view.category or 'Configuration' }}</div>
+        <h1>Edit {{ admin_view.name }}</h1>
+    </div>
+    <div class="page-actions">
+        <a href="{{ return_url }}" class="btn btn-outline">Back to List</a>
+    </div>
 </div>
 
-<div class="card">
-    <div class="card-body">
-        {% block edit_form %}
-        {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.full_path.rstrip('?')) }}
-        {% endblock %}
+<div class="grid grid-cols-3 gap-4">
+    <div class="grid-span-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">{{ admin_view.name }} Details</h2>
+            </div>
+            <div class="card-body">
+                {% block edit_form %}
+                {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.full_path.rstrip('?')) }}
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+    
+    <div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">Information</h3>
+            </div>
+            <div class="card-body">
+                {% if admin_view.__class__.__name__ == 'ClientModelView' %}
+                <p><strong>Client Configuration:</strong></p>
+                <ul class="list-styled">
+                    <li>Update client settings and permissions</li>
+                    <li>Toggle active status to enable/disable access</li>
+                    <li>Modify realm and operation restrictions</li>
+                </ul>
+                
+                <p><strong>Realm Configuration:</strong></p>
+                <ul class="list-styled">
+                    <li>Allowed realm types control which API operations are permitted</li>
+                    <li>Allowed realms specify exact zone/hostname combinations</li>
+                    <li>Format: <code>zone|hostname</code> or <code>zone|*</code> for all hosts</li>
+                </ul>
+                
+                <p><strong>Permissions:</strong></p>
+                <ul class="list-styled">
+                    <li><strong>Record Types:</strong> A, AAAA, CNAME, MX, TXT, etc.</li>
+                    <li><strong>Operations:</strong> read, create, update, delete</li>
+                    <li>Leave empty to allow all types/operations</li>
+                </ul>
+                
+                <div class="alert alert-warning d-flex align-items-center gap-3">
+                    <div class="d-flex align-items-center justify-content-center" style="min-width: 24px;">
+                        <svg width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                            <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
+                        </svg>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h5 class="mb-1" style="font-weight: 600;">Warning</h5>
+                        <p class="mb-0">Changing the token will invalidate the existing one. Update your client applications accordingly.</p>
+                    </div>
+                </div>
+                {% else %}
+                <p>Modify the fields below to update this {{ admin_view.name|lower }}.</p>
+                <p>Fields marked with an asterisk (*) are required.</p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

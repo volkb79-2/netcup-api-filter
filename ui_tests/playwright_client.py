@@ -59,7 +59,15 @@ class PlaywrightClient:
             timeout: Default timeout in milliseconds
         """
         self.browser_type = browser_type
-        self.headless = headless if headless is not None else os.getenv('PLAYWRIGHT_HEADLESS', 'true').lower() == 'true'
+        # Fail-fast: require explicit configuration
+        if headless is not None:
+            self.headless = headless
+        else:
+            headless_str = os.getenv('PLAYWRIGHT_HEADLESS')
+            if not headless_str:
+                headless_str = 'true'
+                print("[CONFIG] WARNING: PLAYWRIGHT_HEADLESS not set, using default: true")
+            self.headless = headless_str.lower() == 'true'
         self.timeout = timeout
         
         self._playwright: Optional[Playwright] = None

@@ -20,10 +20,17 @@
             {% else %}
             <form method="POST">
                 <div class="form-group">
-                    <label for="token" class="form-label">API Token</label>
-                    <input type="password" class="form-control" id="token" name="token" 
-                           placeholder="Paste your token here" required autofocus>
-                    <small class="form-text">Your token never leaves this browser session.</small>
+                    <label for="client_id" class="form-label">Client ID</label>
+                    <input type="text" class="form-control" id="client_id" name="client_id" 
+                           placeholder="your-client-id" required autofocus>
+                    <small class="form-text">Your unique client identifier</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="secret_key" class="form-label">Secret Key</label>
+                    <input type="password" class="form-control" id="secret_key" name="secret_key" 
+                           placeholder="your-secret-key" required>
+                    <small class="form-text text-muted">Your credentials never leave this browser session</small>
                 </div>
 
                 <button type="submit" class="btn btn-important w-full">Sign In</button>

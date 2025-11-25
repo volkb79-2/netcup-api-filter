@@ -29,29 +29,68 @@ class UiTargetProfile:
 
 
 class UiTestConfig:
-    """Environment-driven configuration with optional smoke targets."""
+    """Environment-driven configuration with optional smoke targets.
+    
+    Configuration priority (highest to lowest):
+    1. Explicit environment variables (UI_ADMIN_PASSWORD, etc.)
+    2. Deployment state files (.env.local or .env.webhosting)
+    3. Default values from .env.defaults
+    """
 
     def __init__(self) -> None:
-        # Load deployment state from .env.webhosting if not in environment
+        # Load deployment state from env file if specified
         self._load_deployment_state()
         
-        self.playwright_headless: bool = os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() in {"true", "1"}
-        self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "ui-regression")
-
-        primary_allow_writes = os.getenv("UI_ALLOW_WRITES", "1") not in {"0", "false", "False"}
+        # Fail-fast: require explicit configuration or use .env.defaults values (loaded above)
+        headless_str = os.getenv("PLAYWRIGHT_HEADLESS")
+        if not headless_str:
+            headless_str = "true"
+            print("[CONFIG] WARNING: PLAYWRIGHT_HEADLESS not set, using default: true")
+        self.playwright_headless: bool = headless_str.lower() in {"true", "1"}
         
-        # Try to get admin password from deployment state first, fall back to env/default
-        deployed_password = os.getenv("DEPLOYED_ADMIN_PASSWORD")
-        admin_password = deployed_password if deployed_password else os.getenv("UI_ADMIN_PASSWORD", "admin")
+        screenshot_prefix = os.getenv("UI_SCREENSHOT_PREFIX")
+        if not screenshot_prefix:
+            screenshot_prefix = "ui-regression"
+            print("[CONFIG] WARNING: UI_SCREENSHOT_PREFIX not set, using default: ui-regression")
+        self.screenshot_prefix: str = screenshot_prefix
+
+        allow_writes_str = os.getenv("UI_ALLOW_WRITES")
+        if not allow_writes_str:
+            allow_writes_str = "1"
+            print("[CONFIG] WARNING: UI_ALLOW_WRITES not set, using default: 1 (writes enabled)")
+        primary_allow_writes = allow_writes_str not in {"0", "false", "False"}
+        
+        # Use DEPLOYED_* variables from env files, fall back to UI_* explicit vars
+        # These MUST come from .env.defaults or deployment state files
+        base_url = os.getenv("UI_BASE_URL")
+        if not base_url:
+            base_url = "https://naf.vxxu.de"
+            print("[CONFIG] WARNING: UI_BASE_URL not set, using default: https://naf.vxxu.de")
+        
+        admin_username = os.getenv("DEPLOYED_ADMIN_USERNAME") or os.getenv("UI_ADMIN_USERNAME")
+        if not admin_username:
+            raise RuntimeError("DEPLOYED_ADMIN_USERNAME and UI_ADMIN_USERNAME not set. Load from .env.defaults or set explicitly.")
+        
+        admin_password = os.getenv("DEPLOYED_ADMIN_PASSWORD") or os.getenv("UI_ADMIN_PASSWORD")
+        if not admin_password:
+            raise RuntimeError("DEPLOYED_ADMIN_PASSWORD and UI_ADMIN_PASSWORD not set. Load from .env.defaults or set explicitly.")
+        
+        client_id = os.getenv("DEPLOYED_CLIENT_ID") or os.getenv("UI_CLIENT_ID")
+        if not client_id:
+            raise RuntimeError("DEPLOYED_CLIENT_ID and UI_CLIENT_ID not set. Load from .env.defaults or set explicitly.")
+        
+        client_secret_key = os.getenv("DEPLOYED_CLIENT_SECRET_KEY") or os.getenv("UI_CLIENT_SECRET_KEY")
+        if not client_secret_key:
+            raise RuntimeError("DEPLOYED_CLIENT_SECRET_KEY and UI_CLIENT_SECRET_KEY not set. Load from .env.defaults or set explicitly.")
         
         primary = UiTargetProfile(
             name="primary",
-            base_url=os.getenv("UI_BASE_URL", "https://naf.vxxu.de"),
-            admin_username=os.getenv("UI_ADMIN_USERNAME", "admin"),
+            base_url=base_url,
+            admin_username=admin_username,
             admin_password=admin_password,
             admin_new_password=os.getenv("UI_ADMIN_NEW_PASSWORD") or None,
-            client_id=os.getenv("UI_CLIENT_ID", "test_qweqweqwe_vi"),
-            client_secret_key=os.getenv("UI_CLIENT_SECRET_KEY", "qweqweqwe_vi_readonly_secret_key_12345"),
+            client_id=client_id,
+            client_secret_key=client_secret_key,
             client_domain=os.getenv("UI_CLIENT_DOMAIN", "qweqweqwe.vi"),
             allow_writes=primary_allow_writes,
         )
@@ -121,12 +160,15 @@ class UiTestConfig:
         return list(self._profiles.values())
 
     def _load_deployment_state(self) -> None:
-        """Load deployment state from .env.webhosting and defaults from .env.defaults.
+        """Load deployment state from environment-specific files.
         
-        Priority order:
-        1. Environment variables (highest priority)
-        2. .env.webhosting (updated by tests after deployment)
-        3. .env.defaults (single source of truth for initial values)
+        Priority order (highest to lowest):
+        1. Explicit environment variables (set by caller/CI)
+        2. Deployment-specific env file (.env.local or .env.webhosting)
+        3. .env.defaults (fallback default values)
+        
+        The deployment file is auto-detected: .env.local if exists, else .env.webhosting.
+        Override with DEPLOYMENT_ENV_FILE environment variable.
         """
         import os.path
         
@@ -163,27 +205,25 @@ class UiTestConfig:
                 load_env_file(path, prefix="DEFAULT_")
                 break
         
-        # Then load .env.webhosting (higher priority - updated by tests, should override defaults)
-        webhosting_paths = [
-            '/screenshots/.env.webhosting',  # Playwright container writable mount
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.webhosting'),
-        ]
-        for path in webhosting_paths:
-            if os.path.exists(path):
-                # Load and OVERRIDE any existing values from .env.defaults
-                try:
-                    with open(path, 'r') as f:
-                        for line in f:
-                            line = line.strip()
-                            if line and not line.startswith('#') and '=' in line:
-                                key, value = line.split('=', 1)
-                                key = key.strip()
-                                value = value.strip()
-                                if value:  # Always set non-empty values, overriding defaults
-                                    os.environ[key] = value
-                except Exception:
-                    pass
-                break
+        # Load deployment-specific env file (higher priority)
+        deployment_env_file = os.getenv("DEPLOYMENT_ENV_FILE")
+        
+        if deployment_env_file:
+            # Explicit file specified via environment variable
+            load_env_file(deployment_env_file)
+        else:
+            # Auto-detect: prefer .env.local (local deployment), fallback to .env.webhosting
+            possible_paths = [
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.local'),
+                '/screenshots/.env.local',  # Playwright container
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.webhosting'),
+                '/screenshots/.env.webhosting',  # Playwright container writable mount
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    load_env_file(path)
+                    break
 
     @contextmanager
     def use_profile(self, profile: UiTargetProfile) -> Iterator[UiTargetProfile]:

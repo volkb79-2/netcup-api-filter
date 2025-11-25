@@ -90,18 +90,84 @@ def get_config(key, default=None):
     return os.environ.get(key, default)
 
 DATABASE_PATH = get_config('DATABASE_PATH', '/tmp/default.db')
+config_path = os.environ.get("CONFIG_FILE", "config.yaml")  # Silent default ❌
 ```
 
 **After (fail-fast):**
 ```python
-def get_required_config(key):
+def get_required_config(key, hint=None):
+    """Get required config value or raise clear error."""
     value = os.environ.get(key)
     if not value:
-        raise ValueError(f"{key} must be set")
+        hint_text = f" ({hint})" if hint else ""
+        raise ValueError(f"{key} must be set{hint_text}")
     return value
 
 DATABASE_PATH = get_required_config('DATABASE_PATH')
+
+# For values that have documented defaults, warn loudly
+config_path = os.environ.get("CONFIG_FILE")
+if not config_path:
+    config_path = "config.yaml"
+    print(f"[CONFIG] WARNING: CONFIG_FILE not set, using documented default: {config_path}", file=sys.stderr)
+    print(f"[CONFIG] Set explicitly: export CONFIG_FILE=path/to/config.yaml", file=sys.stderr)
 ```
+
+#### Python Path Resolution (CRITICAL)
+
+**❌ FORBIDDEN - Hardcoded Absolute Paths:**
+```python
+# These violate portability and fail-fast policy
+env_local_path = Path("/workspaces/netcup-api-filter/.env.local")
+screenshot_dir = "/workspaces/netcup-api-filter/tmp/screenshots"
+workspace_root = "/workspaces/netcup-api-filter"
+```
+
+**✅ CORRECT - Environment-Driven Paths:**
+```python
+import os
+import sys
+from pathlib import Path
+
+# Require REPO_ROOT from environment (set by .env.workspace)
+repo_root = os.environ.get('REPO_ROOT')
+if not repo_root:
+    # Only allow calculated fallback with loud warning
+    repo_root = os.path.dirname(os.path.dirname(__file__))
+    print(f"[CONFIG] WARNING: REPO_ROOT not set, calculated: {repo_root}", file=sys.stderr)
+    print(f"[CONFIG] Set explicitly: export REPO_ROOT=/path/to/repo", file=sys.stderr)
+
+# Build relative paths
+env_local_path = Path(repo_root) / ".env.local"
+screenshot_dir = Path(repo_root) / "tmp" / "screenshots"
+
+# For critical paths, fail if environment variable missing
+screenshot_dir = os.environ.get('SCREENSHOT_DIR')
+if not screenshot_dir:
+    raise RuntimeError(
+        "SCREENSHOT_DIR must be set. "
+        "Export SCREENSHOT_DIR=/path/to/screenshots or source .env.workspace"
+    )
+```
+
+#### Files Updated for Python Fail-Fast
+
+**Core Application:**
+- ✅ `wsgi.py` - Config path with WARNING on default
+- ✅ `cgi_handler.py` - Config path with WARNING + error handling
+
+**Testing Infrastructure:**
+- ✅ `ui_tests/config.py` - Credentials require .env.defaults, test settings warn on defaults
+- ✅ `ui_tests/workflows.py` - REPO_ROOT required with warning fallback
+- ✅ `ui_tests/browser.py` - SCREENSHOT_DIR required, no silent getcwd() fallback
+- ✅ `ui_tests/playwright_client.py` - PLAYWRIGHT_HEADLESS warns on default
+- ✅ `capture_ui_screenshots.py` - REPO_ROOT required, deployment env file with warnings
+
+**Tooling (Development utilities - defaults acceptable):**
+- `tooling/local_proxy/local_app.py` - Local dev defaults (LOCAL_ADMIN_PASSWORD, etc.)
+- `tooling/playwright/mcp_server.py` - MCP server defaults (port 8765, chromium, etc.)
+
+**Key Principle**: Core application and testing code must fail-fast. Development tooling may have sensible defaults if clearly documented.
 
 ## Configuration Sources
 
@@ -310,21 +376,36 @@ $ source .env.workspace && ./deploy.sh
 
 ## Files Updated
 
-### Scripts (Completed)
+### Shell Scripts (Completed)
 - ✅ `.vscode/deploy-test-fix-loop.sh` - Added prerequisite checks, removed MAX_ITERATIONS
 - ✅ `.vscode/copilot-cmd.sh` - No PLAN_FILE default
 - ✅ `.vscode/ensure-mcp-connection.sh` - NETWORK required
 - ✅ `tooling/start-ui-stack.sh` - All config required
 - ✅ `tooling/run-ui-validation.sh` - All test vars required
 - ✅ `tooling/local_proxy/_proxy_lib.sh` - Function params required
+- ✅ `deployment-lib.sh` - Exports REPO_ROOT with fail-fast check
+
+### Python Files (Completed)
+- ✅ `wsgi.py` - Config path with WARNING on default
+- ✅ `cgi_handler.py` - Config path with WARNING + error handling
+- ✅ `ui_tests/config.py` - Removed hardcoded credential defaults, requires .env.defaults
+- ✅ `ui_tests/workflows.py` - REPO_ROOT required with warning fallback
+- ✅ `ui_tests/browser.py` - SCREENSHOT_DIR required, no silent getcwd() fallback
+- ✅ `ui_tests/playwright_client.py` - PLAYWRIGHT_HEADLESS warns on default
+- ✅ `capture_ui_screenshots.py` - REPO_ROOT required, deployment env with warnings
 
 ### Config Files (Completed)
 - ✅ `tooling/playwright/docker-compose.yml` - All env vars required
 - ✅ `tooling/local_proxy/docker-compose.yml` - All vars required
 
-### Still Using Defaults (Acceptable)
+### Template Files (Defaults Acceptable)
 - `global-config.defaults.toml` - Template file (not executed)
 - `config.example.yaml` - Example file (not executed)
+- `.env.defaults` - Default values file (documented source of truth)
+
+### Development Tooling (Sensible Defaults Allowed)
+- `tooling/local_proxy/local_app.py` - Local dev server with LOCAL_* defaults
+- `tooling/playwright/mcp_server.py` - MCP server with port/browser defaults
 
 ## See Also
 

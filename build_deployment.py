@@ -24,6 +24,7 @@ import logging
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Tuple
 
 # Configure logging
 logging.basicConfig(
@@ -117,6 +118,7 @@ def copy_application_files(deploy_dir):
     files_to_copy = [
         "filter_proxy.py",
         "netcup_client.py",
+        "netcup_client_mock.py",
         "access_control.py",
         "database.py",
         "admin_ui.py",
@@ -163,8 +165,15 @@ def copy_application_files(deploy_dir):
         logger.info("Copied bootstrap helpers")
 
 
-def write_build_metadata(deploy_dir):
-    """Write build metadata (timestamp, git info) to deploy directory."""
+def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_clients: list):
+    """Write build metadata (timestamp, git info, generated credentials) to deploy directory.
+    
+    Args:
+        deploy_dir: Path to deployment directory
+        client_id: Generated primary test client ID
+        secret_key: Generated primary test client secret key
+        all_demo_clients: List of (client_id, secret_key, description) tuples for all demo clients
+    """
     logger.info("Recording build metadata...")
 
     def git_output(*args, default="unknown"):
@@ -182,7 +191,18 @@ def write_build_metadata(deploy_dir):
         "git_short": git_output("rev-parse", "--short", "HEAD", default="unknown"),
         "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
         "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
-        "source": "build_deployment.py"
+        "source": "build_deployment.py",
+        "generated_client_id": client_id,
+        "generated_secret_key": secret_key,
+        "demo_clients": [
+            {
+                "client_id": cid,
+                "secret_key": secret,
+                "description": desc,
+                "token": f"{cid}:{secret}"
+            }
+            for cid, secret, desc in all_demo_clients
+        ]
     }
 
     metadata_path = Path(deploy_dir) / "build_info.json"
@@ -236,8 +256,13 @@ def create_initial_env_webhosting(deploy_dir):
     logger.info(f"Created {env_webhosting_path} with initial deployment state")
 
 
-def initialize_database(deploy_dir):
-    """Create and initialize SQLite database with admin user."""
+def initialize_database(deploy_dir) -> Tuple[str, str, list]:
+    """Initialize SQLite database with default admin user and dynamically generated client credentials.
+    
+    Returns:
+        Tuple of (client_id, secret_key, all_demo_clients)
+        where all_demo_clients is list of (client_id, secret_key, description) tuples
+    """
     logger.info("Initializing database...")
     
     # Save current directory
@@ -259,7 +284,7 @@ def initialize_database(deploy_dir):
         # Import required modules
         from flask import Flask
         from database import db
-        from bootstrap import AdminSeedOptions, DEFAULT_TEST_CLIENT_OPTIONS, seed_default_entities
+        from bootstrap import AdminSeedOptions, seed_default_entities
         
         # Create Flask app with template_folder in deploy directory
         app = Flask(__name__, template_folder=str(deploy_path / "templates"))
@@ -270,19 +295,26 @@ def initialize_database(deploy_dir):
         # Initialize database
         db.init_app(app)
         
+        generated_client_id = None
+        generated_secret_key = None
+        
         with app.app_context():
             # Create all tables
             db.create_all()
             logger.info("Database tables created")
 
-            # Seed with defaults from .env.defaults (AdminSeedOptions loads them automatically)
-            seed_default_entities()
+            # Seed with defaults - returns generated credentials for all demo clients
+            generated_client_id, generated_secret_key, all_demo_clients = seed_default_entities()
             logger.info(
-                "Database seeded with default admin and client %s",
-                DEFAULT_TEST_CLIENT_OPTIONS.client_id,
+                "Database seeded with default admin and %d clients (primary: %s)",
+                len(all_demo_clients),
+                generated_client_id,
             )
         
         logger.info(f"Database initialized at {db_path}")
+        
+        # Return primary credentials and all demo clients for build_info
+        return generated_client_id, generated_secret_key, all_demo_clients
         
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
@@ -294,6 +326,11 @@ def initialize_database(deploy_dir):
         # Clean up sys.path
         sys.path.remove(str(deploy_path))
         sys.path.remove(str(deploy_path / "vendor"))
+    
+    if generated_client_id is None or generated_secret_key is None:
+        raise RuntimeError("Failed to generate test client credentials")
+    
+    return generated_client_id, generated_secret_key, all_demo_clients
 
 
 def create_htaccess(deploy_dir):
@@ -624,15 +661,15 @@ def main():
         
         # Copy application files
         copy_application_files(deploy_dir)
-
-        # Record build metadata for runtime display
-        write_build_metadata(deploy_dir)
         
         # Create initial deployment state file
         create_initial_env_webhosting(deploy_dir)
         
-        # Initialize database
-        initialize_database(deploy_dir)
+        # Initialize database and get generated credentials
+        client_id, secret_key, all_demo_clients = initialize_database(deploy_dir)
+
+        # Record build metadata with generated credentials for runtime display
+        write_build_metadata(deploy_dir, client_id, secret_key, all_demo_clients)
         
         # Create .htaccess
         create_htaccess(deploy_dir)

@@ -143,18 +143,26 @@ def _call_internal_api(action: str, param: Dict[str, Any]) -> Tuple[bool, Option
             logger.warning("_call_internal_api: Netcup API not configured")
             return False, None, "Netcup API not configured"
         
-        # Call Netcup API directly
+        # Call appropriate Netcup API method based on action
         logger.info(f"_call_internal_api: Calling netcup_client.{action}")
-        result = netcup_client.call(action, param)
-        logger.info(f"_call_internal_api: Call completed, status={result.get('status') if result else 'None'}")
+        domain = param.get("domainname", "")
         
-        if not result or result.get("status") != "success":
-            message = result.get("longmessage") or result.get("shortmessage") or "Request failed"
-            logger.warning(f"_call_internal_api: Request failed - message={message}")
-            return False, None, message
+        if action == "infoDnsZone":
+            result = netcup_client.info_dns_zone(domain)
+        elif action == "infoDnsRecords":
+            result = netcup_client.info_dns_records(domain)
+        elif action == "updateDnsRecords":
+            dns_records = param.get("dnsrecordset", {}).get("dnsrecords", [])
+            result = netcup_client.update_dns_records(domain, dns_records)
+        else:
+            logger.warning(f"_call_internal_api: Unknown action {action}")
+            return False, None, f"Unknown action: {action}"
         
+        logger.info(f"_call_internal_api: Call completed, result type={type(result)}")
+        
+        # NetcupClient methods return the response data directly, not wrapped in status/responsedata
         logger.info(f"_call_internal_api: Success!")
-        return True, result.get("responsedata"), None
+        return True, result, None
     except Exception as e:
         logger.error(f"_call_internal_api: Exception: {type(e).__name__}: {str(e)}", exc_info=True)
         return False, None, f"Internal error: {str(e)}"
@@ -217,7 +225,13 @@ def _load_records(domain: str) -> Tuple[bool, List[Dict[str, Any]], Optional[str
     success, data, error = _call_internal_api("infoDnsRecords", {"domainname": domain})
     if not success:
         return False, [], error
-    records = data.get("dnsrecords", []) if isinstance(data, dict) else []
+    # Handle both dict response (wrapped) and list response (direct from NetcupClient)
+    if isinstance(data, list):
+        records = data
+    elif isinstance(data, dict):
+        records = data.get("dnsrecords", [])
+    else:
+        records = []
     return True, records, None
 
 
@@ -238,22 +252,28 @@ def login():
         return render_template("client/login_modern.html", access_control_ready=False)
 
     if request.method == "POST":
-        token = request.form.get("token", "").strip()
-        if not token:
-            flash("Token is required.", "danger")
-        elif not access_control.validate_token(token):
-            flash("Invalid token or token is inactive.", "danger")
+        client_id = request.form.get("client_id", "").strip()
+        secret_key = request.form.get("secret_key", "").strip()
+        
+        if not client_id or not secret_key:
+            flash("Both Client ID and Secret Key are required.", "danger")
         else:
-            token_info = access_control.get_token_info(token)
-            if not token_info:
-                flash("Token lookup failed. Please try again.", "danger")
+            # Combine into token format for backend validation
+            token = f"{client_id}:{secret_key}"
+            
+            if not access_control.validate_token(token):
+                flash("Invalid credentials or account is inactive.", "danger")
             else:
-                session[SESSION_KEY] = token
-                session["client_login_at"] = datetime.utcnow().isoformat()
-                session.permanent = True
-                flash("Signed in successfully.", "success")
-                next_url = request.args.get("next") or url_for("client_portal.dashboard")
-                return redirect(next_url)
+                token_info = access_control.get_token_info(token)
+                if not token_info:
+                    flash("Credentials lookup failed. Please try again.", "danger")
+                else:
+                    session[SESSION_KEY] = token
+                    session["client_login_at"] = datetime.utcnow().isoformat()
+                    session.permanent = True
+                    flash("Signed in successfully.", "success")
+                    next_url = request.args.get("next") or url_for("client_portal.dashboard")
+                    return redirect(next_url)
 
     return render_template("client/login_modern.html", access_control_ready=True)
 

@@ -3,19 +3,21 @@
 from .seeding import (
     AdminSeedOptions,
     ClientSeedOptions,
-    DEFAULT_TEST_CLIENT_OPTIONS,
     ensure_admin_user,
     ensure_client,
     seed_default_entities,
     seed_from_config,
+    generate_test_client_credentials,
+    create_default_test_client_options,
 )
 
 __all__ = [
     "AdminSeedOptions",
     "ClientSeedOptions",
-    "DEFAULT_TEST_CLIENT_OPTIONS",
     "ensure_admin_user",
     "ensure_client",
     "seed_default_entities",
     "seed_from_config",
+    "generate_test_client_credentials",
+    "create_default_test_client_options",
 ]

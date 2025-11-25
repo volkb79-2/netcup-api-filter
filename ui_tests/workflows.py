@@ -14,20 +14,57 @@ from ui_tests.config import settings
 
 
 def _update_deployment_state(**kwargs) -> None:
-    """Update .env.webhosting with current deployment state.
+    """Update deployment env file with current state (e.g., password changes).
     
-    This persists test-driven changes (like password updates) so subsequent
-    test runs use the correct credentials without needing database resets.
+    This persists test-driven changes so subsequent test runs use the correct
+    credentials without needing database resets.
+    
+    Automatically detects which env file to update:
+    - DEPLOYMENT_ENV_FILE environment variable (explicit)
+    - .env.local (local deployment)
+    - .env.webhosting (webhosting deployment)
     
     Args:
         **kwargs: Key-value pairs to update (e.g., admin_password="NewPass123!")
     """
+    import os
     import os.path
+    
+    # Determine which env file to update (NO DEFAULTS - fail-fast policy)
+    # Require REPO_ROOT for portable paths
+    repo_root = os.environ.get('REPO_ROOT')
+    if not repo_root:
+        # Fallback to calculated path but warn
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        print(f"[CONFIG] WARNING: REPO_ROOT not set, using calculated: {repo_root}")
+        print(f"[CONFIG] Set explicitly: export REPO_ROOT=<workspace_root>")
+    
+    deployment_env_file = os.environ.get('DEPLOYMENT_ENV_FILE')
+    
+    if deployment_env_file:
+        # Explicit env file specified
+        env_filename = os.path.basename(deployment_env_file)
+        print(f"[CONFIG] Using explicit DEPLOYMENT_ENV_FILE: {deployment_env_file}")
+    else:
+        # Auto-detect but warn loudly (violates fail-fast policy)
+        env_local = os.path.join(repo_root, '.env.local')
+        env_webhosting = os.path.join(repo_root, '.env.webhosting')
+        if os.path.exists(env_local):
+            env_filename = '.env.local'
+            print(f"[CONFIG] WARNING: DEPLOYMENT_ENV_FILE not set, auto-detected: {env_local}")
+            print(f"[CONFIG] Set explicitly: export DEPLOYMENT_ENV_FILE={env_local}")
+        elif os.path.exists(env_webhosting):
+            env_filename = '.env.webhosting'
+            print(f"[CONFIG] WARNING: DEPLOYMENT_ENV_FILE not set, auto-detected: {env_webhosting}")
+            print(f"[CONFIG] Set explicitly: export DEPLOYMENT_ENV_FILE={env_webhosting}")
+        else:
+            print(f"[CONFIG] ERROR: DEPLOYMENT_ENV_FILE not set and no .env.local or .env.webhosting found")
+            return
     
     # Try writable locations: /screenshots (Playwright container), then workspace
     possible_paths = [
-        '/screenshots/.env.webhosting',  # Playwright container writable mount
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.webhosting'),
+        f'/screenshots/{env_filename}',  # Playwright container writable mount
+        os.path.join(repo_root, env_filename),
     ]
     
     env_file = None
@@ -42,7 +79,8 @@ def _update_deployment_state(**kwargs) -> None:
             continue
     
     if not env_file:
-        print("[CONFIG] WARNING: Could not find writable location for .env.webhosting")
+        print(f"[CONFIG] WARNING: Could not find writable location for {env_filename}")
+        print(f"[CONFIG] Tried: {possible_paths}")
         return
     
     # Read existing content
@@ -165,11 +203,12 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     """Log into the admin UI and land on the dashboard, handling the full authentication flow.
     
     This function adapts to the current database state:
-    - If password is 'admin' (initial state), logs in and changes to 'TestAdmin123!'
-    - If password is already 'TestAdmin123!', just logs in
-    - Updates global settings.admin_password so subsequent tests use the correct password
+    - If password is 'admin' (initial state), logs in and changes to a generated secure password
+    - If password is already changed, uses the saved password from .env.webhosting
+    - Updates .env.webhosting so subsequent tests use the correct password
     """
     import anyio
+    from utils import generate_token
     
     # Try to login with current password first
     await browser.goto(settings.url("/admin/login"))
@@ -179,9 +218,9 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     # Submit the login form
     print("[DEBUG] Submitting login form...")
     print(f"[DEBUG] Current URL: {browser.current_url}")
-    print(f"[DEBUG] Credentials: {settings.admin_username}/{settings.admin_password}")
+    print(f"[DEBUG] Credentials: {settings.admin_username}/{'*' * len(settings.admin_password)}")
     
-    await browser.submit("form")
+    await browser.click("button[type='submit']")
     await anyio.sleep(1.0)  # Give time for navigation/redirect
     print(f"[DEBUG] URL after form submit: {browser.current_url}")
     
@@ -195,18 +234,19 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     current_h1 = await browser.text("main h1")
     print(f"[DEBUG] Final h1 after login: '{current_h1}'")
     if "Change Password" in current_h1:
-        print("[DEBUG] On password change page, filling form...")
-        # Perform the password change flow using the current password
-        # Use settings.admin_password which may already be updated from previous test
+        print("[DEBUG] On password change page, generating new secure password...")
+        # Generate a cryptographically secure random password
         original_password = settings.admin_password
-        new_password = "TestAdmin123!"
+        new_password = generate_token()  # Generates 32-char secure token
+        print(f"[DEBUG] Generated new password (length: {len(new_password)})")
+        
         await browser.fill("#current_password", original_password)
         await browser.fill("#new_password", new_password)
         await browser.fill("#confirm_password", new_password)
         
         # Submit password change form and wait for redirect
         print("[DEBUG] Submitting password change...")
-        await browser.submit("form")
+        await browser.click("button[type='submit']")
         deadline = anyio.current_time() + 5.0
         elapsed = 0
         while anyio.current_time() < deadline:
@@ -220,6 +260,7 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         
         # CRITICAL: Persist password change for subsequent test runs
         _update_deployment_state(admin_password=new_password)
+        print(f"[DEBUG] Persisted new password to .env.webhosting")
         
         # Update in-memory settings for this test session
         settings._active.admin_password = new_password
@@ -314,7 +355,8 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     NOTE: This test does NOT test wrong credentials to avoid triggering account lockout.
     Wrong credential testing should be done in a separate, isolated test.
     """
-    new_password = "TestAdmin123!"
+    from utils import generate_token
+    new_password = generate_token()  # Generate secure random password
     
     # 1. Test access to admin pages is prohibited without login
     await browser.goto(settings.url("/admin/"))
@@ -326,7 +368,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.goto(settings.url("/admin/login"))
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", settings.admin_password)
-    await browser.submit("form")
+    await browser.click("button[type='submit']")
     await anyio.sleep(1.0)
     
     # Check if login was successful by looking for dashboard or change-password redirect
@@ -357,6 +399,9 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     
     await browser.wait_for_text("main h1", "Change Password")
     
+    # Capture password change page screenshot
+    await browser.screenshot("01a-admin-password-change")
+    
     # Test change password with non-matching passwords
     await browser.fill("#current_password", settings.admin_password)
     await browser.fill("#new_password", "NewPassword123!")
@@ -382,7 +427,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", new_password)
-    await browser.submit("form")
+    await browser.click("button[type='submit']")
     await anyio.sleep(1.0)
     await browser.wait_for_text("main h1", "Dashboard")
     
@@ -528,7 +573,10 @@ async def delete_admin_client(browser: Browser, client_id: str) -> None:
 
 async def client_portal_login(browser: Browser) -> Browser:
     await browser.goto(settings.url("/client/login"))
-    await browser.fill("#token", settings.client_token)
+    # Split token into separate client_id and secret_key fields
+    client_id, secret_key = settings.client_token.split(":", 1)
+    await browser.fill('input[name="client_id"]', client_id)
+    await browser.fill('input[name="secret_key"]', secret_key)
     await browser.click("button[type='submit']")
     body = await browser.text("body")
     if "internal server error" in body.lower() or "server error" in body.lower():

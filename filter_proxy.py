@@ -11,8 +11,10 @@ import yaml
 from typing import Dict, Any
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from netcup_client import NetcupClient, NetcupAPIError
+from netcup_client import NetcupAPIError
+from netcup_client_mock import get_netcup_client
 from access_control import AccessControl
+from typing import Any
 from client_portal import client_portal_bp
 from utils import get_build_info
 
@@ -46,7 +48,7 @@ limiter = Limiter(
 
 # Global configuration
 config: Dict[str, Any] = {}
-netcup_client: NetcupClient = None
+netcup_client: Any = None
 access_control: AccessControl = None
 
 # Domain name validation regex (RFC 1035)
@@ -82,9 +84,9 @@ def load_config(config_path: str = "config.yaml"):
             logger.error("Invalid configuration: root must be a dictionary")
             return False
         
-        # Initialize Netcup client
+        # Initialize Netcup client (mock or real based on MOCK_NETCUP_API env var)
         netcup_config = config.get("netcup", {})
-        netcup_client = NetcupClient(
+        netcup_client = get_netcup_client(
             customer_id=netcup_config.get("customer_id"),
             api_key=netcup_config.get("api_key"),
             api_password=netcup_config.get("api_password"),
@@ -172,10 +174,11 @@ def add_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     # Content Security Policy - Allow UI resources for admin + client portals
     # Allow self for scripts/styles plus Bootstrap/jQuery CDNs
+    # unsafe-eval required for Alpine.js expressions in modern UI
     if request.path.startswith('/admin') or request.path.startswith('/client'):
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
             "img-src 'self' data:; "
             "font-src 'self' https://stackpath.bootstrapcdn.com; "

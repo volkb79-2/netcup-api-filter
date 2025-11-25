@@ -77,50 +77,56 @@
     </div>
     <div class="card-body p-0">
         {% if records %}
-        <div class="table-container" x-data="{ 
-            sortColumn: 'hostname',
-            sortDirection: 'asc',
-            searchQuery: '',
-            sort(column) {
-                if (this.sortColumn === column) {
-                    this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-                } else {
-                    this.sortColumn = column;
-                    this.sortDirection = 'asc';
+        <script>
+        function domainRecordsData() {
+            return {
+                allRecords: {{ records|tojson|safe }},
+                sortColumn: 'hostname',
+                sortDirection: 'asc',
+                searchQuery: '',
+                sort(column) {
+                    if (this.sortColumn === column) {
+                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortColumn = column;
+                        this.sortDirection = 'asc';
+                    }
+                    this.sortTable();
+                },
+                sortTable() {
+                    const tbody = this.$refs.tbody;
+                    const rows = Array.from(tbody.querySelectorAll('tr'));
+                    const columnIndex = {
+                        'hostname': 1,
+                        'type': 2,
+                        'destination': 3,
+                        'ttl': 4,
+                        'state': 5
+                    }[this.sortColumn];
+                    
+                    rows.sort((a, b) => {
+                        const aVal = a.cells[columnIndex].textContent.trim();
+                        const bVal = b.cells[columnIndex].textContent.trim();
+                        const result = aVal.localeCompare(bVal, undefined, { numeric: true });
+                        return this.sortDirection === 'asc' ? result : -result;
+                    });
+                    
+                    rows.forEach(row => tbody.appendChild(row));
+                },
+                filteredRecords() {
+                    if (!this.searchQuery) return this.allRecords;
+                    const query = this.searchQuery.toLowerCase();
+                    return this.allRecords.filter(record => 
+                        record.hostname.toLowerCase().includes(query) ||
+                        record.type.toLowerCase().includes(query) ||
+                        record.destination.toLowerCase().includes(query) ||
+                        record.state.toLowerCase().includes(query)
+                    );
                 }
-                this.sortTable();
-            },
-            sortTable() {
-                const tbody = this.$refs.tbody;
-                const rows = Array.from(tbody.querySelectorAll('tr'));
-                const columnIndex = {
-                    'hostname': 1,
-                    'type': 2,
-                    'destination': 3,
-                    'ttl': 4,
-                    'state': 5
-                }[this.sortColumn];
-                
-                rows.sort((a, b) => {
-                    const aVal = a.cells[columnIndex].textContent.trim();
-                    const bVal = b.cells[columnIndex].textContent.trim();
-                    const result = aVal.localeCompare(bVal, undefined, { numeric: true });
-                    return this.sortDirection === 'asc' ? result : -result;
-                });
-                
-                rows.forEach(row => tbody.appendChild(row));
-            },
-            filteredRecords() {
-                if (!this.searchQuery) return {{ records|tojson }};
-                const query = this.searchQuery.toLowerCase();
-                return {{ records|tojson }}.filter(record => 
-                    record.hostname.toLowerCase().includes(query) ||
-                    record.type.toLowerCase().includes(query) ||
-                    record.destination.toLowerCase().includes(query) ||
-                    record.state.toLowerCase().includes(query)
-                );
-            }
-        }">
+            };
+        }
+        </script>
+        <div class="table-container" x-data="domainRecordsData()">
             <!-- Search and Actions Bar -->
             <div class="d-flex justify-content-between align-items-center p-3 border-bottom" style="background: var(--color-bg-secondary);">
                 <div class="d-flex align-items-center gap-3">
@@ -166,10 +172,10 @@
                         <td class="text-right">
                             <div class="d-flex gap-2 justify-content-end">
                                 {% if 'update' in operations %}
-                                <a class="btn btn-sm btn-outline" :href="'{{ url_for('client_portal.edit_record', domain=domain, record_id='') }}' + record.id">Edit</a>
+                                <a class="btn btn-sm btn-outline" :href="'/client/domains/{{ domain }}/records/' + record.id + '/edit'">Edit</a>
                                 {% endif %}
                                 {% if 'delete' in operations %}
-                                <form action="" method="post" class="d-inline" onsubmit="return confirm('Delete this record?');" :action="'{{ url_for('client_portal.delete_record', domain=domain, record_id='') }}' + record.id">
+                                <form action="" method="post" class="d-inline" onsubmit="return confirm('Delete this record?');" :action="'/client/domains/{{ domain }}/records/' + record.id + '/delete'">
                                     <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                                 </form>
                                 {% endif %}

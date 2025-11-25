@@ -22,6 +22,9 @@ async def test_admin_authentication_flow(active_profile):
 async def test_admin_dashboard_and_footer(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
+        # Verify page loaded successfully (HTTP 200)
+        await browser.verify_status(200)
+        
         heading = await browser.text("main h1")
         assert "Dashboard" in heading
 
@@ -45,6 +48,8 @@ async def test_admin_audit_logs_headers(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         header = await workflows.admin_verify_audit_log_columns(browser)
+        # Verify audit logs page loaded successfully (catch template errors)
+        await browser.verify_status(200)
         assert "Operation" in header
 
 
@@ -52,6 +57,8 @@ async def test_admin_clients_table_lists_preseeded_client(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_clients(browser)
+        # Verify client list page loaded successfully (catch template errors)
+        await browser.verify_status(200)
 
         table_text = await browser.text("table tbody")
         assert settings.client_id in table_text

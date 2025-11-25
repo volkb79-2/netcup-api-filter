@@ -12,10 +12,11 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import check_password_hash
 from wtforms import PasswordField, StringField, TextAreaField, SelectField, SelectMultipleField, BooleanField, DateTimeField
 from wtforms.validators import DataRequired, Email, Optional, ValidationError
+from markupsafe import Markup
 import json
 
 from database import db, Client, AuditLog, AdminUser, SystemConfig, get_system_config, set_system_config
-from utils import generate_token, hash_password, verify_password, test_filesystem_access, get_python_info, get_current_directory_info, validate_email, validate_ip_range, validate_domain
+from utils import generate_token, hash_password, verify_password, test_filesystem_access, get_python_info, get_current_directory_info, get_installed_libraries, validate_email, validate_ip_range, validate_domain
 from email_notifier import get_email_notifier_from_config
 
 logger = logging.getLogger(__name__)
@@ -243,10 +244,33 @@ class SecureModelView(ModelView):
 class ClientModelView(SecureModelView):
     """Admin view for Client management"""
     
+    # Use custom templates
+    list_template = 'admin/model/list.html'
+    create_template = 'admin/model/create.html'
+    edit_template = 'admin/model/edit.html'
+    
+    # Disable batch actions (no "With selected" dropdown)
+    action_disallowed_list = ['delete']
+    
+    # Enable row actions (edit/delete buttons on each row)
+    column_display_actions = True
+    can_delete = True
+    
     column_list = ['client_id', 'description', 'realm_type', 'realm_value', 'is_active', 'email_notifications_enabled', 'created_at']
     column_searchable_list = ['client_id', 'description', 'realm_value']
     column_filters = ['realm_type', 'is_active', 'email_notifications_enabled']
     column_sortable_list = ['client_id', 'realm_type', 'realm_value', 'is_active', 'created_at']
+    
+    # Make Active and Email Notifications toggleable in-place
+    column_editable_list = ['is_active', 'email_notifications_enabled']
+    
+    # Format Active and Email columns as visual indicators (badges)
+    # Note: The editable widget will be rendered by Flask-Admin automatically
+    column_formatters = {
+        'client_id': lambda v, c, m, p: Markup(f'<a href="/admin/client/edit/?id={m.id}" class="client-id-link">{m.client_id}</a>'),
+        'is_active': lambda v, c, m, p: Markup(f'<span class="bool-icon {"active" if m.is_active else "inactive"}">{"✓" if m.is_active else "✗"}</span>'),
+        'email_notifications_enabled': lambda v, c, m, p: Markup(f'<span class="bool-icon {"active" if m.email_notifications_enabled else "inactive"}">{"✓" if m.email_notifications_enabled else "✗"}</span>'),
+    }
     
     column_labels = {
         'client_id': 'Client ID',
@@ -296,7 +320,8 @@ class ClientModelView(SecureModelView):
         'realm_type': {
             'choices': [('host', 'Host'), ('subdomain', 'Subdomain')],
             'validators': [DataRequired()],
-            'description': 'host = exact domain match, subdomain = *.subdomain pattern'
+            'description': 'host = exact domain match, subdomain = *.subdomain pattern',
+            'default': 'host'  # Pre-select host by default
         },
         'realm_value': {
             'validators': [DataRequired()],
@@ -305,12 +330,14 @@ class ClientModelView(SecureModelView):
         'allowed_record_types': {
             'choices': [('A', 'A'), ('AAAA', 'AAAA'), ('CNAME', 'CNAME'), ('NS', 'NS')],
             'validators': [DataRequired()],
-            'description': 'DNS record types this client can modify'
+            'description': 'DNS record types this client can modify',
+            'default': ['A']  # Pre-select A record by default
         },
         'allowed_operations': {
             'choices': [('read', 'Read'), ('update', 'Update'), ('create', 'Create'), ('delete', 'Delete')],
             'validators': [DataRequired()],
-            'description': 'Allowed operations'
+            'description': 'Allowed operations',
+            'default': ['read']  # Pre-select read-only by default
         },
         'allowed_ip_ranges': {
             'description': 'One IP/range per line (e.g., 192.168.1.0/24, 10.0.0.1-10.0.0.255, 192.168.1.*)'
@@ -448,6 +475,9 @@ class ClientModelView(SecureModelView):
 class AuditLogModelView(SecureModelView):
     """Admin view for Audit Logs"""
     
+    # Use custom templates
+    list_template = 'admin/model/list.html'
+    
     can_create = False
     can_edit = False
     can_delete = False
@@ -486,6 +516,7 @@ class SystemInfoView(BaseView):
         python_info = get_python_info()
         dir_info = get_current_directory_info()
         fs_tests = test_filesystem_access()
+        installed_libraries = get_installed_libraries()
         
         # Get database path
         from database import get_db_path
@@ -495,7 +526,8 @@ class SystemInfoView(BaseView):
                          python_info=python_info,
                          dir_info=dir_info,
                          fs_tests=fs_tests,
-                         db_path=db_path)
+                         db_path=db_path,
+                         installed_libraries=installed_libraries)
 
 
 class NetcupConfigView(BaseView):
@@ -621,7 +653,8 @@ def setup_admin_ui(app):
     admin = Admin(
         app,
         name='Netcup API Filter',
-        index_view=SecureAdminIndexView(name='Dashboard', url='/admin')
+        index_view=SecureAdminIndexView(name='Dashboard', url='/admin'),
+        template_mode='bootstrap3'
     )
     
     # Add model views

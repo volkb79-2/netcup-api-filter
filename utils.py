@@ -108,7 +108,7 @@ def test_filesystem_access() -> List[Dict[str, str]]:
     Test filesystem access for various paths
     
     Returns:
-        List of dicts describing each test result
+        List of dicts describing each test result with read/write indicators
     """
     results = []
 
@@ -118,17 +118,43 @@ def test_filesystem_access() -> List[Dict[str, str]]:
             'path': path,
             'success': False,
             'message': '',
-            'error': ''
+            'error': '',
+            'readable': False,
+            'writable': False
         }
+        
+        # Test readability
+        try:
+            if os.path.exists(path) and os.access(path, os.R_OK):
+                record['readable'] = True
+        except Exception:
+            pass
+        
+        # Test writability
         test_file = os.path.join(path, '.write_test_netcup_filter')
         try:
             with open(test_file, 'w', encoding='utf-8') as handle:
                 handle.write('test')
             os.remove(test_file)
+            record['writable'] = True
             record['success'] = True
-            record['message'] = f"{path} is writable"
+            
+            # Build status message
+            if record['readable'] and record['writable']:
+                record['message'] = f"Readable ✓ | Writable ✓"
+            elif record['writable']:
+                record['message'] = f"Writable ✓"
+            else:
+                record['message'] = f"Unknown access"
+                
         except Exception as exc:  # pragma: no cover - environment dependent
-            record['error'] = f"{path} not writable: {exc}"
+            # Still might be readable even if not writable
+            if record['readable']:
+                record['message'] = f"Readable ✓ | Writable ✗"
+                record['error'] = f"Write test failed: {exc}"
+            else:
+                record['error'] = f"Not accessible: {exc}"
+        
         results.append(record)
 
     check_path(os.getcwd(), 'Working Directory')
@@ -291,6 +317,40 @@ def get_python_info() -> dict:
     }
 
 
+def get_installed_libraries() -> list:
+    """
+    Get list of installed Python libraries with versions
+    
+    Returns:
+        List of dictionaries with library name and version
+    """
+    import importlib.metadata
+    
+    # Key libraries used by this project
+    key_libraries = [
+        'flask', 'flask-admin', 'flask-login', 'flask-wtf',
+        'sqlalchemy', 'requests', 'gunicorn', 'waitress',
+        'playwright', 'pytest', 'wtforms'
+    ]
+    
+    libraries = []
+    
+    for lib_name in key_libraries:
+        try:
+            version = importlib.metadata.version(lib_name)
+            libraries.append({
+                'name': lib_name,
+                'version': version
+            })
+        except importlib.metadata.PackageNotFoundError:
+            libraries.append({
+                'name': lib_name,
+                'version': 'Not installed'
+            })
+    
+    return libraries
+
+
 def get_current_directory_info() -> dict:
     """
     Get current directory information
@@ -305,102 +365,65 @@ def get_current_directory_info() -> dict:
     }
 
 
-def test_filesystem_access() -> dict:
+def get_mock_netcup_client():
     """
-    Test filesystem write/read access in various locations
+    Return a mock Netcup client for demo/testing purposes.
     
-    Returns:
-        Dictionary with test results for different locations and file types
+    This client provides fake DNS data so the client portal can display
+    properly even without real Netcup API configuration.
     """
-    import tempfile
-    from datetime import datetime
-    
-    results = {}
-    test_content = f"Test write at {datetime.utcnow().isoformat()}"
-    
-    # Test locations to try
-    test_locations = [
-        ('cwd', os.getcwd()),
-        ('tmp_subdir', os.path.join(os.getcwd(), 'tmp')),
-        ('system_tmp', tempfile.gettempdir()),
-        ('parent', os.path.dirname(os.getcwd())),
-    ]
-    
-    for loc_name, loc_path in test_locations:
-        result = {
-            'path': loc_path,
-            'exists': os.path.exists(loc_path),
-            'writable': False,
-            'readable': False,
-            'file_test': None,
-            'sqlite_test': None,
-            'error': None
-        }
+    class MockNetcupClient:
+        """Mock Netcup API client with demo data"""
         
-        try:
-            # Check if directory is accessible
-            if result['exists']:
-                result['writable'] = os.access(loc_path, os.W_OK)
-                result['readable'] = os.access(loc_path, os.R_OK)
-            
-            # Test regular file write/read
-            if result['exists'] and result['writable']:
-                test_file = os.path.join(loc_path, f'write_test_{loc_name}.txt')
-                try:
-                    with open(test_file, 'w') as f:
-                        f.write(test_content)
-                    
-                    with open(test_file, 'r') as f:
-                        read_content = f.read()
-                    
-                    if read_content == test_content:
-                        result['file_test'] = 'SUCCESS'
-                        # Clean up
-                        os.remove(test_file)
-                    else:
-                        result['file_test'] = 'CONTENT_MISMATCH'
-                except Exception as e:
-                    result['file_test'] = f'FAILED: {str(e)}'
-                
-                # Test SQLite database write
-                db_test_file = os.path.join(loc_path, f'test_db_{loc_name}.db')
-                try:
-                    import sqlite3
-                    conn = sqlite3.connect(db_test_file)
-                    cursor = conn.cursor()
-                    cursor.execute('CREATE TABLE test (id INTEGER PRIMARY KEY, data TEXT)')
-                    cursor.execute('INSERT INTO test (data) VALUES (?)', (test_content,))
-                    conn.commit()
-                    cursor.execute('SELECT data FROM test WHERE id = 1')
-                    row = cursor.fetchone()
-                    conn.close()
-                    
-                    if row and row[0] == test_content:
-                        result['sqlite_test'] = 'SUCCESS'
-                        # Clean up
-                        os.remove(db_test_file)
-                    else:
-                        result['sqlite_test'] = 'DATA_MISMATCH'
-                except Exception as e:
-                    result['sqlite_test'] = f'FAILED: {str(e)}'
+        def info_dns_zone(self, domain: str):
+            """Return mock DNS zone info"""
+            return {
+                'name': domain,
+                'ttl': '86400',
+                'serial': '2024112401',
+                'refresh': '28800',
+                'retry': '7200',
+                'expire': '1209600',
+                'dnssecstatus': False
+            }
         
-        except Exception as e:
-            result['error'] = str(e)
+        def info_dns_records(self, domain: str):
+            """Return mock DNS records"""
+            return [
+                {
+                    'id': '1',
+                    'hostname': '@',
+                    'type': 'A',
+                    'priority': '',
+                    'destination': '192.0.2.1',
+                    'deleterecord': False,
+                    'state': 'yes'
+                },
+                {
+                    'id': '2',
+                    'hostname': 'www',
+                    'type': 'A',
+                    'priority': '',
+                    'destination': '192.0.2.1',
+                    'deleterecord': False,
+                    'state': 'yes'
+                },
+                {
+                    'id': '3',
+                    'hostname': '@',
+                    'type': 'MX',
+                    'priority': '10',
+                    'destination': 'mail.' + domain,
+                    'deleterecord': False,
+                    'state': 'yes'
+                }
+            ]
         
-        results[loc_name] = result
+        def update_dns_records(self, domain: str, records: list):
+            """Mock update DNS records"""
+            return {'status': 'success', 'updated': len(records)}
     
-    # Test if we can list parent directories
-    try:
-        parent = os.path.dirname(os.getcwd())
-        results['parent_listing'] = {
-            'path': parent,
-            'contents': os.listdir(parent) if os.path.exists(parent) else None,
-            'accessible': os.access(parent, os.R_OK) if os.path.exists(parent) else False
-        }
-    except Exception as e:
-        results['parent_listing'] = {'error': str(e)}
-    
-    return results
+    return MockNetcupClient()
 
 
 @lru_cache(maxsize=1)

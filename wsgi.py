@@ -21,10 +21,19 @@ init_db(app)
 # Setup admin UI
 setup_admin_ui(app)
 
-# Load configuration
-config_path = os.environ.get("NETCUP_FILTER_CONFIG", "config.yaml")
+# Load configuration (fail-fast: require explicit config or use documented default)
+config_path = os.environ.get("NETCUP_FILTER_CONFIG")
+if not config_path:
+    # Fall back to config.yaml (documented default) but warn
+    config_path = "config.yaml"
+    print(f"[CONFIG] WARNING: NETCUP_FILTER_CONFIG not set, using default: {config_path}", file=sys.stderr)
+    print(f"[CONFIG] Set explicitly: export NETCUP_FILTER_CONFIG=path/to/config.yaml", file=sys.stderr)
+
 if os.path.exists(config_path):
     load_config(config_path)
+else:
+    print(f"[CONFIG] ERROR: Config file not found: {config_path}", file=sys.stderr)
+    print(f"[CONFIG] Set NETCUP_FILTER_CONFIG to point to valid config file", file=sys.stderr)
 
 # WSGI application
 application = app

@@ -494,6 +494,17 @@ code {
     color: var(--color-text-primary);
 }
 
+/* Form field hints/descriptions */
+.form-group .help-block,
+.form-group .text-muted,
+.form-text {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    color: #6c757d;
+    font-weight: 400;
+}
+
 .form-control {
     width: 100%;
     padding: var(--space-sm) var(--space-md);
@@ -548,6 +559,51 @@ select.form-control {
 textarea.form-control {
     resize: vertical;
     min-height: 100px;
+}
+
+/* ===================================================================
+   INLINE EDITABLE TOGGLE SWITCHES
+   =================================================================== */
+
+/* Style Flask-Admin's inline editable checkboxes as toggle switches */
+.list_editable-input[type="checkbox"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 44px;
+    height: 24px;
+    background: rgba(75, 85, 99, 0.5);
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border: 1px solid var(--color-border-subtle);
+}
+
+.list_editable-input[type="checkbox"]:checked {
+    background: var(--color-success);
+}
+
+.list_editable-input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.list_editable-input[type="checkbox"]:checked::before {
+    transform: translateX(20px);
+}
+
+.list_editable-input[type="checkbox"]:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
 
 /* ===================================================================
@@ -731,6 +787,39 @@ textarea.form-control {
     background: rgba(6, 182, 212, 0.15);
     border: 1px solid rgba(6, 182, 212, 0.3);
     color: var(--color-info);
+}
+
+/* Boolean value indicators (checkmarks/crosses) */
+.bool-icon {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.bool-icon.active {
+    color: var(--color-success);
+}
+
+.bool-icon.inactive {
+    color: var(--color-muted);
+}
+
+/* Row action icons */
+.list-buttons-column .icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    margin: 0 0.125rem;
+}
+
+.list-buttons-column form.icon {
+    display: inline-flex;
+}
+
+.list-buttons-column button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* ===================================================================
@@ -943,4 +1032,335 @@ textarea.form-control {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border-width: 0;
+}
+
+/* Flask-Admin List Toolbar - Modern Design */
+.list-toolbar {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-base);
+    padding: var(--space-sm) var(--space-md);
+}
+
+.list-toolbar-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+    align-items: center;
+}
+
+.toolbar-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.toolbar-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin: 0;
+    white-space: nowrap;
+}
+
+.toolbar-item .btn {
+    border-color: var(--color-border);
+}
+
+.toolbar-item .btn:hover {
+    background: var(--color-bg-tertiary);
+    border-color: var(--color-primary);
+}
+
+/* Toolbar search alignment */
+.list-toolbar .search-input-wrapper form,
+.search-input-wrapper form {
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.search-input-wrapper .input-group,
+.search-input-wrapper .form-group {
+    width: 100%;
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.search-input-wrapper input[type="search"] {
+    min-width: 250px;
+    height: 2.5rem;
+    border-radius: var(--radius-sm);
+}
+
+.search-input-wrapper .input-group-addon.clear {
+    display: none !important;
+}
+
+.search-input-wrapper .input-group-addon,
+.search-input-wrapper .input-group-addon.clear span {
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+/* Client List Enhancements */
+.client-id-link {
+    color: var(--color-primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+/* Icon button used for row actions */
+.btn-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--color-accent);
+    text-decoration: none;
+    transition: background var(--transition-fast), border var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-icon:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--color-accent);
+    transform: translateY(-1px);
+}
+
+.btn-icon span[aria-hidden="true"] {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.btn-icon-ghost {
+    color: var(--color-text-primary);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-icon-ghost:hover {
+    border-color: var(--color-accent);
+}
+
+.btn-icon-danger {
+    color: var(--color-danger);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.btn-icon-danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--color-danger);
+}
+
+.list-buttons-column {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.inline-delete {
+    margin: 0;
+}
+
+.client-id-link:hover {
+    text-decoration: underline;
+    color: var(--color-primary-dark);
+}
+
+/* Badge styling for visual indicators */
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: var(--radius-sm);
+}
+
+.badge-success {
+    color: #fff;
+    background-color: #28a745;
+}
+
+.badge-secondary {
+    color: #fff;
+    background-color: #6c757d;
+}
+
+.badge-danger {
+    color: #fff;
+    background-color: #dc3545;
+}
+
+.badge-warning {
+    color: #212529;
+    background-color: #ffc107;
+}
+
+.badge-info {
+    color: #fff;
+    background-color: #17a2b8;
+}
+
+/* Empty State Styling */
+.empty-state {
+    padding: var(--space-3xl) var(--space-xl);
+    color: var(--color-text-muted);
+    font-size: 1rem;
+    background: var(--color-bg-secondary);
+    border-radius: var(--radius-base);
+    margin: var(--space-md);
+}
+
+.empty-state::before {
+    content: "📭";
+    display: block;
+    font-size: 3rem;
+    margin-bottom: var(--space-md);
+    opacity: 0.5;
+}
+
+/* List Actions Column */
+.list-actions-column,
+.list-buttons-column {
+    width: 100px;
+    text-align: center;
+}
+
+.list-checkbox-column {
+    width: 40px;
+    text-align: center;
+}
+
+/* Table Modern Styling */
+.table-modern {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-modern thead {
+    background: var(--color-bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.table-modern thead th {
+    border-bottom: 2px solid var(--color-border);
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--space-md);
+}
+
+.table-modern tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.table-modern tbody tr:hover {
+    background: var(--color-bg-secondary);
+}
+
+.table-modern tbody td {
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Search Inline Styling */
+.search-inline {
+    position: relative;
+}
+
+.search-inline .search-input {
+    min-width: 300px;
+    padding-right: 2.5rem;
+}
+
+.search-inline::after {
+    content: "🔍";
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Filter Panel */
+.filter-panel {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-base);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.filter-panel .form-group {
+    margin-bottom: var(--space-sm);
+}
+
+/* Page Header with Actions */
+.page-header-with-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-lg);
+    gap: var(--space-md);
+}
+
+.page-header-with-actions .eyebrow {
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-xs);
+}
+
+.page-header-with-actions h1 {
+    margin: 0;
+    margin-bottom: var(--space-xs);
+}
+
+.header-actions {
+    display: flex;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+}
+
+/* Card Footer for Pagination */
+.card-footer {
+    background: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-md);
+}
+
+/* Row Actions */
+.form-panel {
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* Hide filter panel when it only contains hidden elements */
+.filter-panel:not(:has(.form-group:not([style*="display: none"]))) {
+    display: none;
+}
+
+/* Alternative: hide when form is empty */
+.filter-panel form:empty {
+    display: none;
+}
+
+.filter-panel form:not(:has(button:visible, input:visible, select:visible)) {
+    display: none;
 }

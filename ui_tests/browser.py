@@ -96,6 +96,41 @@ class Browser:
         except Exception as exc:
             raise ToolError(name="get_attribute", payload={"selector": selector, "attribute": attribute}, message=str(exc))
 
+    async def verify_status(self, expected_status: int = 200) -> int:
+        """Verify HTTP status code of current page.
+        
+        Returns the status code. Raises ToolError if status doesn't match expected.
+        """
+        try:
+            # Try to get status from performance API
+            status_code = await self._page.evaluate("() => window.performance.getEntriesByType('navigation')[0]?.responseStatus || 0")
+            
+            # Fallback: check for error indicators in page content
+            if status_code == 0:
+                page_text = await self._page.text_content("body")
+                if page_text and ("500 Internal Server Error" in page_text or "Internal Server Error" in page_text):
+                    status_code = 500
+                elif page_text and "404" in page_text and ("Not Found" in page_text or "Page not found" in page_text):
+                    status_code = 404
+            
+            if status_code != expected_status:
+                page_content = await self._page.content()
+                error_msg = f"HTTP {status_code} (expected {expected_status}) on {self.current_url}"
+                if len(page_content) < 500:
+                    error_msg += f"\nPage content: {page_content[:500]}"
+                raise ToolError(
+                    name="verify_status",
+                    payload={"expected": expected_status, "actual": status_code, "url": self.current_url},
+                    message=error_msg
+                )
+            
+            return status_code
+        except ToolError:
+            raise
+        except Exception as exc:
+            # Non-critical error - return 0 to indicate unknown status
+            return 0
+
     async def html(self, selector: str) -> str:
         """Get inner HTML of element."""
         try:
@@ -108,13 +143,21 @@ class Browser:
         """Take screenshot."""
         try:
             import os
-            # Use /screenshots mounted by Playwright container (writable)
-            # Fallback to tmp/screenshots for local runs
-            if os.path.exists("/screenshots") and os.access("/screenshots", os.W_OK):
-                screenshot_dir = "/screenshots"
-            else:
-                screenshot_dir = os.path.join(os.getcwd(), "tmp", "screenshots")
-                os.makedirs(screenshot_dir, exist_ok=True)
+            # Require SCREENSHOT_DIR (no defaults - fail-fast policy)
+            screenshot_dir = os.environ.get('SCREENSHOT_DIR')
+            if not screenshot_dir:
+                # Last resort: check for Playwright container mount or getcwd
+                if os.path.exists("/screenshots") and os.access("/screenshots", os.W_OK):
+                    screenshot_dir = "/screenshots"
+                    print(f"[SCREENSHOT] WARNING: SCREENSHOT_DIR not set, using Playwright mount: {screenshot_dir}")
+                else:
+                    # Fail-fast: don't use getcwd() as default
+                    raise ToolError(
+                        name="screenshot",
+                        payload={"name": name},
+                        message="SCREENSHOT_DIR environment variable must be set. No defaults allowed (fail-fast policy)."
+                    )
+            os.makedirs(screenshot_dir, exist_ok=True)
             path = os.path.join(screenshot_dir, f"{name}.png")
             await self._page.screenshot(path=path)
             return path
@@ -191,15 +234,21 @@ class Browser:
         except Exception as exc:
             raise ToolError(name="query_selector_all", payload={"selector": selector}, message=str(exc))
 
+    async def set_viewport(self, width: int = 1920, height: int = 1200) -> None:
+        """Set viewport size for consistent screenshots."""
+        await self._page.set_viewport_size({"width": width, "height": height})
+
 
 @asynccontextmanager
 async def browser_session() -> AsyncIterator[Browser]:
-    """Yield a Browser instance using direct Playwright."""
+    """Yield a Browser instance using direct Playwright with global viewport settings."""
     client = PlaywrightClient(headless=settings.playwright_headless)
     await client.connect()
     try:
         page = await client.new_page()
         browser = Browser(page)
+        # CRITICAL: Set viewport globally for ALL browser sessions (including auth flow)
+        await browser.set_viewport(1920, 1200)
         yield browser
     finally:
         await client.close()
