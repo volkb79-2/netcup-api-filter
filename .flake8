@@ -1,0 +1,53 @@
+[flake8]
+# Flake8 configuration for netcup-api-filter
+# See: https://flake8.pycqa.org/en/latest/user/configuration.html
+
+# Exclude directories
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    vendor,
+    deploy,
+    deploy-local,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    .mypy_cache,
+    .tox
+
+# Maximum line length
+max-line-length = 127
+
+# Maximum complexity
+max-complexity = 15
+
+# Ignore specific errors/warnings
+ignore =
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (handled by max-line-length)
+    # E501,
+
+# Per-file ignores
+per-file-ignores =
+    # Ignore unused imports in __init__ files
+    __init__.py:F401,
+    # Ignore complexity in test files
+    test_*.py:C901,
+    # Ignore long lines in migration files
+    migrations/*.py:E501
+
+# Show source code for each error
+show-source = True
+
+# Show statistics at the end
+statistics = True
+
+# Count errors
+count = True
