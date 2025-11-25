@@ -1,0 +1,26 @@
+# Requirements for netcup-api-filter
+# This is the main requirements file referenced by setup.py
+
+# Core Flask dependencies
+flask>=2.3.0,<4.0.0
+flask-limiter>=3.0.0
+flask-admin>=1.6.0
+flask-sqlalchemy>=3.0.0
+flask-login>=0.6.0
+
+# Database and ORM
+sqlalchemy>=2.0.0
+
+# HTTP client and utilities
+requests>=2.31.0
+
+# Configuration and environment
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+
+# Security and authentication
+bcrypt>=4.0.0
+email-validator>=2.0.0
+
+# Forms
+wtforms>=3.0.0
