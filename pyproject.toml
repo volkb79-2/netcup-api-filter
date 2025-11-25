@@ -1,0 +1,52 @@
+[tool.black]
+line-length = 127
+target-version = ['py39', 'py310', 'py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | env
+  | vendor
+  | deploy
+  | deploy-local
+  | build
+  | dist
+  | \.egg-info
+  | \.pytest_cache
+  | \.mypy_cache
+  | \.tox
+)/
+'''
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = [
+    "vendor",
+    "deploy",
+    "deploy-local",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+]
+
+[tool.pytest.ini_options]
+testpaths = [".", "ui_tests/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "e2e_local: E2E tests requiring local app deployment",
+]
+addopts = "-x --tb=short"
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"

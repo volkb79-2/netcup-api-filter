@@ -403,11 +403,19 @@ def create_app(config_path: str = "config.yaml"):
     if os.path.exists(deploy_static):
         app.static_folder = deploy_static
     
-    # SECURITY: Configure secure session cookies
-    app.config['SESSION_COOKIE_SECURE'] = True  # Only send over HTTPS
-    app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
-    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session timeout
+    # SECURITY: Configure secure session cookies (100% config-driven from environment)
+    # Read from .env.defaults (NO HARDCODED VALUES!)
+    secure_cookie = os.environ.get('FLASK_SESSION_COOKIE_SECURE', 'auto')
+    if secure_cookie == 'auto':
+        # Auto-detect: disable Secure flag only for local_test environment
+        app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') != 'local_test'
+    else:
+        # Explicit override from config
+        app.config['SESSION_COOKIE_SECURE'] = secure_cookie.lower() in ('true', '1', 'yes')
+    
+    app.config['SESSION_COOKIE_HTTPONLY'] = os.environ.get('FLASK_SESSION_COOKIE_HTTPONLY', 'True').lower() in ('true', '1', 'yes')
+    app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('FLASK_SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config['PERMANENT_SESSION_LIFETIME'] = int(os.environ.get('FLASK_SESSION_LIFETIME', '3600'))
     
     # Initialize database
     init_db(app)
