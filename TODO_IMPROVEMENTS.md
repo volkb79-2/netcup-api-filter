@@ -6,6 +6,9 @@ This document tracks recommended improvements from the security and code quality
 
 - [x] Create missing requirements.txt at project root
 - [x] Fix hardcoded session configuration in database.py (made config-driven)
+- [x] Add GitHub Actions CI/CD workflow (tests.yml)
+- [x] Add linting configuration (.flake8, pyproject.toml)
+- [x] Add security audit job (pip-audit in CI)
 
 ## High Priority ⚠️
 
@@ -20,27 +23,13 @@ This document tracks recommended improvements from the security and code quality
 
 ## Medium Priority 💡
 
-- [ ] **CI/CD: Add GitHub Actions workflow**
-  - Create `.github/workflows/test.yml`
-  - Run pytest on PRs
-  - Add linting (flake8, black, mypy)
-  - Example:
-    ```yaml
-    name: Tests
-    on: [push, pull_request]
-    jobs:
-      test:
-        runs-on: ubuntu-latest
-        steps:
-          - uses: actions/checkout@v3
-          - uses: actions/setup-python@v4
-            with:
-              python-version: '3.11'
-          - run: pip install -r requirements.txt
-          - run: pip install pytest flake8 black mypy
-          - run: pytest
-          - run: flake8 .
-    ```
+- [x] **CI/CD: Add GitHub Actions workflow** ✅ COMPLETED
+  - Created `.github/workflows/tests.yml`
+  - Runs pytest on PRs and pushes
+  - Includes flake8, black, mypy checks
+  - Multi-version testing (Python 3.9, 3.10, 3.11)
+  - Security audit with pip-audit
+  - Non-blocking checks for gradual improvement
 
 - [ ] **Testing: Add unit tests for utilities**
   - Create `test_utils.py`
