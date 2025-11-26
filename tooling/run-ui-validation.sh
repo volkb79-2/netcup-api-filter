@@ -165,7 +165,7 @@ proxy_render_nginx_conf "${PROXY_ENV}"
 proxy_stage_inputs "${PROXY_ENV}"
 
 if [[ "${SKIP_UI_TEST_DEPS:?SKIP_UI_TEST_DEPS must be set (0 or 1)}" != "1" ]]; then
-    pip install -r "${UI_TEST_DIR}/requirements.txt"
+    pip install --user -r "${ROOT_DIR}/requirements-dev.txt"
 fi
 
 cd "${ROOT_DIR}"

@@ -59,7 +59,7 @@ Successfully implemented comprehensive mock Netcup API for local E2E testing wit
 **Files Modified**:
 - `filter_proxy.py`: Use `get_netcup_client()` factory function
 - `passenger_wsgi.py`: Fallback to MockNetcupClient when no DB config
-- `deployment-lib.sh`: Added `MOCK_NETCUP_API=true` for local deployments
+- `build_deployment_lib.sh`: Added `MOCK_NETCUP_API=true` for local deployments
 - `build_deployment.py`: Include `netcup_client_mock.py` in deployment package
 
 ### 4. Screenshot Enhancements
@@ -177,7 +177,7 @@ Integration Points
 
 ```
 1. Local Deployment
-   └── deployment-lib.sh sets MOCK_NETCUP_API=true
+   └── build_deployment_lib.sh sets MOCK_NETCUP_API=true
    
 2. Flask Initialization
    └── passenger_wsgi.py: Uses MockNetcupClient
@@ -296,7 +296,7 @@ FLASK_SESSION_COOKIE_SECURE=auto  # False for HTTP, True for HTTPS
    - Lines 80-120: Refactored Alpine.js data initialization
    - Line 169: Fixed Edit button URL generation
 
-5. `deployment-lib.sh`
+5. `build_deployment_lib.sh`
    - Line 115: Added MOCK_NETCUP_API=true environment variable
 
 6. `build_deployment.py`

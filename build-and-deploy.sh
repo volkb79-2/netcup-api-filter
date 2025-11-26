@@ -17,7 +17,7 @@ fi
 : "${REPO_ROOT:?REPO_ROOT must be set (source .env.workspace)}"
 
 # Source shared deployment functions
-source "${REPO_ROOT}/deployment-lib.sh"
+source "${REPO_ROOT}/build_deployment_lib.sh"
 
 # Colors for output
 BLUE='\033[0;34m'
@@ -84,41 +84,13 @@ ssh "${NETCUP_USER}@${NETCUP_SERVER}" \
 # so .env.webhosting must be synchronized to avoid stale credential issues
 echo "[CONFIG] Resetting credentials to match fresh database..."
 
-# Read generated credentials from build_info.json in local deploy directory
-BUILD_INFO="${DEPLOY_LOCAL_DIR}/build_info.json"
-if [[ ! -f "$BUILD_INFO" ]]; then
-    echo "[ERROR] build_info.json not found at ${BUILD_INFO}" >&2
-    exit 1
-fi
-
-GENERATED_CLIENT_ID=$(jq -r '.generated_client_id' "$BUILD_INFO")
-GENERATED_SECRET_KEY=$(jq -r '.generated_secret_key' "$BUILD_INFO")
-
-if [[ -z "$GENERATED_CLIENT_ID" || "$GENERATED_CLIENT_ID" == "null" ]]; then
-    echo "[ERROR] generated_client_id not found in build_info.json" >&2
-    exit 1
-fi
-
-if [[ -z "$GENERATED_SECRET_KEY" || "$GENERATED_SECRET_KEY" == "null" ]]; then
-    echo "[ERROR] generated_secret_key not found in build_info.json" >&2
-    exit 1
-fi
-
 update_deployment_state "$ENV_FILE" \
     "DEPLOYED_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME}" \
-    "DEPLOYED_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}" \
-    "DEPLOYED_CLIENT_ID=${GENERATED_CLIENT_ID}" \
-    "DEPLOYED_CLIENT_SECRET_KEY=${GENERATED_SECRET_KEY}"
+    "DEPLOYED_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}"
 
-# Write all demo client tokens to accessible file for screenshot capture
-DEMO_CLIENTS_FILE="${SCREENSHOT_DIR}/demo_clients.json"
-echo "[CONFIG] Writing demo clients to ${DEMO_CLIENTS_FILE}..."
-jq '.demo_clients' "$BUILD_INFO" > "$DEMO_CLIENTS_FILE"
-if [[ ! -s "$DEMO_CLIENTS_FILE" ]]; then
-    echo "[ERROR] Failed to extract demo_clients from build_info.json" >&2
-    exit 1
-fi
-echo "[CONFIG] ✓ Wrote $(jq length "$DEMO_CLIENTS_FILE") demo clients"
+# Extract demo client credentials from local build_info.json
+# (same credentials are in the deployed database, but we need the plaintext secret_key for testing)
+extract_demo_client_credentials "${DEPLOY_LOCAL_DIR}" "$ENV_FILE"
 
 # Record deployment metadata
 record_deployment "$ENV_FILE"
@@ -184,4 +156,4 @@ echo "  export DEPLOYMENT_ENV_FILE=${ENV_FILE} && pytest ui_tests/tests -v"
 echo "  # Password changes will be persisted to ${ENV_FILE}"
 echo ""
 echo "To recapture screenshots:"
-echo "  export DEPLOYMENT_ENV_FILE=${ENV_FILE} && python3 capture_ui_screenshots.py"
+echo "  export DEPLOYMENT_ENV_FILE=${ENV_FILE} && python3 ui_tests/capture_ui_screenshots.py"

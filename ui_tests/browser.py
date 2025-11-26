@@ -44,11 +44,11 @@ class Browser:
         return {"url": self.current_url, "title": self.current_title}
 
     async def goto(self, url: str) -> Dict[str, Any]:
-        """Navigate to URL."""
+        """Navigate to URL and return response with status."""
         try:
-            await self._page.goto(url, wait_until="networkidle", timeout=30000)
+            response = await self._page.goto(url, wait_until="networkidle", timeout=30000)
             await self._update_state()
-            return {"url": self.current_url, "title": self.current_title}
+            return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
         except PlaywrightTimeout as exc:
             raise ToolError(name="goto", payload={"url": url}, message=str(exc))
 
@@ -158,8 +158,8 @@ class Browser:
                         message="SCREENSHOT_DIR environment variable must be set. No defaults allowed (fail-fast policy)."
                     )
             os.makedirs(screenshot_dir, exist_ok=True)
-            path = os.path.join(screenshot_dir, f"{name}.png")
-            await self._page.screenshot(path=path)
+            path = os.path.join(screenshot_dir, f"{name}.webp")
+            await self._page.screenshot(path=path, type='jpeg', quality=85, full_page=True)
             return path
         except Exception as exc:
             raise ToolError(name="screenshot", payload={"name": name}, message=str(exc))
@@ -234,7 +234,7 @@ class Browser:
         except Exception as exc:
             raise ToolError(name="query_selector_all", payload={"selector": selector}, message=str(exc))
 
-    async def set_viewport(self, width: int = 1920, height: int = 1200) -> None:
+    async def set_viewport(self, width: int = 1920, height: int = 2400) -> None:
         """Set viewport size for consistent screenshots."""
         await self._page.set_viewport_size({"width": width, "height": height})
 
@@ -248,7 +248,7 @@ async def browser_session() -> AsyncIterator[Browser]:
         page = await client.new_page()
         browser = Browser(page)
         # CRITICAL: Set viewport globally for ALL browser sessions (including auth flow)
-        await browser.set_viewport(1920, 1200)
+        await browser.set_viewport(1920, 2400)
         yield browser
     finally:
         await client.close()

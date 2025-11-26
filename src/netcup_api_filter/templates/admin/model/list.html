@@ -1,0 +1,202 @@
+{% extends 'admin_base.html' %}
+{% import 'admin/lib.html' as lib with context %}
+{% import 'admin/model/layout.html' as model_layout with context %}
+{% import 'admin/actions.html' as actionlib with context %}
+{% import 'admin/model/row_actions.html' as row_actions with context %}
+
+{% block page_title %}{{ admin_view.name }}{% endblock %}
+
+{% block extra_head %}
+{{ super() }}
+{{ lib.form_css() }}
+{% endblock %}
+
+{% block admin_content %}
+<div class="page-header-with-actions">
+    <div>
+        <h1>{{ admin_view.name }}</h1>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">{{ admin_view.name }} ({{ count if count is not none else data|length }})</h2>
+        <span class="text-muted text-sm">Manage {{ admin_view.name|lower }} records</span>
+    </div>
+    {% if search_supported or actions or can_set_page_size or admin_view.can_export %}
+    <div class="d-flex justify-content-between align-items-center p-3 border-bottom" style="background: var(--color-bg-secondary);">
+        <div class="d-flex align-items-center gap-3">
+            {% if search_supported %}
+            <div class="search-input-wrapper" style="min-width: 250px;">
+                {{ model_layout.search_form(input_class="form-control form-control-sm") }}
+            </div>
+            {% endif %}
+            {% if count is not none %}
+            <span class="text-muted text-sm">Showing {{ data|length }} of {{ count }} record{{ '' if count == 1 else 's' }}</span>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            {% if admin_view.can_create %}
+                {% if admin_view.create_modal %}
+                {{ lib.add_modal_button(url=get_url('.create_view', url=return_url, modal=True), btn_class='btn btn-important btn-sm', title=_gettext('Create New Record'), content=_gettext('Add New')) }}
+                {% else %}
+                <a href="{{ get_url('.create_view', url=return_url) }}" class="btn btn-important btn-sm">+ {{ _gettext('Add New') }}</a>
+                {% endif %}
+            {% endif %}
+            {% if can_set_page_size %}
+            {{ model_layout.page_size_form(page_size_url, admin_view.page_size_options) }}
+            {% endif %}
+            {% if admin_view.can_export %}
+            {{ model_layout.export_options('btn btn-sm btn-outline') }}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    <div class="card-body p-0">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        {% if actions %}
+                        <th class="list-checkbox-column">
+                            <input type="checkbox" name="rowtoggle" class="action-rowtoggle" title="{{ _gettext('Select all records') }}" />
+                        </th>
+                        {% endif %}
+                        {% if admin_view.column_display_actions %}
+                        <th class="list-actions-column">&nbsp;</th>
+                        {% endif %}
+                        {% for c, name in list_columns %}
+                        {% set column = loop.index0 %}
+                        <th class="column-header col-{{ c }}">
+                            {% if admin_view.is_sortable(c) %}
+                                {% if sort_column == column %}
+                                    <a href="{{ sort_url(column, True) }}" title="{{ _gettext('Sort by %(name)s', name=name) }}">
+                                        {{ name }}
+                                        {% if sort_desc %}
+                                            <span class="fa fa-chevron-up glyphicon glyphicon-chevron-up"></span>
+                                        {% else %}
+                                            <span class="fa fa-chevron-down glyphicon glyphicon-chevron-down"></span>
+                                        {% endif %}
+                                    </a>
+                                {% else %}
+                                    <a href="{{ sort_url(column) }}" title="{{ _gettext('Sort by %(name)s', name=name) }}">{{ name }}</a>
+                                {% endif %}
+                            {% else %}
+                                {{ name }}
+                            {% endif %}
+                            {% if admin_view.column_descriptions.get(c) %}
+                            <a class="fa fa-question-circle glyphicon glyphicon-question-sign"
+                               title="{{ admin_view.column_descriptions[c] }}"
+                               href="javascript:void(0)" data-role="tooltip"></a>
+                            {% endif %}
+                        </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data %}
+                    <tr>
+                        {% if actions %}
+                        <td>
+                            <input type="checkbox" name="rowid" class="action-checkbox" value="{{ get_pk_value(row) }}" title="{{ _gettext('Select record') }}" />
+                        </td>
+                        {% endif %}
+                        {% if admin_view.column_display_actions %}
+                        <td class="list-buttons-column">
+                            {% if admin_view.can_edit %}
+                            <a class="btn-icon btn-icon-ghost" href="{{ get_url('.edit_view', id=get_pk_value(row), url=return_url) }}" title="Edit record">
+                                <span aria-hidden="true">✏️</span>
+                                <span class="sr-only">Edit {{ admin_view.name|lower }} record</span>
+                            </a>
+                            {% endif %}
+                            {% if admin_view.can_delete %}
+                            <form class="inline-delete" method="POST" action="{{ get_url('.delete_view') }}">
+                                {% if delete_form %}
+                                {{ delete_form.id(value=get_pk_value(row)) }}
+                                {{ delete_form.url(value=return_url) }}
+                                {% if delete_form.csrf_token %}
+                                {{ delete_form.csrf_token }}
+                                {% elif csrf_token %}
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                                {% endif %}
+                                {% endif %}
+                                <button type="submit" class="btn-icon btn-icon-danger" onclick="return confirm('Delete this record?');" title="Delete record">
+                                    <span aria-hidden="true">✖</span>
+                                    <span class="sr-only">Delete {{ admin_view.name|lower }} record</span>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        {% for c, name in list_columns %}
+                        <td class="col-{{ c }}">
+                            {% if admin_view.is_editable(c) %}
+                                {% set form = list_forms[get_pk_value(row)] %}
+                                {% if form.csrf_token is defined and form.csrf_token %}
+                                    {{ form[c](pk=get_pk_value(row), display_value=get_value(row, c), csrf=form.csrf_token._value()) }}
+                                {% elif csrf_token is defined and csrf_token %}
+                                    {{ form[c](pk=get_pk_value(row), display_value=get_value(row, c), csrf=csrf_token()) }}
+                                {% else %}
+                                    {{ form[c](pk=get_pk_value(row), display_value=get_value(row, c)) }}
+                                {% endif %}
+                            {% else %}
+                                {{ get_value(row, c) }}
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="999">
+                            <div class="empty-state text-center">
+                                {{ admin_view.get_empty_list_message() }}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer d-flex justify-content-center">
+        {% if num_pages is not none %}
+            {{ lib.pager(page, num_pages, pager_url) }}
+        {% else %}
+            {{ lib.simple_pager(page, data|length == page_size, pager_url) }}
+        {% endif %}
+    </div>
+</div>
+
+{% if actions %}
+{{ actionlib.form(actions, get_url('.action_view')) }}
+{% endif %}
+
+{% if admin_view.edit_modal or admin_view.create_modal or admin_view.details_modal %}
+    {{ lib.add_modal_window() }}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+{{ lib.form_js() }}
+{% if actions %}
+{{ actionlib.script(_gettext('Please select at least one record.'), actions, actions_confirmation) }}
+{% endif %}
+
+<script {{ admin_csp_nonce_attribute|default('') }}>
+function copyToClipboard(text, button) {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '✓';
+        button.classList.add('copied');
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+            button.classList.remove('copied');
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+</script>
+{% endblock %}

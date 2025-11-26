@@ -47,7 +47,7 @@ This test:
 ### Step 3: Capture Screenshots
 
 ```bash
-python3 capture_ui_screenshots.py
+python3 ui_tests/capture_ui_screenshots.py
 ```
 
 The script:
@@ -98,14 +98,14 @@ curl http://localhost:5100/admin/login
 pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
 
 # 6. Capture screenshots
-python3 capture_ui_screenshots.py
+python3 ui_tests/capture_ui_screenshots.py
 ```
 
 ## Key Files
 
 - **`./build-and-deploy-local.sh`** - Builds and extracts deployment package
 - **`./inspect-ui-local.sh`** - Automated 3-step workflow
-- **`capture_ui_screenshots.py`** - Screenshot capture script (reads `.env.webhosting`)
+- **`ui_tests/capture_ui_screenshots.py`** - Screenshot capture script (reads `.env.webhosting`)
 - **`.env.webhosting`** - Persisted deployment state (password, tokens)
 - **`ui_tests/workflows.py`** - Contains `_update_deployment_state()` for persistence
 - **`deploy-local/netcup_filter.db`** - Local deployment database

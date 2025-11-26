@@ -400,7 +400,7 @@ async def test_mock_netcup_api_directly(mock_netcup_api_server, mock_netcup_cred
     
     This validates that the mock API itself works correctly.
     """
-    from netcup_client import NetcupClient
+    from netcup_api_filter.netcup_client import NetcupClient
     
     # Create client pointing to mock API
     client = NetcupClient(
@@ -454,7 +454,7 @@ async def test_mock_netcup_api_directly(mock_netcup_api_server, mock_netcup_cred
 
 async def test_mock_api_session_timeout(mock_netcup_api_server, mock_netcup_credentials):
     """Test that mock API enforces session timeout."""
-    from netcup_client import NetcupClient, NetcupAPIError
+    from netcup_api_filter.netcup_client import NetcupClient, NetcupAPIError
     
     client = NetcupClient(
         customer_id=mock_netcup_credentials['customer_id'],

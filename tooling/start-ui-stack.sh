@@ -61,23 +61,32 @@ trap cleanup EXIT INT TERM
 if [[ ! -f "${DATABASE_PATH}" ]]; then
     log_warn "Database not found at ${DATABASE_PATH}"
     log_info "Creating fresh database..."
-    python -c "
-from database import db, create_app
-from bootstrap.seeding import seed_default_entities
+    python - <<PY
+import sys
+from pathlib import Path
+
+root = Path("${ROOT_DIR}")
+sys.path.insert(0, str(root))
+sys.path.insert(0, str(root / "src"))
+
+from netcup_api_filter.database import db, create_app
+from netcup_api_filter.bootstrap.seeding import seed_default_entities
+
 app = create_app()
 with app.app_context():
     db.create_all()
     seed_default_entities()
-" || {
+PY
+        if [[ $? -ne 0 ]]; then
         log_error "Failed to create database"
         exit 1
-    }
+    fi
     log_success "Database created and seeded"
 fi
 
 # Start Flask backend
 log_info "Starting Flask backend on ${FLASK_HOST}:${FLASK_PORT}"
-gunicorn wsgi:app \
+gunicorn netcup_api_filter.wsgi:app \
     -b "${FLASK_HOST}:${FLASK_PORT}" \
     --workers 1 \
     --log-level info \

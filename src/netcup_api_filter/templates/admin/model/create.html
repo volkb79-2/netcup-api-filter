@@ -1,0 +1,253 @@
+{% extends 'admin_base.html' %}
+{% import 'admin/lib.html' as lib with context %}
+{% import 'admin/static.html' as admin_static with context%}
+
+{% block page_title %}{{ admin_view.name }}{% endblock %}
+
+{% block extra_head %}
+{{ super() }}
+{{ lib.form_css() }}
+{% endblock %}
+
+{% block admin_content %}
+<div class="page-header-with-actions">
+    <div>
+        <h1>Create {{ admin_view.name }}</h1>
+    </div>
+    <div class="page-actions">
+        <a href="{{ get_url('.index_view') }}" class="btn btn-outline">Back to List</a>
+    </div>
+</div>
+
+{% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="mb-0">📋 Quick Start Templates</h3>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Select a template to pre-configure common DNS management scenarios:</p>
+        
+        <div class="template-radio-group">
+            <div class="template-radio-option">
+                <input type="radio" id="template_ddns_single" name="clientTemplate" value="ddns_single_host" onchange="applyTemplate(this.value)">
+                <label for="template_ddns_single" class="template-radio-label">
+                    <span class="template-icon">🏠</span>
+                    <span class="template-name">DDNS Single Host</span>
+                    <span class="template-desc">Update single hostname IP</span>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_ddns_subdomain" name="clientTemplate" value="ddns_subdomain_zone" onchange="applyTemplate(this.value)">
+                <label for="template_ddns_subdomain" class="template-radio-label">
+                    <span class="template-icon">🌐</span>
+                    <span class="template-name">DDNS Subdomain</span>
+                    <span class="template-desc">Manage entire subdomain zone</span>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_monitoring" name="clientTemplate" value="monitoring_readonly" onchange="applyTemplate(this.value)">
+                <label for="template_monitoring" class="template-radio-label">
+                    <span class="template-icon">👁️</span>
+                    <span class="template-name">Read-Only</span>
+                    <span class="template-desc">View records only</span>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_letsencrypt" name="clientTemplate" value="letsencrypt_dns01" onchange="applyTemplate(this.value)">
+                <label for="template_letsencrypt" class="template-radio-label">
+                    <span class="template-icon">🔒</span>
+                    <span class="template-name">LetsEncrypt</span>
+                    <span class="template-desc">DNS-01 challenge (TXT)</span>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_full" name="clientTemplate" value="full_management" onchange="applyTemplate(this.value)">
+                <label for="template_full" class="template-radio-label">
+                    <span class="template-icon">⚙️</span>
+                    <span class="template-name">Full Management</span>
+                    <span class="template-desc">Complete DNS control</span>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_cname" name="clientTemplate" value="cname_only" onchange="applyTemplate(this.value)">
+                <label for="template_cname" class="template-radio-label">
+                    <span class="template-icon">🔗</span>
+                    <span class="template-name">CNAME Only</span>
+                    <span class="template-desc">CDN/alias delegation</span>
+                </label>
+            </div>
+        </div>
+        
+        <div id="templateDescription" class="alert alert-info mt-3" style="display:none;">
+            <strong id="templateName"></strong>
+            <p id="templateUseCase" class="mb-2"></p>
+            <p class="mb-0"><small id="templateExample"></small></p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-3 gap-4">
+    <div class="grid-span-2">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">{{ admin_view.name }} Details</h2>
+            </div>
+            <div class="card-body">
+                {% block create_form %}
+                {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.full_path.rstrip('?')) }}
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+    
+    <div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">Information</h3>
+            </div>
+            <div class="card-body">
+                {% if admin_view.__class__.__name__ == 'ClientModelView' %}
+                <p><strong>Required Fields:</strong></p>
+                <ul class="list-styled">
+                    <li><strong>Client ID:</strong> Unique identifier</li>
+                    <li><strong>Realm Value:</strong> Domain name</li>
+                </ul>
+                
+                <p><strong>Permissions:</strong></p>
+                <ul class="list-styled">
+                    <li>Record Types: A, AAAA, CNAME, etc.</li>
+                    <li>Operations: read, create, update, delete</li>
+                </ul>
+                
+                <div class="alert alert-success">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    Tip: Select a template above for quick setup.
+                </div>
+                {% else %}
+                <p>Fill in the required fields to create a new {{ admin_view.name|lower }}.</p>
+                <p>Fields marked with an asterisk (*) are required.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+{{ lib.form_js() }}
+{% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
+<script {{ admin_csp_nonce_attribute|default('') }} src="{{ url_for('static', filename='js/client-token.js') }}" data-generate-url="{{ url_for('.generate_token_view') }}"></script>
+<script {{ admin_csp_nonce_attribute|default('') }}>
+// Client templates configuration
+const CLIENT_TEMPLATES = {
+    ddns_single_host: {
+        name: "DDNS Single Host",
+        realm_type: "host",
+        record_types: ["A", "AAAA"],
+        operations: ["read", "update"],
+        example: "Example: home.example.com",
+        use_case: "Dynamic DNS for a single host (home router, VPN endpoint)"
+    },
+    ddns_subdomain_zone: {
+        name: "DDNS Subdomain Delegation",
+        realm_type: "subdomain",
+        record_types: ["A", "AAAA", "CNAME"],
+        operations: ["read", "update", "create", "delete"],
+        example: "Example: dyn.example.com (manages *.dyn.example.com)",
+        use_case: "Full control over subdomain for multiple dynamic hosts"
+    },
+    monitoring_readonly: {
+        name: "Read-Only Monitoring",
+        realm_type: "host",
+        record_types: ["A", "AAAA", "CNAME", "NS", "TXT", "MX"],
+        operations: ["read"],
+        example: "Example: example.com",
+        use_case: "View DNS records without modification (monitoring, auditing)"
+    },
+    letsencrypt_dns01: {
+        name: "LetsEncrypt DNS-01 Challenge",
+        realm_type: "subdomain",
+        record_types: ["TXT"],
+        operations: ["read", "create", "delete"],
+        example: "Example: _acme-challenge.example.com",
+        use_case: "Automated certificate issuance via DNS-01 (certbot, Traefik)"
+    },
+    full_management: {
+        name: "Full DNS Management",
+        realm_type: "host",
+        record_types: ["A", "AAAA", "CNAME", "NS", "TXT", "MX", "SRV"],
+        operations: ["read", "update", "create", "delete"],
+        example: "Example: example.com",
+        use_case: "Complete DNS control for automation (CI/CD, Terraform)"
+    },
+    cname_only: {
+        name: "CNAME Delegation",
+        realm_type: "subdomain",
+        record_types: ["CNAME"],
+        operations: ["read", "update", "create", "delete"],
+        example: "Example: cdn.example.com",
+        use_case: "Delegate CNAME management (CDN, load balancer aliases)"
+    }
+};
+
+function applyTemplate(templateId) {
+    if (!templateId) {
+        document.getElementById('templateDescription').style.display = 'none';
+        return;
+    }
+    
+    const template = CLIENT_TEMPLATES[templateId];
+    if (!template) return;
+    
+    // Show template description
+    document.getElementById('templateName').textContent = template.name;
+    document.getElementById('templateUseCase').textContent = template.use_case;
+    document.getElementById('templateExample').textContent = template.example;
+    document.getElementById('templateDescription').style.display = 'block';
+    
+    // Apply realm type
+    const realmTypeSelect = document.querySelector('select[name="realm_type"]');
+    if (realmTypeSelect) {
+        realmTypeSelect.value = template.realm_type;
+    }
+    
+    // Apply record types (multi-select)
+    const recordTypesSelect = document.querySelector('select[name="allowed_record_types"]');
+    if (recordTypesSelect) {
+        // Clear all selections first
+        for (let option of recordTypesSelect.options) {
+            option.selected = false;
+        }
+        // Select template record types
+        for (let option of recordTypesSelect.options) {
+            if (template.record_types.includes(option.value)) {
+                option.selected = true;
+            }
+        }
+    }
+    
+    // Apply operations (multi-select)
+    const operationsSelect = document.querySelector('select[name="allowed_operations"]');
+    if (operationsSelect) {
+        // Clear all selections first
+        for (let option of operationsSelect.options) {
+            option.selected = false;
+        }
+        // Select template operations
+        for (let option of operationsSelect.options) {
+            if (template.operations.includes(option.value)) {
+                option.selected = true;
+            }
+        }
+    }
+}
+</script>
+{% endif %}
+{% endblock %}

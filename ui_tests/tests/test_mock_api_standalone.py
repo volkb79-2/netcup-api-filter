@@ -15,7 +15,7 @@ def test_mock_api_basic_operations(mock_netcup_api_server, mock_netcup_credentia
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     
-    from netcup_client import NetcupClient
+    from netcup_api_filter.netcup_client import NetcupClient
     
     # Create client pointing to mock API
     client = NetcupClient(
@@ -119,7 +119,7 @@ def test_mock_api_multiple_domains(mock_netcup_api_server, mock_netcup_credentia
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     
-    from netcup_client import NetcupClient
+    from netcup_api_filter.netcup_client import NetcupClient
     
     client = NetcupClient(
         customer_id=mock_netcup_credentials['customer_id'],
@@ -178,7 +178,7 @@ def test_mock_api_invalid_credentials(mock_netcup_api_server):
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     
-    from netcup_client import NetcupClient, NetcupAPIError
+    from netcup_api_filter.netcup_client import NetcupClient, NetcupAPIError
     
     client = NetcupClient(
         customer_id="wrong",
@@ -204,7 +204,7 @@ def test_mock_api_session_isolation(mock_netcup_api_server, mock_netcup_credenti
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     
-    from netcup_client import NetcupClient
+    from netcup_api_filter.netcup_client import NetcupClient
     
     # Create two clients
     client1 = NetcupClient(

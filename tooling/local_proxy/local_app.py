@@ -15,12 +15,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add project root and src package to path
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+SRC_ROOT = PROJECT_ROOT / "src"
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(SRC_ROOT))
 
-from database import create_app
-from access_control import AccessControl
-from bootstrap import AdminSeedOptions, ClientSeedOptions, seed_default_entities
+from netcup_api_filter.database import create_app
+from netcup_api_filter.access_control import AccessControl
+from netcup_api_filter.bootstrap import AdminSeedOptions, ClientSeedOptions, seed_default_entities
 
 DEFAULT_SECRET_KEY = os.environ.get("LOCAL_SECRET_KEY", "local-dev-secret-key")
 

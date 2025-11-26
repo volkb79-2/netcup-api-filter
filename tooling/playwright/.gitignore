@@ -1,3 +1,9 @@
+# Docker Compose environment file (auto-generated)
+.env
+
+# Build tracking
+.build-hash
+
 # Screenshots directory (bind mount, initialized by init container)
 vol-playwright-screenshots/
 

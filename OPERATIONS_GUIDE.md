@@ -1,1 +1,0 @@
-docs/OPERATIONS_GUIDE.md

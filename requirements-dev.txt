@@ -1,0 +1,12 @@
+# Development and Testing Dependencies
+# Includes all production dependencies plus tooling for local development
+
+# Production dependencies (from requirements.webhosting.txt)
+-r requirements.webhosting.txt
+
+# Testing frameworks
+pytest>=9.0
+pytest-asyncio>=1.3
+
+# WSGI server for local testing
+gunicorn>=21.0.0

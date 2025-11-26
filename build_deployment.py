@@ -6,7 +6,6 @@ This script creates a ready-to-deploy package containing:
 - All application files
 - Vendored dependencies (no pip install needed)
 - Pre-initialized SQLite database with default credentials from .env.defaults
-- .htaccess configuration file
 - DEPLOY_README.md with upload instructions
 - .env.webhosting with initial deployment state
 
@@ -23,8 +22,8 @@ import hashlib
 import logging
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Tuple
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -116,53 +115,31 @@ def copy_application_files(deploy_dir):
     
     # Files to copy
     files_to_copy = [
-        "filter_proxy.py",
-        "netcup_client.py",
-        "netcup_client_mock.py",
-        "access_control.py",
-        "database.py",
-        "admin_ui.py",
-        "client_portal.py",
-        "audit_logger.py",
-        "email_notifier.py",
-        "utils.py",
-        "passenger_wsgi.py",
-        "passenger_wsgi_hello.py",  # Diagnostic hello world
-        "passenger_wsgi_debug.py",  # Debug version with detailed error reporting
-        "wsgi.py",
-        "cgi_handler.py",
-        "generate_token.py",
-        "migrate_yaml_to_db.py",
-        "example_client.py",
-        "requirements.txt",
-        "config.example.yaml",
-        ".env.example",
+        ("src/netcup_api_filter/passenger_wsgi.py", "passenger_wsgi.py"),
         ".env.defaults",  # Default credentials (single source of truth)
-        ".htaccess.hello-world",  # Test .htaccess for hello world
         "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
         "DEBUG_QUICK_START.md",  # Quick debugging reference
         "READY_TO_DEPLOY.md",  # Instructions based on working hello world
         "DEBUG_404_ERROR.md",  # How to debug 404 errors with debug version
+        ("src/netcup_api_filter/diagnostics/passenger_wsgi_hello.py", "passenger_wsgi_hello.py"),
     ]
     
-    for file_name in files_to_copy:
-        if os.path.exists(file_name):
-            shutil.copy2(file_name, deploy_path / file_name)
-            logger.info(f"Copied {file_name}")
+    for entry in files_to_copy:
+        if isinstance(entry, tuple):
+            source_path, target_name = entry
+        else:
+            source_path = target_name = entry
+
+        if os.path.exists(source_path):
+            destination = deploy_path / target_name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, destination)
+            logger.info(f"Copied {source_path} -> {target_name}")
     
-    # Copy templates directory
-    if os.path.exists("templates"):
-        shutil.copytree("templates", deploy_path / "templates", dirs_exist_ok=True)
-        logger.info("Copied templates directory")
-
-    # Copy static assets (CSS, JS)
-    if os.path.exists("static"):
-        shutil.copytree("static", deploy_path / "static", dirs_exist_ok=True)
-        logger.info("Copied static assets")
-
-    if os.path.exists("bootstrap"):
-        shutil.copytree("bootstrap", deploy_path / "bootstrap", dirs_exist_ok=True)
-        logger.info("Copied bootstrap helpers")
+    # Copy src tree (canonical application code)
+    if os.path.exists("src"):
+        shutil.copytree("src", deploy_path / "src", dirs_exist_ok=True)
+        logger.info("Copied src directory")
 
 
 def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_clients: list):
@@ -270,6 +247,9 @@ def initialize_database(deploy_dir) -> Tuple[str, str, list]:
     
     # Temporarily add deploy directory to path to import modules
     deploy_path = Path(deploy_dir).resolve()
+    src_path = deploy_path / "src"
+    # Add src/ to path so netcup_api_filter package can be imported
+    sys.path.insert(0, str(src_path))
     sys.path.insert(0, str(deploy_path))
     sys.path.insert(0, str(deploy_path / "vendor"))
     
@@ -281,32 +261,35 @@ def initialize_database(deploy_dir) -> Tuple[str, str, list]:
         db_path = deploy_path / "netcup_filter.db"
         os.environ['NETCUP_FILTER_DB_PATH'] = str(db_path)
         
-        # Import required modules
+        # Import required modules (netcup_api_filter is under src/)
         from flask import Flask
-        from database import db
-        from bootstrap import AdminSeedOptions, seed_default_entities
+        from netcup_api_filter import database
+        from netcup_api_filter.bootstrap import AdminSeedOptions, seed_default_entities
         
         # Create Flask app with template_folder in deploy directory
-        app = Flask(__name__, template_folder=str(deploy_path / "templates"))
+        app = Flask(__name__, template_folder=str(deploy_path / "src" / "netcup_api_filter" / "templates"))
         app.config['SECRET_KEY'] = 'build-temp-key'
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         
         # Initialize database
-        db.init_app(app)
+        database.db.init_app(app)
         
         generated_client_id = None
         generated_secret_key = None
         
         with app.app_context():
             # Create all tables
-            db.create_all()
+            database.db.create_all()
             logger.info("Database tables created")
 
-            # Seed with defaults - returns generated credentials for all demo clients
-            generated_client_id, generated_secret_key, all_demo_clients = seed_default_entities()
+            # Seed with defaults - enable demo clients for comprehensive local testing
+            # Demo clients provide multiple permission configurations for E2E tests
+            generated_client_id, generated_secret_key, all_demo_clients = seed_default_entities(
+                seed_demo_clients_flag=True  # Enable demo clients with varied permissions
+            )
             logger.info(
-                "Database seeded with default admin and %d clients (primary: %s)",
+                "Database seeded with default admin and %d demo clients (primary: %s)",
                 len(all_demo_clients),
                 generated_client_id,
             )
@@ -324,66 +307,11 @@ def initialize_database(deploy_dir) -> Tuple[str, str, list]:
         os.chdir(original_dir)
         
         # Clean up sys.path
+        sys.path.remove(str(src_path))
         sys.path.remove(str(deploy_path))
         sys.path.remove(str(deploy_path / "vendor"))
     
-    if generated_client_id is None or generated_secret_key is None:
-        raise RuntimeError("Failed to generate test client credentials")
-    
     return generated_client_id, generated_secret_key, all_demo_clients
-
-
-def create_htaccess(deploy_dir):
-    """Create .htaccess configuration file."""
-    logger.info("Creating .htaccess file...")
-    
-    htaccess_content = """# .htaccess for Phusion Passenger deployment
-# Netcup API Filter
-
-# Enable Passenger
-PassengerEnabled on
-
-# IMPORTANT: Set this to your application directory (relative to webspace)
-# For netcup webhosting, use relative path like: /netcup-api-filter
-# The control panel App Root setting should match this value
-PassengerAppRoot /netcup-api-filter
-
-# Python configuration
-# Use system Python since dependencies are vendored in deploy package
-PassengerPython /usr/bin/python3
-PassengerStartupFile passenger_wsgi.py
-PassengerAppType wsgi
-
-# Production mode settings
-PassengerAppEnv production
-PassengerFriendlyErrorPages off
-
-# Optional: Set environment variables
-# SetEnv NETCUP_FILTER_DB_PATH /path/to/netcup_filter.db
-
-# Protect sensitive files
-<FilesMatch "^(config\\.yaml|\\.env|netcup_filter\\.db|.*\\.log)$">
-    Require all denied
-</FilesMatch>
-
-# Allow admin UI access
-<Location /admin>
-    Require all granted
-</Location>
-
-# Security headers
-<IfModule mod_headers.c>
-    Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-</IfModule>
-"""
-    
-    htaccess_path = Path(deploy_dir) / ".htaccess"
-    with open(htaccess_path, 'w') as f:
-        f.write(htaccess_content)
-    
-    logger.info(f"Created {htaccess_path}")
 
 
 def create_deploy_readme(deploy_dir):
@@ -400,7 +328,6 @@ No command line access needed!
 - ✅ All application files
 - ✅ All Python dependencies (pre-installed in `vendor/` directory)
 - ✅ Pre-initialized SQLite database with admin account
-- ✅ Ready-to-use `.htaccess` configuration
 - ✅ This deployment guide
 
 ## 5-Step Deployment
@@ -423,34 +350,14 @@ You should already have `deploy.zip` - that's this package!
    - Make sure to upload the `vendor/` directory with all subdirectories
    - Make sure to upload the `templates/` directory
    - Upload all `.py` files
-   - Upload `.htaccess` file
    - Upload `netcup_filter.db` file
 
-### Step 3: Edit .htaccess
+### Step 3: Point Passenger to the app entrypoint
 
-Open `.htaccess` in your FTP client's editor (or download, edit, re-upload):
-
-**Find this line:**
-```apache
-PassengerAppRoot /path/to/your/domain/netcup-filter
-```
-
-**Change it to your actual path:**
-```apache
-PassengerAppRoot /www/htdocs/w0123456/yourdomain.com/netcup-filter
-```
-
-**Important notes:**
-- Replace `w0123456` with your actual webhosting ID
-- Replace `yourdomain.com` with your actual domain
-- The PassengerPython line is already set to `/usr/bin/python3` (system Python)
-- Do NOT change PassengerPython to a venv path - dependencies are already bundled in vendor/
-- Save the file after editing
-
-**Optional:** If you want the database in a different location:
-```apache
-SetEnv NETCUP_FILTER_DB_PATH /full/path/to/netcup_filter.db
-```
+1. In the netcup control panel, open the Passenger configuration for your domain.
+2. Set the **App Root** to the directory where you uploaded this package (e.g., `/www/htdocs/w0123456/yourdomain.com/netcup-api-filter`).
+3. Ensure the startup file is `passenger_wsgi.py` (default). No `.htaccess` overrides are required.
+4. To relocate the SQLite database, define `NETCUP_FILTER_DB_PATH` via the control panel's environment variables.
 
 ### Step 4: Access the Admin Interface
 
@@ -488,7 +395,7 @@ SetEnv NETCUP_FILTER_DB_PATH /full/path/to/netcup_filter.db
 
 **Solution:**
 1. Check that all files were uploaded correctly
-2. Verify `.htaccess` paths are correct
+2. Verify the Passenger App Root in the control panel points to the uploaded directory
 3. Check error logs (usually in `~/logs/error.log` or via control panel)
 4. Ensure `netcup_filter.db` has correct permissions (readable/writable by web server)
 
@@ -509,10 +416,9 @@ SetEnv NETCUP_FILTER_DB_PATH /full/path/to/netcup_filter.db
 ### Problem: Cannot access admin interface
 
 **Solution:**
-1. Check that `.htaccess` file was uploaded
-2. Verify PassengerAppRoot path is correct
-3. Try accessing root URL first: `https://yourdomain.com/`
-4. Check that `templates/` directory with all HTML files was uploaded
+1. Verify Passenger App Root and startup file match the uploaded directory
+2. Try accessing root URL first: `https://yourdomain.com/`
+3. Check that `templates/` directory with all HTML files was uploaded
 
 ## File Permissions
 
@@ -521,7 +427,6 @@ If using SFTP/SSH, set appropriate permissions:
 ```bash
 chmod 755 /path/to/netcup-filter/
 chmod 644 /path/to/netcup-filter/*.py
-chmod 644 /path/to/netcup-filter/.htaccess
 chmod 644 /path/to/netcup-filter/netcup_filter.db
 chmod 755 /path/to/netcup-filter/vendor/
 chmod 755 /path/to/netcup-filter/templates/
@@ -530,11 +435,10 @@ chmod 755 /path/to/netcup-filter/templates/
 ## Security Notes
 
 1. **Change the default password immediately** after first login
-2. **Protect sensitive files** - The .htaccess includes rules to block access to:
-   - `netcup_filter.db` (database)
-   - `config.yaml` (if you create one)
-   - `.env` files
-   - `*.log` files
+2. **Protect sensitive files** - Use the hosting control panel to deny direct access to:
+    - `netcup_filter.db` (database)
+    - `.env` files
+    - `*.log` files
 
 3. **Use HTTPS** - Always access the admin interface over HTTPS
 
@@ -575,7 +479,7 @@ This package was built with `build_deployment.py` and includes:
 - Application version: Latest from repository
 - Python dependencies: From requirements.txt
 - Database: Pre-initialized SQLite with default admin account
-- Configuration: Ready-to-use .htaccess template
+- Configuration: Config-driven defaults from .env.defaults
 
 Enjoy using Netcup API Filter! 🚀
 """
@@ -614,8 +518,11 @@ def create_zip_package(deploy_dir):
     logger.info("Calculating SHA256 hash...")
     sha256_hash = hashlib.sha256()
     with open(zip_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
+        while True:
+            chunk = f.read(4096)
+            if not chunk:
+                break
+            sha256_hash.update(chunk)
     
     hash_value = sha256_hash.hexdigest()
     
@@ -643,8 +550,9 @@ def main():
         logger.error(f"{requirements_path} not found. Run this script from the repository root.")
         sys.exit(1)
     
-    if not os.path.exists("passenger_wsgi.py"):
-        logger.error("passenger_wsgi.py not found. Run this script from the repository root.")
+    entrypoint_path = "src/netcup_api_filter/passenger_wsgi.py"
+    if not os.path.exists(entrypoint_path):
+        logger.error(f"{entrypoint_path} not found. Run this script from the repository root.")
         sys.exit(1)
     
     try:
@@ -671,9 +579,6 @@ def main():
         # Record build metadata with generated credentials for runtime display
         write_build_metadata(deploy_dir, client_id, secret_key, all_demo_clients)
         
-        # Create .htaccess
-        create_htaccess(deploy_dir)
-        
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
@@ -690,9 +595,8 @@ def main():
         logger.info("Next steps:")
         logger.info("1. Download deploy.zip")
         logger.info("2. Extract and upload contents via FTP to your webhosting")
-        logger.info("3. Edit .htaccess with your actual paths")
-        logger.info("4. Access /admin and login with credentials from .env.defaults")
-        logger.info("5. Read DEPLOY_README.md for detailed instructions")
+        logger.info("3. Access /admin and login with credentials from .env.defaults")
+        logger.info("4. Read DEPLOY_README.md for detailed instructions")
         logger.info("=" * 60)
         
     except Exception as e:

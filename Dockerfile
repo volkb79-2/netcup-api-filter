@@ -6,16 +6,17 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY filter_proxy.py .
-COPY netcup_client.py .
-COPY access_control.py .
+# Copy canonical application package
+COPY src/ ./src/
 
 # Copy configuration template
-COPY config.example.yaml .
+COPY config.example.yaml ./config.example.yaml
+
+# Ensure Python can import the src package
+ENV PYTHONPATH="/app/src"
 
 # Expose port
 EXPOSE 5000
 
-# Run the application
-CMD ["python", "filter_proxy.py", "/app/config.yaml"]
+# Run the application via the canonical module entrypoint
+CMD ["python", "-m", "netcup_api_filter.filter_proxy", "/app/config.yaml"]

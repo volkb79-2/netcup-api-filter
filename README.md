@@ -44,6 +44,9 @@ Netcup issues a single credential set with full control over every DNS record, d
 - `docs/OPERATIONS_GUIDE.md` – Day-to-day runbook for building, testing, and deploying.
 - `docs/ADMIN_GUIDE.md` – Admin UI walkthrough (user-oriented doc retained as-is).
 - `docs/CLIENT_USAGE.md` – Instructions for client token holders and API examples.
+- `PLAYWRIGHT_CONTAINER.md` – Dedicated Playwright container architecture and usage.
+- `PYTHON_PACKAGES.md` – Python dependencies and requirements management.
+- `AGENTS.md` – Agent instructions and project context (for AI assistants).
 
 Historical summaries (`ITERATION_SUMMARY.md`, `LOCAL_DEPLOYMENT_SUMMARY.md`, etc.) have been retired; use the guides above instead.
 

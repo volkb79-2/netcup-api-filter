@@ -111,65 +111,20 @@ setup_python_environment() {
     fi
     log_debug "Pip upgrade completed"
 
-    # Core packages needed for DST-DNS development and deployment
-    local packages=(
-        # Configuration and templating
-        "PyYAML>=6.0.1"  # 6.0.1+ supports Python 3.13
-        "jinja2"
-
-        # Data validation and CLI
-        "pydantic"
-        "click"
-        "rich"
-
-        # Testing and development
-        "pytest"
-        "pytest-asyncio"
-        "ipython"
-
-        # HTTP and async clients
-        "requests"
-        "aiohttp"
-
-        # Database and cache clients
-        "asyncpg"
-        "redis"
-
-        # Vault and secrets
-        "hvac"
-
-        # Logging
-        "structlog"
-    )
-
-    # Environment-specific packages
-    case "$ENV_TYPE" in
-        "devcontainer")
-            packages+=(
-                # Development tools
-                "black"
-                "isort"
-                "mypy"
-            )
-            ;;
-        "github_actions")
-            packages+=(
-                # CI/CD tools
-                "coverage"
-                "pytest-cov"
-            )
-            ;;
-        "local")
-            # Minimal set for local development
-            ;;
-    esac
-
-    # Install all packages
-    log_info "Installing ${#packages[@]} Python packages globally..."
-    log_debug "Packages to install: ${packages[*]}"
+    # Install from requirements-dev.txt (includes production + testing + development packages)
+    local requirements_file="$WORKSPACE_DIR/requirements-dev.txt"
+    
+    if [[ ! -f "$requirements_file" ]]; then
+        log_error "requirements-dev.txt not found at $requirements_file"
+        log_error "This file should contain all development dependencies"
+        return 1
+    fi
+    
+    log_info "Installing Python packages from requirements-dev.txt..."
+    log_debug "Requirements file: $requirements_file"
     
     local install_output
-    if ! install_output=$(printf '%s\n' "${packages[@]}" | xargs pip install --user --disable-pip-version-check 2>&1); then
+    if ! install_output=$(pip install --user -r "$requirements_file" --disable-pip-version-check 2>&1); then
         log_error "Failed to install Python packages"
         log_error "Install output: $install_output"
         log_error "Check pip version and network connectivity"
@@ -178,53 +133,27 @@ setup_python_environment() {
     fi
     log_debug "Package installation completed"
 
-    # Verify installation
-    log_debug "Verifying package installations..."
-    local installed_count=0
-    local total_count=${#packages[@]}
-    local failed_packages=()
+    # Verify critical imports (Flask app + testing)
+    log_debug "Verifying critical package installations..."
+    local critical_imports=("flask" "pytest" "playwright" "gunicorn" "sqlalchemy" "bcrypt")
+    local failed_imports=()
     
-    # Mapping for packages with different import names than package names
-    declare -A import_names=(
-        ["PyYAML"]="yaml"
-        ["ipython"]="IPython"
-        ["pytest-asyncio"]="pytest_asyncio"
-        ["pytest-cov"]="pytest_cov"
-    )
-    
-    for pkg in "${packages[@]}"; do
-        pkg_name="${pkg%%==*}"  # Remove version specifier
-        pkg_name="${pkg_name%%>=*}"  # Remove >= specifier
-        pkg_name="${pkg_name%%>*}"   # Remove > specifier
-        
-        # Use mapped import name if available, otherwise convert - to _
-        import_name="${import_names[$pkg_name]:-${pkg_name//-/_}}"
-        
-        log_debug "Verifying $pkg_name (importing as $import_name)..."
-        
-        if python -c "import $import_name" 2>/dev/null; then
-            ((installed_count++))
-        else
-            # Try the original package name as fallback
-            if python -c "import ${pkg_name//-/_}" 2>/dev/null; then
-                log_debug "Package $pkg_name imported as ${pkg_name//-/_} (fallback)"
-                ((installed_count++))
-            else
-                failed_packages+=("$pkg_name")
-                log_debug "Failed to import $pkg_name as $import_name or ${pkg_name//-/_}"
-            fi
+    for import_name in "${critical_imports[@]}"; do
+        log_debug "Verifying $import_name..."
+        if ! python -c "import $import_name" 2>/dev/null; then
+            failed_imports+=("$import_name")
+            log_debug "Failed to import $import_name"
         fi
     done
 
-    if [[ ${#failed_packages[@]} -gt 0 ]]; then
-        log_error "Failed to verify packages: ${failed_packages[*]}"
-        log_error "This may be due to import name mismatches or installation issues"
-        log_error "Try reinstalling with: pip install --user --force-reinstall ${failed_packages[*]}"
+    if [[ ${#failed_imports[@]} -gt 0 ]]; then
+        log_error "Failed to import critical packages: ${failed_imports[*]}"
+        log_error "Try reinstalling with: pip install --user --force-reinstall ${failed_imports[*]}"
         log_error "Or check if packages are installed in user site-packages: python -m site --user-site"
         return 1
     fi
 
-    log_success "Python environment ready: $installed_count/$total_count packages available"
+    log_success "Python environment ready: all critical packages verified"
 }
 
 # ============================================================================

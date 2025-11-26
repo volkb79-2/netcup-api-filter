@@ -132,7 +132,7 @@ The test framework automatically:
 ### Recapture Screenshots
 
 ```bash
-python3 capture_ui_screenshots.py
+python3 ui_tests/capture_ui_screenshots.py
 # Screenshots saved to: $REPO_ROOT/deploy-local/screenshots/
 ```
 
@@ -181,16 +181,16 @@ The test framework automatically:
 ### Capture Webhosting Screenshots
 
 ```bash
-python3 capture_ui_screenshots.py
+python3 ui_tests/capture_ui_screenshots.py
 # Screenshots saved to: $REPO_ROOT/deploy-webhosting/screenshots/
 ```
 
 ## Shared Deployment Library
 
-Both deployment scripts use `deployment-lib.sh` for DRY principles:
+Both deployment scripts use `build_deployment_lib.sh` for DRY principles:
 
 ```bash
-source "${REPO_ROOT}/deployment-lib.sh"
+source "${REPO_ROOT}/build_deployment_lib.sh"
 
 # Available functions:
 load_defaults                              # Load .env.defaults
@@ -285,7 +285,7 @@ UI_BASE_URL="http://${DEVCONTAINER_NAME}:5100"
 2. **Always use deployment scripts** - Don't manually copy files or run Flask
 3. **Let tests manage passwords** - Don't manually edit env files
 4. **Source `.env.workspace` in custom scripts** - Gets canonical paths
-5. **Use `deployment-lib.sh` functions** - DRY, tested, consistent
+5. **Use `build_deployment_lib.sh` functions** - DRY, tested, consistent
 
 ## Troubleshooting
 

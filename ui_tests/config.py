@@ -60,12 +60,11 @@ class UiTestConfig:
             print("[CONFIG] WARNING: UI_ALLOW_WRITES not set, using default: 1 (writes enabled)")
         primary_allow_writes = allow_writes_str not in {"0", "false", "False"}
         
-        # Use DEPLOYED_* variables from env files, fall back to UI_* explicit vars
-        # These MUST come from .env.defaults or deployment state files
+        # Use DEPLOYED_* variables from environment (NO FILE ACCESS)
+        # Playwright container is a pure service - credentials passed via env vars
         base_url = os.getenv("UI_BASE_URL")
         if not base_url:
-            base_url = "https://naf.vxxu.de"
-            print("[CONFIG] WARNING: UI_BASE_URL not set, using default: https://naf.vxxu.de")
+            raise RuntimeError("base_url not set. Need to be set according to deployment.")
         
         admin_username = os.getenv("DEPLOYED_ADMIN_USERNAME") or os.getenv("UI_ADMIN_USERNAME")
         if not admin_username:
@@ -187,9 +186,15 @@ class UiTestConfig:
                             # Map DEFAULT_* to DEPLOYED_* for consistency
                             if prefix and key.startswith(prefix):
                                 deployed_key = key.replace(prefix, "DEPLOYED_", 1)
+                                # Only set defaults if not already in environment
                                 if deployed_key not in os.environ and value:
                                     os.environ[deployed_key] = value
-                            # Only set if not already in environment
+                            # No prefix = deployment-specific file
+                            # BUT: respect already-set environment variables (explicit > file)
+                            elif not prefix and value:
+                                if key not in os.environ:
+                                    os.environ[key] = value
+                            # With prefix but no match = keep if not set
                             elif key not in os.environ and value:
                                 os.environ[key] = value
             except Exception:

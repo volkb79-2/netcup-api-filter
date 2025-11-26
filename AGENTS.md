@@ -141,10 +141,11 @@ See `HTTPS_LOCAL_TESTING.md` for complete setup, debugging, and integration guid
 
 **CRITICAL: ALWAYS use `./build-and-deploy.sh` for deployments**
 
-DO NOT manually copy files, use scp directly, or touch `passenger_wsgi.py`. The deployment script is the ONLY supported deployment method.
+DO NOT manually copy files or use scp directly. The deployment script is the ONLY supported deployment method.
 
 The deployment script:
 - Builds the deployment package with `build_deployment.py` (includes fresh preseeded database)
+- Copies `passenger_wsgi.py` from `src/netcup_api_filter/` to deployment root
 - Uploads `deploy.zip` to the server
 - Cleans old deployment (including dotfiles AND database)
 - Extracts the new package
@@ -173,6 +174,19 @@ Every freshly built deployment now ships with a ready-to-use client for quick sm
 
 Use this token in the `Authorization: Bearer ...` header to exercise read-only flows or to validate UI/API plumbing before creating real clients. Rotate or delete it on production installs once your own clients exist.
 
+## Client Configuration Templates
+
+The admin UI provides **6 pre-configured templates** for common DNS management scenarios:
+
+1. **🏠 DDNS Single Host** - Update single hostname IP (home router, VPN)
+2. **🌐 DDNS Subdomain Delegation** - Manage entire subdomain zone (IoT fleet, K8s)
+3. **👁️ Read-Only Monitoring** - View records without modification
+4. **🔒 LetsEncrypt DNS-01** - Automated certificate issuance (TXT records only)
+5. **⚙️ Full DNS Management** - Complete control for automation (CI/CD, Terraform)
+6. **🔗 CNAME Delegation** - CDN/load balancer alias management
+
+Templates automatically configure realm type, record types, and operations. See `CLIENT_TEMPLATES.md` for detailed use cases and integration examples.
+
 **Deployment Command:**
 ```bash
 ./build-and-deploy.sh
@@ -187,6 +201,68 @@ This is the ONLY supported deployment method. Do not manually scp files.
 - Log File: `/netcup-api-filter/netcup_filter.log`
 - Database: `/netcup-api-filter/netcup_filter.db`
 - Restart: `touch /netcup-api-filter/tmp/restart.txt` (Passenger reload)
+
+**Docker Network** (from `.env.workspace`):
+- Network name is dynamic, set by devcontainer configuration
+- Current network: Read from `DOCKER_NETWORK_INTERNAL` in `.env.workspace` (typically `naf-dev-network`)
+- Both devcontainer and Playwright container share this network for communication
+
+## UI Testing with Playwright Container
+
+**CRITICAL**: UI testing and screenshot capture now use a dedicated Playwright container to keep the devcontainer clean and ensure consistent font/emoji rendering.
+
+### Quick Start
+
+```bash
+# Start Playwright container (one-time setup)
+cd tooling/playwright && ./start-playwright.sh
+
+# Run screenshots (automatic in build-and-deploy-local.sh)
+./tooling/playwright/playwright-exec.sh python3 /workspace/ui_tests/capture_ui_screenshots.py
+
+# Run UI tests
+./tooling/playwright/playwright-exec.sh pytest /workspace/ui_tests/tests -v
+
+# Stop container when done
+docker stop playwright
+```
+
+### What This Provides
+
+- **Clean devcontainer**: No Playwright/browser clutter in devcontainer
+- **Consistent fonts**: Emoji/symbols render correctly (fonts-noto-color-emoji included)
+- **Reusable**: Same container for screenshots, tests, debugging
+- **Automatic fallback**: Scripts detect if container is unavailable and fall back to local Playwright
+- **Network-aware**: Automatically uses correct hostname for container↔devcontainer communication
+
+### Architecture
+
+```
+Playwright Container (generic-playwright:latest)
+  ├── /workspace → Project root (read-write)
+  ├── /screenshots → deploy-local/screenshots (direct output)
+  ├── Network: Same as devcontainer (e.g., naf-dev-network)
+  └── Packages: pytest, playwright, visual regression, debugging tools
+```
+
+**Screenshot workflow**:
+1. `build-and-deploy-local.sh` checks if Playwright container is running
+2. If running: Uses container with `http://<devcontainer-hostname>:5100` as target
+3. If not: Falls back to local Playwright with helpful message
+4. Screenshots written directly to `deploy-local/screenshots/`
+
+### Container Contents
+
+The Playwright container includes:
+- **Browser automation**: Playwright, Chromium browser
+- **Testing**: pytest, pytest-xdist (parallel), pytest-timeout, pytest-rerunfailures
+- **Visual regression**: Pillow, pixelmatch
+- **Code quality**: ruff, black, mypy
+- **Debugging**: ipython, ipdb, rich
+- **HTTP clients**: httpx, requests
+- **Mock servers**: Flask (Netcup API mock), aiosmtpd (SMTP mock)
+
+See `tooling/playwright/requirements.root.txt` for complete list.
 
 ## deploy locally 
 
@@ -250,14 +326,22 @@ See `tooling/playwright/README.md` for detailed setup and usage.
 - the python application resides not inside the web server's document root
 - via webhoster's management UI passenger is configured to pick up `passenger_wsgi.py` as startup
 
-## `.htaccess` 
+## Configuration Model
 
-`.htaccess` is not used by the hoster, no overrides possible
+**All configuration is database-driven** (managed via admin UI). No `.htaccess` files needed—hoster configuration managed via control panel (Passenger settings).
+
+**Config hierarchy:**
+1. `.env.defaults` - Default values (version-controlled)
+2. Environment variables - Override defaults per environment
+3. Database - Runtime settings via admin UI
 
 # Repository structure
 
 - `/deploy` is a generated temporary folder holding only copied data for creating the `deploy.zip` created by `build_deploy.py`
-- installed python modules are defined in `.devcontainer/requirements.txt` 
+- Python dependencies are managed via two-tier system:
+  - `requirements.webhosting.txt` - Production runtime dependencies (vendored in deployment)
+  - `requirements-dev.txt` - Development/testing dependencies (includes production + pytest/playwright/gunicorn)
+  - See `PYTHON_PACKAGES.md` for complete documentation 
 
 # python 
 

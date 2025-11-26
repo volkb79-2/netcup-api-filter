@@ -61,8 +61,11 @@ async def test_admin_clients_table_lists_preseeded_client(active_profile):
         await browser.verify_status(200)
 
         table_text = await browser.text("table tbody")
+        # Demo clients should be seeded for local testing
+        assert "There are no items in the table" not in table_text, "Expected demo clients to be seeded"
         assert settings.client_id in table_text
-        assert settings.client_domain in table_text
+        # Demo clients use example.com realm, not the client_domain from config
+        assert "example.com" in table_text
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-clients")
         assert screenshot_path.endswith(".png")

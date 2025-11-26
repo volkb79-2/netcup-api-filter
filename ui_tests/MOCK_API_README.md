@@ -38,7 +38,7 @@ Use the pytest fixtures from `conftest.py`:
 ```python
 def test_something(mock_netcup_api_server, mock_netcup_credentials):
     """Test with mock API."""
-    from netcup_client import NetcupClient
+    from netcup_api_filter.netcup_client import NetcupClient
     
     client = NetcupClient(
         customer_id=mock_netcup_credentials['customer_id'],

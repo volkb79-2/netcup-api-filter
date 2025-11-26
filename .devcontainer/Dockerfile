@@ -42,6 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shellcheck \
     # allow remote filesystem access in VSCode
     fuse3 sshfs  \
+    # Emoji font support for Playwright screenshots
+    fonts-noto-color-emoji \
     && echo "user_allow_other" >> /etc/fuse.conf \
     && rm -rf /var/lib/apt/lists/*
 

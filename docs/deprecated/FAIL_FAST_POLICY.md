@@ -385,7 +385,7 @@ $ source .env.workspace && ./deploy.sh
 - ✅ `tooling/start-ui-stack.sh` - All config required
 - ✅ `tooling/run-ui-validation.sh` - All test vars required
 - ✅ `tooling/local_proxy/_proxy_lib.sh` - Function params required
-- ✅ `deployment-lib.sh` - Exports REPO_ROOT with fail-fast check
+- ✅ `build_deployment_lib.sh` - Exports REPO_ROOT with fail-fast check
 
 ### Python Files (Completed)
 - ✅ `wsgi.py` - Config path with WARNING on default

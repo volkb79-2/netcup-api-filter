@@ -23,6 +23,15 @@ This folder contains the living documentation for the Netcup API Filter.
 - `UI_GUIDE.md` – UI walkthrough for operator-facing pages.
 - `WEBHOSTING_DEPLOYMENT.md` – Hosting-specific deployment steps for the Netcup environment.
 
+## Project Documentation (Repository Root)
+
+These files live at the repository root for quick access:
+
+- `../PLAYWRIGHT_CONTAINER.md` – Dedicated Playwright container architecture, setup, and troubleshooting.
+- `../PYTHON_PACKAGES.md` – Python dependencies, requirements files, and package management.
+- `../AGENTS.md` – Agent instructions and project context (for AI assistants).
+- `../CLIENT_TEMPLATES.md` – Pre-configured client templates for common use cases.
+
 ## Deprecated / Historical References
 
 See `docs/deprecated/` for archived summaries. They remain available for context but should not be updated; fold any new information into the active guides above.

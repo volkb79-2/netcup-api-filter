@@ -42,7 +42,7 @@ cd "${DEPLOY_LOCAL_DIR}"
 # Use the preseeded database
 export NETCUP_FILTER_DB_PATH="${DEPLOY_LOCAL_DIR}/netcup_filter.db"
 
-# Set SECRET_KEY for Flask session persistence (same as webhosting uses .secret_key file)
+# Set SECRET_KEY for Flask session persistence (config-driven)
 export SECRET_KEY="local-test-secret-key-for-session-persistence-12345678"
 
 # Disable Secure cookie flag for local HTTP testing (production uses HTTPS)

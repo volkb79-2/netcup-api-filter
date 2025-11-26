@@ -61,6 +61,12 @@ def _update_deployment_state(**kwargs) -> None:
             print(f"[CONFIG] ERROR: DEPLOYMENT_ENV_FILE not set and no .env.local or .env.webhosting found")
             return
     
+    # CRITICAL: Never write to .env.defaults (it's the source of truth for defaults only!)
+    if env_filename == '.env.defaults':
+        print(f"[CONFIG] ERROR: Cannot write to {env_filename} - this file is read-only defaults")
+        print(f"[CONFIG] Deployment state must be in .env.local or .env.webhosting")
+        return
+    
     # Try writable locations: /screenshots (Playwright container), then workspace
     possible_paths = [
         f'/screenshots/{env_filename}',  # Playwright container writable mount
@@ -208,7 +214,7 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     - Updates .env.webhosting so subsequent tests use the correct password
     """
     import anyio
-    from utils import generate_token
+    from netcup_api_filter.utils import generate_token
     
     # Try to login with current password first
     await browser.goto(settings.url("/admin/login"))
@@ -355,7 +361,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     NOTE: This test does NOT test wrong credentials to avoid triggering account lockout.
     Wrong credential testing should be done in a separate, isolated test.
     """
-    from utils import generate_token
+    from netcup_api_filter.utils import generate_token
     new_password = generate_token()  # Generate secure random password
     
     # 1. Test access to admin pages is prohibited without login

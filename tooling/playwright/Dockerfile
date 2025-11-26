@@ -11,7 +11,7 @@ WORKDIR /app
 # Copy requirements and install Python packages
 COPY requirements.root.txt ./
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends curl fonts-noto-color-emoji && \
     rm -rf /var/lib/apt/lists/* && \
     pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.root.txt && \
@@ -28,5 +28,6 @@ COPY mcp_server.py /app/mcp_server.py
 # If MCP_ENABLED=true, docker-compose will override to run MCP server
 CMD ["/bin/bash"]
 
-EXPOSE 8765
+# Note: No EXPOSE needed - ports defined in docker-compose.yml
+# MCP server runs on port 8765 (configurable via MCP_PORT)
 VOLUME ["/screenshots", "/workspace"]
