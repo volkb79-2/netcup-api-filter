@@ -1,5 +1,7 @@
 # Deployment and Testing Guide
 
+> **Status:** Archived. See `OPERATIONS_GUIDE.md` for the maintained deployment and validation steps.
+
 ## Overview
 
 This project uses a **config-driven** approach for deployments and testing with complete separation between local and webhosting environments. All configuration comes from environment files - NO hardcoded values in scripts or code.

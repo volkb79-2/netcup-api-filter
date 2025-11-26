@@ -1,5 +1,7 @@
 # READY TO DEPLOY - Instructions for Your Working Setup
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Status: ✅ Hello World is Working!
 
 Your hello world test at https://hosting.vxxu.de/netcup-api-filter shows:

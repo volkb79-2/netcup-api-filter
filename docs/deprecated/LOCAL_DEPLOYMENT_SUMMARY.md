@@ -1,5 +1,7 @@
 # Local Testing Implementation Summary
 
+> **Status:** Archived background. Operational instructions now live in `OPERATIONS_GUIDE.md`.
+
 ## Problem Statement
 
 User requested: "mirror live deployment as closely as possible" for local testing to ensure tests are valid and production deployments are predictable.

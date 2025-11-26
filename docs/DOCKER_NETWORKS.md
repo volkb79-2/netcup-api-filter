@@ -1,5 +1,7 @@
 # Docker Network Types - Explained
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Overview
 
 Docker provides multiple network drivers, each with different characteristics for container connectivity, DNS resolution, and accessibility.

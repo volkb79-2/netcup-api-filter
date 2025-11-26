@@ -1,5 +1,7 @@
 # Test Suite Status Report
 
+> **Status:** Archived snapshot. See `OPERATIONS_GUIDE.md` for current test expectations.
+
 **Date**: November 23, 2025  
 **Total Tests**: 90  
 **Execution Time**: 15 minutes 22 seconds

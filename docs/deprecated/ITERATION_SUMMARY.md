@@ -1,5 +1,7 @@
 # Build-Deploy-Test-Fix Iteration Summary
 
+> **Status:** Historical log. Current procedures are documented in `README.md`, `CONFIGURATION_GUIDE.md`, and `OPERATIONS_GUIDE.md`.
+
 ## Overview
 This document summarizes the complete iterative testing cycle performed on the Netcup API Filter application, following the user's directive: **"build, deploy, test, fix and REPEAT until all issues are gone"**
 

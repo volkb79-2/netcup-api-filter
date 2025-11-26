@@ -1,5 +1,7 @@
 # SSH Agent Persistence
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Overview
 
 SSH keys loaded during devcontainer creation are now **persistent across all terminal sessions**. The SSH agent is started once and shared across all shells.

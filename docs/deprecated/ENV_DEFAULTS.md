@@ -1,5 +1,7 @@
 # Environment Defaults System
 
+> **Status:** Archived reference. The living documentation for defaults and overrides is `CONFIGURATION_GUIDE.md`.
+
 ## Overview
 
 This project uses `.env.defaults` as the **single source of truth** for default credentials and configuration. This eliminates hardcoded values scattered across code, scripts, and documentation.

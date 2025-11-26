@@ -1,5 +1,7 @@
 # Configuration-Driven Architecture & HTTPS Testing Implementation
 
+> **Status:** Archived rollout log. Current configuration guidance lives in `CONFIGURATION_GUIDE.md`.
+
 **Date**: 2025-11-24  
 **Status**: ✅ Complete
 

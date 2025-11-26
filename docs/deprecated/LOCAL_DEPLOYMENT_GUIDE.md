@@ -1,5 +1,7 @@
 # Local Deployment Guide
 
+> **Status:** Archived walkthrough. Use `OPERATIONS_GUIDE.md` for the up-to-date local deployment steps.
+
 ## Overview
 
 **YES**, you can already run **complete tests including mocked services** locally! The infrastructure is fully set up.

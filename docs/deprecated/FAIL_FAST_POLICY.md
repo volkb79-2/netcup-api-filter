@@ -1,5 +1,7 @@
 # Fail-Fast Policy
 
+> **Status:** Archived reference. Use `CONFIGURATION_GUIDE.md` for the current fail-fast requirements and workflow.
+
 ## Overview
 
 **This project enforces a strict FAIL-FAST policy**: Missing configuration causes immediate errors instead of falling back to defaults. This surfaces configuration issues early and ensures reproducible deployments.

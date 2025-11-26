@@ -1,5 +1,7 @@
 # `.env.workspace` - Workspace Configuration File
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Purpose
 
 The `.env.workspace` file is **auto-generated** by `.devcontainer/post-create.sh` and provides workspace configuration to scripts that run **outside** the post-create.sh context.

@@ -1,5 +1,7 @@
 # Local Proxy Configuration Review - Dynamic Detection Implementation
 
+> **Status:** Archived review. Use `OPERATIONS_GUIDE.md` for the maintained TLS proxy workflow.
+
 **Date**: 2025-11-24  
 **Status**: ✅ Complete
 
@@ -15,14 +17,8 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 **Changes**: Added extensive inline documentation (100+ lines of comments)
 
 **Key sections**:
-- **Domain Configuration**: Explains `LOCAL_TLS_DOMAIN` (public FQDN from reverse DNS)
-- **Backend Configuration**: Documents `LOCAL_APP_HOST` and `LOCAL_APP_PORT`
-- **Port Bindings**: Clarifies production (443/80) vs development (4443/4080) ports
-- **Certificate Configuration**: Details two options:
   - **Option 1 (Recommended)**: Real Let's Encrypt certificates (`/etc/letsencrypt`)
   - **Option 2 (Fallback)**: Self-signed test certificates (`./certs/`)
-- **Docker Networking**: Explains `LOCAL_PROXY_NETWORK` requirement
-- **Staging Paths**: Documents devcontainer-specific `LOCAL_PROXY_CONFIG_PATH`
 
 **Before**: Minimal comments, unclear purpose of variables  
 **After**: Each variable has purpose, usage examples, and caveats
@@ -31,20 +27,11 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 **Changes**: Added detailed comments explaining current fallback configuration
 
 **Key additions**:
-- Clear indication this uses **fallback test certificates** (self-signed)
-- Warning about browser security warnings
-- Recommendation to run `./auto-detect-fqdn.sh` for production parity
-- Explanation of each current value (why 4443 vs 443, etc.)
 
 #### `nginx.conf.template`
 **Changes**: Added comprehensive comments explaining template variables and nginx configuration
 
 **Key sections**:
-- Template variable substitution documentation (`${LOCAL_TLS_DOMAIN}`, etc.)
-- Certificate path construction explanation
-- **CRITICAL comment** on `disable_symlinks off` (required for Let's Encrypt)
-- Proxy header documentation (especially `X-Forwarded-Proto: https`)
-- HTTP → HTTPS redirect explanation
 
 #### `README.md`
 **Changes**: Major rewrite of Configuration section
@@ -59,25 +46,18 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 
 #### `render-nginx-conf.sh`
 **Changes**:
-- Added header comments explaining purpose and usage
-- Default to `proxy.env` in same directory (no argument needed)
-- Better output messages with ✓ checkmark and next steps
 
 **Before**: Required explicit argument, minimal output  
 **After**: Smart defaults, clear guidance
 
 #### `stage-proxy-inputs.sh`
 **Changes**:
-- Added header comments explaining purpose and usage
-- Default to `proxy.env` in same directory
-- Better output messages with next step guidance
 
 **Before**: Required explicit argument  
 **After**: Smart defaults, clear workflow
 
 #### `_proxy_lib.sh`
 **Changes**:
-- Fixed syntax error in `proxy__require_tmp_path` (escaped quote issue)
 
 **Fix**: `${ALLOW_PROXY_ASSET_STAGE_ANYWHERE:?...}\"` → `${ALLOW_PROXY_ASSET_STAGE_ANYWHERE:-0}`
 
@@ -87,12 +67,6 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 **Purpose**: Explain the fallback test certificate structure
 
 **Contents**:
-- When to use self-signed test certificates (fallback only)
-- Directory structure mimicking Let's Encrypt layout
-- Configuration instructions for test certificates
-- Limitations and security warnings
-- Certificate regeneration instructions
-- Recommendation to use auto-detection instead
 
 ## Variable Purpose Clarification
 
@@ -112,8 +86,6 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 ### `LOCAL_APP_HOST`
 **Purpose**: Backend Flask hostname reachable from nginx container  
 **Dynamic values**:
-- `__auto__`: Injected at runtime by `run-ui-validation.sh` (uses `hostname` command)
-- `netcup-api-filter-devcontainer`: Manual specification (must be on same Docker network)
 
 **NO HARDCODED VALUES**: Either auto-injected or read from `proxy.env`
 
@@ -125,8 +97,6 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 ### `LE_CERT_BASE`
 **Purpose**: Base directory for TLS certificates  
 **Dynamic values**:
-- `/etc/letsencrypt`: Real Let's Encrypt (auto-detected by `./auto-detect-fqdn.sh`)
-- `/tmp/netcup-local-proxy/certs`: Fallback test certificates (manual configuration)
 
 **NO HARDCODED VALUES**: Always from `proxy.env`, auto-detected or manual
 

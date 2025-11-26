@@ -1,5 +1,7 @@
 # Local Testing with Production Parity
 
+> **Status:** Archived implementation notes. Follow `OPERATIONS_GUIDE.md` for the maintained testing workflow.
+
 ## Overview
 
 This document describes how to run the complete test suite (47 tests: 26 functional + 21 E2E) against a local deployment that **exactly mirrors** the webhosting production environment.

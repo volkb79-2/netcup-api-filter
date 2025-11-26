@@ -1,5 +1,7 @@
 # Security Hardening Guide
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 This document describes the security measures implemented in the Netcup API Filter and provides recommendations for secure deployment.
 
 ## Implemented Security Measures

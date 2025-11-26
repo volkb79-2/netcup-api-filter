@@ -1,5 +1,7 @@
 # MCP and FUSE Configuration Changes
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Summary
 
 Implemented MCP server for Playwright container and added FUSE support to devcontainer.

@@ -1,5 +1,7 @@
 # Webhosting Deployment Guide
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 This guide explains how to deploy the Netcup API Filter on shared webhosting environments (like Netcup Webhosting 4000).
 
 ## Prerequisites

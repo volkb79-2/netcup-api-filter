@@ -1,5 +1,7 @@
 # Test Suite Quick Reference
 
+> **Status:** Archived scoreboard. Use `OPERATIONS_GUIDE.md` for active testing instructions and pass/fail expectations.
+
 ## Current Status: 57/90 Passing (63%)
 
 ### Run All Tests

@@ -1,5 +1,7 @@
 # Multi-Client Demonstration System
 
+> **Status:** Archived showcase. Current client configuration guidance lives in `ADMIN_GUIDE.md` and `OPERATIONS_GUIDE.md`.
+
 ## Overview
 
 The deployment now includes **5 different demo clients** that showcase the full range of API filtering capabilities. Each client demonstrates different permission configurations for real-world use cases.

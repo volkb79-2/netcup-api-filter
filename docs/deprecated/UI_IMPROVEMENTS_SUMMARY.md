@@ -1,5 +1,7 @@
 # UI Consistency Improvements Summary
 
+> **Status:** Archived summary. Any forward-looking UI guidance should live alongside the relevant feature docs (README / ADMIN_GUIDE / CLIENT_USAGE).
+
 **Date**: 2025-11-25  
 **Status**: ✅ Complete  
 **Deployment**: `deploy-local/` rebuilt with all changes  

@@ -1,5 +1,7 @@
 # HTTPS Local Testing with Let's Encrypt Certificates
 
+> **Status:** Archived. Follow the TLS workflow documented in `OPERATIONS_GUIDE.md` for current instructions.
+
 ## Quick Start
 
 ```bash

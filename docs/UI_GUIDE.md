@@ -1,5 +1,7 @@
 # Netcup API Filter · UI Guide
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 This document describes the current UI architecture, development patterns, and deployment workflow for the Netcup API Filter. It supersedes all previous UI docs.
 
 ## 1. Architecture Overview

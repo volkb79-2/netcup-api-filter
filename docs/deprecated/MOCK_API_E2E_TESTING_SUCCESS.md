@@ -1,5 +1,7 @@
 # Mock Netcup API - E2E Testing Implementation Complete ✅
 
+> **Status:** Archived validation log. Refer to `OPERATIONS_GUIDE.md` for the maintained e2e workflows.
+
 ## Summary
 
 Successfully implemented comprehensive mock Netcup API for local E2E testing without requiring real Netcup credentials. All CRUD operations work perfectly with in-memory mock data, and the UI correctly displays records and permission-based controls.

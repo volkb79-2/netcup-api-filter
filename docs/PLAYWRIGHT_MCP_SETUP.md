@@ -1,5 +1,7 @@
 # Playwright MCP Setup Guide
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Overview
 
 The Playwright MCP (Model Context Protocol) server allows VS Code Copilot Chat to interact with web pages for testing. This guide explains the networking requirements and how to troubleshoot connectivity issues.

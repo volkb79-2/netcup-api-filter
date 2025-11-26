@@ -1,5 +1,7 @@
 # Client Authentication Guide
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 ## Authentication Format
 
 The Netcup API Filter uses **two-factor client authentication**:

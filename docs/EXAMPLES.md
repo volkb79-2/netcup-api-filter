@@ -1,5 +1,7 @@
 # Usage Examples
 
+> Part of the active documentation set in `/docs`. See `docs/README.md` for context.
+
 This document provides practical examples of using the Netcup API Filter in various scenarios.
 
 ## Table of Contents
