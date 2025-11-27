@@ -2,6 +2,9 @@
 playwright>=1.56.0
 anyio>=4.11.0
 
+# WebSocket support for standalone service
+websockets>=12.0
+
 
 # Testing frameworks
 pytest>=8.0.0

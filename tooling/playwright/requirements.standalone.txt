@@ -1,0 +1,8 @@
+# Additional requirements for standalone Playwright service
+# These extend the base requirements.root.txt
+
+# WebSocket server
+websockets>=12.0
+
+# Process management for running multiple services
+supervisor>=4.2.5

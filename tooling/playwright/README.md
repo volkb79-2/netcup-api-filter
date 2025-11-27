@@ -1,19 +1,81 @@
 # Generic Playwright Container for Browser Automation
 
-A reusable Docker container providing Playwright browser automation with dual access modes:
-- **MCP server** for AI agent exploration (optional)
-- **Direct Playwright API** for automated testing (primary use)
+A reusable Docker container providing Playwright browser automation with three access modes:
+- **WebSocket server** for programmatic tests and multi-client access (port 3000)
+- **MCP server** for AI agent exploration (port 8765)
+- **Direct Playwright API** for in-container testing
 
 ## Features
 
 - ✅ Playwright with Chromium pre-installed
 - ✅ All system dependencies included
 - ✅ Python 3.13 with async support
-- ✅ Optional MCP server for AI agents
+- ✅ **Multi-client WebSocket service** (port 3000) - NEW!
+- ✅ Optional MCP server for AI agents (port 8765)
+- ✅ **TLS support with self-signed certificates** - NEW!
+- ✅ **Token-based authentication** - NEW!
+- ✅ **Session management per client** - NEW!
 - ✅ Volume mount for screenshots
 - ✅ Generic and reusable across projects
 
 ## Quick Start
+
+There are two deployment modes:
+
+### Integrated Mode (Current - for netcup-api-filter)
+
+Uses shared Docker network with devcontainer. See original Quick Start below.
+
+### Standalone Mode (NEW - for multi-client service)
+
+Run as independent service with its own network, TLS, and auth:
+
+```bash
+cd tooling/playwright
+
+# Basic mode (no TLS, no auth)
+./start-standalone.sh
+
+# With TLS (self-signed certificate)
+./start-standalone.sh --tls
+
+# With authentication
+./start-standalone.sh --auth
+
+# Full security (TLS + auth)
+./start-standalone.sh --tls --auth
+```
+
+#### Connect to Standalone Service
+
+**Python WebSocket Client:**
+```python
+from ws_client import PlaywrightWSClient
+import asyncio
+
+async def main():
+    async with PlaywrightWSClient("ws://localhost:3000") as client:
+        await client.navigate("https://example.com")
+        await client.fill("#username", "admin")
+        await client.click("button[type='submit']")
+        screenshot = await client.screenshot("test.png")
+        print(f"Screenshot: {screenshot['path']}")
+
+asyncio.run(main())
+```
+
+**With Authentication:**
+```python
+async with PlaywrightWSClient(
+    "ws://localhost:3000",
+    auth_token="your-token-here"
+) as client:
+    await client.navigate("https://example.com")
+```
+
+---
+
+## Integrated Mode Quick Start
 
 ### 1. Configure Environment (Optional)
 
@@ -54,7 +116,72 @@ docker compose exec playwright pytest /workspace/tests -v
 
 ## Usage Modes
 
-### Mode 1: Direct Playwright (Recommended for Tests)
+### Mode 1: WebSocket Service (NEW - Recommended for Multi-Client)
+
+The standalone WebSocket server allows multiple clients to connect simultaneously.
+Each client gets its own browser session.
+
+**Features:**
+- ✅ Multi-client support
+- ✅ Session isolation per client
+- ✅ Full Playwright API (no MCP limitations)
+- ✅ Form submissions work correctly
+- ✅ JavaScript execution available
+- ✅ Optional TLS encryption
+- ✅ Optional token authentication
+
+**Start the service:**
+```bash
+./start-standalone.sh
+```
+
+**Use the Python client:**
+```python
+from ws_client import PlaywrightWSClient
+import asyncio
+
+async def test_login():
+    async with PlaywrightWSClient("ws://localhost:3000") as client:
+        # Login helper method
+        result = await client.login(
+            url="https://example.com/login",
+            username="admin",
+            password="secret",
+            success_url_pattern="**/dashboard"
+        )
+        print(f"Logged in: {result['logged_in']}")
+        
+        # Take screenshot
+        await client.screenshot("after_login.png")
+
+asyncio.run(test_login())
+```
+
+**WebSocket Protocol:**
+
+All messages are JSON:
+
+```json
+// Request
+{"id": "msg1", "command": "navigate", "args": {"url": "https://example.com"}}
+
+// Response
+{"type": "response", "id": "msg1", "success": true, "data": {"url": "...", "title": "..."}}
+```
+
+**Available Commands:**
+- Navigation: `navigate`, `reload`, `go_back`, `go_forward`
+- Actions: `click`, `fill`, `type`, `press`, `check`, `uncheck`, `hover`, `focus`
+- Form: `select_option`, `login` (convenience method)
+- Query: `get_url`, `get_content`, `get_text`, `get_attribute`, `get_input_value`
+- Wait: `wait_for_selector`, `wait_for_url`, `wait_for_load_state`
+- State: `is_visible`, `is_enabled`, `is_checked`, `query_selector`, `query_selector_all`
+- Screenshot: `screenshot`
+- JavaScript: `evaluate`
+- Cookies: `cookies`, `set_cookies`, `clear_cookies`
+- Session: `close_session`, `health`
+
+### Mode 2: Direct Playwright (Recommended for In-Container Tests)
 
 Run Playwright directly inside the container:
 
@@ -86,7 +213,7 @@ Run it:
 docker compose exec playwright python3 /workspace/test_example.py
 ```
 
-### Mode 2: MCP Server (Optional, for AI Agents)
+### Mode 3: MCP Server (Optional, for AI Agents)
 
 The container can optionally run an MCP server for AI agent exploration:
 
@@ -125,17 +252,52 @@ ssh -L 8765:localhost:8765 user@your-server.com -N
 
 ```
 tooling/playwright/
-├── README.md                 # This file
-├── Dockerfile                # Container definition
-├── docker-compose.yml        # Container orchestration
-├── requirements.root.txt     # Python dependencies
-├── mcp_server.py             # Optional MCP server
-└── screenshots/              # Screenshot output directory
+├── README.md                     # This file
+├── Dockerfile                    # Integrated container
+├── Dockerfile.standalone         # Standalone service container
+├── docker-compose.yml            # Integrated orchestration
+├── docker-compose.standalone.yml # Standalone orchestration (NEW)
+├── requirements.root.txt         # Python dependencies
+├── requirements.standalone.txt   # Additional standalone dependencies
+├── mcp_server.py                 # MCP server for AI agents
+├── ws_server.py                  # WebSocket server (NEW)
+├── ws_client.py                  # Python WebSocket client (NEW)
+├── start_services.py             # Multi-service startup script (NEW)
+├── start-playwright.sh           # Integrated mode start script
+├── start-mcp.sh                  # MCP mode start script
+├── start-standalone.sh           # Standalone mode start script (NEW)
+├── test_ws_server.py             # WebSocket server tests (NEW)
+└── screenshots/                  # Screenshot output directory
 ```
 
 ## Configuration
 
-### Environment Variables
+### Environment Variables (Standalone Mode)
+
+```bash
+# WebSocket server
+WS_PORT=3000                      # WebSocket server port
+WS_HOST=0.0.0.0                   # Bind address
+WS_AUTH_TOKEN=                    # Authentication token (empty = no auth)
+WS_MAX_SESSIONS=10                # Maximum concurrent sessions
+WS_SESSION_TIMEOUT=3600           # Session timeout in seconds
+
+# TLS settings
+SSL_ENABLED=false                 # Enable TLS
+SSL_CERT_PATH=/certs/server.crt   # Certificate path
+SSL_KEY_PATH=/certs/server.key    # Key path
+
+# MCP server
+MCP_ENABLED=true                  # Enable MCP server
+MCP_PORT=8765                     # MCP server port
+MCP_SERVER_NAME=playwright        # MCP server name
+
+# Playwright
+PLAYWRIGHT_HEADLESS=true          # Run browsers headless
+PLAYWRIGHT_BROWSER=chromium       # Browser: chromium, firefox, webkit
+```
+
+### Environment Variables (Integrated Mode)
 
 Create a `.env` file from `.env.example` or set these variables:
 
@@ -201,31 +363,36 @@ All Python packages are defined in `requirements.root.txt`:
 
 ```
 playwright>=1.56.0       # Browser automation
-pytest>=8.0.0            # Testing framework (if needed)
-pytest-asyncio>=0.23.0   # Async test support (if needed)
+websockets>=12.0         # WebSocket support (NEW)
+pytest>=8.0.0            # Testing framework
+pytest-asyncio>=0.23.0   # Async test support
 ```
 
-Optional (for MCP mode):
+For MCP mode (included in requirements.root.txt):
 ```
 fastmcp>=0.9.0          # MCP protocol
 fastapi>=0.110.0        # Web framework
 uvicorn>=0.30.0         # ASGI server
+mcp>=1.22.0             # MCP SDK
 ```
 
-## Why Direct Playwright Instead of MCP?
+## Mode Comparison
 
-After extensive testing (10+ iterations), we discovered:
+| Feature | WebSocket | Direct Playwright | MCP |
+|---------|-----------|-------------------|-----|
+| Multi-client | ✅ Yes | ❌ No | ❌ Single |
+| Form Submission | ✅ Works | ✅ Works | ❌ Broken |
+| JavaScript | ✅ Full | ✅ Full | ❌ Limited |
+| Remote Access | ✅ Yes | ❌ Container only | ✅ Yes |
+| TLS Support | ✅ Yes | N/A | ❌ No |
+| Authentication | ✅ Token | N/A | ❌ No |
+| Session Management | ✅ Per-client | Manual | Single |
+| Best For | Tests, CI/CD | Quick scripts | AI exploration |
 
-| Feature | MCP Wrapper | Direct Playwright |
-|---------|-------------|-------------------|
-| Form Submission | ❌ Broken | ✅ Works |
-| JavaScript | ❌ Limited | ✅ Full Access |
-| Navigation | ✅ Works | ✅ Works |
-| Screenshots | ✅ Works | ✅ Works |
-| Speed | Slower | Faster |
-| Complexity | Higher | Lower |
-
-**Conclusion**: Use Direct Playwright for all automated testing.
+**Recommendation**: 
+- Use **WebSocket** for automated tests and CI/CD
+- Use **Direct Playwright** for quick in-container scripts
+- Use **MCP** only for AI-assisted exploration
 
 ## Troubleshooting
 
@@ -321,6 +488,17 @@ For issues or questions:
 
 ---
 
-**Version**: 1.0  
-**Last Updated**: 2025-11-22  
+**Version**: 2.0  
+**Last Updated**: 2025-11-26  
 **Maintainer**: Generic (adapt per project)
+
+## Changelog
+
+### v2.0 (2025-11-26)
+- Added WebSocket server for multi-client support
+- Added standalone Docker Compose configuration
+- Added TLS support with self-signed certificates
+- Added token-based authentication
+- Added session management per client
+- Added Python WebSocket client library
+- Added convenience `login` command for authentication flows
