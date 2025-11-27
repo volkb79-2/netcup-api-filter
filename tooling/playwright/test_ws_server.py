@@ -8,7 +8,7 @@ Playwright service container.
 Run with:
     pytest tooling/playwright/test_ws_server.py -v
 
-Author: netcup-api-filter project
+Author: Playwright Standalone Service
 Date: 2025-11-26
 """
 

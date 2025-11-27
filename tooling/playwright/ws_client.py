@@ -14,7 +14,7 @@ Usage:
         await client.click("button[type='submit']")
         screenshot = await client.screenshot("test.png")
 
-Author: netcup-api-filter project
+Author: Playwright Standalone Service
 Date: 2025-11-26
 """
 

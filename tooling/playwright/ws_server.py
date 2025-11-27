@@ -22,7 +22,7 @@ Protocol:
         {"type": "response", "id": "unique-id", "success": true, "data": {...}}
         {"type": "error", "id": "unique-id", "error": "message"}
 
-Author: netcup-api-filter project
+Author: Playwright Standalone Service
 Date: 2025-11-26
 """
 
@@ -357,9 +357,14 @@ class PlaywrightWebSocketServer:
             }))
         except Exception as e:
             logger.error(f"Command error: {e}")
+            msg_id = None
+            try:
+                msg_id = data.get('id')
+            except NameError:
+                pass
             await websocket.send(json.dumps({
                 'type': 'error',
-                'id': data.get('id') if 'data' in dir() else None,
+                'id': msg_id,
                 'error': str(e)
             }))
     
@@ -388,8 +393,14 @@ class PlaywrightWebSocketServer:
         
         path = args.get('path')
         if path:
-            # Ensure path is within screenshots directory
-            screenshot_path = Path("/screenshots") / Path(path).name
+            # Sanitize filename - only allow alphanumeric, dash, underscore, and dot
+            filename = Path(path).name
+            import re
+            if not re.match(r'^[\w\-\.]+$', filename):
+                raise ValueError(f"Invalid filename: {filename}")
+            if '..' in filename or filename.startswith('.'):
+                raise ValueError(f"Invalid filename: {filename}")
+            screenshot_path = Path("/screenshots") / filename
         else:
             screenshot_path = Path("/screenshots") / f"screenshot_{int(time.time())}.png"
         

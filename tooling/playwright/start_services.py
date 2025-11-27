@@ -10,7 +10,7 @@ Environment Variables:
     MCP_ENABLED: Enable MCP server (default: true)
     MCP_PORT: MCP server port (default: 8765)
     
-Author: netcup-api-filter project
+Author: Playwright Standalone Service
 Date: 2025-11-26
 """
 
