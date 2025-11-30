@@ -311,10 +311,9 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
         pass
     elif "/admin/" in current_url and ("Dashboard" in body_text or "Clients" in body_text):
         # Already logged in and on dashboard (password already changed)
+        # Return the CURRENT password from settings (not a new random one)
         print("[DEBUG] Already on dashboard - password was already changed")
-        settings._active.admin_password = new_password
-        settings._active.admin_new_password = new_password
-        return new_password
+        return settings.admin_password
     else:
         # Check for lockout or other errors
         if "Too many failed login attempts" in body_text:
@@ -700,14 +699,21 @@ async def admin_email_save_expect_error(browser: Browser) -> None:
         await browser.fill(selector, value)
 
     await browser.fill("#sender_email", "invalid@example")
-    await browser.submit("#smtp-settings-form")
-    await browser.wait_for_text(".flash-messages", "Sender email address must be valid")
+    # Click the Save button specifically to include action=save in form data
+    await browser.click('button[value="save"]')
+    # Form validation errors appear inline in Bootstrap 5, not as flash messages
+    await browser.wait_for_text(".invalid-feedback", "Invalid email address")
     await open_admin_email_settings(browser)
 
 
 async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     await open_admin_email_settings(browser)
-    await browser.submit("#test-email-form")
+    # Fill required fields to pass HTML5 form validation
+    await browser.fill("#smtp_server", "smtp.test.local")
+    await browser.fill("#smtp_port", "465")
+    await browser.fill("#sender_email", "test@example.com")
+    # Leave test_email empty and click test button - should show warning
+    await browser.click('button[value="test"]')
     await browser.wait_for_text(".flash-messages", "Please enter an email address to test")
     await open_admin_email_settings(browser)
 

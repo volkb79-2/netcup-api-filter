@@ -3,8 +3,9 @@ Netcup API Filter Proxy
 A filtering proxy for the Netcup DNS API that provides granular access control
 """
 import logging
+import os
 import re
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import yaml
@@ -38,12 +39,16 @@ def inject_build_metadata():
 # Security: Set maximum content length (10MB)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
 
-# Security: Rate limiting
+# Security: Rate limiting (disabled in local_test mode)
+flask_env = os.environ.get('FLASK_ENV', '')
+rate_limit_enabled = flask_env != 'local_test'
+
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per hour", "50 per minute"],
+    default_limits=["200 per hour", "50 per minute"] if rate_limit_enabled else [],
     storage_uri="memory://",
+    enabled=rate_limit_enabled,
 )
 
 # Global configuration
@@ -175,7 +180,7 @@ def add_security_headers(response):
     # Content Security Policy - Allow UI resources for admin + client portals
     # Allow self for scripts/styles plus Bootstrap/jQuery CDNs
     # unsafe-eval required for Alpine.js expressions in modern UI
-    if request.path.startswith('/admin') or request.path.startswith('/client'):
+    if request.path.startswith('/admin') or request.path.startswith('/client') or request.path.startswith('/theme-demo'):
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "
@@ -206,6 +211,13 @@ def index():
         "version": "1.0.0"
     })
 
+
+
+@app.route("/theme-demo", methods=["GET"])
+@limiter.exempt
+def theme_demo():
+    """Theme demo page for previewing UI themes"""
+    return render_template("theme_demo.html")
 
 @app.route("/debug/filesystem", methods=["GET"])
 @limiter.exempt

@@ -110,7 +110,7 @@ class UiTestConfig:
             admin_new_password=os.getenv("UI_ADMIN_NEW_PASSWORD") or None,
             client_id=client_id,
             client_secret_key=client_secret_key,
-            client_domain=os.getenv("UI_CLIENT_DOMAIN", "qweqweqwe.vi"),
+            client_domain=os.getenv("UI_CLIENT_DOMAIN", "example.com"),  # Match preseeded clients
             allow_writes=primary_allow_writes,
             deployment_target=self._deployment_target,
         )

@@ -472,28 +472,29 @@ phase_tests() {
     local failed_suites=()
     
     # Define test suites with their applicability
-    # Format: "suite_name:test_pattern:local_only"
+    # Format: "suite_name|test_pattern|local_only" (using | as delimiter to allow :: in patterns)
+    # Note: Admin UI excludes auth_flow test since Phase 4 already handles it
     local test_suites=(
-        "Admin UI:ui_tests/tests/test_admin_ui.py:false"
-        "API Proxy:ui_tests/tests/test_api_proxy.py:false"
-        "Client UI:ui_tests/tests/test_client_ui.py:false"
-        "Audit Logs:ui_tests/tests/test_audit_logs.py:false"
-        "Config Pages:ui_tests/tests/test_config_pages.py:false"
-        "UI Comprehensive:ui_tests/tests/test_ui_comprehensive.py:false"
-        "UI Regression:ui_tests/tests/test_ui_regression.py:false"
-        "UI UX Validation:ui_tests/tests/test_ui_ux_validation.py:false"
-        "Console Errors:ui_tests/tests/test_console_errors.py:false"
-        "Create and Login:ui_tests/tests/test_create_and_login.py:false"
-        "Isolated Sessions:ui_tests/tests/test_isolated_sessions.py:false"
+        "Admin UI|ui_tests/tests/test_admin_ui.py --deselect=ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow|false"
+        "API Proxy|ui_tests/tests/test_api_proxy.py|false"
+        "Client UI|ui_tests/tests/test_client_ui.py|false"
+        "Audit Logs|ui_tests/tests/test_audit_logs.py|false"
+        "Config Pages|ui_tests/tests/test_config_pages.py|false"
+        "UI Comprehensive|ui_tests/tests/test_ui_comprehensive.py|false"
+        "UI Regression|ui_tests/tests/test_ui_regression.py|false"
+        "UI UX Validation|ui_tests/tests/test_ui_ux_validation.py|false"
+        "Console Errors|ui_tests/tests/test_console_errors.py|false"
+        "Create and Login|ui_tests/tests/test_create_and_login.py|false"
+        "Isolated Sessions|ui_tests/tests/test_isolated_sessions.py|false"
         # Mock-only tests (local only)
-        "Mock API Standalone:ui_tests/tests/test_mock_api_standalone.py:true"
-        "E2E with Mock API:ui_tests/tests/test_e2e_with_mock_api.py:true"
-        "Client Scenarios Mock:ui_tests/tests/test_client_scenarios_mock.py:true"
-        "Mock SMTP:ui_tests/tests/test_mock_smtp.py:true"
+        "Mock API Standalone|ui_tests/tests/test_mock_api_standalone.py|true"
+        "E2E with Mock API|ui_tests/tests/test_e2e_with_mock_api.py|true"
+        "Client Scenarios Mock|ui_tests/tests/test_client_scenarios_mock.py|true"
+        "Mock SMTP|ui_tests/tests/test_mock_smtp.py|true"
     )
     
     for suite in "${test_suites[@]}"; do
-        IFS=':' read -r name pattern local_only <<< "$suite"
+        IFS='|' read -r name pattern local_only <<< "$suite"
         
         # Skip local-only tests for webhosting
         if [[ "$DEPLOYMENT_TARGET" == "webhosting" && "$local_only" == "true" ]]; then
@@ -502,16 +503,19 @@ phase_tests() {
             continue
         fi
         
+        # Extract just the file path from pattern (first space-separated word)
+        local test_file="${pattern%% *}"
+        
         # Check if test file exists
-        if [[ ! -f "${REPO_ROOT}/${pattern}" ]]; then
-            log_warning "Skipping $name (file not found)"
+        if [[ ! -f "${REPO_ROOT}/${test_file}" ]]; then
+            log_warning "Skipping $name (file not found: $test_file)"
             test_results+=("$name: SKIPPED (not found)")
             continue
         fi
         
         log_step "Running $name..."
         
-        if run_in_playwright pytest "$pattern" -v --timeout=120 2>&1 | tail -5; then
+        if run_in_playwright pytest $pattern -v --timeout=120 2>&1 | tail -5; then
             test_results+=("$name: PASSED")
             log_success "$name passed"
         else

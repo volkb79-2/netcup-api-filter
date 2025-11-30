@@ -244,4 +244,6 @@ __marimo__/
 
 # Deployment state files (contain secrets, not for VCS)
 deployment_state_*.json
+# maxmind geo ip location database license key file
+geoIP.conf
 

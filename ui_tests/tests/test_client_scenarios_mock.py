@@ -40,10 +40,25 @@ def deployment_dir():
 
 @pytest.fixture
 def demo_clients(deployment_dir):
-    """Load demo client credentials from build_info.json."""
-    build_info_path = deployment_dir / "build_info.json"
-    with open(build_info_path) as f:
-        data = json.load(f)
+    """Load demo client credentials from database and deployment state.
+    
+    Demo clients are created at build time and stored in:
+    1. Database (netcup_filter.db) - main client data
+    2. deployment_state_*.json - tokens for authentication (in REPO_ROOT)
+    """
+    import sys
+    sys.path.insert(0, str(deployment_dir.parent / "ui_tests"))
+    
+    from deployment_state import load_state, get_deployment_target
+    
+    # Load state from the central state file
+    try:
+        state = load_state()
+    except FileNotFoundError:
+        pytest.skip("Deployment state file not found - run build first")
+    
+    # Get clients from state file
+    state_clients = {c.client_id: c for c in state.clients}
     
     # Enhance with database info
     db_path = deployment_dir / "netcup_filter.db"
@@ -76,19 +91,28 @@ def demo_clients(deployment_dir):
         }
     conn.close()
     
-    # Merge
-    for client in data['demo_clients'][:5]:
-        client_id = client['client_id']
-        if client_id in client_info:
-            client.update(client_info[client_id])
+    # Build demo_clients list from state + database info
+    demo_clients = []
+    for client_id, db_info in client_info.items():
+        if client_id in state_clients:
+            state_client = state_clients[client_id]
+            demo_clients.append({
+                'client_id': client_id,
+                'secret_key': state_client.secret_key,  # Match expected key name
+                'description': state_client.description,
+                **db_info
+            })
     
-    return data['demo_clients'][:5]
+    if not demo_clients:
+        pytest.skip("No demo clients found in database")
+    
+    return demo_clients[:5]
 
 
 @pytest.fixture
 def base_url():
-    """Base URL for local deployment."""
-    return "http://localhost:5100"
+    """Base URL for deployment, from UI_BASE_URL env var."""
+    return os.environ.get('UI_BASE_URL', 'http://localhost:5100')
 
 
 def test_client_1_readonly_host(demo_clients, base_url):

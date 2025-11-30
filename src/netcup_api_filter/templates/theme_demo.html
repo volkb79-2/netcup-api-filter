@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theme Demo - Netcup API Filter</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            /* Default theme variables - will be overridden by theme selection */
+            --color-bg-primary: #0a0e1a;
+            --color-bg-secondary: #111827;
+            --color-bg-elevated: #1a2234;
+            --color-bg-surface: rgba(26, 34, 52, 0.8);
+            --color-accent: #3b82f6;
+            --color-accent-hover: #2563eb;
+            --color-success: #10b981;
+            --color-warning: #f59e0b;
+            --color-danger: #ef4444;
+            --color-info: #06b6d4;
+            --color-text-primary: #f3f4f6;
+            --color-text-secondary: #9ca3af;
+            --color-text-muted: #6b7280;
+            --color-border: rgba(255, 255, 255, 0.1);
+            --navbar-height: 56px;
+            --border-radius-sm: 0.375rem;
+            --border-radius-md: 0.5rem;
+            --border-radius-lg: 0.75rem;
+        }
+
+        /* ==========================================
+           THEME 1: Deep Ocean (Default)
+           ========================================== */
+        .theme-deep-ocean {
+            --color-bg-primary: #0a0e1a;
+            --color-bg-secondary: #111827;
+            --color-bg-elevated: #1a2234;
+            --color-accent: #3b82f6;
+            --color-accent-hover: #2563eb;
+            --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+
+        /* ==========================================
+           THEME 2: Midnight Purple
+           ========================================== */
+        .theme-midnight-purple {
+            --color-bg-primary: #0f0a1a;
+            --color-bg-secondary: #1a1127;
+            --color-bg-elevated: #251a34;
+            --color-accent: #8b5cf6;
+            --color-accent-hover: #7c3aed;
+            --gradient-accent: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        }
+
+        /* ==========================================
+           THEME 3: Cyber Teal
+           ========================================== */
+        .theme-cyber-teal {
+            --color-bg-primary: #0a1a1a;
+            --color-bg-secondary: #0d2727;
+            --color-bg-elevated: #123434;
+            --color-accent: #14b8a6;
+            --color-accent-hover: #0d9488;
+            --gradient-accent: linear-gradient(135deg, #14b8a6 0%, #0f766e 100%);
+        }
+
+        /* ==========================================
+           THEME 4: Carbon Gray
+           ========================================== */
+        .theme-carbon-gray {
+            --color-bg-primary: #121212;
+            --color-bg-secondary: #1e1e1e;
+            --color-bg-elevated: #2d2d2d;
+            --color-accent: #60a5fa;
+            --color-accent-hover: #3b82f6;
+            --gradient-accent: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            --color-border: rgba(255, 255, 255, 0.08);
+        }
+
+        /* ==========================================
+           THEME 5: Emerald Night
+           ========================================== */
+        .theme-emerald-night {
+            --color-bg-primary: #0a1a0f;
+            --color-bg-secondary: #0f2718;
+            --color-bg-elevated: #143421;
+            --color-accent: #10b981;
+            --color-accent-hover: #059669;
+            --gradient-accent: linear-gradient(135deg, #10b981 0%, #047857 100%);
+        }
+
+        /* ==========================================
+           THEME 6: Rose Gold Dark
+           ========================================== */
+        .theme-rose-gold {
+            --color-bg-primary: #1a0f14;
+            --color-bg-secondary: #27141c;
+            --color-bg-elevated: #341a25;
+            --color-accent: #f43f5e;
+            --color-accent-hover: #e11d48;
+            --color-warning: #fb923c;
+            --gradient-accent: linear-gradient(135deg, #f43f5e 0%, #be123c 100%);
+        }
+
+        /* ==========================================
+           THEME 7: Arctic Blue
+           ========================================== */
+        .theme-arctic-blue {
+            --color-bg-primary: #0c1929;
+            --color-bg-secondary: #132337;
+            --color-bg-elevated: #1a2d45;
+            --color-accent: #38bdf8;
+            --color-accent-hover: #0ea5e9;
+            --gradient-accent: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+        }
+
+        /* ==========================================
+           THEME 8: Sunset Orange
+           ========================================== */
+        .theme-sunset-orange {
+            --color-bg-primary: #1a100a;
+            --color-bg-secondary: #271811;
+            --color-bg-elevated: #34201a;
+            --color-accent: #f97316;
+            --color-accent-hover: #ea580c;
+            --color-warning: #fbbf24;
+            --gradient-accent: linear-gradient(135deg, #f97316 0%, #c2410c 100%);
+        }
+
+        /* ==========================================
+           THEME 9: Matrix Green
+           ========================================== */
+        .theme-matrix-green {
+            --color-bg-primary: #000a00;
+            --color-bg-secondary: #001400;
+            --color-bg-elevated: #002200;
+            --color-accent: #22c55e;
+            --color-accent-hover: #16a34a;
+            --color-text-primary: #86efac;
+            --color-text-secondary: #4ade80;
+            --color-text-muted: #22c55e;
+            --gradient-accent: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+        }
+
+        /* ==========================================
+           THEME 10: Nord Frost
+           ========================================== */
+        .theme-nord-frost {
+            --color-bg-primary: #2e3440;
+            --color-bg-secondary: #3b4252;
+            --color-bg-elevated: #434c5e;
+            --color-accent: #88c0d0;
+            --color-accent-hover: #81a1c1;
+            --color-success: #a3be8c;
+            --color-warning: #ebcb8b;
+            --color-danger: #bf616a;
+            --color-info: #b48ead;
+            --color-text-primary: #eceff4;
+            --color-text-secondary: #d8dee9;
+            --color-text-muted: #4c566a;
+            --gradient-accent: linear-gradient(135deg, #88c0d0 0%, #5e81ac 100%);
+        }
+
+        /* ==========================================
+           BASE STYLES (Apply to all themes)
+           ========================================== */
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--color-bg-primary);
+            color: var(--color-text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Theme Selector Fixed Panel */
+        .theme-selector {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--color-bg-secondary);
+            border-right: 1px solid var(--color-border);
+            padding: 1rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .theme-selector h3 {
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .theme-option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: var(--border-radius-md);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .theme-option:hover {
+            background: var(--color-bg-elevated);
+        }
+
+        .theme-option.active {
+            border-color: var(--color-accent);
+            background: var(--color-bg-elevated);
+        }
+
+        .theme-swatch {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--border-radius-sm);
+            flex-shrink: 0;
+        }
+
+        .theme-name {
+            font-size: 0.875rem;
+            color: var(--color-text-primary);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 280px;
+            min-height: 100vh;
+        }
+
+        /* Navbar */
+        .navbar-custom {
+            background: var(--color-bg-secondary);
+            border-bottom: 1px solid var(--color-border);
+            height: var(--navbar-height);
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--color-text-primary);
+            font-weight: 600;
+            font-size: 1.125rem;
+            text-decoration: none;
+        }
+
+        .navbar-brand:hover {
+            color: var(--color-accent);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .nav-link {
+            color: var(--color-text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius-sm);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover {
+            color: var(--color-text-primary);
+            background: var(--color-bg-elevated);
+        }
+
+        .nav-link.active {
+            color: var(--color-accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-dropdown {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--color-text-secondary);
+            padding: 0.5rem 0.75rem;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .user-dropdown:hover {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+        }
+
+        /* Page Container */
+        .page-container {
+            padding: 1.5rem;
+            max-width: 1400px;
+        }
+
+        /* Page Header */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .page-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin: 0;
+        }
+
+        /* Cards */
+        .card-custom {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-lg);
+            overflow: hidden;
+        }
+
+        .card-header-custom {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin: 0;
+        }
+
+        .card-body-custom {
+            padding: 1.25rem;
+        }
+
+        /* Buttons */
+        .btn-primary-custom {
+            background: var(--gradient-accent);
+            color: white;
+            border: none;
+            padding: 0.625rem 1.25rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary-custom:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary-custom {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+            border: 1px solid var(--color-border);
+            padding: 0.625rem 1.25rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary-custom:hover {
+            background: var(--color-bg-surface);
+            border-color: var(--color-accent);
+        }
+
+        .btn-danger-custom {
+            background: var(--color-danger);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: none;
+            color: var(--color-text-secondary);
+            padding: 0.375rem;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-icon:hover {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+        }
+
+        /* Search Bar */
+        .search-bar {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: var(--color-bg-elevated);
+            border-radius: var(--border-radius-md);
+        }
+
+        .search-input {
+            flex: 1;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: 0.625rem 1rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+        }
+
+        .search-input::placeholder {
+            color: var(--color-text-muted);
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .table-custom {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table-custom th {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-secondary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.875rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .table-custom td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            font-size: 0.875rem;
+        }
+
+        .table-custom tbody tr:hover {
+            background: var(--color-bg-elevated);
+        }
+
+        .table-custom tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Badges */
+        .badge-custom {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.625rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--color-success);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--color-danger);
+        }
+
+        .badge-info {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--color-info);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--color-warning);
+        }
+
+        .badge-record {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-secondary);
+            padding: 0.2rem 0.5rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-right: 0.25rem;
+        }
+
+        /* Monospace */
+        .mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.8125rem;
+            background: var(--color-bg-primary);
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--border-radius-sm);
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-label {
+            display: block;
+            color: var(--color-text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input {
+            width: 100%;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: 0.75rem 1rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .form-input.mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .form-select {
+            width: 100%;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: 0.75rem 1rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .form-textarea {
+            width: 100%;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: 0.75rem 1rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            min-height: 100px;
+            resize: vertical;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .form-checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .form-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.875rem;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .form-checkbox-item:hover {
+            border-color: var(--color-accent);
+        }
+
+        .form-checkbox-item.selected {
+            border-color: var(--color-accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .form-checkbox-item input[type="checkbox"] {
+            accent-color: var(--color-accent);
+        }
+
+        .form-checkbox-item label {
+            font-size: 0.875rem;
+            color: var(--color-text-primary);
+            cursor: pointer;
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            background: var(--color-bg-elevated);
+            border-radius: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-switch.active {
+            background: var(--color-accent);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-switch.active::after {
+            left: 24px;
+        }
+
+        /* Template Cards */
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .template-card {
+            background: var(--color-bg-elevated);
+            border: 2px solid var(--color-border);
+            border-radius: var(--border-radius-md);
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .template-card:hover {
+            border-color: var(--color-accent);
+            transform: translateY(-2px);
+        }
+
+        .template-card.selected {
+            border-color: var(--color-accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .template-icon {
+            font-size: 2rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .template-name {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .template-desc {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            margin-bottom: 0.75rem;
+        }
+
+        .template-badges {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.25rem;
+        }
+
+        /* Pagination */
+        .pagination-custom {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
+        }
+
+        .page-btn {
+            min-width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-secondary);
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .page-btn:hover {
+            border-color: var(--color-accent);
+            color: var(--color-text-primary);
+        }
+
+        .page-btn.active {
+            background: var(--color-accent);
+            border-color: var(--color-accent);
+            color: white;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-md);
+            padding: 1.25rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Section Divider */
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+        }
+
+        .section-divider::before,
+        .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--color-border);
+        }
+
+        /* Row Layout */
+        .row-flex {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .col-main {
+            flex: 2;
+        }
+
+        .col-sidebar {
+            flex: 1;
+            min-width: 280px;
+        }
+
+        /* Info Box */
+        .info-box {
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-md);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .info-box-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: 0.75rem;
+        }
+
+        .info-box-content {
+            font-size: 0.8125rem;
+            color: var(--color-text-secondary);
+            line-height: 1.6;
+        }
+
+        .info-box.warning {
+            border-color: var(--color-warning);
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        /* Action Row */
+        .action-row {
+            display: flex;
+            gap: 0.75rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--color-border);
+            margin-top: 1.5rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .row-flex {
+                flex-direction: column;
+            }
+            .col-sidebar {
+                min-width: 100%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .theme-selector {
+                display: none;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body class="theme-deep-ocean">
+
+<!-- Theme Selector Panel -->
+<div class="theme-selector">
+    <h3>🎨 Select Theme</h3>
+    
+    <div class="theme-option active" onclick="setTheme('deep-ocean')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #3b82f6, #0a0e1a)"></div>
+        <span class="theme-name">1. Deep Ocean</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('midnight-purple')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #8b5cf6, #0f0a1a)"></div>
+        <span class="theme-name">2. Midnight Purple</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('cyber-teal')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #14b8a6, #0a1a1a)"></div>
+        <span class="theme-name">3. Cyber Teal</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('carbon-gray')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #60a5fa, #121212)"></div>
+        <span class="theme-name">4. Carbon Gray</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('emerald-night')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #10b981, #0a1a0f)"></div>
+        <span class="theme-name">5. Emerald Night</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('rose-gold')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #f43f5e, #1a0f14)"></div>
+        <span class="theme-name">6. Rose Gold Dark</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('arctic-blue')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #38bdf8, #0c1929)"></div>
+        <span class="theme-name">7. Arctic Blue</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('sunset-orange')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #f97316, #1a100a)"></div>
+        <span class="theme-name">8. Sunset Orange</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('matrix-green')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #22c55e, #000a00)"></div>
+        <span class="theme-name">9. Matrix Green</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('nord-frost')">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #88c0d0, #2e3440)"></div>
+        <span class="theme-name">10. Nord Frost</span>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+    <!-- Navbar -->
+    <nav class="navbar-custom">
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <a href="#" class="navbar-brand">
+                <span style="font-size: 1.5rem;">⚡</span>
+                Netcup API Filter
+            </a>
+            <div class="nav-links">
+                <a href="#" class="nav-link">Dashboard</a>
+                <a href="#" class="nav-link active">Clients</a>
+                <a href="#" class="nav-link">Audit Logs</a>
+                <a href="#" class="nav-link">Netcup API</a>
+                <a href="#" class="nav-link">Email</a>
+                <a href="#" class="nav-link">System</a>
+            </div>
+        </div>
+        <div class="user-menu">
+            <div class="user-dropdown">
+                <span>admin</span>
+                <span>▼</span>
+            </div>
+            <button class="btn-secondary-custom" style="padding: 0.5rem 0.875rem;">Logout</button>
+        </div>
+    </nav>
+
+    <div class="page-container">
+        <!-- Stats Section -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">12</div>
+                <div class="stat-label">Total Clients</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">8</div>
+                <div class="stat-label">Active Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">156</div>
+                <div class="stat-label">Requests (24h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">3</div>
+                <div class="stat-label">Errors (24h)</div>
+            </div>
+        </div>
+
+        <!-- DEMO SECTION 1: Complex Table (Client List) -->
+        <div class="page-header">
+            <h1 class="page-title">Clients</h1>
+            <button class="btn-primary-custom">+ Create Client</button>
+        </div>
+
+        <div class="card-custom">
+            <div class="card-header-custom">
+                <h2 class="card-title">Client List</h2>
+                <span style="color: var(--color-text-muted); font-size: 0.875rem;">12 records</span>
+            </div>
+            
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="🔍 Quick filter (client-side)...">
+                <input type="text" class="search-input" placeholder="Server search...">
+                <select class="form-select" style="width: auto;">
+                    <option>Status: All</option>
+                    <option>Active</option>
+                    <option>Inactive</option>
+                </select>
+                <button class="btn-secondary-custom">Search</button>
+            </div>
+            
+            <div class="table-container">
+                <table class="table-custom">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox"></th>
+                            <th>Status</th>
+                            <th>Client ID</th>
+                            <th>Realm</th>
+                            <th>Record Types</th>
+                            <th>Operations</th>
+                            <th>Last Used</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_ddns_home</span></td>
+                            <td><span>🏠</span> home.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">AAAA</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                                <span class="badge-record">U</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">5 min ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_cert</span></td>
+                            <td><span>🔒</span> _acme.example.com</td>
+                            <td>
+                                <span class="badge-record">TXT</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                                <span class="badge-record">C</span>
+                                <span class="badge-record">D</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">1 hour ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-danger">● Inactive</span></td>
+                            <td><span class="mono">client_old_backup</span></td>
+                            <td><span>🌐</span> *.backup.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">CNAME</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">30 days ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_monitoring</span></td>
+                            <td><span>👁️</span> api.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">AAAA</span>
+                                <span class="badge-record">TXT</span>
+                                <span class="badge-record">MX</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">2 hours ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_full_mgmt</span></td>
+                            <td><span>⚙️</span> infra.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">AAAA</span>
+                                <span class="badge-record">CNAME</span>
+                                <span class="badge-record">TXT</span>
+                                <span class="badge-record">MX</span>
+                                <span class="badge-record">NS</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                                <span class="badge-record">C</span>
+                                <span class="badge-record">U</span>
+                                <span class="badge-record">D</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">Yesterday</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="pagination-custom">
+                <button class="page-btn">◀</button>
+                <button class="page-btn active">1</button>
+                <button class="page-btn">2</button>
+                <button class="page-btn">3</button>
+                <button class="page-btn">▶</button>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 2: Complex Form (Create Client) -->
+        <div class="page-header">
+            <h1 class="page-title">Create New Client</h1>
+        </div>
+
+        <!-- Template Selection -->
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Step 1: Select Configuration Template</h2>
+            </div>
+            <div class="card-body-custom">
+                <div class="template-grid">
+                    <div class="template-card selected">
+                        <div class="template-icon">🏠</div>
+                        <div class="template-name">DDNS Single Host</div>
+                        <div class="template-desc">Update single hostname IP</div>
+                        <div class="template-badges">
+                            <span class="badge-record">A</span>
+                            <span class="badge-record">AAAA</span>
+                            <span class="badge-record">R</span>
+                            <span class="badge-record">U</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">🌐</div>
+                        <div class="template-name">DDNS Subdomain</div>
+                        <div class="template-desc">Manage entire subdomain zone</div>
+                        <div class="template-badges">
+                            <span class="badge-record">A</span>
+                            <span class="badge-record">AAAA</span>
+                            <span class="badge-record">CNAME</span>
+                            <span class="badge-record">Full</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">👁️</div>
+                        <div class="template-name">Read-Only</div>
+                        <div class="template-desc">View records without modification</div>
+                        <div class="template-badges">
+                            <span class="badge-record">All</span>
+                            <span class="badge-record">R</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">🔒</div>
+                        <div class="template-name">LetsEncrypt</div>
+                        <div class="template-desc">DNS-01 challenge automation</div>
+                        <div class="template-badges">
+                            <span class="badge-record">TXT</span>
+                            <span class="badge-record">R</span>
+                            <span class="badge-record">C</span>
+                            <span class="badge-record">D</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">⚙️</div>
+                        <div class="template-name">Full Management</div>
+                        <div class="template-desc">Complete DNS control</div>
+                        <div class="template-badges">
+                            <span class="badge-record">All</span>
+                            <span class="badge-record">Full</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">🔗</div>
+                        <div class="template-name">CNAME Only</div>
+                        <div class="template-desc">CDN/Load balancer aliases</div>
+                        <div class="template-badges">
+                            <span class="badge-record">CNAME</span>
+                            <span class="badge-record">Full</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Client Details Form -->
+        <div class="row-flex">
+            <div class="col-main">
+                <div class="card-custom">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Step 2: Client Details</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span style="color: var(--color-text-secondary); font-size: 0.875rem;">Active</span>
+                            <div class="toggle-switch active" onclick="this.classList.toggle('active')"></div>
+                        </div>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="form-group">
+                            <label class="form-label">Client ID *</label>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <input type="text" class="form-input mono" placeholder="client_ddns_home" style="flex: 1;">
+                                <button class="btn-secondary-custom">Generate ID</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <input type="text" class="form-input" placeholder="Home network DDNS updater">
+                        </div>
+
+                        <div class="section-divider">Realm Configuration</div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                            <div class="form-group">
+                                <label class="form-label">Realm Type *</label>
+                                <select class="form-select">
+                                    <option>Host</option>
+                                    <option>Subdomain</option>
+                                    <option>Zone</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Realm Value *</label>
+                                <input type="text" class="form-input mono" placeholder="home.example.com">
+                            </div>
+                        </div>
+
+                        <div class="section-divider">Permissions</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Allowed Record Types *</label>
+                            <div class="form-checkbox-group">
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="rt_a" checked>
+                                    <label for="rt_a">A</label>
+                                </div>
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="rt_aaaa" checked>
+                                    <label for="rt_aaaa">AAAA</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_cname">
+                                    <label for="rt_cname">CNAME</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_txt">
+                                    <label for="rt_txt">TXT</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_mx">
+                                    <label for="rt_mx">MX</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_ns">
+                                    <label for="rt_ns">NS</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_srv">
+                                    <label for="rt_srv">SRV</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Allowed Operations *</label>
+                            <div class="form-checkbox-group">
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="op_r" checked>
+                                    <label for="op_r">Read</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="op_c">
+                                    <label for="op_c">Create</label>
+                                </div>
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="op_u" checked>
+                                    <label for="op_u">Update</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="op_d">
+                                    <label for="op_d">Delete</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-divider">Security</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Allowed IP Ranges (one per line)</label>
+                            <textarea class="form-textarea" placeholder="192.168.1.0/24&#10;10.0.0.0/8"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Token Expires</label>
+                            <input type="date" class="form-input" placeholder="Leave empty for no expiration">
+                        </div>
+
+                        <div class="section-divider">Notifications</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Email Address</label>
+                            <input type="email" class="form-input mono" placeholder="admin@example.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Notification Events</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox"> Token expired
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox" checked> Failed login attempt
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox"> Successful login
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox" checked> Access from non-whitelisted IP
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox" checked> Unauthorized API call
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="action-row">
+                            <button class="btn-primary-custom">Save & Generate Token</button>
+                            <button class="btn-secondary-custom">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-sidebar">
+                <div class="info-box">
+                    <div class="info-box-title">📋 Selected Template</div>
+                    <div class="info-box-content">
+                        <p><strong>🏠 DDNS Single Host</strong></p>
+                        <p style="margin-top: 0.5rem;">Use Cases:</p>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.25rem;">
+                            <li>Home network with dynamic IP</li>
+                            <li>VPN server with changing IP</li>
+                            <li>Single server DDNS</li>
+                        </ul>
+                        <p style="margin-top: 0.75rem;">Example realm: <code class="mono">home.example.com</code></p>
+                    </div>
+                </div>
+
+                <div class="info-box warning">
+                    <div class="info-box-title">⚠️ Security Notice</div>
+                    <div class="info-box-content">
+                        The token will only be shown <strong>once</strong> after creation. Store it securely!
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <div class="info-box-title">📖 Quick Reference</div>
+                    <div class="info-box-content">
+                        <p><strong>Realm Types:</strong></p>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.25rem;">
+                            <li><strong>Host</strong> - Single hostname</li>
+                            <li><strong>Subdomain</strong> - All hosts under subdomain</li>
+                            <li><strong>Zone</strong> - Entire DNS zone</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function setTheme(themeName) {
+    // Remove all theme classes
+    document.body.className = '';
+    // Add new theme class
+    document.body.classList.add('theme-' + themeName);
+    
+    // Update active state in selector
+    document.querySelectorAll('.theme-option').forEach(el => {
+        el.classList.remove('active');
+    });
+    event.currentTarget.classList.add('active');
+}
+
+// Toggle checkbox items
+document.querySelectorAll('.form-checkbox-item').forEach(item => {
+    item.addEventListener('click', function(e) {
+        if (e.target.tagName !== 'INPUT') {
+            const checkbox = this.querySelector('input[type="checkbox"]');
+            checkbox.checked = !checkbox.checked;
+            this.classList.toggle('selected', checkbox.checked);
+        } else {
+            this.classList.toggle('selected', e.target.checked);
+        }
+    });
+});
+
+// Template card selection
+document.querySelectorAll('.template-card').forEach(card => {
+    card.addEventListener('click', function() {
+        document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+        this.classList.add('selected');
+    });
+});
+</script>
+
+</body>
+</html>

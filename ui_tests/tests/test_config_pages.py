@@ -5,7 +5,7 @@ from ui_tests.config import settings
 @pytest.mark.asyncio
 async def test_netcup_config_page(admin_page):
     """Test that the Netcup Config page loads and displays the form."""
-    page = await admin_page
+    page = admin_page  # Already awaited by fixture
     base_url = settings.base_url
     
     await page.goto(f"{base_url}/admin/netcup_config/")
@@ -18,13 +18,13 @@ async def test_netcup_config_page(admin_page):
     await expect(page.locator("input[name='api_key']")).to_be_visible()
     await expect(page.locator("input[name='api_password']")).to_be_visible()
     
-    # Check submit button (Flask-Admin default is input type=submit)
-    await expect(page.locator("input[type='submit']")).to_be_visible()
+    # Check submit button (renders as button element)
+    await expect(page.locator("button[type='submit']")).to_be_visible()
 
 @pytest.mark.asyncio
 async def test_email_config_page(admin_page):
     """Test that the Email Config page loads and displays the form with two buttons."""
-    page = await admin_page
+    page = admin_page  # Already awaited by fixture
     base_url = settings.base_url
     
     await page.goto(f"{base_url}/admin/email_config/")

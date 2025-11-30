@@ -153,56 +153,44 @@ async def mock_smtp_server():
 # UI Page Fixtures
 # ============================================================================
 
-@pytest.fixture(scope="function")
-def admin_page(browser_session):
+@pytest_asyncio.fixture(scope="function")
+async def admin_page(browser_session):
     """
     Logs in as an admin user and returns an authenticated Page object.
     """
     from ui_tests.workflows import ensure_admin_dashboard
-    import anyio
     
-    async def do_login():
-        await ensure_admin_dashboard(browser_session)
-        return browser_session.page
+    await ensure_admin_dashboard(browser_session)
+    return browser_session._page
 
-    return anyio.run(do_login)
-
-@pytest.fixture(scope="function")
-def client_page_readonly(browser_session, admin_page):
+@pytest_asyncio.fixture(scope="function")
+async def client_page_readonly(browser_session, admin_page):
     """
     Creates a read-only client, logs in, and returns an authenticated Page object.
     """
     from ui_tests.workflows import generate_client_data, admin_create_client_and_extract_token, test_client_login_with_token
-    import anyio
 
-    async def do_setup():
-        # 1. Create a read-only client
-        client_data = generate_client_data("readonly-client")
-        client_data.operations = ["read"]
-        token = await admin_create_client_and_extract_token(browser_session, client_data)
+    # 1. Create a read-only client
+    client_data = generate_client_data("readonly-client")
+    client_data.operations = ["read"]
+    token = await admin_create_client_and_extract_token(browser_session, client_data)
 
-        # 2. Log in with the new client's token
-        await test_client_login_with_token(browser_session, token, should_succeed=True, expected_client_id=client_data.client_id)
-        return browser_session.page
+    # 2. Log in with the new client's token
+    await test_client_login_with_token(browser_session, token, should_succeed=True, expected_client_id=client_data.client_id)
+    return browser_session._page
 
-    return anyio.run(do_setup)
-
-@pytest.fixture(scope="function")
-def client_page_fullcontrol(browser_session, admin_page):
+@pytest_asyncio.fixture(scope="function")
+async def client_page_fullcontrol(browser_session, admin_page):
     """
     Creates a full-control client, logs in, and returns an authenticated Page object.
     """
     from ui_tests.workflows import generate_client_data, admin_create_client_and_extract_token, test_client_login_with_token
-    import anyio
 
-    async def do_setup():
-        # 1. Create a full-control client
-        client_data = generate_client_data("fullcontrol-client")
-        client_data.operations = ["read", "update", "create", "delete"]
-        token = await admin_create_client_and_extract_token(browser_session, client_data)
+    # 1. Create a full-control client
+    client_data = generate_client_data("fullcontrol-client")
+    client_data.operations = ["read", "update", "create", "delete"]
+    token = await admin_create_client_and_extract_token(browser_session, client_data)
 
-        # 2. Log in with the new client's token
-        await test_client_login_with_token(browser_session, token, should_succeed=True, expected_client_id=client_data.client_id)
-        return browser_session.page
-
-    return anyio.run(do_setup)
+    # 2. Log in with the new client's token
+    await test_client_login_with_token(browser_session, token, should_succeed=True, expected_client_id=client_data.client_id)
+    return browser_session._page
