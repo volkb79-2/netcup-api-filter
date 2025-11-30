@@ -138,13 +138,13 @@ log_info "Flask Backend:    http://127.0.0.1:${FLASK_PORT}"
 log_info "                  http://${GATEWAY_IP}:${FLASK_PORT}"
 echo
 log_info "Playwright:       Ready for exec-based testing"
-log_info "                  docker exec playwright pytest /workspace/ui_tests/tests -v"
+log_info "                  docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
 echo
 log_info "Default Login:    admin / admin"
 log_info "Test Client:      test_qweqweqwe_vi"
 log_info "Test Token:       qweqweqwe-vi-readonly"
 echo
-log_success "Run tests: docker exec playwright pytest /workspace/ui_tests/tests -v"
+log_success "Run tests: docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
 echo
 log_info "Press Ctrl+C to stop all services"
 echo

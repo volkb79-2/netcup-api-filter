@@ -243,7 +243,7 @@ python3 tooling/validate-playwright-websocket.py
 # Run tests inside Playwright container
 cd tooling/playwright
 docker compose up -d
-docker exec playwright pytest /workspace/ui_tests/tests -v
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v
 ```
 
 ### MCP-Assisted Debugging (Optional)

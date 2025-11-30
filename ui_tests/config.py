@@ -1,11 +1,28 @@
-"""Shared configuration for UI regression tests."""
+"""Shared configuration for UI regression tests.
+
+Configuration is loaded from deployment_state.json based on DEPLOYMENT_TARGET:
+- local: deploy-local/deployment_state.json
+- webhosting: deploy-local/screenshots/.deployment_state_webhosting.json
+
+Set DEPLOYMENT_TARGET=local or DEPLOYMENT_TARGET=webhosting to select.
+"""
 from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, Optional
 from urllib.parse import urljoin
+
+from ui_tests.deployment_state import (
+    DeploymentTarget,
+    get_deployment_target,
+    get_state_file_path,
+    load_state,
+    state_exists,
+    get_base_url as get_default_base_url,
+)
 
 
 @dataclass
@@ -21,6 +38,7 @@ class UiTargetProfile:
     client_secret_key: str
     client_domain: str
     allow_writes: bool = True
+    deployment_target: str = "local"
     
     @property
     def client_token(self) -> str:
@@ -29,58 +47,60 @@ class UiTargetProfile:
 
 
 class UiTestConfig:
-    """Environment-driven configuration with optional smoke targets.
+    """Configuration loaded from deployment_state.json.
     
-    Configuration priority (highest to lowest):
-    1. Explicit environment variables (UI_ADMIN_PASSWORD, etc.)
-    2. Deployment state files (.env.local or .env.webhosting)
-    3. Default values from .env.defaults
+    Uses DEPLOYMENT_TARGET env var to select which deployment to test:
+    - "local" (default): Tests against deploy-local/
+    - "webhosting": Tests against production webhosting
+    
+    All credentials come from the JSON state file, with optional
+    environment variable overrides for specific values.
     """
 
     def __init__(self) -> None:
-        # Load deployment state from env file if specified
-        self._load_deployment_state()
+        # Determine deployment target
+        self._deployment_target = get_deployment_target()
         
-        # Fail-fast: require explicit configuration or use .env.defaults values (loaded above)
-        headless_str = os.getenv("PLAYWRIGHT_HEADLESS")
-        if not headless_str:
-            headless_str = "true"
-            print("[CONFIG] WARNING: PLAYWRIGHT_HEADLESS not set, using default: true")
+        # Configuration options with defaults
+        headless_str = os.getenv("PLAYWRIGHT_HEADLESS", "true")
         self.playwright_headless: bool = headless_str.lower() in {"true", "1"}
         
-        screenshot_prefix = os.getenv("UI_SCREENSHOT_PREFIX")
-        if not screenshot_prefix:
-            screenshot_prefix = "ui-regression"
-            print("[CONFIG] WARNING: UI_SCREENSHOT_PREFIX not set, using default: ui-regression")
-        self.screenshot_prefix: str = screenshot_prefix
+        self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "ui-regression")
 
-        allow_writes_str = os.getenv("UI_ALLOW_WRITES")
-        if not allow_writes_str:
-            allow_writes_str = "1"
-            print("[CONFIG] WARNING: UI_ALLOW_WRITES not set, using default: 1 (writes enabled)")
+        allow_writes_str = os.getenv("UI_ALLOW_WRITES", "1")
         primary_allow_writes = allow_writes_str not in {"0", "false", "False"}
         
-        # Use DEPLOYED_* variables from environment (NO FILE ACCESS)
-        # Playwright container is a pure service - credentials passed via env vars
-        base_url = os.getenv("UI_BASE_URL")
-        if not base_url:
-            raise RuntimeError("base_url not set. Need to be set according to deployment.")
+        # Base URL: env override > default for target
+        base_url = os.getenv("UI_BASE_URL") or get_default_base_url(self._deployment_target)
         
-        admin_username = os.getenv("DEPLOYED_ADMIN_USERNAME") or os.getenv("UI_ADMIN_USERNAME")
-        if not admin_username:
-            raise RuntimeError("DEPLOYED_ADMIN_USERNAME and UI_ADMIN_USERNAME not set. Load from .env.defaults or set explicitly.")
+        # Load state from JSON (REQUIRED - no fallback)
+        state_file = get_state_file_path(self._deployment_target)
+        if not state_exists(self._deployment_target):
+            raise RuntimeError(
+                f"Deployment state file not found: {state_file}\n"
+                f"DEPLOYMENT_TARGET={self._deployment_target}\n"
+                f"\n"
+                f"For local: Run ./build-and-deploy-local.sh\n"
+                f"For webhosting: Run ./build-and-deploy.sh and ensure state is synced"
+            )
         
-        admin_password = os.getenv("DEPLOYED_ADMIN_PASSWORD") or os.getenv("UI_ADMIN_PASSWORD")
-        if not admin_password:
-            raise RuntimeError("DEPLOYED_ADMIN_PASSWORD and UI_ADMIN_PASSWORD not set. Load from .env.defaults or set explicitly.")
+        state = load_state(self._deployment_target)
+        admin = state.admin
+        primary_client = state.get_primary_client()
         
-        client_id = os.getenv("DEPLOYED_CLIENT_ID") or os.getenv("UI_CLIENT_ID")
-        if not client_id:
-            raise RuntimeError("DEPLOYED_CLIENT_ID and UI_CLIENT_ID not set. Load from .env.defaults or set explicitly.")
+        # Allow environment variable overrides for specific credentials
+        admin_username = os.getenv("DEPLOYED_ADMIN_USERNAME") or admin.username
+        admin_password = os.getenv("DEPLOYED_ADMIN_PASSWORD") or admin.password
+        client_id = os.getenv("DEPLOYED_CLIENT_ID") or (primary_client.client_id if primary_client else "")
+        client_secret_key = os.getenv("DEPLOYED_CLIENT_SECRET_KEY") or (primary_client.secret_key if primary_client else "")
         
-        client_secret_key = os.getenv("DEPLOYED_CLIENT_SECRET_KEY") or os.getenv("UI_CLIENT_SECRET_KEY")
-        if not client_secret_key:
-            raise RuntimeError("DEPLOYED_CLIENT_SECRET_KEY and UI_CLIENT_SECRET_KEY not set. Load from .env.defaults or set explicitly.")
+        print(f"[CONFIG] Loaded from {state_file.name} (target={self._deployment_target}, updated={state.last_updated_at or 'unknown'})")
+        
+        if not all([admin_username, admin_password]):
+            raise RuntimeError(
+                f"Admin credentials not found in {state_file}\n"
+                f"The state file may be corrupted or incomplete."
+            )
         
         primary = UiTargetProfile(
             name="primary",
@@ -92,8 +112,10 @@ class UiTestConfig:
             client_secret_key=client_secret_key,
             client_domain=os.getenv("UI_CLIENT_DOMAIN", "qweqweqwe.vi"),
             allow_writes=primary_allow_writes,
+            deployment_target=self._deployment_target,
         )
 
+        # Optional smoke profile for production testing
         smoke_base = os.getenv("UI_SMOKE_BASE_URL")
         smoke_profile: UiTargetProfile | None = None
         if smoke_base:
@@ -109,6 +131,7 @@ class UiTestConfig:
                 client_secret_key=os.getenv("UI_SMOKE_CLIENT_SECRET_KEY", primary.client_secret_key),
                 client_domain=os.getenv("UI_SMOKE_CLIENT_DOMAIN", primary.client_domain),
                 allow_writes=smoke_allow_writes,
+                deployment_target=self._deployment_target,
             )
 
         self._profiles: Dict[str, UiTargetProfile] = {primary.name: primary}
@@ -116,6 +139,12 @@ class UiTestConfig:
             self._profiles[smoke_profile.name] = smoke_profile
 
         self._active: UiTargetProfile = primary
+
+    # ---- deployment target info -------------------------------------------------
+    @property
+    def deployment_target(self) -> DeploymentTarget:
+        """Current deployment target (local or webhosting)."""
+        return self._deployment_target
 
     # ---- active profile helpers -------------------------------------------------
     @property
@@ -158,78 +187,6 @@ class UiTestConfig:
     def profiles(self) -> List[UiTargetProfile]:
         return list(self._profiles.values())
 
-    def _load_deployment_state(self) -> None:
-        """Load deployment state from environment-specific files.
-        
-        Priority order (highest to lowest):
-        1. Explicit environment variables (set by caller/CI)
-        2. Deployment-specific env file (.env.local or .env.webhosting)
-        3. .env.defaults (fallback default values)
-        
-        The deployment file is auto-detected: .env.local if exists, else .env.webhosting.
-        Override with DEPLOYMENT_ENV_FILE environment variable.
-        """
-        import os.path
-        
-        def load_env_file(file_path: str, prefix: str = "") -> None:
-            """Load key=value pairs from file into environment."""
-            if not os.path.exists(file_path):
-                return
-            try:
-                with open(file_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, value = line.split('=', 1)
-                            key = key.strip()
-                            value = value.strip()
-                            # Map DEFAULT_* to DEPLOYED_* for consistency
-                            if prefix and key.startswith(prefix):
-                                deployed_key = key.replace(prefix, "DEPLOYED_", 1)
-                                # Only set defaults if not already in environment
-                                if deployed_key not in os.environ and value:
-                                    os.environ[deployed_key] = value
-                            # No prefix = deployment-specific file
-                            # BUT: respect already-set environment variables (explicit > file)
-                            elif not prefix and value:
-                                if key not in os.environ:
-                                    os.environ[key] = value
-                            # With prefix but no match = keep if not set
-                            elif key not in os.environ and value:
-                                os.environ[key] = value
-            except Exception:
-                pass  # Silently ignore errors
-        
-        # Load .env.defaults first (lowest priority - provides fallback values)
-        defaults_paths = [
-            '/workspace/.env.defaults',  # Playwright container
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.defaults'),
-        ]
-        for path in defaults_paths:
-            if os.path.exists(path):
-                load_env_file(path, prefix="DEFAULT_")
-                break
-        
-        # Load deployment-specific env file (higher priority)
-        deployment_env_file = os.getenv("DEPLOYMENT_ENV_FILE")
-        
-        if deployment_env_file:
-            # Explicit file specified via environment variable
-            load_env_file(deployment_env_file)
-        else:
-            # Auto-detect: prefer .env.local (local deployment), fallback to .env.webhosting
-            possible_paths = [
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.local'),
-                '/screenshots/.env.local',  # Playwright container
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.webhosting'),
-                '/screenshots/.env.webhosting',  # Playwright container writable mount
-            ]
-            
-            for path in possible_paths:
-                if os.path.exists(path):
-                    load_env_file(path)
-                    break
-
     @contextmanager
     def use_profile(self, profile: UiTargetProfile) -> Iterator[UiTargetProfile]:
         """Context manager to temporarily switch active profile.
@@ -237,7 +194,6 @@ class UiTestConfig:
         IMPORTANT: Creates a COPY of the profile to prevent state mutations
         from persisting across test runs in the same Python process.
         """
-        from copy import deepcopy
         previous = self._active
         # Use a deep copy to prevent mutations from affecting the original
         self._active = deepcopy(profile)
@@ -256,5 +212,38 @@ class UiTestConfig:
         if self.admin_new_password:
             self.admin_password = self.admin_new_password
 
+    def refresh_credentials(self) -> None:
+        """Reload credentials from deployment_state.json.
+        
+        Call this at the start of a test to ensure you have the latest
+        credentials, especially after another test might have changed passwords.
+        
+        This reads fresh from the JSON file, bypassing any cached values.
+        """
+        try:
+            state = load_state(self._deployment_target)
+        except FileNotFoundError:
+            print(f"[CONFIG] Warning: State file not found during refresh, keeping current values")
+            return
+        
+        admin = state.admin
+        primary_client = state.get_primary_client()
+        
+        # Update the active profile with fresh credentials
+        if admin.password != self._active.admin_password:
+            print(f"[CONFIG] Refreshed admin password (changed: {admin.password_changed_at or 'unknown'})")
+            self._active.admin_password = admin.password
+        
+        if admin.username != self._active.admin_username:
+            self._active.admin_username = admin.username
+        
+        # Update client credentials if changed
+        if primary_client:
+            if primary_client.client_id != self._active.client_id:
+                self._active.client_id = primary_client.client_id
+            if primary_client.secret_key != self._active.client_secret_key:
+                self._active.client_secret_key = primary_client.secret_key
 
+
+# Singleton instance - initialized on first import
 settings = UiTestConfig()

@@ -20,33 +20,30 @@ A reusable Docker container providing Playwright browser automation with three a
 
 ## Quick Start
 
-There are two deployment modes:
+The Playwright container provides both WebSocket (port 3000) and MCP (port 8765) interfaces.
 
-### Integrated Mode (Current - for netcup-api-filter)
-
-Uses shared Docker network with devcontainer. See original Quick Start below.
-
-### Standalone Mode (NEW - for multi-client service)
-
-Run as independent service with its own network, TLS, and auth:
+### Start the Container
 
 ```bash
 cd tooling/playwright
 
 # Basic mode (no TLS, no auth)
-./start-standalone.sh
+./start-playwright.sh
 
 # With TLS (self-signed certificate)
-./start-standalone.sh --tls
+./start-playwright.sh --tls
 
 # With authentication
-./start-standalone.sh --auth
+./start-playwright.sh --auth
 
 # Full security (TLS + auth)
-./start-standalone.sh --tls --auth
+./start-playwright.sh --tls --auth
+
+# Force rebuild
+./start-playwright.sh --rebuild
 ```
 
-#### Connect to Standalone Service
+### Connect via WebSocket (Recommended for Tests)
 
 **Python WebSocket Client:**
 ```python
@@ -54,7 +51,7 @@ from ws_client import PlaywrightWSClient
 import asyncio
 
 async def main():
-    async with PlaywrightWSClient("ws://localhost:3000") as client:
+    async with PlaywrightWSClient("ws://playwright:3000") as client:
         await client.navigate("https://example.com")
         await client.fill("#username", "admin")
         await client.click("button[type='submit']")
@@ -67,52 +64,17 @@ asyncio.run(main())
 **With Authentication:**
 ```python
 async with PlaywrightWSClient(
-    "ws://localhost:3000",
+    "ws://playwright:3000",
     auth_token="your-token-here"
 ) as client:
     await client.navigate("https://example.com")
 ```
 
+### Connect via MCP (For AI Agents)
+
+The MCP server is available at `http://playwright:8765/mcp` for AI agent integration.
+
 ---
-
-## Integrated Mode Quick Start
-
-### 1. Configure Environment (Optional)
-
-```bash
-cd tooling/playwright
-cp .env.example .env
-# Edit .env to customize network name, MCP settings, etc.
-```
-
-### 2. Build Container
-
-```bash
-docker compose build
-```
-
-### 3. Start Container
-
-```bash
-# Option 1: Use helper script (recommended - auto-loads workspace config)
-./start-mcp.sh
-
-# Option 2: Use docker compose directly
-docker compose up -d
-
-# Option 3: Enable MCP server explicitly
-MCP_ENABLED=true docker compose up -d
-```
-
-### 3. Run Tests
-
-```bash
-# Run Python script inside container
-docker compose exec playwright python3 /workspace/my_test.py
-
-# Or run pytest
-docker compose exec playwright pytest /workspace/tests -v
-```
 
 ## Usage Modes
 
@@ -210,7 +172,7 @@ asyncio.run(test_form_submission())
 
 Run it:
 ```bash
-docker compose exec playwright python3 /workspace/test_example.py
+docker compose exec playwright python3 /workspaces/netcup-api-filter/test_example.py
 ```
 
 ### Mode 3: MCP Server (Optional, for AI Agents)
@@ -253,21 +215,18 @@ ssh -L 8765:localhost:8765 user@your-server.com -N
 ```
 tooling/playwright/
 ├── README.md                     # This file
-├── Dockerfile                    # Integrated container
-├── Dockerfile.standalone         # Standalone service container
-├── docker-compose.yml            # Integrated orchestration
-├── docker-compose.standalone.yml # Standalone orchestration (NEW)
+├── Dockerfile                    # Container with WebSocket + MCP servers
+├── docker-compose.yml            # Container orchestration
 ├── requirements.root.txt         # Python dependencies
-├── requirements.standalone.txt   # Additional standalone dependencies
+├── requirements.standalone.txt   # Additional service dependencies
 ├── mcp_server.py                 # MCP server for AI agents
-├── ws_server.py                  # WebSocket server (NEW)
-├── ws_client.py                  # Python WebSocket client (NEW)
-├── start_services.py             # Multi-service startup script (NEW)
-├── start-playwright.sh           # Integrated mode start script
-├── start-mcp.sh                  # MCP mode start script
-├── start-standalone.sh           # Standalone mode start script (NEW)
-├── test_ws_server.py             # WebSocket server tests (NEW)
-└── screenshots/                  # Screenshot output directory
+├── ws_server.py                  # WebSocket server for tests
+├── ws_client.py                  # Python WebSocket client
+├── start_services.py             # Multi-service startup script
+├── start-playwright.sh           # Start script (supports --tls, --auth)
+├── start-mcp.sh                  # Legacy MCP mode start script
+├── test_ws_server.py             # WebSocket server tests
+└── vol-playwright-screenshots/   # Screenshot output directory
 ```
 
 ## Configuration
@@ -336,7 +295,7 @@ The network is automatically created and connected by `.devcontainer/post-create
 ```yaml
 volumes:
   - ./screenshots:/screenshots      # Screenshot output
-  - ../../:/workspace              # Project workspace (read-only recommended)
+  - ../../:/workspaces/netcup-api-filter  # Project workspace
 ```
 
 ## Integration with Projects

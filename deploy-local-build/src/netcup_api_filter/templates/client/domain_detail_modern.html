@@ -1,0 +1,196 @@
+{% extends 'client_base.html' %}
+
+{% block page_title %}{{ domain }}{% endblock %}
+
+{% block client_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="mb-1">{{ domain }}</h1>
+        <p class="text-muted mb-0">Manage DNS records for this domain</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if 'create' in operations %}
+        <a class="btn btn-important" href="{{ url_for('client_portal.new_record', domain=domain) }}">New Record</a>
+        {% endif %}
+        <a class="btn btn-outline" href="{{ url_for('client_portal.dashboard') }}">Back to Dashboard</a>
+    </div>
+</div>
+
+<div class="grid grid-cols-3 gap-4 mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h3 class="mb-3">Zone Summary</h3>
+            {% if zone.zoneconfig %}
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <td><strong>TTL:</strong></td>
+                        <td>{{ zone.zoneconfig.ttl }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Serial:</strong></td>
+                        <td>{{ zone.zoneconfig.serial }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Refresh:</strong></td>
+                        <td>{{ zone.zoneconfig.refresh }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Retry:</strong></td>
+                        <td>{{ zone.zoneconfig.retry }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Expire:</strong></td>
+                        <td>{{ zone.zoneconfig.expire }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-muted mb-0">Zone metadata not available.</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div style="grid-column: span 2;">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-3">Your Permissions</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <p class="text-muted text-sm mb-1">Operations Allowed</p>
+                        <p class="mb-0">{{ operations|join(', ') if operations else 'read' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-muted text-sm mb-1">Record Types Allowed</p>
+                        <p class="mb-0">{{ record_types|join(', ') if record_types else 'scoped' }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">DNS Records ({{ records|length }})</h2>
+        <span class="text-muted text-sm">Only records your token can access are shown</span>
+    </div>
+    <div class="card-body p-0">
+        {% if records %}
+        <script>
+        function domainRecordsData() {
+            return {
+                allRecords: {{ records|tojson|safe }},
+                sortColumn: 'hostname',
+                sortDirection: 'asc',
+                searchQuery: '',
+                sort(column) {
+                    if (this.sortColumn === column) {
+                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortColumn = column;
+                        this.sortDirection = 'asc';
+                    }
+                    this.sortTable();
+                },
+                sortTable() {
+                    const tbody = this.$refs.tbody;
+                    const rows = Array.from(tbody.querySelectorAll('tr'));
+                    const columnIndex = {
+                        'hostname': 1,
+                        'type': 2,
+                        'destination': 3,
+                        'ttl': 4,
+                        'state': 5
+                    }[this.sortColumn];
+                    
+                    rows.sort((a, b) => {
+                        const aVal = a.cells[columnIndex].textContent.trim();
+                        const bVal = b.cells[columnIndex].textContent.trim();
+                        const result = aVal.localeCompare(bVal, undefined, { numeric: true });
+                        return this.sortDirection === 'asc' ? result : -result;
+                    });
+                    
+                    rows.forEach(row => tbody.appendChild(row));
+                },
+                filteredRecords() {
+                    if (!this.searchQuery) return this.allRecords;
+                    const query = this.searchQuery.toLowerCase();
+                    return this.allRecords.filter(record => 
+                        record.hostname.toLowerCase().includes(query) ||
+                        record.type.toLowerCase().includes(query) ||
+                        record.destination.toLowerCase().includes(query) ||
+                        record.state.toLowerCase().includes(query)
+                    );
+                }
+            };
+        }
+        </script>
+        <div class="table-container" x-data="domainRecordsData()">
+            <!-- Search and Actions Bar -->
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom" style="background: var(--color-bg-secondary);">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="search-input-wrapper">
+                        <input type="text" 
+                               x-model="searchQuery" 
+                               placeholder="Search records..." 
+                               class="form-control form-control-sm"
+                               style="min-width: 250px;">
+                    </div>
+                    <span class="text-muted text-sm" x-text="'Showing ' + filteredRecords().length + ' of {{ records|length }} records'"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    {% if 'create' in operations %}
+                    <a class="btn btn-important btn-sm" href="{{ url_for('client_portal.new_record', domain=domain) }}">
+                        <span>+</span> New Record
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th class="sortable" @click="sort('hostname')" :class="{ 'asc': sortColumn === 'hostname' && sortDirection === 'asc', 'desc': sortColumn === 'hostname' && sortDirection === 'desc' }">Hostname</th>
+                        <th class="sortable" @click="sort('type')" :class="{ 'asc': sortColumn === 'type' && sortDirection === 'asc', 'desc': sortColumn === 'type' && sortDirection === 'desc' }">Type</th>
+                        <th class="sortable" @click="sort('destination')" :class="{ 'asc': sortColumn === 'destination' && sortDirection === 'asc', 'desc': sortColumn === 'destination' && sortDirection === 'desc' }">Destination</th>
+                        <th class="sortable" @click="sort('ttl')" :class="{ 'asc': sortColumn === 'ttl' && sortDirection === 'asc', 'desc': sortColumn === 'ttl' && sortDirection === 'desc' }">TTL</th>
+                        <th class="sortable" @click="sort('state')" :class="{ 'asc': sortColumn === 'state' && sortDirection === 'asc', 'desc': sortColumn === 'state' && sortDirection === 'desc' }">State</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody x-ref="tbody">
+                    <template x-for="record in filteredRecords()" :key="record.id">
+                    <tr>
+                        <td><code x-text="record.id"></code></td>
+                        <td><code x-text="record.hostname"></code></td>
+                        <td x-text="record.type"></td>
+                        <td x-text="record.destination"></td>
+                        <td x-text="record.ttl"></td>
+                        <td x-text="record.state"></td>
+                        <td class="text-right">
+                            <div class="d-flex gap-2 justify-content-end">
+                                {% if 'update' in operations %}
+                                <a class="btn btn-sm btn-outline" :href="'/client/domains/{{ domain }}/records/' + record.id + '/edit'">Edit</a>
+                                {% endif %}
+                                {% if 'delete' in operations %}
+                                <form action="" method="post" class="d-inline" onsubmit="return confirm('Delete this record?');" :action="'/client/domains/{{ domain }}/records/' + record.id + '/delete'">
+                                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+            No records available under your permissions.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test form submission using the generic Playwright container.
-Run with: docker compose exec playwright python3 /workspace/tooling/playwright/test_form_submission.py
+Run with: docker compose exec playwright python3 /workspaces/netcup-api-filter/tooling/playwright/test_form_submission.py
 """
 import asyncio
 import sys

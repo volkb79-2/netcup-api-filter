@@ -2,135 +2,58 @@
 from __future__ import annotations
 
 import anyio
-import os
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Callable, List, Tuple
 
 from ui_tests.browser import Browser, ToolError
 from ui_tests.config import settings
+from ui_tests.deployment_state import (
+    get_deployment_target,
+    get_state_file_path,
+    load_state,
+    save_state,
+    update_admin_password as ds_update_admin_password,
+)
 
 
 def _update_deployment_state(**kwargs) -> None:
-    """Update deployment env file with current state (e.g., password changes).
+    """Update deployment state file with current state (e.g., password changes).
     
     This persists test-driven changes so subsequent test runs use the correct
     credentials without needing database resets.
     
-    Automatically detects which env file to update:
-    - DEPLOYMENT_ENV_FILE environment variable (explicit)
-    - .env.local (local deployment)
-    - .env.webhosting (webhosting deployment)
+    Uses the deployment_state.json for the current DEPLOYMENT_TARGET.
     
     Args:
         **kwargs: Key-value pairs to update (e.g., admin_password="NewPass123!")
     """
-    import os
-    import os.path
+    target = get_deployment_target()
+    state_file = get_state_file_path(target)
     
-    # Determine which env file to update (NO DEFAULTS - fail-fast policy)
-    # Require REPO_ROOT for portable paths
-    repo_root = os.environ.get('REPO_ROOT')
-    if not repo_root:
-        # Fallback to calculated path but warn
-        repo_root = os.path.dirname(os.path.dirname(__file__))
-        print(f"[CONFIG] WARNING: REPO_ROOT not set, using calculated: {repo_root}")
-        print(f"[CONFIG] Set explicitly: export REPO_ROOT=<workspace_root>")
+    if not state_file.exists():
+        raise RuntimeError(
+            f"Deployment state file not found: {state_file}\n"
+            f"DEPLOYMENT_TARGET={target}\n"
+            f"Run build-and-deploy-local.sh (local) or build-and-deploy.sh (webhosting)"
+        )
     
-    deployment_env_file = os.environ.get('DEPLOYMENT_ENV_FILE')
+    # Load current state
+    state = load_state(target)
     
-    if deployment_env_file:
-        # Explicit env file specified
-        env_filename = os.path.basename(deployment_env_file)
-        print(f"[CONFIG] Using explicit DEPLOYMENT_ENV_FILE: {deployment_env_file}")
-    else:
-        # Auto-detect but warn loudly (violates fail-fast policy)
-        env_local = os.path.join(repo_root, '.env.local')
-        env_webhosting = os.path.join(repo_root, '.env.webhosting')
-        if os.path.exists(env_local):
-            env_filename = '.env.local'
-            print(f"[CONFIG] WARNING: DEPLOYMENT_ENV_FILE not set, auto-detected: {env_local}")
-            print(f"[CONFIG] Set explicitly: export DEPLOYMENT_ENV_FILE={env_local}")
-        elif os.path.exists(env_webhosting):
-            env_filename = '.env.webhosting'
-            print(f"[CONFIG] WARNING: DEPLOYMENT_ENV_FILE not set, auto-detected: {env_webhosting}")
-            print(f"[CONFIG] Set explicitly: export DEPLOYMENT_ENV_FILE={env_webhosting}")
-        else:
-            print(f"[CONFIG] ERROR: DEPLOYMENT_ENV_FILE not set and no .env.local or .env.webhosting found")
-            return
+    # Update admin credentials
+    if "admin_password" in kwargs:
+        state.admin.password = kwargs["admin_password"]
+        from datetime import datetime, timezone
+        state.admin.password_changed_at = datetime.now(timezone.utc).isoformat()
     
-    # CRITICAL: Never write to .env.defaults (it's the source of truth for defaults only!)
-    if env_filename == '.env.defaults':
-        print(f"[CONFIG] ERROR: Cannot write to {env_filename} - this file is read-only defaults")
-        print(f"[CONFIG] Deployment state must be in .env.local or .env.webhosting")
-        return
+    if "admin_username" in kwargs:
+        state.admin.username = kwargs["admin_username"]
     
-    # Try writable locations: /screenshots (Playwright container), then workspace
-    possible_paths = [
-        f'/screenshots/{env_filename}',  # Playwright container writable mount
-        os.path.join(repo_root, env_filename),
-    ]
-    
-    env_file = None
-    for path in possible_paths:
-        try:
-            # Test if writable by attempting to open in append mode
-            with open(path, 'a'):
-                pass
-            env_file = path
-            break
-        except (OSError, IOError):
-            continue
-    
-    if not env_file:
-        print(f"[CONFIG] WARNING: Could not find writable location for {env_filename}")
-        print(f"[CONFIG] Tried: {possible_paths}")
-        return
-    
-    # Read existing content
-    lines = []
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            lines = f.readlines()
-    
-    # Update/add values
-    updated_keys = set()
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        if '=' in stripped:
-            key = stripped.split('=', 1)[0]
-            # Check if we need to update this key
-            for kwarg_key, kwarg_value in kwargs.items():
-                env_key = f"DEPLOYED_{kwarg_key.upper()}"
-                if key == env_key:
-                    lines[i] = f"{env_key}={kwarg_value}\n"
-                    updated_keys.add(env_key)
-    
-    # Add new keys that weren't found
-    for kwarg_key, kwarg_value in kwargs.items():
-        env_key = f"DEPLOYED_{kwarg_key.upper()}"
-        if env_key not in updated_keys:
-            lines.append(f"{env_key}={kwarg_value}\n")
-    
-    # Add deployment timestamp
-    timestamp_updated = False
-    for i, line in enumerate(lines):
-        if line.startswith('DEPLOYED_AT='):
-            lines[i] = f"DEPLOYED_AT={datetime.utcnow().isoformat()}Z\n"
-            timestamp_updated = True
-            break
-    if not timestamp_updated:
-        lines.append(f"DEPLOYED_AT={datetime.utcnow().isoformat()}Z\n")
-    
-    # Write back
-    with open(env_file, 'w') as f:
-        f.writelines(lines)
-    
-    print(f"[CONFIG] Updated {env_file}: {', '.join(f'{k}={v}' for k, v in kwargs.items())}")
+    # Save updated state
+    updated_by = kwargs.get("updated_by", "ui_test")
+    save_state(state, updated_by, target)
 
 
 @dataclass
@@ -201,7 +124,7 @@ async def trigger_token_generation(browser: Browser) -> str:
     before = await browser.get_attribute("#client_id", "value")
     await wait_for_selector(browser, ".token-generate-btn")
     await browser.click(".token-generate-btn")
-    token = await wait_for_input_value(browser, "#client_id", lambda v: v and v != before)
+    token = await wait_for_input_value(browser, "#client_id", lambda v: v != "" and v != before)
     return token
 
 
@@ -288,7 +211,7 @@ async def test_admin_login_wrong_credentials(browser: Browser) -> None:
     await browser.click("button[type='submit']")
     
     # Should stay on login page with error message
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await browser.wait_for_selector(".login-container form button[type='submit']")
     body_text = await browser.text("body")
     assert "Invalid username or password" in body_text or "danger" in body_text
 
@@ -298,11 +221,11 @@ async def test_admin_access_prohibited_without_login(browser: Browser) -> None:
     # Try to access dashboard directly
     await browser.goto(settings.url("/admin/"))
     # Should redirect to login
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await wait_for_selector(browser, ".login-container form button[type='submit']")
     
     # Try to access clients page
     await browser.goto(settings.url("/admin/client/"))
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await wait_for_selector(browser, ".login-container form button[type='submit']")
 
 
 async def test_admin_change_password_validation(browser: Browser) -> None:
@@ -344,7 +267,7 @@ async def test_admin_logout_and_login_with_new_password(browser: Browser, new_pa
     """Test logout and login with new password."""
     # Logout
     await browser.click("header .navbar-user a.btn")
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
     
     # Login with new password
     await browser.fill("#username", settings.admin_username)
@@ -366,9 +289,9 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     
     # 1. Test access to admin pages is prohibited without login
     await browser.goto(settings.url("/admin/"))
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await wait_for_selector(browser, ".login-container form button[type='submit']")
     await browser.goto(settings.url("/admin/client/"))
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await wait_for_selector(browser, ".login-container form button[type='submit']")
     
     # 2. Login with correct credentials
     await browser.goto(settings.url("/admin/login"))
@@ -378,35 +301,47 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await anyio.sleep(1.0)
     
     # Check if login was successful by looking for dashboard or change-password redirect
-    current_h1 = await browser.text("main h1")
-    if "Dashboard" in current_h1:
+    # After login restructuring, check both the page content and URL
+    body_text = await browser.text("body")
+    current_url = browser.current_url or ""
+    
+    if "/admin/change-password" in current_url or "Change Password" in body_text:
+        # On change password page - this is expected for fresh database
+        print("[DEBUG] On change password page - fresh database detected")
+        pass
+    elif "/admin/" in current_url and ("Dashboard" in body_text or "Clients" in body_text):
         # Already logged in and on dashboard (password already changed)
         print("[DEBUG] Already on dashboard - password was already changed")
         settings._active.admin_password = new_password
         settings._active.admin_new_password = new_password
         return new_password
-    elif "Change Password" in current_h1:
-        # On change password page - this is expected for fresh database
-        print("[DEBUG] On change password page - fresh database detected")
-        pass
     else:
         # Check for lockout or other errors
-        body_text = await browser.text("body")
         if "Too many failed login attempts" in body_text:
             raise AssertionError("Account is locked out. Wait 15 minutes or redeploy to reset database.")
-        else:
+        elif "/admin/login" in current_url:
             # Still on login page - login failed
-            print(f"DEBUG: After login submit, unexpected page. H1: '{current_h1}', Body: {body_text[:500]}")
-            raise AssertionError(f"Login failed - unexpected page with h1: '{current_h1}'")
+            print(f"DEBUG: Login failed. URL: {current_url}, Body: {body_text[:500]}")
+            raise AssertionError(f"Login failed - still on login page")
+        else:
+            # Unknown state
+            print(f"DEBUG: After login submit, unexpected state. URL: {current_url}, Body: {body_text[:500]}")
+            raise AssertionError(f"Login failed - unexpected page at {current_url}")
     
     # Navigate to change password page if not already there
-    if "Change Password" not in current_h1:
+    if "/admin/change-password" not in current_url:
         await browser.goto(settings.url("/admin/change-password"))
     
-    await browser.wait_for_text("main h1", "Change Password")
+    await browser.wait_for_text(".login-header", "Change Password")
+    
+    # Set consistent viewport before screenshot (NO HARDCODED VALUES)
+    import os
+    width = int(os.environ.get('SCREENSHOT_VIEWPORT_WIDTH', '1920'))
+    height = int(os.environ.get('SCREENSHOT_VIEWPORT_HEIGHT', '1200'))
+    await browser._page.set_viewport_size({"width": width, "height": height})
     
     # Capture password change page screenshot
-    await browser.screenshot("01a-admin-password-change")
+    await browser.screenshot("00b-admin-password-change")
     
     # Test change password with non-matching passwords
     await browser.fill("#current_password", settings.admin_password)
@@ -414,7 +349,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.fill("#confirm_password", "DifferentPassword123!")
     await browser.submit("form")
     await anyio.sleep(0.5)
-    await browser.wait_for_text("main h1", "Change Password")
+    await browser.wait_for_text(".login-header", "Change Password")
     body_text = await browser.text("body")
     assert "New passwords do not match" in body_text or "danger" in body_text
     
@@ -424,12 +359,13 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.fill("#confirm_password", new_password)
     await browser.submit("form")
     await anyio.sleep(1.0)
-    await browser.wait_for_text("main h1", "Dashboard")
+    # After password change, should redirect to dashboard
+    await browser.wait_for_text("body", "Dashboard")
     
     # 4. Logout and login with new password
     await browser.click("header .navbar-user a.btn")
     await anyio.sleep(0.5)
-    await browser.wait_for_text(".login-header h1", "Admin Login")
+    await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
     
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", new_password)
@@ -463,8 +399,11 @@ async def verify_admin_nav(browser: Browser) -> List[Tuple[str, str]]:
     visited: List[Tuple[str, str]] = []
     for label, selector, expected_heading in nav_items:
         await browser.click(selector)
-        heading_selector = ".login-header h1" if label == "Logout" else "main h1"
-        heading = await browser.wait_for_text(heading_selector, expected_heading)
+        # For logout, wait for login form button; for other navigation, wait for page heading
+        if label == "Logout":
+            heading = await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
+        else:
+            heading = await browser.wait_for_text("main h1", expected_heading)
         visited.append((label, heading))
 
     # Re-establish the admin session for follow-up tests.
@@ -514,10 +453,42 @@ async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
     await browser.fill("#description", data.description)
     await browser.select("select[name='realm_type']", data.realm_type)
     await browser.fill("#realm_value", data.realm_value)
-    await browser.select("select[name='allowed_record_types']", data.record_choices())
-    await browser.select("select[name='allowed_operations']", data.operation_choices())
+
+    # The original <select> is hidden; we must interact with it via JavaScript.
+    # This is more robust than trying to click the custom UI elements.
+    await browser.evaluate(
+        """
+        (args) => {
+            const [selector, values] = args;
+            const select = document.querySelector(selector);
+            if (!select) return;
+            for (const option of select.options) {
+                option.selected = values.includes(option.value);
+            }
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        """,
+        ["select[name='allowed_record_types']", data.record_choices()],
+    )
+
+    await browser.evaluate(
+        """
+        (args) => {
+            const [selector, values] = args;
+            const select = document.querySelector(selector);
+            if (!select) return;
+            for (const option of select.options) {
+                option.selected = values.includes(option.value);
+            }
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        """,
+        ["select[name='allowed_operations']", data.operation_choices()],
+    )
+
     if data.email:
         await browser.fill("#email_address", data.email)
+    
     await browser.submit("form")
     
     # Wait for success message and extract token
@@ -575,6 +546,40 @@ async def delete_admin_client(browser: Browser, client_id: str) -> None:
         await browser._page.locator(form_selector).evaluate("form => form.submit()")
     
     await browser.wait_for_text("main h1", "Clients")
+
+
+async def admin_logout_and_prepare_client_login(browser: Browser) -> None:
+    """Logout from admin UI and robustly navigate to client login page."""
+    print("[DEBUG] Workflow: Logging out admin to prepare for client login.")
+    await admin_logout(browser)
+    
+    # Add a small delay to allow server-side session to clear completely
+    print("[DEBUG] Workflow: Delaying for 500ms before navigating.")
+    await anyio.sleep(0.5)
+    
+    print("[DEBUG] Workflow: Navigating to client login page.")
+    await browser.goto(settings.url("/client/login"))
+    
+    # Add another debug screenshot to see the result of the navigation
+    await browser.screenshot("debug-after-client-login-goto")
+    
+    # Robustly wait for the client login form to be ready
+    print("[DEBUG] Workflow: Waiting for client login form elements.")
+    await wait_for_selector(browser, "#client_id")
+    await wait_for_selector(browser, "#secret_key")
+    await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
+    print("[DEBUG] Workflow: Client login page is ready.")
+
+
+async def admin_logout(browser: Browser) -> None:
+    """Logout from admin UI and wait for login page."""
+    print("[DEBUG] Admin logout: clicking logout button.")
+    await browser.click("header .navbar-user a.btn")
+    print(f"[DEBUG] Admin logout: URL after click is {browser.current_url}")
+    
+    # After logout, we should be on the admin login page.
+    await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
+    print("[DEBUG] Admin logout: successfully detected admin login page.")
 
 
 async def client_portal_login(browser: Browser) -> Browser:
@@ -737,7 +742,7 @@ async def client_portal_manage_all_domains(browser: Browser) -> List[str]:
 
 async def client_portal_logout(browser: Browser) -> None:
     await browser.click("header .navbar-user a.btn")
-    await browser.wait_for_text(".login-header h1", "Client Portal")
+    await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
 
 
 async def client_portal_open_activity(browser: Browser) -> str:
@@ -757,8 +762,19 @@ async def client_portal_open_activity(browser: Browser) -> str:
 
 async def test_client_login_with_token(browser: Browser, token: str, should_succeed: bool = True, expected_client_id: str | None = None) -> None:
     """Test client login with a specific token."""
+    print(f"[DEBUG] Client login: Navigating to /client/login. Current URL: {browser.current_url}")
     await browser.goto(settings.url("/client/login"))
-    await browser.fill("#token", token)
+    print(f"[DEBUG] Client login: URL is now {browser.current_url}")
+    await wait_for_selector(browser, "#client_id")
+    await wait_for_selector(browser, "#secret_key")
+    await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
+    # Parse token into client_id:secret_key format
+    if ":" in token:
+        client_id, secret_key = token.split(":", 1)
+    else:
+        client_id, secret_key = token, token  # Legacy fallback
+    await browser.fill("#client_id", client_id)
+    await browser.fill("#secret_key", secret_key)
     await browser.click("button[type='submit']")
     
     if should_succeed:

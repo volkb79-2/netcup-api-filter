@@ -80,7 +80,8 @@ pip install --user -r requirements-dev.txt
 cd tooling/playwright && ./start-playwright.sh
 
 # Run UI tests in container
-./tooling/playwright/playwright-exec.sh pytest /workspace/ui_tests/tests -v
+# Run tests in container
+./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 
 # Or use automated validation script
 ./tooling/run-ui-validation.sh

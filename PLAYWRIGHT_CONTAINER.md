@@ -11,10 +11,10 @@ This project uses a **dedicated Playwright container** for all browser automatio
 cd tooling/playwright && ./start-playwright.sh
 
 # 2. Run UI tests
-./tooling/playwright/playwright-exec.sh pytest /workspace/ui_tests/tests -v
+./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 
 # 3. Capture screenshots
-./tooling/playwright/playwright-exec.sh python3 /workspace/ui_tests/capture_ui_screenshots.py
+./tooling/playwright/playwright-exec.sh python3 ui_tests/capture_ui_screenshots.py
 
 # 4. Stop container when done
 docker stop playwright
@@ -30,7 +30,7 @@ docker stop playwright
 
 ```
 Playwright Container (generic-playwright:latest)
-  ├── /workspace → Project root (read-write)
+  ├── /workspaces/netcup-api-filter → Project root (read-write)
   ├── /screenshots → deploy-local/screenshots (direct output)
   ├── Network: Shares devcontainer network (e.g., naf-dev-network)
   └── Packages: Comprehensive tooling for testing, debugging, visual regression
@@ -52,7 +52,7 @@ Playwright Container (generic-playwright:latest)
    - Wrapper for executing commands in container
    - Passes all UI test environment variables
    - Sources `DEPLOYMENT_ENV_FILE` if provided
-   - Example: `./playwright-exec.sh pytest /workspace/ui_tests/tests -v`
+   - Example: `./playwright-exec.sh pytest ui_tests/tests -v`
 
 3. **`build_deployment_lib.sh::capture_screenshots()`**
    - Automatically detects if Playwright container is running
@@ -113,20 +113,20 @@ The Playwright container communicates with the Flask server running in the devco
 # In build_deployment_lib.sh::capture_screenshots()
 devcontainer_hostname=$(hostname)
 export UI_BASE_URL="http://${devcontainer_hostname}:5100"
-./tooling/playwright/playwright-exec.sh python3 /workspace/ui_tests/capture_ui_screenshots.py
+./tooling/playwright/playwright-exec.sh python3 ui_tests/capture_ui_screenshots.py
 ```
 
 ## Volume Mappings
 
 ```yaml
 volumes:
-  - ${PHYSICAL_REPO_ROOT}:/workspace            # Full project access (read-write)
+  - ${PHYSICAL_REPO_ROOT}/..:/workspaces:rw     # Full project access (read-write)
   - ${PHYSICAL_PLAYWRIGHT_DIR}/screenshots:/screenshots  # Direct output to deploy-local/screenshots
 ```
 
 **Key paths:**
 
-- `/workspace` → Full project root (read-write access)
+- `/workspaces/netcup-api-filter` → Full project root (read-write access)
 - `/screenshots` → Direct mapping to `deploy-local/screenshots/` (output path)
 - `PHYSICAL_PLAYWRIGHT_DIR` defaults to `${PHYSICAL_REPO_ROOT}/deploy-local`
 
@@ -248,7 +248,7 @@ The `playwright-exec.sh` script automatically passes all relevant environment va
 export UI_BASE_URL="https://naf.vxxu.de"
 export UI_ADMIN_USERNAME="admin"
 export UI_ADMIN_PASSWORD="TestAdmin123!"
-./tooling/playwright/playwright-exec.sh pytest /workspace/ui_tests/tests -v
+./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 ```
 
 ## Automatic Rebuild Detection

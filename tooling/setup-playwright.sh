@@ -127,10 +127,10 @@ echo
 log_header "Next Steps:"
 echo
 echo "  1. Run tests inside container:"
-echo "     ${GREEN}docker exec playwright pytest /workspace/ui_tests/tests -v${NC}"
+echo "     ${GREEN}docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v${NC}"
 echo
 echo "  2. Run Python scripts:"
-echo "     ${GREEN}docker exec playwright python3 /workspace/my_script.py${NC}"
+echo "     ${GREEN}docker exec playwright python3 /workspaces/netcup-api-filter/my_script.py${NC}"
 echo
 echo "  3. Interactive shell:"
 echo "     ${GREEN}docker exec -it playwright bash${NC}"

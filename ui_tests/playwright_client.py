@@ -300,12 +300,15 @@ async def example_usage():
     
     # Example 3: Screenshot
     print("\n3. Taking screenshot:")
+    import os
+    screenshot_dir = os.environ.get('SCREENSHOT_DIR', 'screenshots')
+    screenshot_path = f"{screenshot_dir}/test-screenshot.png"
     await screenshot(
         "https://example.com",
-        "/tmp/test-screenshot.png",
+        screenshot_path,
         full_page=True
     )
-    print("   ✅ Screenshot saved to /tmp/test-screenshot.png")
+    print(f"   ✅ Screenshot saved to {screenshot_path}")
     
     # Example 4: Text extraction
     print("\n4. Text extraction:")

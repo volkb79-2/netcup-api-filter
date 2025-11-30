@@ -99,10 +99,10 @@ log_info "  Devcontainer: $SCRIPT_DIR/vol-playwright-screenshots"
 echo
 log_info "Usage:"
 echo "  # Run Python script:"
-echo "  docker compose exec playwright python3 /workspace/your_script.py"
+echo "  docker compose exec playwright python3 /workspaces/netcup-api-filter/your_script.py"
 echo
 echo "  # Run pytest:"
-echo "  docker compose exec playwright pytest /workspace/tests -v"
+echo "  docker compose exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
 echo
 echo "  # Interactive shell:"
 echo "  docker compose exec playwright /bin/bash"

@@ -31,7 +31,7 @@ echo ""
 
 # Configuration
 DEPLOY_LOCAL_DIR="${REPO_ROOT}/deploy-local"
-DEPLOY_ZIP="${REPO_ROOT}/deploy.zip"
+DEPLOY_ZIP="${REPO_ROOT}/deploy-local.zip"
 DB_PATH="${DEPLOY_LOCAL_DIR}/netcup_filter.db"
 ENV_FILE="${REPO_ROOT}/.env.local"
 SCREENSHOT_DIR="${DEPLOY_LOCAL_DIR}/screenshots"
@@ -58,7 +58,7 @@ echo ""
 
 # Step 2: Build deployment package
 echo -e "${BLUE}Step 2/5: Building deployment package...${NC}"
-"${REPO_ROOT}/build_deployment.py"
+(cd "${REPO_ROOT}" && python3 build_deployment.py --output deploy-local.zip --build-dir deploy-local-build)
 echo -e "${GREEN}✓ Build complete${NC}"
 echo ""
 
@@ -66,7 +66,16 @@ echo ""
 echo -e "${BLUE}Step 3/5: Deploying to ${DEPLOY_LOCAL_DIR}...${NC}"
 rm -rf "${DEPLOY_LOCAL_DIR}"
 mkdir -p "${DEPLOY_LOCAL_DIR}/tmp"
+
+# CRITICAL: Ensure the screenshot directory exists *before* running tests
+# that might write to it.
 mkdir -p "${SCREENSHOT_DIR}"
+# Also ensure the Playwright container (if used) can write to it.
+# The playwright/start-playwright.sh script handles chown/chmod.
+if [[ -f "${REPO_ROOT}/tooling/playwright/start-playwright.sh" ]]; then
+    echo "[PERMISSIONS] Ensuring Playwright container has access to screenshots..."
+    (cd "${REPO_ROOT}/tooling/playwright" && ./start-playwright.sh --init-only)
+fi
 
 unzip -o -q "${DEPLOY_ZIP}" -d "${DEPLOY_LOCAL_DIR}/"
 

@@ -7,20 +7,35 @@ Tests validate:
 - UI button visibility based on permissions
 - CRUD operations with mock data
 """
-import pytest
-from playwright.sync_api import sync_playwright, expect
 import json
+import os
 import sqlite3
 from pathlib import Path
 
+import pytest
+from playwright.sync_api import sync_playwright, expect
 
-pytestmark = pytest.mark.asyncio
+
+def get_screenshot_path(filename: str) -> str:
+    """Get screenshot path using SCREENSHOT_DIR environment variable."""
+    screenshot_dir = os.environ.get('SCREENSHOT_DIR', 'screenshots')
+    return f"{screenshot_dir}/{filename}"
 
 
 @pytest.fixture
 def deployment_dir():
-    """Path to local deployment directory."""
-    return Path("/workspaces/netcup-api-filter/deploy-local")
+    """Path to deployment directory (local or webhosting)."""
+    # Support both local and webhosting deployments
+    deploy_dir = os.environ.get('DEPLOY_DIR')
+    if deploy_dir:
+        return Path(deploy_dir)
+    
+    repo_root = os.environ.get('REPO_ROOT')
+    if not repo_root:
+        raise RuntimeError("DEPLOY_DIR or REPO_ROOT must be set (no hardcoded paths allowed)")
+    
+    # Default to deploy-local for local testing
+    return Path(f"{repo_root}/deploy-local")
 
 
 @pytest.fixture
@@ -76,7 +91,7 @@ def base_url():
     return "http://localhost:5100"
 
 
-async def test_client_1_readonly_host(demo_clients, base_url):
+def test_client_1_readonly_host(demo_clients, base_url):
     """Test Client 1: Read-only monitoring for example.com.
     
     Validates:
@@ -93,10 +108,9 @@ async def test_client_1_readonly_host(demo_clients, base_url):
     assert client['realm_type'] == 'host'
     assert client['realm_value'] == 'example.com'
     
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        page = await browser.new_page(viewport={'width': 1920, 'height': 1200})
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={'width': 1920, 'height': 1200})
         
         # Login
         page.goto(f"{base_url}/client/login")
@@ -135,13 +149,14 @@ async def test_client_1_readonly_host(demo_clients, base_url):
         assert '93.184.216.34' in page_text
         assert 'mail' in page_text
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_1_readonly.png', full_page=True)
+        # Use SCREENSHOT_DIR for both local and webhosting
+        page.screenshot(path=get_screenshot_path('test_client_1_readonly.png'), full_page=True)
         
         browser.close()
         print(f"✓ Client 1 (read-only host) validated")
 
 
-async def test_client_2_fullcontrol_host(demo_clients, base_url):
+def test_client_2_fullcontrol_host(demo_clients, base_url):
     """Test Client 2: Full DNS management for api.example.com.
     
     Validates:
@@ -189,7 +204,7 @@ async def test_client_2_fullcontrol_host(demo_clients, base_url):
         delete_count = delete_buttons.count()
         assert delete_count == 3, f"Full control client should have {initial_count} delete buttons, found {delete_count}"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_2_before_crud.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_2_before_crud.png'), full_page=True)
         
         # TEST CREATE
         page.click('a:has-text("New Record")')
@@ -210,7 +225,7 @@ async def test_client_2_fullcontrol_host(demo_clients, base_url):
         assert 'test-auto' in page_text
         assert '198.51.100.88' in page_text
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_2_after_create.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_2_after_create.png'), full_page=True)
         
         # TEST UPDATE
         test_row = None
@@ -236,7 +251,7 @@ async def test_client_2_fullcontrol_host(demo_clients, base_url):
         assert '198.51.100.99' in page_text, "Should see updated IP"
         assert '198.51.100.88' not in page_text, "Old IP should be gone"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_2_after_update.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_2_after_update.png'), full_page=True)
         
         # TEST DELETE
         page.on('dialog', lambda dialog: dialog.accept())
@@ -257,13 +272,13 @@ async def test_client_2_fullcontrol_host(demo_clients, base_url):
         page_text = page.inner_text('body')
         assert 'test-auto' not in page_text, "Deleted record should be gone"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_2_after_delete.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_2_after_delete.png'), full_page=True)
         
         browser.close()
         print(f"✓ Client 2 (full control host) validated - CRUD complete")
 
 
-async def test_client_3_subdomain_readonly(demo_clients, base_url):
+def test_client_3_subdomain_readonly(demo_clients, base_url):
     """Test Client 3: Monitor all *.example.com subdomains (read-only).
     
     Validates:
@@ -307,13 +322,13 @@ async def test_client_3_subdomain_readonly(demo_clients, base_url):
         delete_buttons = page.locator('button:has-text("Delete")')
         assert delete_buttons.count() == 0, "Subdomain read-only should have no delete buttons"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_3_subdomain_readonly.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_3_subdomain_readonly.png'), full_page=True)
         
         browser.close()
         print(f"✓ Client 3 (subdomain read-only) validated")
 
 
-async def test_client_4_subdomain_update(demo_clients, base_url):
+def test_client_4_subdomain_update(demo_clients, base_url):
     """Test Client 4: Dynamic DNS for *.dyn.example.com (read+update+create).
     
     Validates:
@@ -359,7 +374,7 @@ async def test_client_4_subdomain_update(demo_clients, base_url):
         delete_buttons = page.locator('button:has-text("Delete")')
         assert delete_buttons.count() == 0, "Should have NO delete buttons (no delete permission)"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_4_before_ddns.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_4_before_ddns.png'), full_page=True)
         
         # Test CREATE (simulating dynamic DNS update)
         page.click('a:has-text("New Record")')
@@ -394,13 +409,13 @@ async def test_client_4_subdomain_update(demo_clients, base_url):
         page_text = page.inner_text('body')
         assert '198.51.100.201' in page_text, "Should see updated dynamic IP"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_4_after_ddns.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_4_after_ddns.png'), full_page=True)
         
         browser.close()
         print(f"✓ Client 4 (subdomain DDNS) validated - create+update working, delete blocked")
 
 
-async def test_client_5_multirecord_fullcontrol(demo_clients, base_url):
+def test_client_5_multirecord_fullcontrol(demo_clients, base_url):
     """Test Client 5: DNS provider for services.example.com (full control, multiple record types).
     
     Validates:
@@ -449,13 +464,13 @@ async def test_client_5_multirecord_fullcontrol(demo_clients, base_url):
         delete_buttons = page.locator('button:has-text("Delete")')
         assert delete_buttons.count() == 4, "Should have delete buttons for all records"
         
-        page.screenshot(path=f'deploy-local/screenshots/test_client_5_multirecord.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_client_5_multirecord.png'), full_page=True)
         
         browser.close()
         print(f"✓ Client 5 (multi-record full control) validated")
 
 
-async def test_all_clients_smoke(demo_clients, base_url):
+def test_all_clients_smoke(demo_clients, base_url):
     """Smoke test: Verify all 5 clients can login and view their domains.
     
     Quick validation that basic functionality works for each client.
@@ -523,7 +538,7 @@ async def test_all_clients_smoke(demo_clients, base_url):
     print(f"\n✅ All {len(results)} clients passed smoke test")
 
 
-async def test_permission_matrix(demo_clients, base_url):
+def test_permission_matrix(demo_clients, base_url):
     """Test permission matrix: Verify each client has exactly the expected permissions.
     
     Creates a matrix showing which operations each client can perform.

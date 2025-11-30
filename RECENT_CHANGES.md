@@ -67,7 +67,7 @@ Implemented dedicated Playwright container with comprehensive tooling:
 
 #### `tooling/playwright/docker-compose.yml`
 - **Changed**: `/screenshots` volume from `vol-playwright-screenshots` to direct `deploy-local/screenshots` mapping
-- **Changed**: `/workspace` volume from read-only to read-write for flexibility
+- **Changed**: `/workspaces/netcup-api-filter` volume from read-only to read-write for flexibility
 
 #### `requirements-dev.txt`
 - **Removed**: `playwright>=1.40.0` (now in container)
@@ -175,8 +175,8 @@ pytest ui_tests/tests -v
 ```bash
 # Clean separation with dedicated container
 cd tooling/playwright && ./start-playwright.sh
-./tooling/playwright/playwright-exec.sh python3 /workspace/ui_tests/capture_ui_screenshots.py
-./tooling/playwright/playwright-exec.sh pytest /workspace/ui_tests/tests -v
+./tooling/playwright/playwright-exec.sh python3 /workspaces/netcup-api-filter/ui_tests/capture_ui_screenshots.py
+./tooling/playwright/playwright-exec.sh pytest /workspaces/netcup-api-filter/ui_tests/tests -v
 docker stop playwright  # When done
 ```
 

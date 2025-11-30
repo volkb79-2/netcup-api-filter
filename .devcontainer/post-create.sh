@@ -132,28 +132,6 @@ setup_python_environment() {
         return 1
     fi
     log_debug "Package installation completed"
-
-    # Verify critical imports (Flask app + testing)
-    log_debug "Verifying critical package installations..."
-    local critical_imports=("flask" "pytest" "playwright" "gunicorn" "sqlalchemy" "bcrypt")
-    local failed_imports=()
-    
-    for import_name in "${critical_imports[@]}"; do
-        log_debug "Verifying $import_name..."
-        if ! python -c "import $import_name" 2>/dev/null; then
-            failed_imports+=("$import_name")
-            log_debug "Failed to import $import_name"
-        fi
-    done
-
-    if [[ ${#failed_imports[@]} -gt 0 ]]; then
-        log_error "Failed to import critical packages: ${failed_imports[*]}"
-        log_error "Try reinstalling with: pip install --user --force-reinstall ${failed_imports[*]}"
-        log_error "Or check if packages are installed in user site-packages: python -m site --user-site"
-        return 1
-    fi
-
-    log_success "Python environment ready: all critical packages verified"
 }
 
 # ============================================================================

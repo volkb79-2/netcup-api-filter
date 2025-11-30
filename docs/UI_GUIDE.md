@@ -136,7 +136,7 @@ Post-deploy smoke test checklist:
 
 ## 8. Tooling Notes
 
-- **Playwright**: `cd tooling/playwright && docker compose up -d`, then run tests with `docker exec playwright pytest /workspace/ui_tests/tests -v`. For MCP access, use SSH tunnel to expose port 8765 internally.
+- **Playwright**: `cd tooling/playwright && docker compose up -d`, then run tests with `docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v`. For MCP access, use SSH tunnel to expose port 8765 internally.
 - **Docs to keep handy**: `UI_GUIDE.md` (this file). All earlier UI_* references were removed.
 - **Scripts**: `test_modern_ui.sh`, `cleanup_legacy_ui.sh`, `report_ui_modernization.sh` are available for validation/reporting.
 

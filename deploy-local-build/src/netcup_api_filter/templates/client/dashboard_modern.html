@@ -1,0 +1,97 @@
+{% extends 'client_base.html' %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block client_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="mb-1">Welcome{% if client_info and client_info.client_id %}, {{ client_info.client_id }}{% endif %}</h1>
+        <p class="text-muted mb-0">Manage your DNS records through this portal.</p>
+    </div>
+    {% if login_ts %}
+    <div class="text-muted text-sm">
+        Signed in at {{ login_ts }} UTC
+    </div>
+    {% endif %}
+</div>
+
+<div class="grid grid-cols-3 gap-4 mb-5">
+    <div class="card stat-card">
+        <div class="card-body">
+            <div class="stat-label">Operations</div>
+            <div class="stat-value">{{ meta.operations|length }}</div>
+            <p class="text-muted text-sm mt-2 mb-0">{{ meta.operations|join(', ') if meta.operations else 'Read-only' }}</p>
+        </div>
+    </div>
+
+    <div class="card stat-card">
+        <div class="card-body">
+            <div class="stat-label">Record Types</div>
+            <div class="stat-value" style="color: var(--color-info);">{{ meta.record_types|length }}</div>
+            <p class="text-muted text-sm mt-2 mb-0">{{ meta.record_types|join(', ') if meta.record_types else 'Scoped' }}</p>
+        </div>
+    </div>
+
+    <div class="card stat-card">
+        <div class="card-body">
+            <div class="stat-label">Domains</div>
+            <div class="stat-value" style="color: var(--color-success);">{{ domain_cards|length }}</div>
+            <p class="text-muted text-sm mt-2 mb-0">You can access</p>
+        </div>
+    </div>
+</div>
+
+{% if domain_cards %}
+    {% for card in domain_cards %}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-0">{{ card.domain }}</h2>
+                    {% set ttl = card.zone.get('zoneconfig', {}).get('ttl') %}
+                    {% if ttl %}
+                    <span class="text-muted text-sm">Default TTL: {{ ttl }}</span>
+                    {% endif %}
+                </div>
+                <a class="btn btn-sm btn-important" href="{{ url_for('client_portal.domain_detail', domain=card.domain) }}">Manage</a>
+            </div>
+            <div class="card-body">
+                {% if card.error %}
+                    <div class="alert alert-danger">{{ card.error }}</div>
+                {% else %}
+                    <p class="text-muted text-sm mb-3">{{ card.record_count }} record(s) visible via your token.</p>
+                    {% if card.records %}
+                        <div class="table-container">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Hostname</th>
+                                        <th>Type</th>
+                                        <th>Destination</th>
+                                        <th>State</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for record in card.records %}
+                                    <tr>
+                                        <td><code>{{ record.hostname }}</code></td>
+                                        <td>{{ record.type }}</td>
+                                        <td>{{ record.destination }}</td>
+                                        <td>{{ record.state }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted mb-0">No previewable records.</p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <div class="alert alert-info">
+        No domains are currently linked to this token. Contact your administrator if this seems incorrect.
+    </div>
+{% endif %}
+{% endblock %}

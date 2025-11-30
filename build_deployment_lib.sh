@@ -180,19 +180,15 @@ extract_demo_client_credentials() {
 
 capture_screenshots() {
     local env_file="$1"
-    local screenshot_dir="$2"
+    local screenshot_dir_host="$2"
     
     echo "[SCREENSHOTS] Capturing UI screenshots..."
-    mkdir -p "$screenshot_dir"
+    # Ensure the host directory exists
+    mkdir -p "$screenshot_dir_host"
     
     # Check if Playwright container is available
     if docker ps --filter name=playwright --filter status=running | grep -q playwright; then
         echo "[SCREENSHOTS] Using Playwright container for screenshot capture"
-        
-        # Restart container to pick up new screenshot directory mount
-        echo "[SCREENSHOTS] Restarting Playwright container to refresh bind mounts..."
-        docker restart playwright > /dev/null
-        sleep 2  # Give container time to start
         
         # Get devcontainer hostname for network access
         local devcontainer_hostname
@@ -211,23 +207,24 @@ capture_screenshots() {
         deployed_client_token=$(grep '^DEPLOYED_CLIENT_SECRET_KEY=' "$env_file" | cut -d= -f2)
         
         # Export environment for container execution
-        # Pass credentials as environment variables (no file access needed)
+        # The paths are now identical between devcontainer and playwright container
         export UI_BASE_URL="http://${devcontainer_hostname}:5100"
-        export SCREENSHOT_DIR="/screenshots"
+        export SCREENSHOT_DIR="$screenshot_dir_host"
         export DEPLOYED_ADMIN_USERNAME="admin"
         export DEPLOYED_ADMIN_PASSWORD="${deployed_admin_password}"
         export DEPLOYED_CLIENT_ID="${deployed_client_id}"
         export DEPLOYED_CLIENT_SECRET_KEY="${deployed_client_token}"
         
         echo "[SCREENSHOTS] Target URL: ${UI_BASE_URL}"
-        echo "[SCREENSHOTS] Credentials passed to container (pure service - no file access)"
+        echo "[SCREENSHOTS] Screenshot DIR: ${SCREENSHOT_DIR}"
+        
+        echo "[SCREENSHOTS] Waiting for Playwright container to be ready..."
         
         # Run screenshot capture inside container
-        # Playwright container is a pure service - all data passed via env vars
         "${host_repo_root}/tooling/playwright/playwright-exec.sh" \
-            python3 /workspace/ui_tests/capture_ui_screenshots.py
+            python3 ui_tests/capture_ui_screenshots.py
         
-        echo "[SCREENSHOTS] ✓ Screenshots saved to $screenshot_dir (via container)"
+        echo "[SCREENSHOTS] ✓ Screenshots saved to $screenshot_dir_host (via container)"
     else
         echo "[SCREENSHOTS] WARNING: Playwright container not running, using local Playwright"
         echo "[SCREENSHOTS] Tip: Start container for better emoji/font support:"
@@ -236,7 +233,7 @@ capture_screenshots() {
         # Fallback to local execution
         export REPO_ROOT="${REPO_ROOT:?REPO_ROOT must be set}"
         export DEPLOYMENT_ENV_FILE="$env_file"
-        export SCREENSHOT_DIR="$screenshot_dir"
+        export SCREENSHOT_DIR="$screenshot_dir_host"
         
         # Export deployment state
         set -a
@@ -245,7 +242,7 @@ capture_screenshots() {
         
         python3 "${REPO_ROOT}/ui_tests/capture_ui_screenshots.py"
         
-        echo "[SCREENSHOTS] ✓ Screenshots saved to $screenshot_dir (local)"
+        echo "[SCREENSHOTS] ✓ Screenshots saved to $screenshot_dir_host (local)"
     fi
 }
 
@@ -293,15 +290,46 @@ run_auth_test() {
     
     # Export test environment (including screenshot directory for test screenshots)
     mkdir -p "$screenshot_dir"
-    export SCREENSHOT_DIR="$screenshot_dir"
-    export DEPLOYMENT_ENV_FILE="$env_file"
-    set -a
-    source "$env_file"
-    set +a
     
-    # Run only the auth flow test (from REPO_ROOT for correct path resolution)
-    cd "${REPO_ROOT}"
-    pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
+    # Check if Playwright container is running
+    if docker ps --filter name=playwright --filter status=running | grep -q playwright; then
+        echo "[TESTS] Using Playwright container for auth test"
+        
+        # The container has /workspaces mapped to the physical repo root's parent.
+        # Paths are now consistent.
+        export SCREENSHOT_DIR="$screenshot_dir" 
+        export DEPLOYMENT_ENV_FILE="$env_file"
+        export REPO_ROOT="${REPO_ROOT}" # Pass through for playwright-exec
+        
+        # Load state for passing to container
+        set -a
+        source "$env_file"
+        set +a
+        
+        # Get devcontainer hostname for network access
+        local devcontainer_hostname
+        devcontainer_hostname=$(hostname)
+        export UI_BASE_URL="http://${devcontainer_hostname}:5100"
+
+        echo "[TESTS] Waiting for Playwright container to be ready..."
+
+        # Run test inside container
+        "${REPO_ROOT}/tooling/playwright/playwright-exec.sh" \
+            pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
+
+    else
+        echo "[TESTS] Using local execution for auth test"
+        export SCREENSHOT_DIR="$screenshot_dir"
+        export DEPLOYMENT_ENV_FILE="$env_file"
+        export REPO_ROOT="${REPO_ROOT}"
+        set -a
+        source "$env_file"
+        set +a
+        
+        # Run only the auth flow test (from REPO_ROOT for correct path resolution)
+        cd "${REPO_ROOT}"
+        pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
+    fi
     
     local exit_code=$?
     if [[ $exit_code -eq 0 ]]; then

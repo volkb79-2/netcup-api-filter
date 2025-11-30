@@ -62,7 +62,7 @@ against production.
 ## Running the suite
 
 ```bash
-docker exec playwright pytest /workspace/ui_tests/tests -q
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -q
 ```
 
 Screenshots stay inside the Playwright container under `/screenshots`; copy any

@@ -3,6 +3,7 @@
 These tests run synchronously (no asyncio) to validate basic functionality.
 """
 import json
+import os
 import sqlite3
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -10,8 +11,22 @@ from playwright.sync_api import sync_playwright
 
 def load_demo_clients():
     """Load demo client credentials with database info."""
-    deployment_dir = Path("/workspaces/netcup-api-filter/deploy-local")
+    # Support both local and webhosting deployments
+    deploy_dir = os.environ.get('DEPLOY_DIR')
+    if deploy_dir:
+        deployment_dir = Path(deploy_dir)
+    else:
+        repo_root = os.environ.get('REPO_ROOT')
+        if not repo_root:
+            raise RuntimeError("DEPLOY_DIR or REPO_ROOT must be set (no hardcoded paths allowed)")
+        deployment_dir = Path(f"{repo_root}/deploy-local")
     build_info_path = deployment_dir / "build_info.json"
+
+
+def get_screenshot_path(filename: str) -> str:
+    """Get screenshot path using SCREENSHOT_DIR environment variable."""
+    screenshot_dir = os.environ.get('SCREENSHOT_DIR', 'screenshots')
+    return f"{screenshot_dir}/{filename}"
     
     with open(build_info_path) as f:
         data = json.load(f)
@@ -164,7 +179,7 @@ def test_client_1_readonly_permissions():
         delete_buttons = page.locator('button:has-text("Delete")')
         assert delete_buttons.count() == 0, "Read-only client should have no delete buttons"
         
-        page.screenshot(path='deploy-local/screenshots/test_smoke_client_1_readonly.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_smoke_client_1_readonly.png'), full_page=True)
         browser.close()
         
     print(f"✓ Client 1 (read-only) permissions validated: {count} records, 0 edit, 0 delete")
@@ -205,7 +220,7 @@ def test_client_2_fullcontrol_crud():
         delete_buttons = page.locator('button:has-text("Delete")')
         assert delete_buttons.count() == initial_count, "Should have delete button for each record"
         
-        page.screenshot(path='deploy-local/screenshots/test_smoke_client_2_before_crud.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_smoke_client_2_before_crud.png'), full_page=True)
         
         # CREATE
         page.click('a:has-text("New Record")')
@@ -255,7 +270,7 @@ def test_client_2_fullcontrol_crud():
         final = page.locator('tbody tr')
         assert final.count() == initial_count, "Should be back to original count after DELETE"
         
-        page.screenshot(path='deploy-local/screenshots/test_smoke_client_2_after_crud.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_smoke_client_2_after_crud.png'), full_page=True)
         browser.close()
         
     print(f"✓ Client 2 (full control) CRUD validated: CREATE → UPDATE → DELETE")
@@ -296,7 +311,7 @@ def test_client_4_ddns_no_delete():
         delete_buttons = page.locator('button:has-text("Delete")')
         assert delete_buttons.count() == 0, "DDNS client should have no delete buttons"
         
-        page.screenshot(path='deploy-local/screenshots/test_smoke_client_4_ddns.png', full_page=True)
+        page.screenshot(path=get_screenshot_path('test_smoke_client_4_ddns.png'), full_page=True)
         browser.close()
         
     print(f"✓ Client 4 (DDNS) permissions validated: edit buttons present, no delete buttons")

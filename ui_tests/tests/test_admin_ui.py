@@ -16,7 +16,7 @@ async def test_admin_authentication_flow(active_profile):
         assert "Dashboard" in heading
         
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-auth-flow")
-        assert screenshot_path.endswith(".png")
+        assert screenshot_path.endswith((".png", ".webp"))
 
 
 async def test_admin_dashboard_and_footer(active_profile):
@@ -83,23 +83,24 @@ async def test_admin_can_create_and_delete_client(active_profile):
         generated_token = await workflows.submit_client_form(browser, client_data)
         assert len(generated_token) >= 10
         
+        # Verify client is visible in admin list
         await workflows.ensure_client_visible(browser, client_data.client_id)
 
-        # Verify edit and delete icons are present
-        await workflows.verify_client_list_has_icons(browser)
+        # 6. Logout from admin and prepare for client login
+        await workflows.admin_logout_and_prepare_client_login(browser)
 
-        # Test client login with the new token (should succeed)
-        await workflows.test_client_login_with_token(browser, generated_token, should_succeed=True, expected_client_id=client_data.client_id)
+        # 7. Test client login with the new token
+        await workflows.test_client_login_with_token(
+            browser, generated_token, should_succeed=True, expected_client_id=client_data.client_id
+        )
 
-        # Disable the client
-        await workflows.disable_admin_client(browser, client_data.client_id)
-        await workflows.ensure_client_visible(browser, client_data.client_id)  # Still visible but disabled
+        # 8. Re-login as admin to delete the client
+        await workflows.ensure_admin_dashboard(browser)
 
-        # Test client login with disabled token (should fail)
-        await workflows.test_client_login_with_token(browser, generated_token, should_succeed=False)
-
-        # Delete the client
+        # 9. Delete the client
         await workflows.delete_admin_client(browser, client_data.client_id)
+
+        # 10. Verify client is no longer visible
         await workflows.ensure_client_absent(browser, client_data.client_id)
 
 

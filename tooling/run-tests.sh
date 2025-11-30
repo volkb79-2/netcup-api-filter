@@ -28,7 +28,7 @@ log_info "Running tests inside Playwright container..."
 
 # Run pytest with project-specific tests
 docker compose -f tooling/playwright/docker-compose.yml exec playwright \
-    pytest /workspace/ui_tests/tests -v --tb=short
+    pytest /workspaces/netcup-api-filter/ui_tests/tests -v --tb=short
 
 EXIT_CODE=$?
 

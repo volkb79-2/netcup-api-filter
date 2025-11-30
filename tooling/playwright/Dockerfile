@@ -1,6 +1,27 @@
-# Generic Playwright container with optional MCP server
+# Standalone Playwright Service Container
+# ========================================
+#
+# This Dockerfile creates a standalone Playwright browser automation service
+# with dual interfaces:
+# - WebSocket server on port 3000 (for pytest tests, programmatic access)
+# - MCP server on port 8765 (for AI agents, VS Code)
+#
+# Features:
+# - Multi-client WebSocket support
+# - Session management per client
+# - Optional TLS encryption
+# - Token-based authentication
+# - Full Playwright API (no limitations)
+#
+# Build:
+#   docker build -f Dockerfile.standalone -t playwright-standalone .
+#
+# Run:
+#   docker run -p 3000:3000 -p 8765:8765 playwright-standalone
+
 FROM python:3.13-slim-bookworm
 
+# Environment configuration
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
@@ -8,26 +29,39 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        fonts-noto-color-emoji \
+        # For healthcheck
+        netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements and install Python packages
 COPY requirements.root.txt ./
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl fonts-noto-color-emoji && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip install --upgrade pip && \
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.root.txt && \
     python -m playwright install --with-deps chromium
 
-# Create directories with world-writable permissions (will be mounted anyway)
-RUN mkdir -p /screenshots && chmod 777 /screenshots && \
-    mkdir -p /workspace && chmod 777 /workspace
+# Create directories with world-writable permissions
+# This allows the container to run as any user (e.g., vscode uid=1003)
+RUN mkdir -p /screenshots /workspaces /certs && \
+    chmod 777 /screenshots /workspaces /certs /ms-playwright && \
+    chmod -R 777 /ms-playwright
 
-# Copy MCP server script
+# Copy server scripts
 COPY mcp_server.py /app/mcp_server.py
+COPY ws_server.py /app/ws_server.py
+COPY start_services.py /app/start_services.py
 
-# Default to running bash (for exec commands)
-# If MCP_ENABLED=true, docker-compose will override to run MCP server
-CMD ["/bin/bash"]
+# Default ports
+EXPOSE 3000 8765
 
-# Note: No EXPOSE needed - ports defined in docker-compose.yml
-# MCP server runs on port 8765 (configurable via MCP_PORT)
-VOLUME ["/screenshots", "/workspace"]
+# Volume mount points
+VOLUME ["/screenshots", "/workspaces", "/certs"]
+
+# Start both services
+CMD ["python3", "/app/start_services.py"]

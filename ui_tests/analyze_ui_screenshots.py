@@ -230,8 +230,16 @@ def main():
     print("🔍 Analyzing UI Screenshots")
     print("=" * 80)
     
-    # Find all screenshots
-    screenshot_dir = Path("/workspaces/netcup-api-filter/tmp/screenshots/ui-inspection")
+    # Find all screenshots (NO HARDCODED PATHS)
+    screenshot_dir_path = os.environ.get('SCREENSHOT_DIR')
+    if not screenshot_dir_path:
+        repo_root = os.environ.get('REPO_ROOT')
+        if not repo_root:
+            raise RuntimeError("SCREENSHOT_DIR or REPO_ROOT must be set (no hardcoded paths allowed)")
+        screenshot_dir_path = f"{repo_root}/screenshots"
+        print(f"⚠️  WARNING: SCREENSHOT_DIR not set, using: {screenshot_dir_path}")
+    
+    screenshot_dir = Path(screenshot_dir_path)
     if not screenshot_dir.exists():
         print(f"❌ Screenshot directory not found: {screenshot_dir}")
         return
@@ -321,8 +329,14 @@ def main():
     print("  7. Profile page load times and optimize slow queries")
     print("  8. Consider A/B testing for major UI changes")
     
-    # Save JSON report
-    report_path = Path("/workspaces/netcup-api-filter/tmp/ui-inspection-report.json")
+    # Save JSON report (NO HARDCODED PATHS)
+    screenshot_dir_path = os.environ.get('SCREENSHOT_DIR')
+    if not screenshot_dir_path:
+        repo_root = os.environ.get('REPO_ROOT')
+        if not repo_root:
+            raise RuntimeError("SCREENSHOT_DIR or REPO_ROOT must be set (no hardcoded paths allowed)")
+        screenshot_dir_path = f"{repo_root}/screenshots"
+    report_path = Path(f"{screenshot_dir_path}/ui-inspection-report.json")
     report_data = {
         "screenshots": screenshots,
         "categories": {k: [s['name'] for s in v] for k, v in categories.items()},

@@ -49,8 +49,8 @@ RUN pip install --upgrade pip && \
     python -m playwright install --with-deps chromium
 
 # Create directories
-RUN mkdir -p /screenshots /workspace /certs && \
-    chmod 777 /screenshots /workspace
+RUN mkdir -p /screenshots /workspaces /certs && \
+    chmod 777 /screenshots /workspaces
 
 # Copy server scripts
 COPY mcp_server.py /app/mcp_server.py
@@ -61,7 +61,7 @@ COPY start_services.py /app/start_services.py
 EXPOSE 3000 8765
 
 # Volume mount points
-VOLUME ["/screenshots", "/workspace", "/certs"]
+VOLUME ["/screenshots", "/workspaces", "/certs"]
 
 # Start both services
 CMD ["python3", "/app/start_services.py"]

@@ -1,0 +1,73 @@
+{% extends 'client_base.html' %}
+
+{% block page_title %}{% if mode == 'create' %}New Record{% else %}Edit Record{% endif %} · {{ domain }}{% endblock %}
+
+{% block client_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="mb-1">{% if mode == 'create' %}New Record{% else %}Edit Record{% endif %}</h1>
+        <p class="text-muted mb-0">{{ domain }}</p>
+    </div>
+    <a class="btn btn-outline" href="{{ url_for('client_portal.domain_detail', domain=domain) }}">Cancel</a>
+</div>
+
+<div class="d-flex justify-content-center">
+    <div style="max-width: 600px; width: 100%;">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="form-group">
+                        <label for="hostname" class="form-label">Hostname</label>
+                        <input type="text" class="form-control" id="hostname" name="hostname" 
+                               value="{{ record.hostname if record else '' }}" required>
+                        <small class="form-text">e.g., www or @ for root</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="type" class="form-label">Record Type</label>
+                        <select class="form-control" id="type" name="type" required>
+                            {% for rt in record_types %}
+                            <option value="{{ rt }}" {% if record and record.type == rt %}selected{% elif not record and rt == 'A' %}selected{% endif %}>{{ rt }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="destination" class="form-label">Destination</label>
+                        <input type="text" class="form-control" id="destination" name="destination" 
+                               value="{{ record.destination if record else '' }}" required>
+                        <small class="form-text">IP address, hostname, or value depending on type</small>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="form-group">
+                            <label for="ttl" class="form-label">TTL (seconds)</label>
+                            <input type="number" class="form-control" id="ttl" name="ttl" 
+                                   value="{{ record.ttl if record else '3600' }}" min="60">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="priority" class="form-label">Priority</label>
+                            <input type="number" class="form-control" id="priority" name="priority" 
+                                   value="{{ record.priority if record else '0' }}" min="0">
+                            <small class="form-text">For MX records</small>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="state" class="form-label">State</label>
+                        <select class="form-control" id="state" name="state">
+                            <option value="yes" {% if not record or record.state == 'yes' %}selected{% endif %}>Active</option>
+                            <option value="no" {% if record and record.state == 'no' %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-important w-full">
+                        {% if mode == 'create' %}Create Record{% else %}Update Record{% endif %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

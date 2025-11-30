@@ -139,28 +139,29 @@ class Browser:
         except Exception as exc:
             raise ToolError(name="html", payload={"selector": selector}, message=str(exc))
 
+    async def evaluate(self, script: str, arg: Any = None) -> Any:
+        """Execute JavaScript in the page context."""
+        try:
+            return await self._page.evaluate(script, arg)
+        except Exception as exc:
+            raise ToolError(name="evaluate", payload={"script": script}, message=str(exc))
+
     async def screenshot(self, name: str) -> str:
         """Take screenshot."""
         try:
             import os
             # Require SCREENSHOT_DIR (no defaults - fail-fast policy)
-            screenshot_dir = os.environ.get('SCREENSHOT_DIR')
-            if not screenshot_dir:
-                # Last resort: check for Playwright container mount or getcwd
-                if os.path.exists("/screenshots") and os.access("/screenshots", os.W_OK):
-                    screenshot_dir = "/screenshots"
-                    print(f"[SCREENSHOT] WARNING: SCREENSHOT_DIR not set, using Playwright mount: {screenshot_dir}")
-                else:
-                    # Fail-fast: don't use getcwd() as default
-                    raise ToolError(
-                        name="screenshot",
-                        payload={"name": name},
-                        message="SCREENSHOT_DIR environment variable must be set. No defaults allowed (fail-fast policy)."
-                    )
+            screenshot_dir = os.environ['SCREENSHOT_DIR']
             os.makedirs(screenshot_dir, exist_ok=True)
-            path = os.path.join(screenshot_dir, f"{name}.webp")
-            await self._page.screenshot(path=path, type='jpeg', quality=85, full_page=True)
+            path = os.path.join(screenshot_dir, f"{name}.png")
+            await self._page.screenshot(path=path, type='png', full_page=True)
             return path
+        except KeyError:
+            raise ToolError(
+                name="screenshot",
+                payload={"name": name},
+                message="SCREENSHOT_DIR environment variable must be set. No defaults allowed (fail-fast policy)."
+            )
         except Exception as exc:
             raise ToolError(name="screenshot", payload={"name": name}, message=str(exc))
 
@@ -234,8 +235,13 @@ class Browser:
         except Exception as exc:
             raise ToolError(name="query_selector_all", payload={"selector": selector}, message=str(exc))
 
-    async def set_viewport(self, width: int = 1920, height: int = 2400) -> None:
-        """Set viewport size for consistent screenshots."""
+    async def set_viewport(self, width: int | None = None, height: int | None = None) -> None:
+        """Set viewport size using environment config (NO HARDCODED VALUES)."""
+        import os
+        if width is None:
+            width = int(os.environ.get('SCREENSHOT_VIEWPORT_WIDTH', '1920'))
+        if height is None:
+            height = int(os.environ.get('SCREENSHOT_VIEWPORT_HEIGHT', '2400'))
         await self._page.set_viewport_size({"width": width, "height": height})
 
 

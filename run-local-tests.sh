@@ -4,7 +4,8 @@ set -euo pipefail
 # Run complete local test suite against production-like deployment
 # This mirrors the webhosting environment exactly
 
-WORKSPACE_DIR="/workspaces/netcup-api-filter"
+# NO HARDCODED PATHS - use REPO_ROOT from environment
+WORKSPACE_DIR="${REPO_ROOT:?REPO_ROOT must be set (source .env.workspace)}"
 DEPLOY_LOCAL_DIR="${WORKSPACE_DIR}/deploy-local"
 
 # Colors for output
@@ -83,13 +84,36 @@ echo ""
 echo -e "${BLUE}Running complete test suite (47 tests)...${NC}"
 cd "${WORKSPACE_DIR}"
 
-export UI_BASE_URL=http://netcup-api-filter-devcontainer-vb:5100
-export UI_ADMIN_USERNAME=admin
-export UI_ADMIN_PASSWORD=admin
-export UI_CLIENT_ID=test_qweqweqwe_vi
-export UI_CLIENT_SECRET_KEY=qweqweqwe_vi_readonly_secret_key_12345
+# Set deployment target for the test config module
+export DEPLOYMENT_TARGET="local"
 
-pytest ui_tests/tests -v --tb=short
+# Set environment variables for the test suite itself
+if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwright"; then
+    # When running in container, connect to devcontainer hostname and use container's mount path
+    DEVCONTAINER_HOSTNAME=$(hostname)
+    export UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:5100"
+    export SCREENSHOT_DIR="/screenshots"
+else
+    # When running locally, connect to localhost and use local path
+    export UI_BASE_URL="http://127.0.0.1:5100"
+    export SCREENSHOT_DIR="${DEPLOY_LOCAL_DIR}/screenshots"
+fi
+
+# Check if Playwright container is running
+if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwright"; then
+    echo -e "${GREEN}✓ Playwright container detected. Running tests inside container...${NC}"
+    
+    # Use the canonical executor script to run tests
+        # The workspace is mounted at /workspaces/netcup-api-filter in the container
+    # We use the wrapper script which handles user permissions and environment variables
+    log_info "Running tests in Playwright container..."
+    "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${1:-ui_tests/tests}" -v
+
+else
+    echo -e "${YELLOW}Playwright container not running. Running tests locally...${NC}"
+    # Run tests locally if Playwright container is not available
+    pytest ui_tests/tests -v --tb=short
+fi
 
 TEST_EXIT_CODE=$?
 

@@ -1,89 +1,151 @@
-services:
-  playwright-init:
-    image: alpine:latest
-    container_name: playwright-init
-    user: "root:root"  # Override - needs root to chown
-    command: >
-      sh -c "
-      test -n \"${DOCKER_UID}\" || { echo 'ERROR: DOCKER_UID not set' >&2; exit 1; };
-      test -n \"${DOCKER_GID}\" || { echo 'ERROR: DOCKER_GID not set' >&2; exit 1; };
-      mkdir -p /screenshots &&
-      chown -R ${DOCKER_UID}:${DOCKER_GID} /screenshots &&
-      chmod -R 775 /screenshots &&
-      echo \"Screenshots directory initialized with ownership ${DOCKER_UID}:${DOCKER_GID} and group write permissions\"
-      "
-    volumes:
-      # Maps to deploy-local/screenshots (same as playwright service)
-      - ${PHYSICAL_PLAYWRIGHT_DIR:?PHYSICAL_PLAYWRIGHT_DIR must be set}/screenshots:/screenshots
+# Standalone Playwright Service Container
+# ========================================
+# 
+# This docker-compose file provides a standalone Playwright browser automation service
+# that can be used by multiple clients including:
+# - VS Code MCP clients (port 8765)
+# - WebSocket clients / pytest tests (port 3000)
+#
+# Features:
+# - Multi-client WebSocket service
+# - Optional TLS with self-signed certificates
+# - Session management per client
+# - Token-based authentication (optional)
+# - Full Playwright API access (no MCP limitations)
+#
+# Usage:
+#   # Basic (no TLS, no auth)
+#   docker compose -f docker-compose.standalone.yml up -d
+#
+#   # With TLS (self-signed certs auto-generated)
+#   SSL_ENABLED=true docker compose -f docker-compose.standalone.yml up -d
+#
+#   # With authentication
+#   WS_AUTH_TOKEN=my-secret-token docker compose -f docker-compose.standalone.yml up -d
+#
+#   # Full production-like setup
+#   SSL_ENABLED=true WS_AUTH_TOKEN=$(openssl rand -hex 32) docker compose -f docker-compose.standalone.yml up -d
 
+services:
+  # Certificate generator - creates self-signed certs on startup
+  cert-generator:
+    image: alpine:latest
+    container_name: playwright-cert-gen
+    volumes:
+      - playwright-certs:/certs
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ "$$SSL_ENABLED" != "true" ]; then
+          echo "SSL disabled, skipping certificate generation"
+          exit 0
+        fi
+        
+        if [ -f /certs/server.crt ] && [ -f /certs/server.key ]; then
+          echo "Certificates already exist, skipping generation"
+          exit 0
+        fi
+        
+        echo "Installing OpenSSL..."
+        apk add --no-cache openssl
+        
+        echo "Generating self-signed certificate..."
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /certs/server.key \
+          -out /certs/server.crt \
+          -subj "/C=US/ST=Local/L=Development/O=Playwright/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,DNS:playwright,IP:127.0.0.1"
+        
+        chmod 644 /certs/server.crt
+        chmod 600 /certs/server.key
+        echo "Certificate generation complete"
+    environment:
+      - SSL_ENABLED=${SSL_ENABLED:-false}
+
+  # Screenshots directory initialization
+  # playwright-init:
+  #   image: alpine:latest
+  #   container_name: playwright-init
+  #   user: "root:root"
+  #   command: >
+  #     sh -c "
+  #     mkdir -p /workspaces/netcup-api-filter/deploy-local/screenshots &&
+  #     chmod 777 /workspaces/netcup-api-filter/deploy-local/screenshots &&
+  #     echo 'Screenshot directory initialized'
+  #     "
+  #   volumes:
+  #     - playwright-screenshots:/screenshots
+  #     - playwright-workspace:/workspace
+
+  # Main Playwright service
   playwright:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: playwright
-    image: generic-playwright:latest
+    hostname: playwright
+    # Run as same user as devcontainer (vscode) to avoid permission issues
+    # The uid/gid are passed from .env.workspace or default to 1000
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     depends_on:
-      playwright-init:
+      cert-generator:
         condition: service_completed_successfully
     
     environment:
-      # Playwright settings - no defaults, must be explicitly set
-      PLAYWRIGHT_HEADLESS: "${PLAYWRIGHT_HEADLESS:?PLAYWRIGHT_HEADLESS must be set}"
-      PLAYWRIGHT_BROWSER: "${PLAYWRIGHT_BROWSER:?PLAYWRIGHT_BROWSER must be set}"
+      # WebSocket server settings
+      WS_PORT: "${WS_PORT}"
+      WS_HOST: "0.0.0.0"
+      WS_AUTH_TOKEN: "${WS_AUTH_TOKEN}"
+      WS_MAX_SESSIONS: "${WS_MAX_SESSIONS}"
+      WS_SESSION_TIMEOUT: "${WS_SESSION_TIMEOUT}"
       
-      # Container user permissions
-      DOCKER_UID: "${DOCKER_UID:?DOCKER_UID must be set}"
-      DOCKER_GID: "${DOCKER_GID:?DOCKER_GID must be set}"
+      # MCP server settings
+      MCP_ENABLED: "${MCP_ENABLED}"
+      MCP_PORT: "${MCP_PORT}"
+      MCP_SERVER_NAME: "${MCP_SERVER_NAME}"
       
-      # Optional: MCP server settings (if MCP_ENABLED=true)
-      MCP_ENABLED: "${MCP_ENABLED:?MCP_ENABLED must be set (true or false)}"
-      MCP_PORT: "${MCP_PORT:?MCP_PORT must be set}"
-      MCP_SERVER_NAME: "${MCP_SERVER_NAME:?MCP_SERVER_NAME must be set}"
+      # Playwright settings
+      PLAYWRIGHT_HEADLESS: "${PLAYWRIGHT_HEADLESS}"
+      PLAYWRIGHT_BROWSER: "${PLAYWRIGHT_BROWSER}"
+      
+      # TLS settings
+      SSL_ENABLED: "${SSL_ENABLED}"
+      SSL_CERT_PATH: "/certs/server.crt"
+      SSL_KEY_PATH: "/certs/server.key"
     
-    # NO ports directive needed! Containers on same Docker network can communicate
-    # directly without port exposure. This keeps MCP server private.
-    # If you need host access for debugging: ports: ["127.0.0.1:8765:8765"]
-    
-    networks:
-      - default
+    ports:
+      # WebSocket server (primary interface for tests)
+      - "${WS_EXTERNAL_PORT}:${WS_PORT}"
+      # MCP server (for AI agents / VS Code)
+      - "${MCP_EXTERNAL_PORT}:${MCP_PORT}"
     
     volumes:
-      # Mount parent directory as workspace (read-write for flexibility)
-      # For netcup-api-filter: mounts project root using PHYSICAL_REPO_ROOT from post-create.sh
-      # For other projects: adjust the path
-      # Uses physical host path set by .devcontainer/post-create.sh
-      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}:/workspace
-      
-      # Screenshots output - writable, maps to deploy-local/screenshots
-      # Direct mapping means container writes go straight to deployment directory
-      # Uses physical host path so files are accessible from devcontainer
-      - ${PHYSICAL_PLAYWRIGHT_DIR:?PHYSICAL_PLAYWRIGHT_DIR must be set}/screenshots:/screenshots
-    
-    user: "${DOCKER_UID:?DOCKER_UID must be set}:${DOCKER_GID:?DOCKER_GID must be set}"
-    
-    # Keep container running - run MCP server if enabled, otherwise just tail
-    command: >
-      sh -c '
-      test -n "${MCP_ENABLED}" || { echo "ERROR: MCP_ENABLED not set" >&2; exit 1; };
-      test -n "${MCP_PORT}" || { echo "ERROR: MCP_PORT not set" >&2; exit 1; };
-      if [ "${MCP_ENABLED}" = "true" ]; then
-        echo "Starting MCP server on port ${MCP_PORT}...";
-        python3 /app/mcp_server.py;
-      else
-        echo "MCP disabled - container running in background mode";
-        tail -f /dev/null;
-      fi
-      '
-    
-    restart: unless-stopped
+      # Certificates (read-only)
+      - playwright-certs:/certs:ro
+      # Mount physical repo to match devcontainer path exactly
+      # allow playwright to use the same workspace paths as in devcontainer, e.g. we map
+      # `/home/vb/volkb79-2/netcup-api-filter` --> `/workspaces/netcup-api-filter`
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}:${REPO_ROOT:?REPO_ROOT must be set}:rw
     
     # Shared memory for browser
     shm_size: "2gb"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 3000)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    restart: unless-stopped
 
-# Use existing network created by devcontainer
-# Network name from DOCKER_NETWORK_INTERNAL (read from global-config.active.toml)
-# IMPORTANT: Use 'external: true' to connect to existing network
-# No default - must be explicitly set via environment
+volumes:
+  playwright-certs:
+    driver: local
+
+# Use devcontainer network for integration
 networks:
   default:
     name: ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (source .env.workspace)}

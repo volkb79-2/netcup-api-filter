@@ -47,9 +47,17 @@ werkzeug>=3.0.0
 # Mock SMTP server for email testing
 aiosmtpd>=1.4.6
 
+# Required by the application itself
+bcrypt>=4.1.0
 
 # HTTP clients for testing
 httpx>=0.27.0      # Used by E2E tests with mock API
-requests>=2.32.0   # Used by netcup_client (dependency of application under test) 
-                                                                                                                                        
-pillow>=10.0.0  # For visual regression testing
+requests>=2.32.0   # Used by netcup_client (dependency of application under test)
+
+
+# WebSocket server
+websockets>=12.0
+
+# Process management for running multiple services
+supervisor>=4.2.5
+

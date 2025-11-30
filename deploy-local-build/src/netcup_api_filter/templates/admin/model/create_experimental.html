@@ -1,0 +1,408 @@
+{% extends 'admin_base.html' %}
+{% import 'admin/lib.html' as lib with context %}
+{% import 'admin/static.html' as admin_static with context%}
+
+{% block page_title %}{{ admin_view.name }}{% endblock %}
+
+{% block extra_head %}
+{{ super() }}
+{{ lib.form_css() }}
+{% endblock %}
+
+{% block admin_content %}
+<div class="page-header-with-actions">
+    <div>
+        <h1>Create {{ admin_view.name }}</h1>
+    </div>
+    <div class="page-actions">
+        <a href="{{ get_url('.index_view') }}" class="btn btn-outline">Back to List</a>
+    </div>
+</div>
+
+{% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h3 class="mb-0">📋 Quick Start Templates</h3>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Select a template to pre-configure common DNS management scenarios:</p>
+        
+        <div class="template-radio-group">
+            <div class="template-radio-option">
+                <input type="radio" id="template_ddns_single" name="clientTemplate" value="ddns_single_host" onchange="applyTemplate(this.value)">
+                <label for="template_ddns_single" class="template-radio-label" data-template="ddns_single_host">
+                    <div class="template-header">
+                        <span class="template-icon">🏠</span>
+                        <span class="template-name">DDNS Single Host</span>
+                    </div>
+                    <p class="template-desc"></p>
+                    <p class="template-example"></p>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_ddns_subdomain" name="clientTemplate" value="ddns_subdomain_zone" onchange="applyTemplate(this.value)">
+                <label for="template_ddns_subdomain" class="template-radio-label" data-template="ddns_subdomain_zone">
+                    <div class="template-header">
+                        <span class="template-icon">🌐</span>
+                        <span class="template-name">DDNS Subdomain</span>
+                    </div>
+                    <p class="template-desc"></p>
+                    <p class="template-example"></p>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_monitoring" name="clientTemplate" value="monitoring_readonly" onchange="applyTemplate(this.value)">
+                <label for="template_monitoring" class="template-radio-label" data-template="monitoring_readonly">
+                    <div class="template-header">
+                        <span class="template-icon">👁️</span>
+                        <span class="template-name">Read-Only</span>
+                    </div>
+                    <p class="template-desc"></p>
+                    <p class="template-example"></p>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_letsencrypt" name="clientTemplate" value="letsencrypt_dns01" onchange="applyTemplate(this.value)">
+                <label for="template_letsencrypt" class="template-radio-label" data-template="letsencrypt_dns01">
+                    <div class="template-header">
+                        <span class="template-icon">🔒</span>
+                        <span class="template-name">LetsEncrypt</span>
+                    </div>
+                    <p class="template-desc"></p>
+                    <p class="template-example"></p>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_full" name="clientTemplate" value="full_management" onchange="applyTemplate(this.value)">
+                <label for="template_full" class="template-radio-label" data-template="full_management">
+                    <div class="template-header">
+                        <span class="template-icon">⚙️</span>
+                        <span class="template-name">Full Management</span>
+                    </div>
+                    <p class="template-desc"></p>
+                    <p class="template-example"></p>
+                </label>
+            </div>
+            
+            <div class="template-radio-option">
+                <input type="radio" id="template_cname" name="clientTemplate" value="cname_only" onchange="applyTemplate(this.value)">
+                <label for="template_cname" class="template-radio-label" data-template="cname_only">
+                    <div class="template-header">
+                        <span class="template-icon">🔗</span>
+                        <span class="template-name">CNAME Only</span>
+                    </div>
+                    <p class="template-desc"></p>
+                    <p class="template-example"></p>
+                </label>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-3 gap-4">
+    <div class="grid-span-2">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-header-with-toggle">
+                    <h2 class="mb-0">{{ admin_view.name }} Details</h2>
+                    {% if admin_view.__class__.__name__ == 'ClientModelView' %}
+                    <div class="activate-client-toggle">
+                        <label for="is_active" class="toggle-label">Activate Client</label>
+                        <input type="checkbox" id="is_active" name="is_active" class="toggle-checkbox" checked>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                {% block create_form %}
+                {{ lib.render_form(form, return_url, extra_args, form_opts, action=request.full_path.rstrip('?')) }}
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+    
+    <div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">Information</h3>
+            </div>
+            <div class="card-body">
+                {% if admin_view.__class__.__name__ == 'ClientModelView' %}
+                <p><strong>Required Fields:</strong></p>
+                <ul class="list-styled">
+                    <li><strong>Client ID:</strong> Unique identifier</li>
+                    <li><strong>Realm Value:</strong> Domain name</li>
+                </ul>
+                
+                <p><strong>Permissions:</strong></p>
+                <ul class="list-styled">
+                    <li>Record Types: A, AAAA, CNAME, etc.</li>
+                    <li>Operations: read, create, update, delete</li>
+                </ul>
+                
+                <div class="alert alert-success">
+                    <i class="fas fa-lightbulb me-2"></i>
+                    Tip: Select a template above for quick setup.
+                </div>
+                {% else %}
+                <p>Fill in the required fields to create a new {{ admin_view.name|lower }}.</p>
+                <p>Fields marked with an asterisk (*) are required.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+{{ lib.form_js() }}
+{% if admin_view and admin_view.__class__.__name__ == 'ClientModelView' %}
+<script {{ admin_csp_nonce_attribute|default('') }} src="{{ url_for('static', filename='js/client-token.js') }}" data-generate-url="{{ url_for('.generate_token_view') }}"></script>
+<script {{ admin_csp_nonce_attribute|default('') }}>
+function setupCheckboxSelect(fieldName) {
+    const select = document.querySelector(`select[name="${fieldName}"]`);
+    if (!select || select.dataset.checkboxInitialized === 'true') {
+        return;
+    }
+
+    const column = select.closest('.col-md-10') || select.parentElement;
+    if (!column) return;
+
+    const container = document.createElement('div');
+    container.className = 'checkbox-grid';
+
+    Array.from(select.options).forEach((option, index) => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = option.value;
+        checkbox.dataset.optionIndex = index;
+        checkbox.checked = option.selected;
+        checkbox.addEventListener('change', () => {
+            option.selected = checkbox.checked;
+        });
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(option.textContent));
+        container.appendChild(label);
+    });
+
+    select.style.display = 'none';
+    select.dataset.checkboxInitialized = 'true';
+    column.appendChild(container);
+}
+
+function refreshCheckboxGroup(fieldName) {
+    const select = document.querySelector(`select[name="${fieldName}"]`);
+    if (!select) return;
+
+    const column = select.closest('.col-md-10') || select.parentElement;
+    if (!column) return;
+
+    const container = column.querySelector('.checkbox-grid');
+    if (!container) return;
+
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((checkbox) => {
+        const option = select.options[checkbox.dataset.optionIndex];
+        if (option) {
+            checkbox.checked = option.selected;
+        }
+    });
+}
+
+// Sync header checkbox with hidden form field & enhance template cards
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.template-radio-label[data-template]').forEach((label) => {
+        const templateConfig = CLIENT_TEMPLATES[label.dataset.template];
+        if (!templateConfig) return;
+        const desc = label.querySelector('.template-desc');
+        if (desc) {
+            desc.textContent = templateConfig.use_case;
+        }
+        const example = label.querySelector('.template-example');
+        if (example) {
+            example.textContent = templateConfig.example;
+        }
+    });
+
+    const headerCheckbox = document.getElementById('is_active');
+    const formCheckbox = document.querySelector('input[name="is_active"][type="hidden"], input[name="is_active"][type="checkbox"]:not(#is_active)');
+    
+    if (headerCheckbox && formCheckbox) {
+        // Sync header checkbox changes to form field
+        headerCheckbox.addEventListener('change', function() {
+            if (formCheckbox.type === 'hidden') {
+                formCheckbox.value = this.checked ? 'y' : '';
+            } else {
+                formCheckbox.checked = this.checked;
+            }
+        });
+        
+        // Initialize header checkbox from form field
+        if (formCheckbox.type === 'checkbox') {
+            headerCheckbox.checked = formCheckbox.checked;
+        } else if (formCheckbox.value === 'y') {
+            headerCheckbox.checked = true;
+        }
+    }
+    
+    ['allowed_record_types', 'allowed_operations'].forEach(setupCheckboxSelect);
+    
+    // Combine email notification checkbox with email address field
+    const emailInput = document.querySelector('input[name="email_address"]');
+    const emailGroup = emailInput ? emailInput.closest('.form-group') : null;
+    const emailCol = emailInput ? emailInput.closest('.col-md-10') : null;
+    const emailNotifCheckbox = document.querySelector('input[name="email_notifications_enabled"]');
+    const emailNotifGroup = emailNotifCheckbox ? emailNotifCheckbox.closest('.form-group') : null;
+    const saveButton = document.querySelector('input[type="submit"][value="Save"]');
+    const saveButtonContainer = saveButton ? saveButton.closest('.form-group') || saveButton.closest('.form-actions') || saveButton.closest('.submit-row') : null;
+    
+    if (emailGroup && emailCol && emailNotifCheckbox && saveButton) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'email-notify-wrapper';
+        
+        const controls = document.createElement('div');
+        controls.className = 'email-notify-controls';
+        
+        const checkboxId = emailNotifCheckbox.id || 'email-notify-toggle';
+        emailNotifCheckbox.id = checkboxId;
+        
+        const label = document.createElement('label');
+        label.className = 'email-notify-heading';
+        label.setAttribute('for', checkboxId);
+        label.textContent = 'Enable Email Notifications to this Address';
+        
+        controls.appendChild(emailNotifCheckbox);
+        controls.appendChild(label);
+        
+        wrapper.appendChild(controls);
+        wrapper.appendChild(emailInput);
+        
+        emailCol.innerHTML = '';
+        emailCol.appendChild(wrapper);
+        if (emailNotifGroup) {
+            emailNotifGroup.remove();
+        }
+        
+        saveButton.classList.remove('btn-primary');
+        saveButton.classList.add('btn-important');
+        
+        const saveCell = document.createElement('div');
+        saveCell.className = 'form-group form-save-cell';
+        saveCell.appendChild(saveButton);
+        
+        emailGroup.parentNode.insertBefore(saveCell, emailGroup.nextSibling);
+        
+        if (saveButtonContainer) {
+            saveButtonContainer.remove();
+        }
+    }
+});
+
+// Client templates configuration
+const CLIENT_TEMPLATES = {
+    ddns_single_host: {
+        name: "DDNS Single Host",
+        realm_type: "host",
+        record_types: ["A", "AAAA"],
+        operations: ["read", "update"],
+        example: "Example: home.example.com",
+        use_case: "Dynamic DNS for a single host (home router, VPN endpoint)"
+    },
+    ddns_subdomain_zone: {
+        name: "DDNS Subdomain Delegation",
+        realm_type: "subdomain",
+        record_types: ["A", "AAAA", "CNAME"],
+        operations: ["read", "update", "create", "delete"],
+        example: "Example: dyn.example.com (manages *.dyn.example.com)",
+        use_case: "Full control over subdomain for multiple dynamic hosts"
+    },
+    monitoring_readonly: {
+        name: "Read-Only Monitoring",
+        realm_type: "host",
+        record_types: ["A", "AAAA", "CNAME", "NS", "TXT", "MX"],
+        operations: ["read"],
+        example: "Example: example.com",
+        use_case: "View DNS records without modification (monitoring, auditing)"
+    },
+    letsencrypt_dns01: {
+        name: "LetsEncrypt DNS-01 Challenge",
+        realm_type: "subdomain",
+        record_types: ["TXT"],
+        operations: ["read", "create", "delete"],
+        example: "Example: _acme-challenge.example.com",
+        use_case: "Automated certificate issuance via DNS-01 (certbot, Traefik)"
+    },
+    full_management: {
+        name: "Full DNS Management",
+        realm_type: "host",
+        record_types: ["A", "AAAA", "CNAME", "NS", "TXT", "MX", "SRV"],
+        operations: ["read", "update", "create", "delete"],
+        example: "Example: example.com",
+        use_case: "Complete DNS control for automation (CI/CD, Terraform)"
+    },
+    cname_only: {
+        name: "CNAME Delegation",
+        realm_type: "subdomain",
+        record_types: ["CNAME"],
+        operations: ["read", "update", "create", "delete"],
+        example: "Example: cdn.example.com",
+        use_case: "Delegate CNAME management (CDN, load balancer aliases)"
+    }
+};
+
+function applyTemplate(templateId) {
+    if (!templateId) {
+        return;
+    }
+    
+    const template = CLIENT_TEMPLATES[templateId];
+    if (!template) return;
+    
+    // Apply realm type
+    const realmTypeSelect = document.querySelector('select[name="realm_type"]');
+    if (realmTypeSelect) {
+        realmTypeSelect.value = template.realm_type;
+    }
+    
+    // Apply record types (multi-select)
+    const recordTypesSelect = document.querySelector('select[name="allowed_record_types"]');
+    if (recordTypesSelect) {
+        // Clear all selections first
+        for (let option of recordTypesSelect.options) {
+            option.selected = false;
+        }
+        // Select template record types
+        for (let option of recordTypesSelect.options) {
+            if (template.record_types.includes(option.value)) {
+                option.selected = true;
+            }
+        }
+        refreshCheckboxGroup('allowed_record_types');
+    }
+    
+    // Apply operations (multi-select)
+    const operationsSelect = document.querySelector('select[name="allowed_operations"]');
+    if (operationsSelect) {
+        // Clear all selections first
+        for (let option of operationsSelect.options) {
+            option.selected = false;
+        }
+        // Select template operations
+        for (let option of operationsSelect.options) {
+            if (template.operations.includes(option.value)) {
+                option.selected = true;
+            }
+        }
+        refreshCheckboxGroup('allowed_operations');
+    }
+}
+</script>
+{% endif %}
+{% endblock %}

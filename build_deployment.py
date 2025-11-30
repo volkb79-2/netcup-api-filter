@@ -143,15 +143,18 @@ def copy_application_files(deploy_dir):
 
 
 def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_clients: list):
-    """Write build metadata (timestamp, git info, generated credentials) to deploy directory.
+    """Write build metadata (timestamp, git info) to deploy directory.
+    
+    NOTE: This file is deployed to webhosting and MUST NOT contain secrets.
+    Secrets are stored separately in deployment_state_<target>.json in REPO_ROOT.
     
     Args:
         deploy_dir: Path to deployment directory
-        client_id: Generated primary test client ID
-        secret_key: Generated primary test client secret key
-        all_demo_clients: List of (client_id, secret_key, description) tuples for all demo clients
+        client_id: (unused - kept for API compatibility)
+        secret_key: (unused - kept for API compatibility)  
+        all_demo_clients: (unused - kept for API compatibility)
     """
-    logger.info("Recording build metadata...")
+    logger.info("Recording build metadata (public, no secrets)...")
 
     def git_output(*args, default="unknown"):
         try:
@@ -162,6 +165,7 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
         except Exception:
             return default
 
+    # Public build info only - NO SECRETS
     build_info = {
         "built_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         "git_commit": git_output("rev-parse", "HEAD", default="unknown"),
@@ -169,17 +173,8 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
         "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
         "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
         "source": "build_deployment.py",
-        "generated_client_id": client_id,
-        "generated_secret_key": secret_key,
-        "demo_clients": [
-            {
-                "client_id": cid,
-                "secret_key": secret,
-                "description": desc,
-                "token": f"{cid}:{secret}"
-            }
-            for cid, secret, desc in all_demo_clients
-        ]
+        # Count of clients for display purposes only
+        "demo_client_count": len(all_demo_clients),
     }
 
     metadata_path = Path(deploy_dir) / "build_info.json"
@@ -193,16 +188,8 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
     )
 
 
-def create_initial_env_webhosting(deploy_dir):
-    """Create .env.webhosting with initial deployment state from .env.defaults.
-    
-    This file represents the live state after deployment and gets updated by tests
-    when passwords change. It should be written to a writable location like
-    /screenshots/.env.webhosting in the Playwright container.
-    """
-    logger.info("Creating initial .env.webhosting...")
-    
-    # Load defaults from .env.defaults
+def _load_env_defaults() -> dict:
+    """Load defaults from .env.defaults file."""
     defaults = {}
     env_defaults_path = Path(".env.defaults")
     if env_defaults_path.exists():
@@ -220,12 +207,100 @@ def create_initial_env_webhosting(deploy_dir):
             "DEFAULT_ADMIN_USERNAME": "admin",
             "DEFAULT_ADMIN_PASSWORD": "admin",
         }
+    return defaults
+
+
+def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients, target="local"):
+    """Create deployment state file with credentials in REPO_ROOT (not deployed).
+    
+    This file is the single source of truth for deployment state:
+    - Build-time metadata (git info, timestamps)
+    - Admin credentials (updated when passwords change)
+    - Client credentials (for testing)
+    
+    IMPORTANT: This file is written to REPO_ROOT, NOT the deploy directory.
+    It contains secrets and must NEVER be included in deploy.zip.
+    
+    Tests read this file FRESH each time to get the latest state.
+    
+    Args:
+        deploy_dir: Deploy directory (used only to derive REPO_ROOT and deploy_path)
+        client_id: Primary client ID
+        secret_key: Primary client secret
+        all_demo_clients: List of (client_id, secret, description) tuples
+        target: Deployment target ("local" or "webhosting")
+    """
+    # State file goes in REPO_ROOT, named by target
+    repo_root = Path(__file__).parent.absolute()
+    state_filename = f"deployment_state_{target}.json"
+    state_path = repo_root / state_filename
+    
+    logger.info(f"Creating {state_filename} in REPO_ROOT (contains secrets, not deployed)...")
+    
+    defaults = _load_env_defaults()
+    
+    def git_output(*args, default=""):
+        """Run git command and return output."""
+        try:
+            result = subprocess.run(
+                ["git"] + list(args),
+                capture_output=True, text=True, check=True
+            )
+            return result.stdout.strip() or default
+        except Exception:
+            return default
+    
+    # Build unified state structure
+    state = {
+        "target": target,
+        "deploy_dir": str(Path(deploy_dir).absolute()),
+        "build": {
+            "built_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "git_commit": git_output("rev-parse", "--short", "HEAD", default="unknown"),
+            "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
+            "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
+            "source": "build_deployment.py",
+        },
+        "admin": {
+            "username": defaults.get('DEFAULT_ADMIN_USERNAME', 'admin'),
+            "password": defaults.get('DEFAULT_ADMIN_PASSWORD', 'admin'),
+            "password_changed_at": None,  # Set when password is changed
+        },
+        "clients": [
+            {
+                "client_id": cid,
+                "secret_key": secret,
+                "description": desc,
+                "is_primary": (i == 0),  # First client is primary
+            }
+            for i, (cid, secret, desc) in enumerate(all_demo_clients)
+        ],
+        "last_updated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "updated_by": "build_deployment.py",
+    }
+    
+    with open(state_path, 'w') as f:
+        json.dump(state, f, indent=2)
+    
+    logger.info(f"Created {state_path}")
+    return state
+
+
+def create_initial_env_webhosting(deploy_dir):
+    """Create .env.webhosting with initial deployment state from .env.defaults.
+    
+    DEPRECATED: Use deployment_state.json instead.
+    This file is kept for backward compatibility with existing test infrastructure.
+    """
+    logger.info("Creating initial .env.webhosting (legacy compatibility)...")
+    
+    defaults = _load_env_defaults()
     
     # Create .env.webhosting with deployment state
     env_webhosting_path = Path(deploy_dir) / ".env.webhosting"
     with open(env_webhosting_path, 'w') as f:
-        f.write("# Deployment state - updated by tests when passwords change\n")
-        f.write("# This file should be written to /screenshots/.env.webhosting in Playwright container\n\n")
+        f.write("# DEPRECATED: Use deployment_state.json instead\n")
+        f.write("# Deployment state - updated by tests when passwords change\n\n")
         f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', 'admin')}\n")
         f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', 'admin')}\n")
         f.write(f"DEPLOYED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z\n")
@@ -491,11 +566,11 @@ Enjoy using Netcup API Filter! 🚀
     logger.info(f"Created {readme_path}")
 
 
-def create_zip_package(deploy_dir):
-    """Create deploy.zip and deploy.zip.sha256."""
-    logger.info("Creating deployment package...")
+def create_zip_package(deploy_dir, output_filename="deploy.zip"):
+    """Create zip package and sha256 hash file."""
+    logger.info(f"Creating deployment package: {output_filename}...")
     
-    zip_path = "deploy.zip"
+    zip_path = output_filename
     deploy_path = Path(deploy_dir)
     
     # Remove old zip if exists
@@ -539,8 +614,28 @@ def create_zip_package(deploy_dir):
 
 def main():
     """Main build process."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Build deployment package")
+    parser.add_argument("--output", default="deploy.zip", help="Output zip filename")
+    parser.add_argument("--build-dir", default="deploy", help="Directory to build the package in")
+    parser.add_argument("--local", action="store_true", help="Build for local testing (sets target=local)")
+    parser.add_argument("--target", choices=["local", "webhosting"], default=None,
+                        help="Deployment target (local or webhosting). --local sets this to 'local'")
+    args = parser.parse_args()
+    
+    # Determine deployment target
+    if args.local:
+        deployment_target = "local"
+    elif args.target:
+        deployment_target = args.target
+    else:
+        # Default based on build directory name
+        deployment_target = "local" if "local" in args.build_dir else "webhosting"
+
     logger.info("=" * 60)
     logger.info("Netcup API Filter - Deployment Package Builder")
+    logger.info(f"Target: {deployment_target}")
     logger.info("=" * 60)
     
     requirements_path = "./requirements.webhosting.txt"
@@ -557,7 +652,7 @@ def main():
     
     try:
         # Create deploy directory
-        deploy_dir = "deploy"
+        deploy_dir = args.build_dir
         if os.path.exists(deploy_dir):
             logger.info(f"Removing existing {deploy_dir} directory...")
             shutil.rmtree(deploy_dir)
@@ -570,20 +665,21 @@ def main():
         # Copy application files
         copy_application_files(deploy_dir)
         
-        # Create initial deployment state file
-        create_initial_env_webhosting(deploy_dir)
-        
         # Initialize database and get generated credentials
         client_id, secret_key, all_demo_clients = initialize_database(deploy_dir)
+        
+        # Create unified deployment state (primary state file)
+        create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients, target=deployment_target)
 
         # Record build metadata with generated credentials for runtime display
+        # NOTE: build_info.json is deprecated, use deployment_state.json instead
         write_build_metadata(deploy_dir, client_id, secret_key, all_demo_clients)
         
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
         # Create zip package
-        zip_path, hash_file = create_zip_package(deploy_dir)
+        zip_path, hash_file = create_zip_package(deploy_dir, args.output)
         
         logger.info("=" * 60)
         logger.info("✅ Deployment package built successfully!")
@@ -593,7 +689,7 @@ def main():
         logger.info(f"Deploy directory: {deploy_dir}/")
         logger.info("")
         logger.info("Next steps:")
-        logger.info("1. Download deploy.zip")
+        logger.info(f"1. Download {zip_path}")
         logger.info("2. Extract and upload contents via FTP to your webhosting")
         logger.info("3. Access /admin and login with credentials from .env.defaults")
         logger.info("4. Read DEPLOY_README.md for detailed instructions")

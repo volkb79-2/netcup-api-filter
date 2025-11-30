@@ -28,6 +28,13 @@ app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('FLASK_SESSION_COOKIE_SAM
 app.config['PERMANENT_SESSION_LIFETIME'] = int(os.environ.get('FLASK_SESSION_LIFETIME', '3600'))
 ```
 
+### Environment Detection & Safety
+
+**CRITICAL**: Never implement automatic fallbacks between environments (e.g., "if local config missing, try production config").
+- **Explicit Loading Only**: Load ONLY the configuration file specified for the current environment.
+- **No "Smart" Fallbacks**: If `.env.local` is missing in a local environment, FAIL immediately. Do NOT fall back to `.env.webhosting`.
+- **Production Protection**: Test runners must explicitly exclude production configuration files to prevent accidental operations against live systems.
+
 See `CONFIG_DRIVEN_ARCHITECTURE.md` for complete guidelines and migration plan.
 
 ## Local Testing with Production Parity
@@ -218,10 +225,10 @@ This is the ONLY supported deployment method. Do not manually scp files.
 cd tooling/playwright && ./start-playwright.sh
 
 # Run screenshots (automatic in build-and-deploy-local.sh)
-./tooling/playwright/playwright-exec.sh python3 /workspace/ui_tests/capture_ui_screenshots.py
+./tooling/playwright/playwright-exec.sh python3 ui_tests/capture_ui_screenshots.py
 
 # Run UI tests
-./tooling/playwright/playwright-exec.sh pytest /workspace/ui_tests/tests -v
+./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 
 # Stop container when done
 docker stop playwright
@@ -239,7 +246,7 @@ docker stop playwright
 
 ```
 Playwright Container (generic-playwright:latest)
-  ├── /workspace → Project root (read-write)
+  ├── /workspaces/netcup-api-filter → Project root (read-write)
   ├── /screenshots → deploy-local/screenshots (direct output)
   ├── Network: Same as devcontainer (e.g., naf-dev-network)
   └── Packages: pytest, playwright, visual regression, debugging tools
@@ -304,7 +311,7 @@ and UI testing. The quick steps are:
 
 1. `cd tooling/playwright`
 2. `docker compose up -d`
-3. `docker exec playwright pytest /workspace/ui_tests/tests -v`
+3. `docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v`
 
 For MCP access (optional), use SSH tunnel to expose port 8765 internally.
 See `tooling/playwright/README.md` for detailed setup and usage.

@@ -22,6 +22,7 @@ This folder contains the living documentation for the Netcup API Filter.
 - `SSH_AGENT_PERSISTENCE.md` – Guide to the persistent SSH agent in the devcontainer.
 - `UI_GUIDE.md` – UI walkthrough for operator-facing pages.
 - `WEBHOSTING_DEPLOYMENT.md` – Hosting-specific deployment steps for the Netcup environment.
+- `LOCAL_DEVELOPMENT.md` – Guide to the standard local build, deploy, and test workflow.
 
 ## Project Documentation (Repository Root)
 

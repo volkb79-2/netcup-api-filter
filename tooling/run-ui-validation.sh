@@ -213,4 +213,4 @@ docker exec \
     -e UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX}" \
     -e PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS}" \
     playwright \
-    bash -c "cd /workspace && ${PYTEST_CMD}"
+    bash -c "cd /workspaces/netcup-api-filter && ${PYTEST_CMD}"

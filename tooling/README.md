@@ -39,17 +39,17 @@ cd tooling/playwright
 
 ```bash
 # Execute Python script inside container
-docker exec playwright python3 /workspace/ui_tests/test_example.py
+docker exec playwright python3 /workspaces/netcup-api-filter/ui_tests/test_example.py
 
 # Or with docker compose
 docker compose -f tooling/playwright/docker-compose.yml exec playwright \
-  python3 /workspace/ui_tests/test_example.py
+  python3 /workspaces/netcup-api-filter/ui_tests/test_example.py
 ```
 
 ### Run Pytest Suite
 
 ```bash
-docker exec playwright pytest /workspace/ui_tests/tests -v
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v
 ```
 
 ### Interactive Shell

@@ -21,8 +21,13 @@ from ui_tests.browser import browser_session
 from ui_tests.config import settings
 
 
-async def set_viewport(browser, width=1920, height=1200):
-    """Set larger viewport for better screenshots."""
+async def set_viewport(browser, width=None, height=None):
+    """Set viewport for screenshots using environment config (NO HARDCODED VALUES)."""
+    import os
+    if width is None:
+        width = int(os.environ.get('SCREENSHOT_VIEWPORT_WIDTH', '1920'))
+    if height is None:
+        height = int(os.environ.get('SCREENSHOT_VIEWPORT_HEIGHT', '1200'))
     await browser._page.set_viewport_size({"width": width, "height": height})
 
 
@@ -108,9 +113,9 @@ async def capture_admin_pages(browser):
     # Check if we're on password change page (fresh database)
     current_h1 = await browser._page.locator("main h1").text_content()
     if "Change Password" in current_h1:
-        print("📸 Capturing 01a-admin-password-change...")
-        screenshot_path = await browser.screenshot("01a-admin-password-change")
-        screenshots.append(("01a-admin-password-change", screenshot_path))
+        print("📸 Capturing 00b-admin-password-change...")
+        screenshot_path = await browser.screenshot("00b-admin-password-change")
+        screenshots.append(("00b-admin-password-change", screenshot_path))
         
         # Note: This only happens on fresh database before auth test runs
         # For now, just proceed to dashboard since we can't change password here
@@ -161,13 +166,14 @@ async def capture_admin_pages(browser):
     return screenshots
 
 
-async def capture_client_pages_for_token(browser, client_token: str, client_suffix: str):
+async def capture_client_pages_for_token(browser, client_token: str, client_idx: int, client_type: str):
     """Capture client portal pages for a specific client token.
     
     Args:
         browser: Browser instance
         client_token: Full token (client_id:secret_key)
-        client_suffix: Suffix for screenshot naming (e.g., 'readonly', 'fullcontrol')
+        client_idx: Client index (1-based)
+        client_type: Client type description (e.g., 'readonly', 'fullcontrol')
     """
     screenshots = []
     
@@ -182,7 +188,7 @@ async def capture_client_pages_for_token(browser, client_token: str, client_suff
             print(f"⚠️  Logout warning: {e}")
     
     # Login to client portal
-    print(f"📸 Logging in as client ({client_suffix})...")
+    print(f"📸 Logging in as client ({client_type}-{client_idx})...")
     await browser.goto(settings.url("/client/login"))
     await asyncio.sleep(0.5)
     
@@ -196,13 +202,14 @@ async def capture_client_pages_for_token(browser, client_token: str, client_suff
     # Verify login was successful
     current_url = browser.current_url
     if "/client/login" in current_url:
-        print(f"⚠️  WARNING: Login failed for {client_suffix} - skipping")
+        print(f"⚠️  WARNING: Login failed for {client_type}-{client_idx} - skipping")
         return screenshots
     
     # Client pages to capture
+    # Naming convention: XX-client-{idx}-{page}-{type}
     pages = [
-        ("/client/", f"08-client-dashboard-{client_suffix}"),
-        ("/client/activity", f"09-client-activity-{client_suffix}"),
+        ("/client/", f"08-client-{client_idx}-dashboard-{client_type}"),
+        ("/client/activity", f"09-client-{client_idx}-activity-{client_type}"),
     ]
     
     for path, name in pages:
@@ -218,7 +225,7 @@ async def capture_client_pages_for_token(browser, client_token: str, client_suff
     
     # Capture domain detail page (if available)
     try:
-        print(f"📸 Capturing domain detail ({client_suffix})...")
+        print(f"📸 Capturing domain detail ({client_type}-{client_idx})...")
         await browser.goto(settings.url("/client/"))
         await asyncio.sleep(0.5)
         
@@ -232,8 +239,9 @@ async def capture_client_pages_for_token(browser, client_token: str, client_suff
             current_url = browser.current_url
             domain_name = current_url.split('/domains/')[-1].rstrip('/')
             
-            screenshot_path = await browser.screenshot(f"10-client-domain-{client_suffix}")
-            screenshots.append((f"10-client-domain-{client_suffix}", screenshot_path))
+            name = f"10-client-{client_idx}-domain-{client_type}"
+            screenshot_path = await browser.screenshot(name)
+            screenshots.append((name, screenshot_path))
             
             # Try to capture record management (if client has write permissions)
             try:
@@ -242,8 +250,9 @@ async def capture_client_pages_for_token(browser, client_token: str, client_suff
                 if create_button:
                     await create_button.click()
                     await asyncio.sleep(1)
-                    screenshot_path = await browser.screenshot(f"11-client-record-create-{client_suffix}")
-                    screenshots.append((f"11-client-record-create-{client_suffix}", screenshot_path))
+                    name = f"11-client-{client_idx}-record-create-{client_type}"
+                    screenshot_path = await browser.screenshot(name)
+                    screenshots.append((name, screenshot_path))
                     
                     # Go back to domain detail page
                     await browser.goto(settings.url(f"/client/domains/{domain_name}"))
@@ -255,13 +264,14 @@ async def capture_client_pages_for_token(browser, client_token: str, client_suff
                     if edit_buttons:
                         await edit_buttons[0].click()
                         await asyncio.sleep(1)
-                        screenshot_path = await browser.screenshot(f"12-client-record-edit-{client_suffix}")
-                        screenshots.append((f"12-client-record-edit-{client_suffix}", screenshot_path))
-                        print(f"📸 Captured record edit form ({client_suffix})")
+                        name = f"12-client-{client_idx}-record-edit-{client_type}"
+                        screenshot_path = await browser.screenshot(name)
+                        screenshots.append((name, screenshot_path))
+                        print(f"📸 Captured record edit form ({client_type}-{client_idx})")
             except Exception as e:
-                print(f"⚠️  Could not capture record edit form for {client_suffix}: {e}")
+                print(f"⚠️  Could not capture record edit form for {client_type}-{client_idx}: {e}")
     except Exception as e:
-        print(f"⚠️  Could not capture domain detail for {client_suffix}: {e}")
+        print(f"⚠️  Could not capture domain detail for {client_type}-{client_idx}: {e}")
     
     return screenshots
 
@@ -274,11 +284,14 @@ async def capture_client_pages(browser):
     import json
     screenshots = []
     
-    # build_info.json is in the mounted workspace at /workspace/deploy/
-    build_info_path = Path("/workspace/deploy/build_info.json")
+    # build_info.json is in the mounted workspace (NO HARDCODED PATHS)
+    repo_root = os.environ.get('REPO_ROOT')
+    if not repo_root:
+        raise RuntimeError("REPO_ROOT must be set (no hardcoded paths allowed)")
+    build_info_path = Path(f"{repo_root}/deploy-local/build_info.json")
     if not build_info_path.exists():
         print(f"⚠️  WARNING: {build_info_path} not found - no demo clients to capture")
-        print(f"   Run build_deployment.py first to generate build_info.json")
+        print(f"   Run build-and-deploy-local.sh first to generate build_info.json")
         return screenshots
     
     with open(build_info_path, 'r') as f:
@@ -304,19 +317,19 @@ async def capture_client_pages(browser):
         desc_lower = description.lower()
         if "subdomain" in desc_lower:
             if "read-only" in desc_lower or "monitor" in desc_lower:
-                suffix = f"subdomain-readonly-{idx}"
+                client_type = "subdomain-readonly"
             elif "update" in desc_lower or "write" in desc_lower or "create" in desc_lower:
-                suffix = f"subdomain-write-{idx}"
+                client_type = "subdomain-write"
             else:
-                suffix = f"subdomain-{idx}"
+                client_type = "subdomain"
         elif "full control" in desc_lower or "full access" in desc_lower or "multi-record" in desc_lower:
-            suffix = f"fullcontrol-{idx}"
+            client_type = "fullcontrol"
         elif "read-only" in desc_lower or "monitor" in desc_lower:
-            suffix = f"readonly-{idx}"
+            client_type = "readonly"
         else:
-            suffix = f"client-{idx}"
+            client_type = "generic"
         
-        client_screenshots = await capture_client_pages_for_token(browser, client_token, suffix)
+        client_screenshots = await capture_client_pages_for_token(browser, client_token, idx, client_type)
         screenshots.extend(client_screenshots)
     
     return screenshots
@@ -349,18 +362,10 @@ async def main():
     print(f"🔑 Client: {settings.client_id}")
     print()
     
-    # Create screenshots directory (NO DEFAULT - must be explicit)
-    screenshot_dir_path = os.environ.get('SCREENSHOT_DIR')
-    if not screenshot_dir_path:
-        repo_root = os.environ.get('REPO_ROOT')
-        if not repo_root:
-            raise RuntimeError("SCREENSHOT_DIR or REPO_ROOT must be set")
-        # Use REPO_ROOT-relative path but warn
-        screenshot_dir_path = f"{repo_root}/tmp/ui-screenshots"
-        print(f"⚠️  WARNING: SCREENSHOT_DIR not set, using: {screenshot_dir_path}")
-        print(f"⚠️  Set explicitly: export SCREENSHOT_DIR=<path>")
-    
-    screenshot_dir = Path(screenshot_dir_path)
+    screenshot_dir_str = os.environ.get("SCREENSHOT_DIR")
+    if not screenshot_dir_str:
+        raise RuntimeError("SCREENSHOT_DIR environment variable is not set.")
+    screenshot_dir = Path(screenshot_dir_str)
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     print(f"📁 Screenshots will be saved to: {screenshot_dir}")
     
