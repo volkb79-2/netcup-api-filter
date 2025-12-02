@@ -125,12 +125,12 @@ async def capture_admin_pages(browser):
     # Admin pages to capture
     pages = [
         ("/admin/", "01-admin-dashboard"),
-        ("/admin/client/", "02-admin-clients-list"),
-        ("/admin/client/new/", "03-admin-client-create"),
-        ("/admin/auditlog/", "04-admin-audit-logs"),
-        ("/admin/netcup_config/", "05-admin-netcup-config"),
-        ("/admin/email_config/", "06-admin-email-config"),
-        ("/admin/system_info/", "07-admin-system-info"),
+        ("/admin/accounts", "02-admin-accounts-list"),
+        ("/admin/accounts/new", "03-admin-account-create"),
+        ("/admin/audit", "04-admin-audit-logs"),
+        ("/admin/config/netcup", "05-admin-netcup-config"),
+        ("/admin/config/email", "06-admin-email-config"),
+        ("/admin/system", "07-admin-system-info"),
     ]
     
     for path, name in pages:
@@ -147,19 +147,19 @@ async def capture_admin_pages(browser):
         screenshot_path = await browser.screenshot(f"{name}")
         screenshots.append((name, screenshot_path))
     
-    # Capture client edit form (if preseeded client exists)
+    # Capture account edit form (if preseeded account exists)
     try:
-        print("📸 Capturing client edit form...")
-        await browser.goto(settings.url("/admin/client/"))
+        print("📸 Capturing account edit form...")
+        await browser.goto(settings.url("/admin/accounts"))
         await asyncio.sleep(0.5)
         
-        # Click first edit link
-        edit_links = await browser.query_selector_all('a[href*="/admin/client/edit/"]')
+        # Click first edit link (view account details)
+        edit_links = await browser.query_selector_all('a[href*="/admin/accounts/"]')
         if edit_links:
             await edit_links[0].click()
             await asyncio.sleep(1)
-            screenshot_path = await browser.screenshot("03b-admin-client-edit")
-            screenshots.append(("03b-admin-client-edit", screenshot_path))
+            screenshot_path = await browser.screenshot("03b-admin-account-detail")
+            screenshots.append(("03b-admin-account-detail", screenshot_path))
     except Exception as e:
         print(f"⚠️  Could not capture client edit: {e}")
     
