@@ -1,0 +1,264 @@
+{# Admin Account Create - Create new account form #}
+{% extends "admin/base.html" %}
+
+{% block title %}Create Account - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <h1 class="h3 mb-1">Create Account</h1>
+    <p class="text-muted mb-0">Create a new user account with initial realm and token</p>
+</div>
+
+<form method="POST" action="{{ url_for('admin.account_create') }}" id="createAccountForm">
+    <div class="row g-4">
+        <!-- Account Details -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-person me-1"></i>Account Details
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="username">Username <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control font-monospace" id="username" name="username"
+                               required pattern="[a-z0-9_]{3,32}" 
+                               placeholder="e.g., johndoe"
+                               title="3-32 lowercase letters, numbers, or underscores">
+                        <div class="form-text">Lowercase letters, numbers, and underscores. 3-32 characters.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="email">Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="email" name="email" required
+                               placeholder="user@example.com">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="password">Initial Password</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control font-monospace" id="password" name="password"
+                                   placeholder="Leave blank to generate">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePassword('password')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="generatePassword()">
+                                <i class="bi bi-shuffle"></i> Generate
+                            </button>
+                        </div>
+                        <div class="form-text">If blank, a random password will be generated and emailed to the user.</div>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="is_active" name="is_active" checked>
+                        <label class="form-check-label" for="is_active">
+                            Account is active (skip approval)
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="email_verified" name="email_verified" checked>
+                        <label class="form-check-label" for="email_verified">
+                            Email is verified
+                        </label>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="send_welcome" name="send_welcome" checked>
+                        <label class="form-check-label" for="send_welcome">
+                            Send welcome email with credentials
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Initial Realm (Optional) -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-globe me-1"></i>Initial Realm (Optional)</span>
+                    <div class="form-check form-switch mb-0">
+                        <input type="checkbox" class="form-check-input" id="createRealm" name="create_realm"
+                               onchange="toggleRealmSection()">
+                        <label class="form-check-label" for="createRealm">Add realm</label>
+                    </div>
+                </div>
+                <div class="card-body" id="realmSection" style="display: none;">
+                    <!-- Template Selection -->
+                    <div class="mb-4">
+                        <label class="form-label">Quick Template</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <button type="button" class="btn btn-outline-secondary w-100 text-start" 
+                                        onclick="applyTemplate('ddns_host')">
+                                    <i class="bi bi-house me-1"></i>DDNS Single Host
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button type="button" class="btn btn-outline-secondary w-100 text-start" 
+                                        onclick="applyTemplate('ddns_subdomain')">
+                                    <i class="bi bi-globe me-1"></i>DDNS Subdomain
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button type="button" class="btn btn-outline-secondary w-100 text-start" 
+                                        onclick="applyTemplate('readonly')">
+                                    <i class="bi bi-eye me-1"></i>Read-Only
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button type="button" class="btn btn-outline-secondary w-100 text-start" 
+                                        onclick="applyTemplate('letsencrypt')">
+                                    <i class="bi bi-shield-lock me-1"></i>Let's Encrypt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- Realm Configuration -->
+                    <div class="mb-3">
+                        <label class="form-label" for="realm_type">Realm Type</label>
+                        <select class="form-select" id="realm_type" name="realm_type">
+                            <option value="host">Host (exact match)</option>
+                            <option value="subdomain">Subdomain (apex + children)</option>
+                            <option value="subdomain_only">Subdomain Only (children only)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="realm_value">Realm Value</label>
+                        <input type="text" class="form-control font-monospace" id="realm_value" name="realm_value"
+                               placeholder="e.g., home.example.com">
+                        <div class="form-text">The domain or subdomain this token controls.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Record Types</label>
+                        <div class="row g-2">
+                            {% for rt in ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA'] %}
+                            <div class="col-4">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input record-type" 
+                                           id="rt_{{ rt }}" name="record_types" value="{{ rt }}">
+                                    <label class="form-check-label" for="rt_{{ rt }}">{{ rt }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Operations</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input operation" 
+                                       id="op_read" name="operations" value="read">
+                                <label class="form-check-label" for="op_read">Read</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input operation" 
+                                       id="op_update" name="operations" value="update">
+                                <label class="form-check-label" for="op_update">Update</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input operation" 
+                                       id="op_create" name="operations" value="create">
+                                <label class="form-check-label" for="op_create">Create</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input operation" 
+                                       id="op_delete" name="operations" value="delete">
+                                <label class="form-check-label" for="op_delete">Delete</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info small mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        An API token will be automatically generated and included in the welcome email.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Submit Section -->
+    <div class="d-flex justify-content-between mt-4">
+        <a href="{{ url_for('admin.accounts_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Cancel
+        </a>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-person-plus me-1"></i>Create Account
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+function generatePassword() {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < 16; i++) {
+        password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    document.getElementById('password').value = password;
+    document.getElementById('password').type = 'text';
+}
+
+function toggleRealmSection() {
+    const section = document.getElementById('realmSection');
+    const checkbox = document.getElementById('createRealm');
+    section.style.display = checkbox.checked ? 'block' : 'none';
+}
+
+function applyTemplate(template) {
+    // Clear all checkboxes first
+    document.querySelectorAll('.record-type, .operation').forEach(cb => cb.checked = false);
+    
+    const templates = {
+        ddns_host: {
+            realm_type: 'host',
+            record_types: ['A', 'AAAA'],
+            operations: ['read', 'update']
+        },
+        ddns_subdomain: {
+            realm_type: 'subdomain',
+            record_types: ['A', 'AAAA'],
+            operations: ['read', 'update', 'create', 'delete']
+        },
+        readonly: {
+            realm_type: 'subdomain',
+            record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'],
+            operations: ['read']
+        },
+        letsencrypt: {
+            realm_type: 'subdomain',
+            record_types: ['TXT'],
+            operations: ['read', 'update', 'create', 'delete']
+        }
+    };
+    
+    const t = templates[template];
+    if (!t) return;
+    
+    document.getElementById('realm_type').value = t.realm_type;
+    t.record_types.forEach(rt => {
+        const cb = document.getElementById('rt_' + rt);
+        if (cb) cb.checked = true;
+    });
+    t.operations.forEach(op => {
+        const cb = document.getElementById('op_' + op);
+        if (cb) cb.checked = true;
+    });
+}
+</script>
+{% endblock %}

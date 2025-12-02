@@ -1,0 +1,336 @@
+{# Admin Config Email - SMTP email configuration #}
+{% extends "admin/base.html" %}
+
+{% block title %}Email Config - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <h1 class="h3 mb-1">Email Configuration</h1>
+    <p class="text-muted mb-0">Configure SMTP settings for system notifications</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <form method="POST" action="{{ url_for('admin.config_email') }}" id="emailConfigForm">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-server me-1"></i>SMTP Server Settings
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label" for="smtp_host">SMTP Host <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control font-monospace" id="smtp_host" name="smtp_host"
+                                   value="{{ config.smtp_host or '' }}" required
+                                   placeholder="e.g., smtp.example.com">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="smtp_port">Port <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="smtp_port" name="smtp_port"
+                                   value="{{ config.smtp_port or 587 }}" required min="1" max="65535">
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="form-label">Security</label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input type="radio" class="form-check-input" name="smtp_security" id="sec_tls" 
+                                       value="tls" {% if config.smtp_security == 'tls' or not config.smtp_security %}checked{% endif %}>
+                                <label class="form-check-label" for="sec_tls">STARTTLS (587)</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="radio" class="form-check-input" name="smtp_security" id="sec_ssl" 
+                                       value="ssl" {% if config.smtp_security == 'ssl' %}checked{% endif %}>
+                                <label class="form-check-label" for="sec_ssl">SSL/TLS (465)</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="radio" class="form-check-input" name="smtp_security" id="sec_none" 
+                                       value="none" {% if config.smtp_security == 'none' %}checked{% endif %}>
+                                <label class="form-check-label" for="sec_none">None (25)</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-key me-1"></i>Authentication
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="smtp_username">Username</label>
+                        <input type="text" class="form-control" id="smtp_username" name="smtp_username"
+                               value="{{ config.smtp_username or '' }}"
+                               placeholder="e.g., noreply@example.com">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="smtp_password">Password</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="smtp_password" name="smtp_password"
+                                   value="{{ config.smtp_password or '' }}"
+                                   placeholder="SMTP password">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePassword('smtp_password')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-envelope-paper me-1"></i>Sender Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="from_email">From Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="from_email" name="from_email"
+                               value="{{ config.from_email or '' }}" required
+                               placeholder="noreply@example.com">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="from_name">From Name</label>
+                        <input type="text" class="form-control" id="from_name" name="from_name"
+                               value="{{ config.from_name or 'Netcup API Filter' }}"
+                               placeholder="Netcup API Filter">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="reply_to">Reply-To Email</label>
+                        <input type="email" class="form-control" id="reply_to" name="reply_to"
+                               value="{{ config.reply_to or '' }}"
+                               placeholder="support@example.com">
+                        <div class="form-text">Optional: Where replies should be sent</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-bell me-1"></i>Notification Settings
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="notify_new_account" name="notify_new_account"
+                               {% if config.notify_new_account %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_new_account">
+                            Notify admin on new account registration
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="notify_realm_request" name="notify_realm_request"
+                               {% if config.notify_realm_request %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_realm_request">
+                            Notify admin on new realm requests
+                        </label>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="notify_security" name="notify_security"
+                               {% if config.notify_security %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_security">
+                            Notify admin on security events (failed logins, etc.)
+                        </label>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-0">
+                        <label class="form-label" for="admin_email">Admin Email</label>
+                        <input type="email" class="form-control" id="admin_email" name="admin_email"
+                               value="{{ config.admin_email or '' }}"
+                               placeholder="admin@example.com">
+                        <div class="form-text">Where to send admin notifications</div>
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-info" onclick="sendTestEmail()">
+                        <i class="bi bi-send me-1"></i>Send Test Email
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i>Save Configuration
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Status Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-activity me-1"></i>Email Status
+            </div>
+            <div class="card-body">
+                <div id="emailStatus">
+                    {% if config.last_test_at %}
+                    <div class="d-flex align-items-center mb-2">
+                        {% if config.last_test_success %}
+                        <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                        <span>Working</span>
+                        {% else %}
+                        <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                        <span>Failed</span>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted d-block">
+                        Last tested: {{ config.last_test_at.strftime('%Y-%m-%d %H:%M') }}
+                    </small>
+                    {% if config.last_test_error %}
+                    <div class="alert alert-danger mt-2 mb-0 small">
+                        {{ config.last_test_error }}
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="text-muted text-center py-3">
+                        <i class="bi bi-question-circle display-6 d-block mb-2"></i>
+                        Not tested yet
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-bar-chart me-1"></i>Email Statistics
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Sent Today</span>
+                    <span class="fw-bold">{{ stats.sent_today or 0 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Sent This Week</span>
+                    <span class="fw-bold">{{ stats.sent_week or 0 }}</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-muted">Failed (24h)</span>
+                    <span class="fw-bold text-danger">{{ stats.failed or 0 }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Common Providers -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning me-1"></i>Quick Setup
+            </div>
+            <div class="list-group list-group-flush">
+                <button type="button" class="list-group-item list-group-item-action" 
+                        onclick="applyProvider('gmail')">
+                    <strong>Gmail / Google Workspace</strong>
+                    <small class="d-block text-muted">smtp.gmail.com:587 (TLS)</small>
+                </button>
+                <button type="button" class="list-group-item list-group-item-action" 
+                        onclick="applyProvider('outlook')">
+                    <strong>Outlook / Microsoft 365</strong>
+                    <small class="d-block text-muted">smtp.office365.com:587 (TLS)</small>
+                </button>
+                <button type="button" class="list-group-item list-group-item-action" 
+                        onclick="applyProvider('netcup')">
+                    <strong>Netcup Webhosting</strong>
+                    <small class="d-block text-muted">mail.your-domain.com:587 (TLS)</small>
+                </button>
+                <button type="button" class="list-group-item list-group-item-action" 
+                        onclick="applyProvider('sendgrid')">
+                    <strong>SendGrid</strong>
+                    <small class="d-block text-muted">smtp.sendgrid.net:587 (TLS)</small>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = '<i class="bi bi-eye-slash"></i>';
+    } else {
+        input.type = 'password';
+        btn.innerHTML = '<i class="bi bi-eye"></i>';
+    }
+}
+
+function applyProvider(provider) {
+    const providers = {
+        gmail: { host: 'smtp.gmail.com', port: 587, security: 'tls' },
+        outlook: { host: 'smtp.office365.com', port: 587, security: 'tls' },
+        netcup: { host: 'mail.your-domain.com', port: 587, security: 'tls' },
+        sendgrid: { host: 'smtp.sendgrid.net', port: 587, security: 'tls' }
+    };
+    
+    const p = providers[provider];
+    if (!p) return;
+    
+    document.getElementById('smtp_host').value = p.host;
+    document.getElementById('smtp_port').value = p.port;
+    document.getElementById('sec_' + p.security).checked = true;
+}
+
+function sendTestEmail() {
+    const statusDiv = document.getElementById('emailStatus');
+    statusDiv.innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border text-primary mb-2" role="status">
+                <span class="visually-hidden">Sending...</span>
+            </div>
+            <div>Sending test email...</div>
+        </div>
+    `;
+    
+    const formData = new FormData(document.getElementById('emailConfigForm'));
+    formData.append('test_only', 'true');
+    
+    fetch('{{ url_for("admin.config_email") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                    <span>Test Email Sent</span>
+                </div>
+                <small class="text-muted">Check your inbox!</small>
+            `;
+        } else {
+            statusDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                    <span>Send Failed</span>
+                </div>
+                <div class="alert alert-danger mt-2 mb-0 small">
+                    ${data.error || 'Unknown error'}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        statusDiv.innerHTML = `
+            <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                <span>Request Failed</span>
+            </div>
+            <div class="alert alert-danger mt-2 mb-0 small">
+                ${error.message}
+            </div>
+        `;
+    });
+}
+</script>
+{% endblock %}

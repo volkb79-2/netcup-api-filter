@@ -1,198 +1,46 @@
 """
-Database models and operations for netcup-api-filter
-Uses SQLAlchemy for ORM and SQLite for storage
+Database initialization for the Account → Realms → Tokens architecture.
+
+This module provides:
+- Database initialization with new schema
+- Seed functions for default admin account
+- Migration helpers
+
+The new schema replaces the old Client model with:
+- Account: Human users
+- AccountRealm: Domain access permissions
+- APIToken: Machine credentials
+- ActivityLog: Audit trail
+- RegistrationRequest: Pending registrations
+- Settings: Key-value configuration
 """
 import logging
 import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, text
-import json
+from typing import Any
 
-from .config_defaults import require_default
+from .config_defaults import get_default, require_default
+
+# Import all models to ensure they're registered with SQLAlchemy
+from .models import (
+    Account,
+    AccountRealm,
+    ActivityLog,
+    APIToken,
+    db,
+    RegistrationRequest,
+    Settings,
+    generate_token,
+    hash_token,
+    validate_username,
+)
 
 logger = logging.getLogger(__name__)
-
-# Initialize SQLAlchemy
-db = SQLAlchemy()
-
-
-class Client(db.Model):
-    """Client configuration with two-factor authentication (client_id + secret_key)"""
-    __tablename__ = 'clients'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    client_id = db.Column(db.String(255), unique=True, nullable=False, index=True)  # Cleartext identifier, manageable in UI
-    secret_key_hash = db.Column(db.String(255), nullable=False)  # Hashed secret key (bcrypt), never retrievable
-    description = db.Column(db.Text)
-    realm_type = db.Column(db.String(20), nullable=False)  # 'host' or 'subdomain'
-    realm_value = db.Column(db.String(255), nullable=False)
-    allowed_record_types = db.Column(db.Text, nullable=False)  # JSON array
-    allowed_operations = db.Column(db.Text, nullable=False)  # JSON array
-    allowed_ip_ranges = db.Column(db.Text)  # JSON array, optional
-    email_address = db.Column(db.String(255))
-    email_notifications_enabled = db.Column(db.Integer, default=0)
-    token_expires_at = db.Column(db.DateTime)
-    is_active = db.Column(db.Integer, default=1)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    __table_args__ = (
-        CheckConstraint("realm_type IN ('host', 'subdomain')", name='check_realm_type'),
-    )
-    
-    def get_allowed_record_types(self) -> List[str]:
-        """Parse allowed_record_types from JSON"""
-        try:
-            return json.loads(self.allowed_record_types) if self.allowed_record_types else []
-        except (json.JSONDecodeError, TypeError):
-            logger.error(f"Failed to parse allowed_record_types for client {self.client_id}")
-            return []
-    
-    def set_allowed_record_types(self, types: List[str]):
-        """Set allowed_record_types as JSON"""
-        self.allowed_record_types = json.dumps(types)
-    
-    def get_allowed_operations(self) -> List[str]:
-        """Parse allowed_operations from JSON"""
-        try:
-            return json.loads(self.allowed_operations) if self.allowed_operations else []
-        except (json.JSONDecodeError, TypeError):
-            logger.error(f"Failed to parse allowed_operations for client {self.client_id}")
-            return []
-    
-    def set_allowed_operations(self, operations: List[str]):
-        """Set allowed_operations as JSON"""
-        self.allowed_operations = json.dumps(operations)
-    
-    def get_allowed_ip_ranges(self) -> List[str]:
-        """Parse allowed_ip_ranges from JSON"""
-        try:
-            return json.loads(self.allowed_ip_ranges) if self.allowed_ip_ranges else []
-        except (json.JSONDecodeError, TypeError):
-            logger.error(f"Failed to parse allowed_ip_ranges for client {self.client_id}")
-            return []
-    
-    def set_allowed_ip_ranges(self, ranges: List[str]):
-        """Set allowed_ip_ranges as JSON"""
-        self.allowed_ip_ranges = json.dumps(ranges) if ranges else None
-    
-    def __repr__(self):
-        return f'<Client {self.client_id}>'
-
-
-class AuditLog(db.Model):
-    """Audit log entries for API access"""
-    __tablename__ = 'audit_logs'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    client_id = db.Column(db.String(255), index=True)
-    ip_address = db.Column(db.String(45))  # IPv6 max length
-    operation = db.Column(db.String(50), index=True)
-    domain = db.Column(db.String(255), index=True)
-    record_details = db.Column(db.Text)  # JSON
-    success = db.Column(db.Integer, index=True)
-    error_message = db.Column(db.Text)
-    request_data = db.Column(db.Text)  # JSON
-    response_data = db.Column(db.Text)  # JSON
-    
-    def get_record_details(self) -> Dict[str, Any]:
-        """Parse record_details from JSON"""
-        try:
-            return json.loads(self.record_details) if self.record_details else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    
-    def set_record_details(self, details: Dict[str, Any]):
-        """Set record_details as JSON"""
-        self.record_details = json.dumps(details) if details else None
-    
-    def get_request_data(self) -> Dict[str, Any]:
-        """Parse request_data from JSON"""
-        try:
-            return json.loads(self.request_data) if self.request_data else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    
-    def set_request_data(self, data: Dict[str, Any]):
-        """Set request_data as JSON"""
-        # Mask sensitive data
-        if data:
-            masked_data = data.copy()
-            if 'param' in masked_data and isinstance(masked_data['param'], dict):
-                for key in ['apipassword', 'apisessionid', 'apikey']:
-                    if key in masked_data['param']:
-                        masked_data['param'][key] = '***MASKED***'
-            self.request_data = json.dumps(masked_data)
-        else:
-            self.request_data = None
-    
-    def get_response_data(self) -> Dict[str, Any]:
-        """Parse response_data from JSON"""
-        try:
-            return json.loads(self.response_data) if self.response_data else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    
-    def set_response_data(self, data: Dict[str, Any]):
-        """Set response_data as JSON"""
-        # Mask sensitive data
-        if data:
-            masked_data = data.copy()
-            if 'responsedata' in masked_data and isinstance(masked_data['responsedata'], dict):
-                if 'apisessionid' in masked_data['responsedata']:
-                    masked_data['responsedata']['apisessionid'] = '***MASKED***'
-            self.response_data = json.dumps(masked_data)
-        else:
-            self.response_data = None
-    
-    def __repr__(self):
-        return f'<AuditLog {self.timestamp} {self.client_id} {self.operation}>'
-
-
-class AdminUser(db.Model):
-    """Admin user for web UI access"""
-    __tablename__ = 'admin_users'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    must_change_password = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_login_at = db.Column(db.DateTime)
-    
-    def __repr__(self):
-        return f'<AdminUser {self.username}>'
-
-
-class SystemConfig(db.Model):
-    """System configuration key-value store"""
-    __tablename__ = 'system_config'
-    
-    key = db.Column(db.String(255), primary_key=True)
-    value = db.Column(db.Text)  # JSON
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    def get_value(self) -> Dict[str, Any]:
-        """Parse value from JSON"""
-        try:
-            return json.loads(self.value) if self.value else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    
-    def set_value(self, data: Dict[str, Any]):
-        """Set value as JSON"""
-        self.value = json.dumps(data) if data else None
-    
-    def __repr__(self):
-        return f'<SystemConfig {self.key}>'
 
 
 def get_db_path() -> str:
     """
-    Get database file path
+    Get database file path.
     Priority: environment variable > current directory
     """
     db_path = os.environ.get('NETCUP_FILTER_DB_PATH')
@@ -207,7 +55,11 @@ def get_db_path() -> str:
 
 
 def init_db(app):
-    """Initialize database with Flask app"""
+    """
+    Initialize database with Flask app.
+    
+    Creates all tables and seeds default admin account.
+    """
     db_path = get_db_path()
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -220,224 +72,182 @@ def init_db(app):
     db.init_app(app)
     
     with app.app_context():
-        # Create all tables
+        # Create all tables from models
         db.create_all()
         logger.info("Database tables created/verified")
         
-        # Seed default admin user (demo clients optional)
-        from .bootstrap import seed_default_entities
-
-        seed_demo = os.environ.get('SEED_DEMO_CLIENTS', '').lower() in {'1', 'true', 'yes'}
-        seed_default_entities(seed_demo_clients_flag=seed_demo)
-        if seed_demo:
-            logger.info("Default admin user and demo clients seeded")
-        else:
-            logger.info("Default admin user seeded (demo clients disabled)")
-
-
-def get_client_by_token(token: str) -> Optional[Client]:
-    """
-    Get client by authentication token (client_id:secret_key format).
-    
-    Args:
-        token: Authentication token in format "client_id:secret_key"
+        # Seed default admin account
+        seed_admin_account()
         
-    Returns:
-        Client object if valid, None otherwise
+        # Optionally seed demo data
+        seed_demo = os.environ.get('SEED_DEMO_ACCOUNTS', '').lower() in {'1', 'true', 'yes'}
+        if seed_demo:
+            seed_demo_accounts()
+            logger.info("Demo accounts seeded")
+
+
+def seed_admin_account():
     """
-    from .utils import verify_password
+    Seed default admin account if it doesn't exist.
     
-    # Parse two-factor format: client_id:secret_key
-    if ':' not in token:
-        logger.warning("Invalid token format - expected client_id:secret_key")
-        return None
+    Reads credentials from environment or .env.defaults.
+    """
+    admin_username = os.environ.get('DEFAULT_ADMIN_USERNAME') or get_default('DEFAULT_ADMIN_USERNAME', 'admin')
+    admin_password = os.environ.get('DEFAULT_ADMIN_PASSWORD') or require_default('DEFAULT_ADMIN_PASSWORD')
+    admin_email = os.environ.get('DEFAULT_ADMIN_EMAIL') or get_default('DEFAULT_ADMIN_EMAIL', 'admin@localhost')
     
-    parts = token.split(':', 1)
-    if len(parts) != 2:
-        logger.warning("Invalid token format - expected exactly one colon separator")
-        return None
+    # Check if admin already exists
+    existing = Account.query.filter_by(username=admin_username).first()
+    if existing:
+        logger.debug(f"Admin account '{admin_username}' already exists")
+        return
     
-    client_id, secret_key = parts
-    
-    # Fast O(1) lookup by client_id
-    client = Client.query.filter_by(client_id=client_id, is_active=1).first()
-    
-    if not client:
-        logger.debug(f"Client not found: {client_id}")
-        return None
-    
-    if not verify_password(secret_key, client.secret_key_hash):
-        logger.warning(f"Invalid secret key for client: {client_id}")
-        return None
-    
-    # Check expiration
-    if client.token_expires_at and client.token_expires_at < datetime.utcnow():
-        logger.warning(f"Client {client.client_id} token expired")
-        return None
-    
-    return client
-
-
-def get_client_by_id(client_id: str) -> Optional[Client]:
-    """Get client by client_id"""
-    return Client.query.filter_by(client_id=client_id, is_active=1).first()
-
-
-def create_audit_log(client_id: Optional[str], ip_address: str, operation: str,
-                     domain: str, record_details: Optional[Dict[str, Any]],
-                     success: bool, error_message: Optional[str],
-                     request_data: Optional[Dict[str, Any]],
-                     response_data: Optional[Dict[str, Any]]) -> AuditLog:
-    """Create and save an audit log entry"""
-    log = AuditLog(
-        client_id=client_id,
-        ip_address=ip_address,
-        operation=operation,
-        domain=domain,
-        success=1 if success else 0,
-        error_message=error_message
+    # Create admin account
+    admin = Account(
+        username=admin_username,
+        email=admin_email,
+        email_verified=1,
+        email_2fa_enabled=1,  # Email 2FA mandatory
+        is_active=1,
+        is_admin=1,
+        approved_at=datetime.utcnow()
     )
+    admin.set_password(admin_password)
     
-    if record_details:
-        log.set_record_details(record_details)
-    if request_data:
-        log.set_request_data(request_data)
-    if response_data:
-        log.set_response_data(response_data)
-    
-    db.session.add(log)
+    db.session.add(admin)
     db.session.commit()
     
-    return log
+    logger.info(f"Admin account created: {admin_username}")
 
 
-def get_system_config(key: str) -> Optional[Dict[str, Any]]:
-    """Get system configuration value"""
-    config = SystemConfig.query.filter_by(key=key).first()
-    if config:
-        return config.get_value()
+def seed_demo_accounts():
+    """
+    Seed demo accounts for testing.
+    
+    Creates:
+    - A demo user with an approved realm and active token
+    - A pending user awaiting approval
+    """
+    # Demo user with realm and token
+    demo_username = os.environ.get('DEFAULT_TEST_CLIENT_ID') or get_default('DEFAULT_TEST_CLIENT_ID', 'demo-user')
+    
+    # Validate username format for new model
+    is_valid, _ = validate_username(demo_username)
+    if not is_valid:
+        # Fallback to a valid username
+        demo_username = 'demo-user'
+    
+    existing = Account.query.filter_by(username=demo_username).first()
+    if existing:
+        logger.debug(f"Demo account '{demo_username}' already exists")
+        return
+    
+    # Get admin for approval reference
+    admin = Account.query.filter_by(is_admin=1).first()
+    if not admin:
+        logger.warning("No admin account found for demo seeding")
+        return
+    
+    # Create demo user
+    demo_user = Account(
+        username=demo_username,
+        email=f'{demo_username}@example.com',
+        email_verified=1,
+        email_2fa_enabled=1,
+        is_active=1,
+        is_admin=0,
+        approved_by_id=admin.id,
+        approved_at=datetime.utcnow()
+    )
+    demo_user.set_password('DemoPassword123!')
+    
+    db.session.add(demo_user)
+    db.session.flush()  # Get ID
+    
+    # Create demo realm
+    realm_type = os.environ.get('DEFAULT_TEST_CLIENT_REALM_TYPE') or get_default('DEFAULT_TEST_CLIENT_REALM_TYPE', 'host')
+    realm_fqdn = os.environ.get('DEFAULT_TEST_CLIENT_REALM_VALUE') or get_default('DEFAULT_TEST_CLIENT_REALM_VALUE', 'demo.example.com')
+    
+    # Parse FQDN into domain and realm_value
+    # For 'host' type: demo.example.com → domain=example.com, realm_value=demo
+    # For apex: example.com → domain=example.com, realm_value=''
+    fqdn_parts = realm_fqdn.split('.')
+    if len(fqdn_parts) > 2:
+        realm_value = '.'.join(fqdn_parts[:-2])  # All parts except last two (subdomain prefix)
+        domain = '.'.join(fqdn_parts[-2:])  # Last two parts (base domain)
+    else:
+        realm_value = ''  # Apex domain
+        domain = realm_fqdn
+    
+    # Parse record types and operations
+    record_types_str = os.environ.get('DEFAULT_TEST_CLIENT_RECORD_TYPES') or get_default('DEFAULT_TEST_CLIENT_RECORD_TYPES', 'A,AAAA')
+    record_types = [rt.strip() for rt in record_types_str.split(',')]
+    
+    operations_str = os.environ.get('DEFAULT_TEST_CLIENT_OPERATIONS') or get_default('DEFAULT_TEST_CLIENT_OPERATIONS', 'read')
+    operations = [op.strip() for op in operations_str.split(',')]
+    
+    demo_realm = AccountRealm(
+        account_id=demo_user.id,
+        domain=domain,
+        realm_type=realm_type,
+        realm_value=realm_value,
+        status='approved',
+        requested_at=datetime.utcnow(),
+        approved_by_id=admin.id,
+        approved_at=datetime.utcnow()
+    )
+    demo_realm.set_allowed_record_types(record_types)
+    demo_realm.set_allowed_operations(operations)
+    
+    db.session.add(demo_realm)
+    db.session.flush()
+    
+    # Create demo token
+    token_name = 'demo-token'
+    full_token = generate_token(demo_user.username)
+    
+    # Extract prefix from token
+    random_part_start = len(f"naf_{demo_user.username}_")
+    token_prefix = full_token[random_part_start:random_part_start + 8]
+    
+    demo_token = APIToken(
+        realm_id=demo_realm.id,
+        token_name=token_name,
+        token_description='Demo token for testing',
+        token_prefix=token_prefix,
+        token_hash=hash_token(full_token),
+        is_active=1
+    )
+    
+    db.session.add(demo_token)
+    db.session.commit()
+    
+    logger.info(f"Demo account created: {demo_username}")
+    logger.info(f"Demo token: {full_token}")  # Log for testing purposes
+
+
+def get_setting(key: str) -> Any | None:
+    """Get setting value by key."""
+    setting = Settings.query.filter_by(key=key).first()
+    if setting:
+        return setting.get_value()
     return None
 
 
-def set_system_config(key: str, value: Dict[str, Any]):
-    """Set system configuration value"""
-    config = SystemConfig.query.filter_by(key=key).first()
-    if config:
-        config.set_value(value)
-        config.updated_at = datetime.utcnow()
+def set_setting(key: str, value: Any):
+    """Set setting value by key."""
+    setting = Settings.query.filter_by(key=key).first()
+    if setting:
+        setting.set_value(value)
+        setting.updated_at = datetime.utcnow()
     else:
-        config = SystemConfig(key=key)
-        config.set_value(value)
-        db.session.add(config)
+        setting = Settings(key=key)
+        setting.set_value(value)
+        db.session.add(setting)
     
     db.session.commit()
 
 
-def create_app(config_path: str = "config.yaml"):
-    """
-    Create and configure the Flask application
-    
-    Args:
-        config_path: Path to the configuration file
-        
-    Returns:
-        Configured Flask application instance
-    """
-    from flask import Flask
-    from werkzeug.middleware.proxy_fix import ProxyFix
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
-    import yaml
-    import os
-    
-    # Import here to avoid circular imports
-    from .filter_proxy import load_config as load_filter_config
-    from .admin_ui import setup_admin_ui
-    from .access_control import AccessControl
-    from .audit_logger import get_audit_logger
-    from .netcup_client import NetcupClient
-    from .client_portal import client_portal_bp
-    from .utils import get_build_info
-    
-    app = Flask(__name__)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-    
-    # Register blueprints
-    app.register_blueprint(client_portal_bp)
-    
-    # Context processor for build metadata
-    @app.context_processor
-    def inject_build_metadata():
-        return {'build_info': get_build_info()}
-    
-    # Security: Set maximum content length (10MB)
-    app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
-    
-    # Security: Rate limiting
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        default_limits=["200 per hour", "50 per minute"],
-        storage_uri="memory://",
-    )
-    
-    # Set up secret key for Flask sessions
-    secret_key = os.environ.get('SECRET_KEY') or require_default('SECRET_KEY')
-    app.config['SECRET_KEY'] = secret_key
-    
-    # Configure template and static folders for deployment
-    deploy_templates = os.path.join(os.getcwd(), 'deploy', 'templates')
-    deploy_static = os.path.join(os.getcwd(), 'deploy', 'static')
-    
-    if os.path.exists(deploy_templates):
-        app.template_folder = deploy_templates
-    if os.path.exists(deploy_static):
-        app.static_folder = deploy_static
-    
-    # SECURITY: Configure secure session cookies
-    app.config['SESSION_COOKIE_SECURE'] = True  # Only send over HTTPS
-    app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
-    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session timeout
-    
-    # Initialize database
-    init_db(app)
-    
-    # Setup admin UI
-    setup_admin_ui(app)
-    
-    # Load configuration and initialize components
-    try:
-        load_filter_config(config_path)
-        
-        # Initialize components within app context
-        with app.app_context():
-            # Load Netcup configuration from database
-            netcup_config = get_system_config('netcup_config')
-            if netcup_config:
-                from .filter_proxy import netcup_client as fp_netcup_client
-                app.config['netcup_client'] = NetcupClient(
-                    customer_id=netcup_config.get('customer_id'),
-                    api_key=netcup_config.get('api_key'),
-                    api_password=netcup_config.get('api_password'),
-                    api_url=netcup_config.get('api_url', 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON')
-                )
-                fp_netcup_client = app.config['netcup_client']
-            
-            # Initialize access control with database mode
-            from .filter_proxy import access_control as fp_access_control
-            app.config['access_control'] = AccessControl(use_database=True)
-            fp_access_control = app.config['access_control']
-            
-            # Initialize audit logger
-            log_file_path = os.path.join(os.getcwd(), 'netcup_filter_audit.log')
-            app.config['audit_logger'] = get_audit_logger(log_file_path=log_file_path, enable_db=True)
-            
-            # Initialize email notifier (lazy loaded when needed)
-            app.config['email_notifier'] = None
-    
-    except Exception as e:
-        logger.warning(f"Failed to load configuration from {config_path}: {e}")
-        # Continue with minimal configuration for testing
-    
-    return app
+# Aliases for compatibility during migration
+get_system_config = get_setting
+set_system_config = set_setting

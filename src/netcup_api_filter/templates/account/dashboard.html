@@ -1,0 +1,281 @@
+{# Account Dashboard - Client portal main dashboard #}
+{% extends "account/base.html" %}
+
+{% block title %}Dashboard - Client Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Welcome Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-speedometer2 me-2"></i>Dashboard
+        </h1>
+        <p class="text-muted mb-0">Welcome back, <strong>{{ account.username }}</strong></p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('account.request_realm') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Request Realm
+        </a>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+{% set approved_realms = realm_data | selectattr('realm.status', 'eq', 'approved') | list %}
+{% set pending_realms = realm_data | selectattr('realm.status', 'eq', 'pending') | list %}
+{% set total_active_tokens = realm_data | sum(attribute='active_count') %}
+{% set total_tokens = realm_data | sum(attribute='total_count') %}
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary bg-opacity-10 rounded-3 p-3">
+                            <i class="bi bi-globe text-primary fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="h2 mb-0">{{ approved_realms | length }}</div>
+                        <small class="text-muted">Active Realms</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success bg-opacity-10 rounded-3 p-3">
+                            <i class="bi bi-key text-success fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="h2 mb-0">{{ total_active_tokens }}</div>
+                        <small class="text-muted">Active Tokens</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-info bg-opacity-10 rounded-3 p-3">
+                            <i class="bi bi-key-fill text-info fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="h2 mb-0">{{ total_tokens }}</div>
+                        <small class="text-muted">Total Tokens</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-warning bg-opacity-10 rounded-3 p-3">
+                            <i class="bi bi-clock-history text-warning fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <div class="h2 mb-0">{{ pending_realms | length }}</div>
+                        <small class="text-muted">Pending Requests</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Realms Overview -->
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-globe me-1"></i>My Realms</span>
+                <a href="{{ url_for('account.realms') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Realm</th>
+                            <th>Type</th>
+                            <th>Tokens</th>
+                            <th>Status</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in realm_data[:5] %}
+                        <tr>
+                            <td>
+                                <span class="font-monospace">{{ item.realm.realm_value }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ item.realm.realm_type }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-success">{{ item.active_count }}</span>
+                                {% if item.total_count > item.active_count %}
+                                <span class="text-muted small">/ {{ item.total_count }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.realm.status == 'approved' %}
+                                <span class="badge bg-success">Active</span>
+                                {% elif item.realm.status == 'pending' %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ item.realm.status | title }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.realm.status == 'approved' %}
+                                <a href="{{ url_for('account.create_new_token', realm_id=item.realm.id) }}" 
+                                   class="btn btn-sm btn-outline-success" title="Create Token">
+                                    <i class="bi bi-plus-lg"></i>
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                <i class="bi bi-globe display-6 d-block mb-2"></i>
+                                No realms yet
+                                <br>
+                                <a href="{{ url_for('account.request_realm') }}" class="btn btn-sm btn-primary mt-2">
+                                    Request Your First Realm
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-lightning me-1"></i>Quick Actions
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{{ url_for('account.request_realm') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-plus-circle me-2 text-primary"></i>Request New Realm
+                </a>
+                {% if approved_realms %}
+                <a href="{{ url_for('account.tokens') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-key me-2 text-success"></i>Manage Tokens
+                </a>
+                {% endif %}
+                <a href="{{ url_for('account.settings') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-gear me-2 text-secondary"></i>Account Settings
+                </a>
+                <a href="{{ url_for('account.api_docs') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-book me-2 text-info"></i>API Documentation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pending Realm Requests -->
+{% if pending_realms %}
+<div class="card mt-4">
+    <div class="card-header bg-warning bg-opacity-10">
+        <i class="bi bi-clock-history me-1 text-warning"></i>Pending Realm Requests
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Realm</th>
+                    <th>Type</th>
+                    <th>Record Types</th>
+                    <th>Submitted</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in pending_realms %}
+                <tr>
+                    <td><span class="font-monospace">{{ item.realm.realm_value }}</span></td>
+                    <td><span class="badge bg-secondary">{{ item.realm.realm_type }}</span></td>
+                    <td>
+                        {% for rt in item.realm.get_allowed_record_types() %}
+                        <span class="badge bg-dark">{{ rt }}</span>
+                        {% endfor %}
+                    </td>
+                    <td>{{ item.realm.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- API Documentation Modal -->
+<div class="modal fade" id="apiDocsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-book me-2"></i>API Quick Reference</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Authentication</h6>
+                <p>Include your API token in the <code>Authorization</code> header:</p>
+                <pre class="bg-dark text-light p-3 rounded"><code>Authorization: Bearer naf_username_xxxxxxxxxxxx...</code></pre>
+                
+                <h6 class="mt-4">Endpoints</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <td><code>GET /api/dns/records</code></td>
+                        <td>List DNS records for your realm</td>
+                    </tr>
+                    <tr>
+                        <td><code>PUT /api/dns/records</code></td>
+                        <td>Update DNS record value</td>
+                    </tr>
+                    <tr>
+                        <td><code>POST /api/dns/records</code></td>
+                        <td>Create new DNS record</td>
+                    </tr>
+                    <tr>
+                        <td><code>DELETE /api/dns/records</code></td>
+                        <td>Delete DNS record</td>
+                    </tr>
+                </table>
+                
+                <h6 class="mt-4">Example: Update A Record</h6>
+                <pre class="bg-dark text-light p-3 rounded"><code>curl -X PUT https://api.example.com/api/dns/records \
+  -H "Authorization: Bearer naf_user_xxx..." \
+  -H "Content-Type: application/json" \
+  -d '{"hostname": "home.example.com", "type": "A", "value": "1.2.3.4"}'</code></pre>
+            </div>
+            <div class="modal-footer">
+                <a href="/docs/api" class="btn btn-outline-primary" target="_blank">
+                    Full Documentation
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,143 @@
+{# Account Activity - User activity log #}
+{% extends "account/base.html" %}
+
+{% block title %}Activity - Client Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-activity me-2"></i>Activity Log
+        </h1>
+        <p class="text-muted mb-0">Your account and API activity history</p>
+    </div>
+    <div class="d-flex gap-2">
+        <select class="form-select" style="width: auto;" onchange="filterByType(this.value)">
+            <option value="all">All Activity</option>
+            <option value="login" {% if type_filter == 'login' %}selected{% endif %}>Logins</option>
+            <option value="api" {% if type_filter == 'api' %}selected{% endif %}>API Calls</option>
+            <option value="token" {% if type_filter == 'token' %}selected{% endif %}>Token Changes</option>
+            <option value="realm" {% if type_filter == 'realm' %}selected{% endif %}>Realm Changes</option>
+        </select>
+    </div>
+</div>
+
+<!-- Activity List -->
+<div class="card">
+    <div class="list-group list-group-flush">
+        {% for log in activity %}
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="d-flex align-items-start">
+                    <!-- Icon based on action type -->
+                    <div class="flex-shrink-0 me-3">
+                        {% if 'login' in log.action %}
+                        <div class="bg-primary bg-opacity-10 rounded-circle p-2">
+                            <i class="bi bi-box-arrow-in-right text-primary"></i>
+                        </div>
+                        {% elif 'api' in log.action %}
+                        <div class="bg-info bg-opacity-10 rounded-circle p-2">
+                            <i class="bi bi-cloud text-info"></i>
+                        </div>
+                        {% elif 'token' in log.action %}
+                        <div class="bg-success bg-opacity-10 rounded-circle p-2">
+                            <i class="bi bi-key text-success"></i>
+                        </div>
+                        {% elif 'realm' in log.action %}
+                        <div class="bg-warning bg-opacity-10 rounded-circle p-2">
+                            <i class="bi bi-globe text-warning"></i>
+                        </div>
+                        {% else %}
+                        <div class="bg-secondary bg-opacity-10 rounded-circle p-2">
+                            <i class="bi bi-activity text-secondary"></i>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div>
+                        <strong>{{ log.action | replace('_', ' ') | title }}</strong>
+                        {% if log.details %}
+                        <p class="text-muted small mb-0 mt-1">{{ log.details }}</p>
+                        {% endif %}
+                        {% if log.ip_address %}
+                        <small class="text-muted">
+                            <i class="bi bi-geo-alt me-1"></i>{{ log.ip_address }}
+                        </small>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="text-end">
+                    <small class="text-muted d-block">
+                        {{ log.created_at.strftime('%Y-%m-%d') }}
+                    </small>
+                    <small class="text-muted">
+                        {{ log.created_at.strftime('%H:%M:%S') }}
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="list-group-item text-center py-5 text-muted">
+            <i class="bi bi-clock-history display-6 d-block mb-2"></i>
+            No activity recorded yet
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% if pagination and pagination.pages > 1 %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted">
+            Showing {{ pagination.first }} - {{ pagination.last }} of {{ pagination.total }}
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if pagination.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('account.activity', page=pagination.prev_num, type=type_filter) }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                
+                {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                    {% if page %}
+                    <li class="page-item {% if page == pagination.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('account.activity', page=page, type=type_filter) }}">
+                            {{ page }}
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if pagination.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('account.activity', page=pagination.next_num, type=type_filter) }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function filterByType(type) {
+    const url = new URL(window.location.href);
+    if (type === 'all') {
+        url.searchParams.delete('type');
+    } else {
+        url.searchParams.set('type', type);
+    }
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+}
+</script>
+{% endblock %}

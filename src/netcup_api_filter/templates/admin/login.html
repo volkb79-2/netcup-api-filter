@@ -1,33 +1,103 @@
-{% extends 'base_modern.html' %}
+{# Admin Login Page - Standalone (no navbar) #}
+{% extends "base.html" %}
 
-{% block title %}Sign In · Admin · {{ super() }}{% endblock %}
+{% block title %}Admin Login - Netcup API Filter{% endblock %}
 
-{% block content_wrapper %}
-<div class="login-container">
-    <div class="login-card card">
-        <div class="card-body">
-            <div class="login-header">
-                <h1>Admin Login</h1>
-                <p>Netcup API Filter</p>
+{% block header %}
+{# No header on login page #}
+{% endblock %}
+
+{% block footer %}
+{# Minimal footer on login page #}
+{% endblock %}
+
+{% block content %}
+<div class="login-container d-flex align-items-center justify-content-center min-vh-100">
+    <div style="max-width: 420px; width: 100%;">
+        <!-- App Title - Outside Card -->
+        <h1 class="text-center mb-4 fw-bold">Netcup API Filter</h1>
+        
+        <div class="login-card card">
+            <div class="card-body p-4 p-md-5">
+                <!-- Card Title -->
+                <div class="text-center mb-4">
+                    <h2 class="h4 fw-semibold">Admin Login</h2>
+                </div>
+                
+                <!-- Login Form -->
+                <form method="POST" action="{{ url_for('admin.login') }}">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" 
+                               class="form-control form-control-lg" 
+                               id="username" 
+                               name="username" 
+                               placeholder="admin"
+                               autocomplete="username"
+                               autofocus
+                               required>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="password" class="form-label">Password</label>
+                        <div class="input-group">
+                            <input type="password" 
+                                   class="form-control form-control-lg" 
+                                   id="password" 
+                                   name="password" 
+                                   placeholder="••••••••••••"
+                                   autocomplete="current-password"
+                                   required>
+                            <button class="btn btn-outline-secondary" 
+                                    type="button" 
+                                    onclick="togglePassword('password', this)"
+                                    title="Show/Hide Password">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        Sign In
+                    </button>
+                </form>
             </div>
-
-            {% block flash_messages %}{{ super() }}{% endblock %}
-
-            <form method="POST" action="{{ url_for('admin.login_view') }}">
-                <div class="form-group">
-                    <label for="username" class="form-label">Username</label>
-                    <input type="text" class="form-control" id="username" name="username" required autofocus>
-                </div>
-
-                <div class="form-group">
-                    <label for="password" class="form-label">Password</label>
-                    <input type="password" class="form-control" id="password" name="password" required>
-                </div>
-
-                <button type="submit" class="btn btn-important w-full">Sign In</button>
-            </form>
+            
+            <!-- Security Notice -->
+            <div class="card-footer text-center py-3 bg-transparent border-top">
+                <small class="fw-medium">Secure administrative access</small>
+            </div>
         </div>
     </div>
 </div>
+
+<style>
+.login-container {
+    background: var(--gradient-primary);
+    min-height: 100vh;
+}
+
+.login-card {
+    background: var(--gradient-surface);
+    border: 1px solid var(--color-border-card);
+    box-shadow: var(--card-shadow);
+}
+</style>
 {% endblock %}
 
+{% block extra_scripts %}
+<script>
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    const icon = button.querySelector('i');
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.replace('bi-eye', 'bi-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.replace('bi-eye-slash', 'bi-eye');
+    }
+}
+</script>
+{% endblock %}

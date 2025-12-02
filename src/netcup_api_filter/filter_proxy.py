@@ -1,730 +1,601 @@
 """
-Netcup API Filter Proxy
-A filtering proxy for the Netcup DNS API that provides granular access control
+Netcup DNS API Filter Proxy (v2 - Bearer Token Authentication).
+
+Proxies DNS API requests to Netcup, applying realm and permission restrictions
+based on Bearer token authentication.
 """
 import logging
 import os
-import re
-from flask import Flask, request, jsonify, render_template
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-import yaml
-from typing import Dict, Any
-from werkzeug.middleware.proxy_fix import ProxyFix
-
-from .netcup_client import NetcupAPIError
-from .netcup_client_mock import get_netcup_client
-from .access_control import AccessControl
 from typing import Any
-from .client_portal import client_portal_bp
-from .utils import get_build_info
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+import httpx
+from flask import Blueprint, jsonify, request, g
+
+from .models import (
+    APIToken, 
+    AccountRealm, 
+    parse_token,
+    hash_token,
 )
+from .token_auth import (
+    authenticate_token,
+    check_permission,
+    require_auth,
+    log_activity,
+)
+from .database import db
+
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-app.register_blueprint(client_portal_bp)
+# Netcup API configuration
+NETCUP_API_URL = os.environ.get('NETCUP_API_URL', 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON')
+NETCUP_CUSTOMER_ID = os.environ.get('NETCUP_CUSTOMER_ID', '')
+NETCUP_API_KEY = os.environ.get('NETCUP_API_KEY', '')
+NETCUP_API_PASSWORD = os.environ.get('NETCUP_API_PASSWORD', '')
+
+# HTTP client timeout
+REQUEST_TIMEOUT = int(os.environ.get('NETCUP_API_TIMEOUT', '30'))
 
 
-@app.context_processor
-def inject_build_metadata():
-    """Expose build metadata to every Jinja template."""
-    return {'build_info': get_build_info()}
-
-# Security: Set maximum content length (10MB)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
-
-# Security: Rate limiting (disabled in local_test mode)
-flask_env = os.environ.get('FLASK_ENV', '')
-rate_limit_enabled = flask_env != 'local_test'
-
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per hour", "50 per minute"] if rate_limit_enabled else [],
-    storage_uri="memory://",
-    enabled=rate_limit_enabled,
-)
-
-# Global configuration
-config: Dict[str, Any] = {}
-netcup_client: Any = None
-access_control: AccessControl = None
-
-# Domain name validation regex (RFC 1035)
-DOMAIN_REGEX = re.compile(
-    r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$'
-)
-
-# DNS hostname validation regex (simplified to avoid ReDoS)
-# Allows alphanumeric, dash, underscore, asterisk, and dots
-# Max length checked separately
-HOSTNAME_REGEX = re.compile(
-    r'^[a-zA-Z0-9_\*\-\.]+$'
-)
+class NetcupAPIError(Exception):
+    """Raised when Netcup API returns an error."""
+    def __init__(self, message: str, status_code: int = 500):
+        super().__init__(message)
+        self.status_code = status_code
 
 
-def load_config(config_path: str = "config.yaml"):
-    """Load configuration from YAML file"""
-    global config, netcup_client, access_control
-    
-    try:
-        # Security: Limit config file size to 1MB
-        import os
-        file_size = os.path.getsize(config_path)
-        if file_size > 1024 * 1024:  # 1MB
-            logger.error(f"Configuration file too large: {file_size} bytes")
-            return False
-        
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        # Validate config structure
-        if not isinstance(config, dict):
-            logger.error("Invalid configuration: root must be a dictionary")
-            return False
-        
-        # Initialize Netcup client (mock or real based on MOCK_NETCUP_API env var)
-        netcup_config = config.get("netcup", {})
-        netcup_client = get_netcup_client(
-            customer_id=netcup_config.get("customer_id"),
-            api_key=netcup_config.get("api_key"),
-            api_password=netcup_config.get("api_password"),
-            api_url=netcup_config.get("api_url", "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON")
-        )
-        app.config['netcup_client'] = netcup_client
-        
-        # Initialize access control
-        tokens_config = config.get("tokens", [])
-        if not isinstance(tokens_config, list):
-            logger.error("Invalid configuration: tokens must be a list")
-            return False
-            
-        access_control = AccessControl(tokens_config)
-        app.config['access_control'] = access_control
-        
-        logger.info(f"Configuration loaded successfully. {len(tokens_config)} tokens configured.")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to load configuration: {e}")
-        return False
-
-
-def get_token_from_request() -> str:
-    """Extract authentication token from request"""
-    # Check Authorization header (preferred method)
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
-    
-    # Check X-API-Token header (alternative)
-    token = request.headers.get("X-API-Token", "")
-    if token:
-        return token
-    
-    # Security: Deprecated - token in query param (insecure, logged in access logs)
-    # Only use as fallback for backward compatibility
-    # Consider removing this in production
-    token = request.args.get("token", "")
-    if token:
-        logger.warning("Token passed in query parameter (insecure). Use Authorization header instead.")
-        return token
-    
-    return ""
-
-
-def validate_domain_name(domain: str) -> bool:
+def call_netcup_api(action: str, params: dict[str, Any]) -> dict[str, Any]:
     """
-    Validate domain name against DNS specification
+    Call the Netcup API with given action and parameters.
     
     Args:
-        domain: Domain name to validate
+        action: API action name
+        params: Action-specific parameters
         
     Returns:
-        True if valid, False otherwise
-    """
-    if not domain or len(domain) > 253:
-        return False
-    return bool(DOMAIN_REGEX.match(domain))
-
-
-def validate_hostname(hostname: str) -> bool:
-    """
-    Validate DNS hostname (supports wildcards for patterns)
-    
-    Args:
-        hostname: Hostname to validate
+        API response data
         
-    Returns:
-        True if valid, False otherwise
+    Raises:
+        NetcupAPIError: On API error or timeout
     """
-    if not hostname or len(hostname) > 253:
-        return False
-    return bool(HOSTNAME_REGEX.match(hostname))
-
-
-@app.after_request
-def add_security_headers(response):
-    """Add security headers to all responses"""
-    # Prevent clickjacking
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'  # Allow admin UI to load in same origin
-    # Prevent MIME sniffing
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    # Enable XSS protection
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    # Content Security Policy - Allow UI resources for admin + client portals
-    # Allow self for scripts/styles plus Bootstrap/jQuery CDNs
-    # unsafe-eval required for Alpine.js expressions in modern UI
-    if request.path.startswith('/admin') or request.path.startswith('/client') or request.path.startswith('/theme-demo'):
-        response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com https://stackpath.bootstrapcdn.com; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
-            "img-src 'self' data:; "
-            "font-src 'self' https://stackpath.bootstrapcdn.com; "
-            "connect-src 'self'"
-        )
-    else:
-        response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
-    # Referrer policy
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    # Remove server header
-    response.headers.pop('Server', None)
-    # Strict Transport Security (HSTS) - force HTTPS
-    if request.is_secure:
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    return response
-
-
-@app.route("/", methods=["GET"])
-@limiter.exempt
-def index():
-    """Health check endpoint"""
-    return jsonify({
-        "service": "Netcup API Filter Proxy",
-        "status": "running",
-        "version": "1.0.0"
-    })
-
-
-
-@app.route("/theme-demo", methods=["GET"])
-@limiter.exempt
-def theme_demo():
-    """Theme demo page for previewing UI themes"""
-    return render_template("theme_demo.html")
-
-@app.route("/debug/filesystem", methods=["GET"])
-@limiter.exempt
-def debug_filesystem():
-    """Debug endpoint to test filesystem access"""
-    from .utils import test_filesystem_access
-    try:
-        results = test_filesystem_access()
-        return jsonify(results)
-    except Exception as e:
-        import traceback
-        return jsonify({
-            "error": str(e),
-            "type": type(e).__name__,
-            "traceback": traceback.format_exc()
-        }), 500
-
-
-@app.route("/debug/logging", methods=["GET"])
-@limiter.exempt
-def debug_logging():
-    """Debug endpoint to test logging functionality"""
-    import logging as log_module
-    import os
+    if not NETCUP_CUSTOMER_ID or not NETCUP_API_KEY or not NETCUP_API_PASSWORD:
+        raise NetcupAPIError("Netcup API credentials not configured", 500)
     
-    results = {
-        "cwd": os.getcwd(),
-        "log_handlers": [],
-        "write_tests": {}
+    payload = {
+        "action": action,
+        "param": {
+            "customernumber": NETCUP_CUSTOMER_ID,
+            "apikey": NETCUP_API_KEY,
+            "apipassword": NETCUP_API_PASSWORD,
+            **params
+        }
     }
     
-    # List all handlers
-    root_logger = log_module.getLogger()
-    for handler in root_logger.handlers:
-        handler_info = {
-            "type": type(handler).__name__,
-            "level": handler.level,
-        }
-        if isinstance(handler, log_module.FileHandler):
-            handler_info["filename"] = handler.baseFilename
-            handler_info["mode"] = handler.mode
-            try:
-                handler_info["file_exists"] = os.path.exists(handler.baseFilename)
-                if os.path.exists(handler.baseFilename):
-                    handler_info["file_size"] = os.path.getsize(handler.baseFilename)
-                    handler_info["file_writable"] = os.access(handler.baseFilename, os.W_OK)
-            except Exception as e:
-                handler_info["error"] = str(e)
-        results["log_handlers"].append(handler_info)
-    
-    # Test direct write
-    test_msg = f"Direct write test at {__import__('datetime').datetime.utcnow().isoformat()}"
     try:
-        with open('netcup_filter.log', 'a') as f:
-            f.write(f"{test_msg}\n")
-            f.flush()
-        results["write_tests"]["direct_write"] = "SUCCESS"
+        with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+            response = client.post(NETCUP_API_URL, json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.TimeoutException:
+        logger.error("Netcup API timeout")
+        raise NetcupAPIError("API request timed out", 504)
+    except httpx.HTTPError as e:
+        logger.error(f"Netcup API HTTP error: {e}")
+        raise NetcupAPIError(f"API request failed: {e}", 502)
     except Exception as e:
-        results["write_tests"]["direct_write"] = f"FAILED: {str(e)}"
-    
-    # Test logger.info
-    try:
-        logger.info(test_msg)
-        results["write_tests"]["logger_info"] = "CALLED"
-    except Exception as e:
-        results["write_tests"]["logger_info"] = f"FAILED: {str(e)}"
-    
-    return jsonify(results)
-
-
-@app.route("/api", methods=["POST"])
-@limiter.limit("10 per minute")  # Stricter limit for API endpoint
-def api_proxy():
-    """Main API proxy endpoint"""
-    # Security: Validate Content-Type
-    content_type = request.headers.get('Content-Type', '')
-    if not content_type.startswith('application/json'):
-        return jsonify({
-            "status": "error",
-            "message": "Content-Type must be application/json"
-        }), 400
-    
-    # Get authentication token
-    token = get_token_from_request()
-    if not token:
-        return jsonify({
-            "status": "error",
-            "message": "Authentication token required"
-        }), 401
-    
-    # Security: Validate token format (client_id:secret_key format)
-    # Format: alphanumeric_underscore_hyphen : alphanumeric_underscore_hyphen
-    # Example: test_client:abc123def456xyz
-    if not re.match(r'^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+$', token):
-        logger.warning(f"Invalid token format attempted from {request.remote_addr}")
-        send_admin_alert("AUTHENTICATION_FAILURE", "Invalid token format")
-        return jsonify({
-            "status": "error",
-            "message": "Invalid authentication token"
-        }), 401
-    
-    if not access_control.validate_token(token):
-        logger.warning(f"Invalid token attempted from {request.remote_addr}")
-        send_admin_alert("AUTHENTICATION_FAILURE", "Invalid token")
-        return jsonify({
-            "status": "error",
-            "message": "Invalid authentication token"
-        }), 401
-    
-    # Check origin restrictions (IP/domain whitelist)
-    client_ip = request.remote_addr
-    origin_host = request.headers.get("Host", "")
-    if not access_control.check_origin(token, client_ip, origin_host):
-        logger.warning(f"Access denied for token from origin: {client_ip} / {origin_host}")
-        send_admin_alert("ORIGIN_VIOLATION", f"Access from {client_ip} / {origin_host}")
-        return jsonify({
-            "status": "error",
-            "message": "Access denied: origin not allowed"
-        }), 403
-    
-    # Parse request
-    try:
-        data = request.get_json(force=False, silent=False)
-        if not isinstance(data, dict):
-            raise ValueError("Request body must be a JSON object")
-        
-        action = data.get("action")
-        param = data.get("param", {})
-        
-        if not isinstance(param, dict):
-            raise ValueError("param must be a JSON object")
-            
-    except Exception as e:
-        logger.error(f"Invalid request format from {request.remote_addr}: {e}")
-        return jsonify({
-            "status": "error",
-            "message": "Invalid request format"
-        }), 400
-    
-    # Handle different actions
-    try:
-        if action == "infoDnsZone":
-            return handle_info_dns_zone(token, param)
-        elif action == "infoDnsRecords":
-            return handle_info_dns_records(token, param)
-        elif action == "updateDnsRecords":
-            return handle_update_dns_records(token, param)
-        else:
-            return jsonify({
-                "status": "error",
-                "message": f"Unsupported action: {action}"
-            }), 400
-    except NetcupAPIError as e:
         logger.error(f"Netcup API error: {e}")
-        return jsonify({
-            "status": "error",
-            "message": "API request failed"
-        }), 500
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return jsonify({
-            "status": "error",
-            "message": "Internal server error"
-        }), 500
+        raise NetcupAPIError(f"API error: {e}", 500)
+    
+    if data.get("status") != "success":
+        msg = data.get("longmessage") or data.get("shortmessage") or "Unknown error"
+        logger.warning(f"Netcup API error: {msg}")
+        raise NetcupAPIError(msg, 400)
+    
+    return data.get("responsedata", {})
 
 
-def handle_info_dns_zone(token: str, param: Dict[str, Any]):
-    """Handle infoDnsZone action"""
-    domain = param.get("domainname", "")
-    if not domain:
-        return jsonify({
-            "status": "error",
-            "message": "domainname parameter required"
-        }), 400
-    
-    # Security: Validate domain name
-    if not validate_domain_name(domain):
-        logger.warning(f"Invalid domain name: {domain}")
-        log_request(token, "infoDnsZone", domain, False, "Invalid domain name")
-        return jsonify({
-            "status": "error",
-            "message": "Invalid domain name"
-        }), 400
-    
-    # Check permission
-    if not access_control.check_permission(token, "read", domain):
-        log_request(token, "infoDnsZone", domain, False, "Permission denied")
-        send_admin_alert("PERMISSION_DENIED", f"infoDnsZone on {domain}")
-        return jsonify({
-            "status": "error",
-            "message": "Permission denied"
-        }), 403
-        # Check if Netcup API is configured
-    if netcup_client is None:
-        log_request(token, "infoDnsRecords", domain, False, "Netcup API not configured")
-        return jsonify({
-            "status": "error",
-            "message": "Netcup API not configured"
-        }), 503
-        # Check if Netcup API is configured
-    if netcup_client is None:
-        log_request(token, "infoDnsZone", domain, False, "Netcup API not configured")
-        return jsonify({
-            "status": "error",
-            "message": "Netcup API not configured"
-        }), 503
-    
-    try:
-        # Forward to Netcup API
-        zone_info = netcup_client.info_dns_zone(domain)
-        
-        # Log successful request
-        log_request(token, "infoDnsZone", domain, True, 
-                   request_data={"action": "infoDnsZone", "param": param},
-                   response_data={"status": "success", "responsedata": zone_info})
-        
-        return jsonify({
-            "status": "success",
-            "responsedata": zone_info
-        })
-    except Exception as e:
-        log_request(token, "infoDnsZone", domain, False, str(e))
-        raise
-
-
-def handle_info_dns_records(token: str, param: Dict[str, Any]):
-    """Handle infoDnsRecords action"""
-    domain = param.get("domainname", "")
-    if not domain:
-        return jsonify({
-            "status": "error",
-            "message": "domainname parameter required"
-        }), 400
-    
-    # Security: Validate domain name
-    if not validate_domain_name(domain):
-        logger.warning(f"Invalid domain name: {domain}")
-        log_request(token, "infoDnsRecords", domain, False, "Invalid domain name")
-        return jsonify({
-            "status": "error",
-            "message": "Invalid domain name"
-        }), 400
-    
-    # Check permission
-    if not access_control.check_permission(token, "read", domain):
-        log_request(token, "infoDnsRecords", domain, False, "Permission denied")
-        send_admin_alert("PERMISSION_DENIED", f"infoDnsRecords on {domain}")
-        return jsonify({
-            "status": "error",
-            "message": "Permission denied"
-        }), 403
-    
-    try:
-        # Get records from Netcup API
-        all_records = netcup_client.info_dns_records(domain)
-        
-        # Filter records based on token permissions
-        filtered_records = access_control.filter_dns_records(token, domain, all_records)
-        
-        # Log successful request
-        log_request(token, "infoDnsRecords", domain, True,
-                   record_details={"total_records": len(all_records), "filtered_records": len(filtered_records)},
-                   request_data={"action": "infoDnsRecords", "param": param},
-                   response_data={"status": "success", "responsedata": {"dnsrecords": filtered_records}})
-        
-        return jsonify({
-            "status": "success",
-            "responsedata": {
-                "dnsrecords": filtered_records
-            }
-        })
-    except Exception as e:
-        log_request(token, "infoDnsRecords", domain, False, str(e))
-        raise
-
-
-def handle_update_dns_records(token: str, param: Dict[str, Any]):
-    """Handle updateDnsRecords action"""
-    domain = param.get("domainname", "")
-    if not domain:
-        return jsonify({
-            "status": "error",
-            "message": "domainname parameter required"
-        }), 400
-    
-    # Security: Validate domain name
-    if not validate_domain_name(domain):
-        logger.warning(f"Invalid domain name: {domain}")
-        log_request(token, "updateDnsRecords", domain, False, "Invalid domain name")
-        return jsonify({
-            "status": "error",
-            "message": "Invalid domain name"
-        }), 400
-    
-    dns_record_set = param.get("dnsrecordset", {})
-    if not isinstance(dns_record_set, dict):
-        return jsonify({
-            "status": "error",
-            "message": "dnsrecordset must be an object"
-        }), 400
-    
-    dns_records = dns_record_set.get("dnsrecords", [])
-    
-    if not dns_records:
-        return jsonify({
-            "status": "error",
-            "message": "dnsrecords required"
-        }), 400
-    
-    if not isinstance(dns_records, list):
-        return jsonify({
-            "status": "error",
-            "message": "dnsrecords must be an array"
-        }), 400
-    
-    # Security: Limit number of records per request
-    if len(dns_records) > 100:
-        log_request(token, "updateDnsRecords", domain, False, "Too many records")
-        return jsonify({
-            "status": "error",
-            "message": "Too many records (maximum 100 per request)"
-        }), 400
-    
-    # Security: Validate each record's hostname
-    for record in dns_records:
-        if not isinstance(record, dict):
-            return jsonify({
-                "status": "error",
-                "message": "Each DNS record must be an object"
-            }), 400
-        
-        hostname = record.get("hostname", "")
-        if hostname and not validate_hostname(hostname):
-            logger.warning(f"Invalid hostname in DNS record: {hostname}")
-            log_request(token, "updateDnsRecords", domain, False, f"Invalid hostname: {hostname}")
-            return jsonify({
-                "status": "error",
-                "message": f"Invalid hostname: {hostname}"
-            }), 400
-    
-    # Validate permissions for all records
-    is_valid, error_msg = access_control.validate_dns_records_update(token, domain, dns_records)
-    if not is_valid:
-        log_request(token, "updateDnsRecords", domain, False, error_msg,
-                   record_details={"records_count": len(dns_records)})
-        send_admin_alert("PERMISSION_DENIED", f"updateDnsRecords on {domain}: {error_msg}")
-        return jsonify({
-            "status": "error",
-            "message": "Permission denied"
-        }), 403
-    
-    # Check if Netcup API is configured
-    if netcup_client is None:
-        log_request(token, "updateDnsRecords", domain, False, "Netcup API not configured",
-                   record_details={"records_count": len(dns_records)})
-        return jsonify({
-            "status": "error",
-            "message": "Netcup API not configured"
-        }), 503
-    
-    try:
-        # Forward to Netcup API
-        result = netcup_client.update_dns_records(domain, dns_records)
-        
-        # Log successful request
-        log_request(token, "updateDnsRecords", domain, True,
-                   record_details={"records_count": len(dns_records), "records": dns_records},
-                   request_data={"action": "updateDnsRecords", "param": param},
-                   response_data={"status": "success", "responsedata": result})
-        
-        return jsonify({
-            "status": "success",
-            "responsedata": result
-        })
-    except Exception as e:
-        log_request(token, "updateDnsRecords", domain, False, str(e))
-        raise
-
-
-def log_request(token: str, action: str, domain: str, success: bool, 
-                error_message: str = None, record_details: Dict[str, Any] = None,
-                request_data: Dict[str, Any] = None, response_data: Dict[str, Any] = None):
+def filter_records_by_realm(
+    records: list[dict],
+    realm: AccountRealm,
+    domain: str
+) -> list[dict]:
     """
-    Log request to audit logger and send email notifications if configured
+    Filter DNS records based on realm restrictions.
     
     Args:
-        token: Authentication token
-        action: Action performed
-        domain: Domain accessed
-        success: Whether the request succeeded
-        error_message: Optional error message
-        record_details: Optional record details
-        request_data: Optional request data
-        response_data: Optional response data
+        records: List of DNS records from Netcup
+        realm: Realm to apply filtering for
+        domain: Domain name
+        
+    Returns:
+        Filtered list of records
     """
-    # Get audit logger if available
-    audit_logger = app.config.get('audit_logger')
-    if audit_logger:
-        # Get client info
-        token_info = None
-        client_id = None
+    filtered = []
+    realm_value = realm.realm_value
+    allowed_types = realm.record_types_list
+    
+    for record in records:
+        hostname = record.get("hostname", "@")
+        record_type = record.get("type", "")
         
-        if access_control:
-            token_info = access_control.get_token_info(token)
-            if token_info:
-                client_id = token_info.get('client_id', token_info.get('description', 'unknown'))
+        # Check record type is allowed
+        if allowed_types and record_type not in allowed_types:
+            continue
         
-        # Log the access
-        audit_logger.log_access(
-            client_id=client_id,
-            ip_address=request.remote_addr,
-            operation=action,
-            domain=domain,
-            record_details=record_details,
-            success=success,
-            error_message=error_message,
-            request_data=request_data,
-            response_data=response_data
-        )
+        # Check hostname matches realm
+        if realm.realm_type == "host":
+            # Exact match only
+            if hostname != realm_value:
+                continue
+        elif realm.realm_type == "subdomain":
+            # Apex + all children
+            if hostname != realm_value and not hostname.endswith(f".{realm_value}"):
+                if realm_value != "@" and hostname != "@":
+                    continue
+        elif realm.realm_type == "subdomain_only":
+            # Children only, not apex
+            if not hostname.endswith(f".{realm_value}"):
+                continue
         
-        # Send email notification if enabled for this client
-        if token_info and token_info.get('email_notifications_enabled'):
-            email_address = token_info.get('email_address')
-            if email_address:
-                from datetime import datetime
-                from .email_notifier import get_email_notifier_from_config
-                from .database import get_system_config
-                
-                email_config = get_system_config('email_config')
-                if email_config:
-                    notifier = get_email_notifier_from_config(email_config)
-                    if notifier:
-                        notifier.send_client_notification(
-                            client_id=client_id,
-                            to_email=email_address,
-                            timestamp=datetime.utcnow(),
-                            operation=action,
-                            ip_address=request.remote_addr,
-                            success=success,
-                            domain=domain,
-                            record_details=record_details,
-                            error_message=error_message
-                        )
+        filtered.append(record)
+    
+    return filtered
 
 
-def send_admin_alert(event_type: str, details: str):
+def check_hostname_in_realm(hostname: str, realm: AccountRealm) -> bool:
     """
-    Send admin alert for security events
+    Check if a hostname is within a realm's scope.
     
     Args:
-        event_type: Type of security event
-        details: Event details
+        hostname: DNS record hostname
+        realm: Realm to check against
+        
+    Returns:
+        True if hostname is within realm
     """
-    # Log security event
-    audit_logger = app.config.get('audit_logger')
-    if audit_logger:
-        audit_logger.log_security_event(
-            event_type=event_type,
-            details=details,
-            ip_address=request.remote_addr
-        )
+    realm_value = realm.realm_value
     
-    # Send admin email if configured
+    if realm.realm_type == "host":
+        return hostname == realm_value
+    elif realm.realm_type == "subdomain":
+        return hostname == realm_value or hostname.endswith(f".{realm_value}")
+    elif realm.realm_type == "subdomain_only":
+        return hostname.endswith(f".{realm_value}")
+    
+    return False
+
+
+# Blueprint for filter proxy
+filter_proxy_bp = Blueprint('filter_proxy', __name__)
+
+
+@filter_proxy_bp.route('/api/dns/<domain>/records', methods=['GET'])
+@require_auth
+def get_records(domain: str):
+    """
+    Get DNS records for a domain, filtered by realm.
+    
+    Token must have 'read' permission and realm matching the domain.
+    """
+    token: APIToken = g.token
+    realm: AccountRealm = g.realm
+    
+    # Check read permission
+    if not check_permission(token, realm, 'read'):
+        log_activity(token, 'read_denied', domain=domain, success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': 'Token does not have read permission for this realm'
+        }), 403
+    
     try:
-        from datetime import datetime
-        from .email_notifier import get_email_notifier_from_config
-        from .database import get_system_config
+        data = call_netcup_api("infoDnsRecords", {"domainname": domain})
+        records = data.get("dnsrecords", [])
         
-        email_config = get_system_config('email_config')
-        admin_email_config = get_system_config('admin_email_config')
+        # Filter by realm
+        filtered = filter_records_by_realm(records, realm, domain)
         
-        if email_config and admin_email_config:
-            admin_email = admin_email_config.get('admin_email')
-            if admin_email:
-                notifier = get_email_notifier_from_config(email_config)
-                if notifier:
-                    notifier.send_admin_notification(
-                        admin_email=admin_email,
-                        event_type=event_type,
-                        details=details,
-                        ip_address=request.remote_addr,
-                        timestamp=datetime.utcnow()
-                    )
-    except Exception as e:
-        logger.error(f"Failed to send admin alert: {e}")
+        log_activity(token, 'read', domain=domain, details=f"{len(filtered)} records", success=True)
+        
+        return jsonify({
+            'domain': domain,
+            'records': filtered,
+            'count': len(filtered)
+        })
+        
+    except NetcupAPIError as e:
+        log_activity(token, 'read', domain=domain, success=False, details=str(e))
+        return jsonify({'error': 'api_error', 'message': str(e)}), e.status_code
 
 
-def main():
-    """Main entry point"""
-    import sys
+@filter_proxy_bp.route('/api/dns/<domain>/records', methods=['POST'])
+@require_auth
+def create_record(domain: str):
+    """
+    Create a DNS record.
     
-    config_file = "config.yaml"
-    if len(sys.argv) > 1:
-        config_file = sys.argv[1]
+    Token must have 'create' permission and record must be within realm.
+    """
+    token: APIToken = g.token
+    realm: AccountRealm = g.realm
     
-    if not load_config(config_file):
-        logger.error("Failed to load configuration. Exiting.")
-        sys.exit(1)
+    # Check create permission
+    if not check_permission(token, realm, 'create'):
+        log_activity(token, 'create_denied', domain=domain, success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': 'Token does not have create permission'
+        }), 403
     
-    server_config = config.get("server", {})
-    host = server_config.get("host", "0.0.0.0")
-    port = server_config.get("port", 5000)
-    debug = server_config.get("debug", False)
+    data = request.get_json() or {}
+    hostname = data.get('hostname', '@')
+    record_type = data.get('type', 'A')
+    destination = data.get('destination', '')
+    priority = data.get('priority')
     
-    logger.info(f"Starting Netcup API Filter Proxy on {host}:{port}")
-    app.run(host=host, port=port, debug=debug)
+    # Validate hostname within realm
+    if not check_hostname_in_realm(hostname, realm):
+        log_activity(token, 'create_denied', domain=domain, 
+                    details=f"hostname {hostname} outside realm", success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': f'Hostname {hostname} is outside your realm'
+        }), 403
+    
+    # Check record type is allowed
+    allowed_types = realm.record_types_list
+    if allowed_types and record_type not in allowed_types:
+        log_activity(token, 'create_denied', domain=domain,
+                    details=f"type {record_type} not allowed", success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': f'Record type {record_type} not allowed for this realm'
+        }), 403
+    
+    # Build record
+    record = {
+        "hostname": hostname,
+        "type": record_type,
+        "destination": destination,
+    }
+    if priority is not None:
+        record["priority"] = priority
+    
+    try:
+        # Get existing records first
+        existing_data = call_netcup_api("infoDnsRecords", {"domainname": domain})
+        existing_records = existing_data.get("dnsrecords", [])
+        
+        # Add new record
+        existing_records.append(record)
+        
+        # Update all records
+        call_netcup_api("updateDnsRecords", {
+            "domainname": domain,
+            "dnsrecordset": {"dnsrecords": existing_records}
+        })
+        
+        log_activity(token, 'create', domain=domain,
+                    details=f"{record_type} {hostname} -> {destination}", success=True)
+        
+        return jsonify({
+            'message': 'Record created',
+            'record': record
+        }), 201
+        
+    except NetcupAPIError as e:
+        log_activity(token, 'create', domain=domain, success=False, details=str(e))
+        return jsonify({'error': 'api_error', 'message': str(e)}), e.status_code
 
 
-if __name__ == "__main__":
-    main()
+@filter_proxy_bp.route('/api/dns/<domain>/records/<int:record_id>', methods=['PUT'])
+@require_auth
+def update_record(domain: str, record_id: int):
+    """
+    Update a DNS record.
+    
+    Token must have 'update' permission and record must be within realm.
+    """
+    token: APIToken = g.token
+    realm: AccountRealm = g.realm
+    
+    # Check update permission
+    if not check_permission(token, realm, 'update'):
+        log_activity(token, 'update_denied', domain=domain, success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': 'Token does not have update permission'
+        }), 403
+    
+    data = request.get_json() or {}
+    
+    try:
+        # Get existing records
+        existing_data = call_netcup_api("infoDnsRecords", {"domainname": domain})
+        existing_records = existing_data.get("dnsrecords", [])
+        
+        # Find record by id
+        target_record = None
+        for rec in existing_records:
+            if rec.get("id") == str(record_id) or rec.get("id") == record_id:
+                target_record = rec
+                break
+        
+        if not target_record:
+            return jsonify({'error': 'not_found', 'message': 'Record not found'}), 404
+        
+        # Check hostname within realm
+        hostname = target_record.get("hostname", "@")
+        if not check_hostname_in_realm(hostname, realm):
+            log_activity(token, 'update_denied', domain=domain,
+                        details=f"hostname {hostname} outside realm", success=False)
+            return jsonify({
+                'error': 'forbidden',
+                'message': f'Hostname {hostname} is outside your realm'
+            }), 403
+        
+        # Check record type is allowed
+        record_type = target_record.get("type", "")
+        allowed_types = realm.record_types_list
+        if allowed_types and record_type not in allowed_types:
+            log_activity(token, 'update_denied', domain=domain,
+                        details=f"type {record_type} not allowed", success=False)
+            return jsonify({
+                'error': 'forbidden',
+                'message': f'Record type {record_type} not allowed'
+            }), 403
+        
+        # Apply updates
+        if 'destination' in data:
+            target_record['destination'] = data['destination']
+        if 'priority' in data:
+            target_record['priority'] = data['priority']
+        
+        # Update all records
+        call_netcup_api("updateDnsRecords", {
+            "domainname": domain,
+            "dnsrecordset": {"dnsrecords": existing_records}
+        })
+        
+        log_activity(token, 'update', domain=domain,
+                    details=f"record {record_id}", success=True)
+        
+        return jsonify({
+            'message': 'Record updated',
+            'record': target_record
+        })
+        
+    except NetcupAPIError as e:
+        log_activity(token, 'update', domain=domain, success=False, details=str(e))
+        return jsonify({'error': 'api_error', 'message': str(e)}), e.status_code
+
+
+@filter_proxy_bp.route('/api/dns/<domain>/records/<int:record_id>', methods=['DELETE'])
+@require_auth
+def delete_record(domain: str, record_id: int):
+    """
+    Delete a DNS record.
+    
+    Token must have 'delete' permission and record must be within realm.
+    """
+    token: APIToken = g.token
+    realm: AccountRealm = g.realm
+    
+    # Check delete permission
+    if not check_permission(token, realm, 'delete'):
+        log_activity(token, 'delete_denied', domain=domain, success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': 'Token does not have delete permission'
+        }), 403
+    
+    try:
+        # Get existing records
+        existing_data = call_netcup_api("infoDnsRecords", {"domainname": domain})
+        existing_records = existing_data.get("dnsrecords", [])
+        
+        # Find record by id
+        target_record = None
+        target_index = None
+        for i, rec in enumerate(existing_records):
+            if rec.get("id") == str(record_id) or rec.get("id") == record_id:
+                target_record = rec
+                target_index = i
+                break
+        
+        if not target_record:
+            return jsonify({'error': 'not_found', 'message': 'Record not found'}), 404
+        
+        # Check hostname within realm
+        hostname = target_record.get("hostname", "@")
+        if not check_hostname_in_realm(hostname, realm):
+            log_activity(token, 'delete_denied', domain=domain,
+                        details=f"hostname {hostname} outside realm", success=False)
+            return jsonify({
+                'error': 'forbidden',
+                'message': f'Hostname {hostname} is outside your realm'
+            }), 403
+        
+        # Check record type is allowed
+        record_type = target_record.get("type", "")
+        allowed_types = realm.record_types_list
+        if allowed_types and record_type not in allowed_types:
+            log_activity(token, 'delete_denied', domain=domain,
+                        details=f"type {record_type} not allowed", success=False)
+            return jsonify({
+                'error': 'forbidden',
+                'message': f'Record type {record_type} not allowed'
+            }), 403
+        
+        # Remove record
+        del existing_records[target_index]
+        
+        # Update all records (Netcup requires sending all records)
+        # For delete, we need to mark the record with deleterecord flag
+        # Actually, Netcup API uses deleterecord flag
+        target_record['deleterecord'] = True
+        existing_records.append(target_record)
+        
+        call_netcup_api("updateDnsRecords", {
+            "domainname": domain,
+            "dnsrecordset": {"dnsrecords": existing_records}
+        })
+        
+        log_activity(token, 'delete', domain=domain,
+                    details=f"record {record_id}", success=True)
+        
+        return jsonify({'message': 'Record deleted'})
+        
+    except NetcupAPIError as e:
+        log_activity(token, 'delete', domain=domain, success=False, details=str(e))
+        return jsonify({'error': 'api_error', 'message': str(e)}), e.status_code
+
+
+@filter_proxy_bp.route('/api/ddns/<domain>/<hostname>', methods=['GET', 'POST'])
+@require_auth
+def ddns_update(domain: str, hostname: str):
+    """
+    DDNS convenience endpoint for updating A/AAAA records.
+    
+    Query parameters:
+    - ip: IPv4 address (uses client IP if not specified)
+    - ipv6: IPv6 address
+    - auto: If 'true', auto-detect IP from request
+    
+    Token must have 'update' permission.
+    """
+    token: APIToken = g.token
+    realm: AccountRealm = g.realm
+    
+    # Check update permission
+    if not check_permission(token, realm, 'update'):
+        log_activity(token, 'ddns_denied', domain=domain, success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': 'Token does not have update permission'
+        }), 403
+    
+    # Check hostname within realm
+    if not check_hostname_in_realm(hostname, realm):
+        log_activity(token, 'ddns_denied', domain=domain,
+                    details=f"hostname {hostname} outside realm", success=False)
+        return jsonify({
+            'error': 'forbidden',
+            'message': f'Hostname {hostname} is outside your realm'
+        }), 403
+    
+    # Check record types are allowed
+    allowed_types = realm.record_types_list
+    if allowed_types:
+        if 'A' not in allowed_types and 'AAAA' not in allowed_types:
+            log_activity(token, 'ddns_denied', domain=domain,
+                        details="A/AAAA not allowed", success=False)
+            return jsonify({
+                'error': 'forbidden',
+                'message': 'A/AAAA record types not allowed for this realm'
+            }), 403
+    
+    # Get IP addresses
+    ipv4 = request.args.get('ip') or request.args.get('ipv4')
+    ipv6 = request.args.get('ipv6')
+    auto = request.args.get('auto', '').lower() in ('true', '1', 'yes')
+    
+    if auto or (not ipv4 and not ipv6):
+        # Auto-detect from request
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if client_ip:
+            client_ip = client_ip.split(',')[0].strip()
+        
+        if ':' in client_ip:
+            ipv6 = ipv6 or client_ip
+        else:
+            ipv4 = ipv4 or client_ip
+    
+    if not ipv4 and not ipv6:
+        return jsonify({
+            'error': 'bad_request',
+            'message': 'No IP address specified or detected'
+        }), 400
+    
+    try:
+        # Get existing records
+        existing_data = call_netcup_api("infoDnsRecords", {"domainname": domain})
+        existing_records = existing_data.get("dnsrecords", [])
+        
+        updated = []
+        
+        # Update A record
+        if ipv4 and (not allowed_types or 'A' in allowed_types):
+            a_record = None
+            for rec in existing_records:
+                if rec.get("hostname") == hostname and rec.get("type") == "A":
+                    a_record = rec
+                    break
+            
+            if a_record:
+                a_record['destination'] = ipv4
+            else:
+                existing_records.append({
+                    "hostname": hostname,
+                    "type": "A",
+                    "destination": ipv4
+                })
+            updated.append(f"A -> {ipv4}")
+        
+        # Update AAAA record
+        if ipv6 and (not allowed_types or 'AAAA' in allowed_types):
+            aaaa_record = None
+            for rec in existing_records:
+                if rec.get("hostname") == hostname and rec.get("type") == "AAAA":
+                    aaaa_record = rec
+                    break
+            
+            if aaaa_record:
+                aaaa_record['destination'] = ipv6
+            else:
+                existing_records.append({
+                    "hostname": hostname,
+                    "type": "AAAA",
+                    "destination": ipv6
+                })
+            updated.append(f"AAAA -> {ipv6}")
+        
+        if not updated:
+            return jsonify({
+                'error': 'bad_request',
+                'message': 'No records to update'
+            }), 400
+        
+        # Update records
+        call_netcup_api("updateDnsRecords", {
+            "domainname": domain,
+            "dnsrecordset": {"dnsrecords": existing_records}
+        })
+        
+        log_activity(token, 'ddns', domain=domain,
+                    details=f"{hostname}: {', '.join(updated)}", success=True)
+        
+        return jsonify({
+            'message': 'DDNS update successful',
+            'hostname': hostname,
+            'domain': domain,
+            'updated': updated
+        })
+        
+    except NetcupAPIError as e:
+        log_activity(token, 'ddns', domain=domain, success=False, details=str(e))
+        return jsonify({'error': 'api_error', 'message': str(e)}), e.status_code
+
+
+@filter_proxy_bp.route('/api/myip', methods=['GET'])
+def my_ip():
+    """
+    Return the client's IP address.
+    
+    This endpoint does not require authentication.
+    """
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    
+    return jsonify({'ip': client_ip})

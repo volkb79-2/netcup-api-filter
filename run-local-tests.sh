@@ -21,7 +21,8 @@ echo ""
 if [ ! -d "${DEPLOY_LOCAL_DIR}" ]; then
     echo -e "${YELLOW}Building fresh deployment...${NC}"
     cd "${WORKSPACE_DIR}"
-    ./build_deployment.py 2>&1 | grep -E "^[0-9]|Database initialized|Created admin" || true
+    # Use --local flag to ensure deployment_state_local.json is created with fresh credentials
+    ./build_deployment.py --local 2>&1 | grep -E "^[0-9]|Database initialized|Created admin" || true
     rm -rf "${DEPLOY_LOCAL_DIR}"
     mkdir -p "${DEPLOY_LOCAL_DIR}"
     unzip -o -q deploy.zip -d "${DEPLOY_LOCAL_DIR}/"
@@ -80,8 +81,34 @@ done
 
 echo ""
 
-# 4. Run tests
-echo -e "${BLUE}Running complete test suite (47 tests)...${NC}"
+# 4. Run admin UX audit (quick sanity check)
+echo -e "${BLUE}Running admin UX audit...${NC}"
+cd "${WORKSPACE_DIR}"
+
+# Read current admin password from deployment state (may have been changed by previous test run)
+ADMIN_PASSWORD="admin"  # Default for fresh deployment
+if [ -f "${WORKSPACE_DIR}/deployment_state_local.json" ]; then
+    STORED_PASSWORD=$(python3 -c "import json; print(json.load(open('${WORKSPACE_DIR}/deployment_state_local.json'))['admin'].get('password', 'admin'))" 2>/dev/null || echo "admin")
+    if [ -n "$STORED_PASSWORD" ] && [ "$STORED_PASSWORD" != "null" ]; then
+        ADMIN_PASSWORD="$STORED_PASSWORD"
+    fi
+fi
+
+# Run the audit script - exit early if major issues found
+python ui_tests/admin_ux_audit.py --base-url http://127.0.0.1:5100 --admin-password "$ADMIN_PASSWORD" || {
+    AUDIT_EXIT=$?
+    if [ $AUDIT_EXIT -gt 5 ]; then
+        echo -e "${YELLOW}⚠ Admin audit found $AUDIT_EXIT issues - fix before running full test suite${NC}"
+        pkill -9 gunicorn || true
+        exit $AUDIT_EXIT
+    fi
+    echo -e "${YELLOW}⚠ Admin audit found $AUDIT_EXIT minor issues (continuing with tests)${NC}"
+}
+
+echo ""
+
+# 5. Run tests
+echo -e "${BLUE}Running complete test suite...${NC}"
 cd "${WORKSPACE_DIR}"
 
 # Set deployment target for the test config module
@@ -104,9 +131,9 @@ if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwri
     echo -e "${GREEN}✓ Playwright container detected. Running tests inside container...${NC}"
     
     # Use the canonical executor script to run tests
-        # The workspace is mounted at /workspaces/netcup-api-filter in the container
+    # The workspace is mounted at /workspaces/netcup-api-filter in the container
     # We use the wrapper script which handles user permissions and environment variables
-    log_info "Running tests in Playwright container..."
+    echo -e "${BLUE}Running tests in Playwright container...${NC}"
     "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${1:-ui_tests/tests}" -v
 
 else
@@ -117,7 +144,7 @@ fi
 
 TEST_EXIT_CODE=$?
 
-# 5. Cleanup
+# 6. Cleanup
 echo ""
 echo -e "${BLUE}Stopping Flask...${NC}"
 pkill -9 gunicorn || true

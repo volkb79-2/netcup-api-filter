@@ -1,0 +1,177 @@
+{# Setup TOTP Page #}
+{% extends "account/base.html" %}
+
+{% block title %}Set Up Two-Factor Authentication{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-lg-6 mx-auto">
+            <!-- Header -->
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{ url_for('account.settings') }}" class="btn btn-outline-secondary btn-sm me-3">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <div>
+                    <h2 class="mb-0">Set Up Two-Factor Authentication</h2>
+                    <small class="text-muted">Add an extra layer of security to your account</small>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Step 1: Download App -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <span class="badge bg-primary me-2">1</span>
+                        Download an Authenticator App
+                    </h5>
+                    <p class="text-muted mb-3">
+                        If you don't have one already, download an authenticator app on your phone:
+                    </p>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="card bg-dark bg-opacity-50">
+                                <div class="card-body text-center py-3">
+                                    <i class="bi bi-google fs-3 mb-2 text-primary"></i>
+                                    <div class="small">Google Authenticator</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-dark bg-opacity-50">
+                                <div class="card-body text-center py-3">
+                                    <i class="bi bi-shield-lock fs-3 mb-2 text-info"></i>
+                                    <div class="small">Authy</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-dark bg-opacity-50">
+                                <div class="card-body text-center py-3">
+                                    <i class="bi bi-microsoft fs-3 mb-2 text-success"></i>
+                                    <div class="small">Microsoft Authenticator</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Scan QR Code -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <span class="badge bg-primary me-2">2</span>
+                        Scan This QR Code
+                    </h5>
+                    <p class="text-muted mb-3">
+                        Open your authenticator app and scan this QR code:
+                    </p>
+                    
+                    <div class="text-center mb-4">
+                        <div class="d-inline-block p-3 bg-white rounded">
+                            <!-- QR Code image -->
+                            <img src="data:image/png;base64,{{ qr_code }}" alt="2FA QR Code" 
+                                 style="width: 200px; height: 200px;"
+                                 class="img-fluid">
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-secondary">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-keyboard me-1"></i>Can't scan the code?
+                        </h6>
+                        <p class="mb-2 small">Enter this setup key manually in your app:</p>
+                        <div class="d-flex align-items-center gap-2">
+                            <code class="flex-grow-1 p-2 bg-dark rounded text-break" id="setup-key">
+                                {{ secret }}
+                            </code>
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="copySetupKey()">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Verify Code -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <span class="badge bg-primary me-2">3</span>
+                        Verify Setup
+                    </h5>
+                    <p class="text-muted mb-3">
+                        Enter the 6-digit code from your authenticator app to complete setup:
+                    </p>
+                    
+                    <form action="{{ url_for('account.setup_totp') }}" method="post" id="verify-2fa-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="secret" value="{{ secret }}">
+                        
+                        <div class="mb-4">
+                            <label for="verification-code" class="form-label">Verification Code</label>
+                            <input type="text" class="form-control form-control-lg text-center" 
+                                   id="verification-code" name="code"
+                                   inputmode="numeric" pattern="[0-9]{6}" 
+                                   maxlength="6" autocomplete="one-time-code"
+                                   placeholder="000000" required
+                                   style="letter-spacing: 0.5em; font-family: monospace;">
+                            <div class="form-text">Enter the 6-digit code from your authenticator app</div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-shield-check me-1"></i>Enable Two-Factor Authentication
+                            </button>
+                            <a href="{{ url_for('account.settings') }}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Recovery Codes Notice -->
+            <div class="alert alert-warning">
+                <h6 class="alert-heading">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Important
+                </h6>
+                <p class="mb-0 small">
+                    After enabling 2FA, you'll receive recovery codes. 
+                    <strong>Save these codes in a secure location.</strong> 
+                    They're the only way to access your account if you lose your authenticator device.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copySetupKey() {
+    const key = document.getElementById('setup-key').textContent.trim();
+    navigator.clipboard.writeText(key).then(() => {
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check"></i>';
+        setTimeout(() => btn.innerHTML = originalHtml, 1500);
+    });
+}
+
+// Auto-format verification code input
+document.getElementById('verification-code').addEventListener('input', function(e) {
+    this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6);
+});
+</script>
+{% endblock %}

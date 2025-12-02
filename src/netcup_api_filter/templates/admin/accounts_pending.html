@@ -1,0 +1,169 @@
+{# Admin Pending Accounts - Accounts awaiting approval #}
+{% extends "admin/base.html" %}
+
+{% block title %}Pending Accounts - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Pending Accounts</h1>
+        <p class="text-muted mb-0">Review and approve new account registrations</p>
+    </div>
+</div>
+
+{% if accounts %}
+<!-- Bulk Actions -->
+<div class="mb-3 d-flex gap-2">
+    <button class="btn btn-success" onclick="approveAll()">
+        <i class="bi bi-check-all me-1"></i>Approve All
+    </button>
+</div>
+
+<!-- Pending Accounts Cards -->
+<div class="row g-4">
+    {% for account in accounts %}
+    <div class="col-lg-6">
+        <div class="card h-100" id="account-{{ account.id }}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="badge bg-warning text-dark me-2">Pending</span>
+                    <span class="font-monospace fw-bold">{{ account.username }}</span>
+                </div>
+                <small class="text-muted">
+                    Registered {{ account.created_at.strftime('%Y-%m-%d %H:%M') }}
+                </small>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Email</label>
+                        <div class="font-monospace">
+                            {{ account.email }}
+                            {% if account.email_verified %}
+                            <i class="bi bi-patch-check-fill text-success ms-1" title="Verified"></i>
+                            {% else %}
+                            <i class="bi bi-question-circle text-warning ms-1" title="Not Verified"></i>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted">Two-Factor Auth</label>
+                        <div>
+                            {% if account.totp_enabled %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-shield-check me-1"></i>Enabled
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-shield me-1"></i>Not Configured
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                {% if account.realms %}
+                <hr class="my-3">
+                <label class="form-label small text-muted">Requested Realms</label>
+                <div class="list-group list-group-flush">
+                    {% for realm in account.realms %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <div>
+                            <span class="font-monospace">{{ realm.realm_value }}</span>
+                            <span class="badge bg-secondary ms-2">{{ realm.realm_type }}</span>
+                            {% if realm.status == 'pending' %}
+                            <span class="badge bg-warning text-dark ms-1">Pending</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-muted small">
+                            {{ realm.allowed_record_types | join(', ') }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-transparent">
+                <div class="d-flex gap-2">
+                    <form method="POST" action="{{ url_for('admin.account_approve', account_id=account.id) }}" class="flex-grow-1">
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-check-lg me-1"></i>Approve
+                        </button>
+                    </form>
+                    <a href="{{ url_for('admin.account_detail', account_id=account.id) }}" class="btn btn-outline-primary">
+                        <i class="bi bi-eye"></i>
+                    </a>
+                    <button type="button" class="btn btn-outline-danger" 
+                            onclick="rejectAccount({{ account.id }}, '{{ account.username }}')">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-inbox display-3 text-success d-block mb-3"></i>
+        <h4>No Pending Accounts</h4>
+        <p class="text-muted mb-0">All registration requests have been processed.</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Reject Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reject Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="rejectForm">
+                <div class="modal-body">
+                    <p>Are you sure you want to reject <strong id="rejectUsername"></strong>?</p>
+                    <div class="mb-3">
+                        <label class="form-label">Reason (optional)</label>
+                        <textarea name="reason" class="form-control" rows="3" 
+                                  placeholder="Provide a reason for rejection..."></textarea>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" name="send_email" class="form-check-input" id="sendRejectEmail" checked>
+                        <label class="form-check-label" for="sendRejectEmail">
+                            Send notification email to user
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-x-lg me-1"></i>Reject Account
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function rejectAccount(id, username) {
+    document.getElementById('rejectUsername').textContent = username;
+    document.getElementById('rejectForm').action = `/admin/accounts/${id}/reject`;
+    new bootstrap.Modal(document.getElementById('rejectModal')).show();
+}
+
+function approveAll() {
+    if (confirm('Are you sure you want to approve all pending accounts?')) {
+        // TODO: Implement bulk approve API
+        alert('Bulk approve not yet implemented');
+    }
+}
+</script>
+{% endblock %}

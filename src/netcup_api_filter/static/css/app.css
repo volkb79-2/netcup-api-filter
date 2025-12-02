@@ -1,28 +1,39 @@
 /* ===================================================================
    NETCUP API FILTER - MODERN DARK THEME
    Tech Stack: Bootstrap 5 + Alpine.js + List.js
-   Design: Clean dark blue-black with gradients
+   Design: Clean dark with configurable themes and UI density
+   
+   THEMES (17 total, copied from theme-demo2):
+     Deep Ocean, Graphite, Zinc, Obsidian Noir, Ember, Arctic, Jade,
+     Rose Quartz, Gold Dust, Crimson, Amethyst, Sapphire, Slate Luxe,
+     Navy, Cobalt, Midnight Blue, Cobalt 2 (default)
+   DENSITY: Comfortable (default), Compact, Ultra Compact
    =================================================================== */
 
 :root {
     color-scheme: dark;
     
-    /* Color Palette */
-    --color-bg-primary: #0a0e1a;
-    --color-bg-secondary: #111827;
-    --color-bg-elevated: #1a2234;
-    --color-bg-surface: rgba(26, 34, 52, 0.8);
+    /* =============================================
+       BASE COLOR PALETTE (overridden by themes)
+       ============================================= */
+    --color-bg-primary: #070a14;
+    --color-bg-primary-solid: #070a14;
+    --color-bg-secondary: #0c1020;
+    --color-bg-elevated: #141c30;
+    --color-bg-surface: rgba(20, 28, 48, 0.8);
     
-    --color-border: rgba(59, 130, 246, 0.2);
+    --color-border: rgba(100, 150, 255, 0.25);
     --color-border-subtle: rgba(75, 85, 99, 0.3);
+    --color-border-card: rgba(100, 150, 255, 0.38);
     
-    --color-text-primary: #f3f4f6;
-    --color-text-secondary: #9ca3af;
-    --color-text-muted: #6b7280;
+    --color-text-primary: #f8fafc;
+    --color-text-secondary: #c8d4e6;
+    --color-text-muted: #9fb3cc;
     
-    --color-accent: #3b82f6;
+    --color-accent: #3b7cf5;
     --color-accent-hover: #2563eb;
-    --color-accent-rgb: 59, 130, 246;
+    --color-accent-rgb: 59, 124, 245;
+    --color-accent-glow: rgba(59, 124, 245, 0.4);
     
     --color-success: #10b981;
     --color-warning: #f59e0b;
@@ -30,17 +41,38 @@
     --color-info: #06b6d4;
     
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, #1e3a8a 0%, #0a0e1a 100%);
-    --gradient-surface: linear-gradient(180deg, rgba(26, 34, 52, 0.95) 0%, rgba(17, 24, 39, 0.95) 100%);
-    --gradient-accent: linear-gradient(135deg, var(--color-accent) 0%, #1e40af 100%);
+    --gradient-primary: linear-gradient(180deg, #050810 0%, #080c18 100%);
+    --gradient-surface: linear-gradient(180deg, rgba(20, 28, 48, 0.95) 0%, rgba(12, 16, 32, 0.95) 100%);
+    --gradient-accent: linear-gradient(135deg, #3b7cf5 0%, #2563eb 60%, #1d4ed8 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(59, 124, 245, 0.05) 0%, transparent 50%);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+    --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 50px rgba(59, 124, 245, 0.12);
     
-    /* Spacing */
-    --space-xs: 0.5rem;
-    --space-sm: 0.75rem;
-    --space-md: 1rem;
-    --space-lg: 1.5rem;
-    --space-xl: 2rem;
-    --space-2xl: 3rem;
+    /* =============================================
+       UI DENSITY - Comfortable (Default)
+       ============================================= */
+    --density-space-xs: 0.5rem;
+    --density-space-sm: 0.75rem;
+    --density-space-md: 1rem;
+    --density-space-lg: 1.5rem;
+    --density-space-xl: 2rem;
+    --density-space-2xl: 3rem;
+    --density-font-sm: 0.875rem;
+    --density-font-xs: 0.75rem;
+    --density-table-padding: 1rem;
+    --density-card-padding: 1.25rem;
+    --density-input-padding-y: 0.625rem;
+    --density-input-padding-x: 1rem;
+    --density-card-gap: 1.5rem;
+    --density-navbar-height: 56px;
+    
+    /* Base spacing (using density variables) */
+    --space-xs: var(--density-space-xs);
+    --space-sm: var(--density-space-sm);
+    --space-md: var(--density-space-md);
+    --space-lg: var(--density-space-lg);
+    --space-xl: var(--density-space-xl);
+    --space-2xl: var(--density-space-2xl);
     
     /* Border Radius */
     --radius-sm: 0.375rem;
@@ -58,6 +90,519 @@
     --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
     --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
     --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===================================================================
+   THEME DEFINITIONS - Copied exactly from theme-demo2
+   Cobalt 2 is default (defined in :root above)
+   
+   NOTE: Admin UI additions marked with [ADMIN]:
+   - --color-accent-rgb: needed for rgba() calculations in Bootstrap
+   - --color-bg-surface: needed for modal/dropdown overlays
+   - --gradient-primary: stored separately since body uses solid bg
+   =================================================================== */
+
+/* THEME 1: Deep Ocean - Reference theme */
+body.theme-deep-ocean,
+html.theme-deep-ocean {
+    --color-bg-primary: #0a0e1a;
+    --color-bg-primary-solid: #0a0e1a;
+    --color-bg-secondary: #111827;
+    --color-bg-elevated: #1a2234;
+    --color-bg-surface: rgba(26, 34, 52, 0.8); /* [ADMIN] */
+    --color-accent: #3b82f6;
+    --color-accent-hover: #2563eb;
+    --color-accent-rgb: 59, 130, 246; /* [ADMIN] */
+    --color-accent-glow: rgba(59, 130, 246, 0.4);
+    --gradient-primary: linear-gradient(180deg, #0a0e1a 0%, #111827 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+    --color-border: rgba(59, 130, 246, 0.15);
+    --color-border-card: rgba(59, 130, 246, 0.25);
+    --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 40px rgba(59, 130, 246, 0.05);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 40%);
+}
+
+/* THEME 2: Graphite - Deep black with electric blue */
+body.theme-graphite,
+html.theme-graphite {
+    --color-bg-primary: #08080c;
+    --color-bg-primary-solid: #08080c;
+    --color-bg-secondary: #101014;
+    --color-bg-elevated: #18181f;
+    --color-bg-surface: rgba(24, 24, 31, 0.8); /* [ADMIN] */
+    --color-accent: #3b82f6;
+    --color-accent-hover: #2563eb;
+    --color-accent-rgb: 59, 130, 246; /* [ADMIN] */
+    --color-accent-glow: rgba(59, 130, 246, 0.4);
+    --gradient-primary: linear-gradient(180deg, #07070a 0%, #0a0a0f 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+    --color-border: rgba(59, 130, 246, 0.15);
+    --color-border-card: rgba(59, 130, 246, 0.25);
+    --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 40px rgba(59, 130, 246, 0.05);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 40%);
+}
+
+/* THEME 3: Zinc - Modern zinc with teal */
+body.theme-zinc,
+html.theme-zinc {
+    --color-bg-primary: #0a0b0c;
+    --color-bg-primary-solid: #0a0b0c;
+    --color-bg-secondary: #141516;
+    --color-bg-elevated: #1e2021;
+    --color-bg-surface: rgba(30, 32, 33, 0.8); /* [ADMIN] */
+    --color-accent: #2dd4bf;
+    --color-accent-hover: #14b8a6;
+    --color-accent-rgb: 45, 212, 191; /* [ADMIN] */
+    --color-accent-glow: rgba(45, 212, 191, 0.4);
+    --gradient-primary: linear-gradient(180deg, #08090a 0%, #0c0d0e 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 60%, #0d9488 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(45, 212, 191, 0.03) 0%, transparent 50%);
+    --color-border: rgba(45, 212, 191, 0.12);
+    --color-border-card: rgba(45, 212, 191, 0.22);
+    --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 40px rgba(45, 212, 191, 0.05);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.035) 0%, transparent 40%);
+    --color-text-secondary: #a1a1aa;
+    --color-text-muted: #71717a;
+}
+
+/* THEME 4: Obsidian Noir - Ultra-dark with violet luxe */
+body.theme-obsidian-noir,
+html.theme-obsidian-noir {
+    --color-bg-primary: #08080d;
+    --color-bg-primary-solid: #08080d;
+    --color-bg-secondary: #0f0f16;
+    --color-bg-elevated: #16161f;
+    --color-bg-surface: rgba(22, 22, 31, 0.8); /* [ADMIN] */
+    --color-accent: #a78bfa;
+    --color-accent-hover: #8b5cf6;
+    --color-accent-rgb: 167, 139, 250; /* [ADMIN] */
+    --color-accent-glow: rgba(167, 139, 250, 0.4);
+    --gradient-primary: linear-gradient(180deg, #06060a 0%, #0a0a10 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 60%, #7c3aed 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(167, 139, 250, 0.04) 0%, transparent 50%);
+    --color-border: rgba(167, 139, 250, 0.15);
+    --color-border-card: rgba(167, 139, 250, 0.28);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(139, 92, 246, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 35%);
+}
+
+/* THEME 5: Ember - Warm charcoal with orange fire */
+body.theme-ember,
+html.theme-ember {
+    --color-bg-primary: #0b0907;
+    --color-bg-primary-solid: #0b0907;
+    --color-bg-secondary: #151210;
+    --color-bg-elevated: #1e1915;
+    --color-bg-surface: rgba(30, 25, 21, 0.8); /* [ADMIN] */
+    --color-accent: #f97316;
+    --color-accent-hover: #ea580c;
+    --color-accent-rgb: 249, 115, 22; /* [ADMIN] */
+    --color-accent-glow: rgba(249, 115, 22, 0.45);
+    --gradient-primary: linear-gradient(180deg, #0a0806 0%, #0e0b08 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #f97316 0%, #ea580c 60%, #c2410c 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(249, 115, 22, 0.04) 0%, transparent 50%);
+    --color-border: rgba(249, 115, 22, 0.18);
+    --color-border-card: rgba(249, 115, 22, 0.32);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(249, 115, 22, 0.1);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+    --color-warning: #fb923c;
+}
+
+/* THEME 6: Arctic - Cool steel with ice blue */
+body.theme-arctic,
+html.theme-arctic {
+    --color-bg-primary: #090b0f;
+    --color-bg-primary-solid: #090b0f;
+    --color-bg-secondary: #10141a;
+    --color-bg-elevated: #181d25;
+    --color-bg-surface: rgba(24, 29, 37, 0.8); /* [ADMIN] */
+    --color-accent: #38bdf8;
+    --color-accent-hover: #0ea5e9;
+    --color-accent-rgb: 56, 189, 248; /* [ADMIN] */
+    --color-accent-glow: rgba(56, 189, 248, 0.4);
+    --gradient-primary: linear-gradient(180deg, #080a0d 0%, #0b0e12 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 60%, #0284c7 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(56, 189, 248, 0.04) 0%, transparent 50%);
+    --color-border: rgba(56, 189, 248, 0.14);
+    --color-border-card: rgba(56, 189, 248, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.45), 0 0 45px rgba(56, 189, 248, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 38%);
+    --color-info: #7dd3fc;
+}
+
+/* THEME 7: Jade - Rich black with emerald luxury */
+body.theme-jade,
+html.theme-jade {
+    --color-bg-primary: #060908;
+    --color-bg-primary-solid: #060908;
+    --color-bg-secondary: #0d110f;
+    --color-bg-elevated: #141a17;
+    --color-bg-surface: rgba(20, 26, 23, 0.8); /* [ADMIN] */
+    --color-accent: #34d399;
+    --color-accent-hover: #10b981;
+    --color-accent-rgb: 52, 211, 153; /* [ADMIN] */
+    --color-accent-glow: rgba(52, 211, 153, 0.4);
+    --gradient-primary: linear-gradient(180deg, #050807 0%, #080b09 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #34d399 0%, #10b981 60%, #059669 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(52, 211, 153, 0.04) 0%, transparent 50%);
+    --color-border: rgba(52, 211, 153, 0.14);
+    --color-border-card: rgba(52, 211, 153, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(52, 211, 153, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 35%);
+    --color-success: #6ee7b7;
+}
+
+/* THEME 8: Rose Quartz - Dark elegance with pink luxury */
+body.theme-rose-quartz,
+html.theme-rose-quartz {
+    --color-bg-primary: #0b090a;
+    --color-bg-primary-solid: #0b090a;
+    --color-bg-secondary: #141114;
+    --color-bg-elevated: #1c181b;
+    --color-bg-surface: rgba(28, 24, 27, 0.8); /* [ADMIN] */
+    --color-accent: #f472b6;
+    --color-accent-hover: #ec4899;
+    --color-accent-rgb: 244, 114, 182; /* [ADMIN] */
+    --color-accent-glow: rgba(244, 114, 182, 0.4);
+    --gradient-primary: linear-gradient(180deg, #0a080a 0%, #0e0b0d 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #f472b6 0%, #ec4899 60%, #db2777 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(244, 114, 182, 0.04) 0%, transparent 50%);
+    --color-border: rgba(244, 114, 182, 0.14);
+    --color-border-card: rgba(244, 114, 182, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(236, 72, 153, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+}
+
+/* THEME 9: Gold Dust - Luxurious dark with gold accents */
+body.theme-gold-dust,
+html.theme-gold-dust {
+    --color-bg-primary: #0a0907;
+    --color-bg-primary-solid: #0a0907;
+    --color-bg-secondary: #13110d;
+    --color-bg-elevated: #1b1814;
+    --color-bg-surface: rgba(27, 24, 20, 0.8); /* [ADMIN] */
+    --color-accent: #fbbf24;
+    --color-accent-hover: #f59e0b;
+    --color-accent-rgb: 251, 191, 36; /* [ADMIN] */
+    --color-accent-glow: rgba(251, 191, 36, 0.45);
+    --gradient-primary: linear-gradient(180deg, #090806 0%, #0c0a07 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(251, 191, 36, 0.04) 0%, transparent 50%);
+    --color-border: rgba(251, 191, 36, 0.16);
+    --color-border-card: rgba(251, 191, 36, 0.30);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(251, 191, 36, 0.1);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 35%);
+    --color-warning: #fde68a;
+}
+
+/* THEME 10: Crimson - Deep black with red sophistication */
+body.theme-crimson,
+html.theme-crimson {
+    --color-bg-primary: #090707;
+    --color-bg-primary-solid: #090707;
+    --color-bg-secondary: #120e0e;
+    --color-bg-elevated: #1a1414;
+    --color-bg-surface: rgba(26, 20, 20, 0.8); /* [ADMIN] */
+    --color-accent: #f87171;
+    --color-accent-hover: #ef4444;
+    --color-accent-rgb: 248, 113, 113; /* [ADMIN] */
+    --color-accent-glow: rgba(248, 113, 113, 0.4);
+    --gradient-primary: linear-gradient(180deg, #080606 0%, #0c0808 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #f87171 0%, #ef4444 60%, #dc2626 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(248, 113, 113, 0.04) 0%, transparent 50%);
+    --color-border: rgba(248, 113, 113, 0.14);
+    --color-border-card: rgba(248, 113, 113, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(239, 68, 68, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 35%);
+    --color-danger: #fca5a5;
+}
+
+/* THEME 11: Amethyst - Royal purple with crystal clarity */
+body.theme-amethyst,
+html.theme-amethyst {
+    --color-bg-primary: #09070b;
+    --color-bg-primary-solid: #09070b;
+    --color-bg-secondary: #100d15;
+    --color-bg-elevated: #17131d;
+    --color-bg-surface: rgba(23, 19, 29, 0.8); /* [ADMIN] */
+    --color-accent: #c084fc;
+    --color-accent-hover: #a855f7;
+    --color-accent-rgb: 192, 132, 252; /* [ADMIN] */
+    --color-accent-glow: rgba(192, 132, 252, 0.4);
+    --gradient-primary: linear-gradient(180deg, #08060a 0%, #0b080e 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #c084fc 0%, #a855f7 60%, #9333ea 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(192, 132, 252, 0.05) 0%, transparent 50%);
+    --color-border: rgba(192, 132, 252, 0.16);
+    --color-border-card: rgba(192, 132, 252, 0.30);
+    --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 55px rgba(168, 85, 247, 0.1);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.055) 0%, transparent 35%);
+}
+
+/* THEME 12: Sapphire - Deep indigo with bright blue */
+body.theme-sapphire,
+html.theme-sapphire {
+    --color-bg-primary: #07080d;
+    --color-bg-primary-solid: #07080d;
+    --color-bg-secondary: #0d0f18;
+    --color-bg-elevated: #141722;
+    --color-bg-surface: rgba(20, 23, 34, 0.8); /* [ADMIN] */
+    --color-accent: #818cf8;
+    --color-accent-hover: #6366f1;
+    --color-accent-rgb: 129, 140, 248; /* [ADMIN] */
+    --color-accent-glow: rgba(129, 140, 248, 0.4);
+    --gradient-primary: linear-gradient(180deg, #06070c 0%, #090a10 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #818cf8 0%, #6366f1 60%, #4f46e5 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(129, 140, 248, 0.05) 0%, transparent 50%);
+    --color-border: rgba(129, 140, 248, 0.16);
+    --color-border-card: rgba(129, 140, 248, 0.28);
+    --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 55px rgba(99, 102, 241, 0.1);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 38%);
+}
+
+/* THEME 13: Slate Luxe - Refined slate with cyan elegance */
+body.theme-slate-luxe,
+html.theme-slate-luxe {
+    --color-bg-primary: #0a0c10;
+    --color-bg-primary-solid: #0a0c10;
+    --color-bg-secondary: #111520;
+    --color-bg-elevated: #181d2a;
+    --color-bg-surface: rgba(24, 29, 42, 0.8); /* [ADMIN] */
+    --color-accent: #22d3ee;
+    --color-accent-hover: #06b6d4;
+    --color-accent-rgb: 34, 211, 238; /* [ADMIN] */
+    --color-accent-glow: rgba(34, 211, 238, 0.4);
+    --gradient-primary: linear-gradient(180deg, #080a0e 0%, #0c0f14 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #22d3ee 0%, #06b6d4 60%, #0891b2 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(34, 211, 238, 0.04) 0%, transparent 50%);
+    --color-border: rgba(34, 211, 238, 0.14);
+    --color-border-card: rgba(34, 211, 238, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(6, 182, 212, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 38%);
+    --color-text-secondary: #94a3b8;
+}
+
+/* THEME 14: Navy - Classic dark blue accent */
+body.theme-navy,
+html.theme-navy {
+    --color-bg-primary: #080a12;
+    --color-bg-primary-solid: #080a12;
+    --color-bg-secondary: #0e1220;
+    --color-bg-elevated: #151a2c;
+    --color-bg-surface: rgba(21, 26, 44, 0.8); /* [ADMIN] */
+    --color-accent: #4f7cff;
+    --color-accent-hover: #3b68eb;
+    --color-accent-rgb: 79, 124, 255; /* [ADMIN] */
+    --color-accent-glow: rgba(79, 124, 255, 0.35);
+    --gradient-primary: linear-gradient(180deg, #060810 0%, #0a0d16 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #4f7cff 0%, #3b68eb 60%, #2952d4 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(79, 124, 255, 0.04) 0%, transparent 50%);
+    --color-border: rgba(79, 124, 255, 0.14);
+    --color-border-card: rgba(79, 124, 255, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(79, 124, 255, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 38%);
+}
+
+/* THEME 15: Cobalt - Rich cobalt blue sophistication */
+body.theme-cobalt,
+html.theme-cobalt {
+    --color-bg-primary: #070a14;
+    --color-bg-primary-solid: #070a14;
+    --color-bg-secondary: #0c1020;
+    --color-bg-elevated: #12182c;
+    --color-bg-surface: rgba(18, 24, 44, 0.8); /* [ADMIN] */
+    --color-accent: #2563eb;
+    --color-accent-hover: #1d4ed8;
+    --color-accent-rgb: 37, 99, 235; /* [ADMIN] */
+    --color-accent-glow: rgba(37, 99, 235, 0.4);
+    --gradient-primary: linear-gradient(180deg, #050810 0%, #080c18 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #2563eb 0%, #1d4ed8 60%, #1e40af 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(37, 99, 235, 0.05) 0%, transparent 50%);
+    --color-border: rgba(37, 99, 235, 0.16);
+    --color-border-card: rgba(37, 99, 235, 0.28);
+    --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 50px rgba(37, 99, 235, 0.1);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 35%);
+}
+
+/* THEME 16: Midnight Blue - Deep midnight with steel blue accent */
+body.theme-midnight-blue,
+html.theme-midnight-blue {
+    --color-bg-primary: #080b12;
+    --color-bg-primary-solid: #080b12;
+    --color-bg-secondary: #0d1220;
+    --color-bg-elevated: #14192e;
+    --color-bg-surface: rgba(20, 25, 46, 0.8); /* [ADMIN] */
+    --color-accent: #6889ff;
+    --color-accent-hover: #5070f0;
+    --color-accent-rgb: 104, 137, 255; /* [ADMIN] */
+    --color-accent-glow: rgba(104, 137, 255, 0.35);
+    --gradient-primary: linear-gradient(180deg, #06090f 0%, #0a0e18 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #6889ff 0%, #5070f0 60%, #3d5bd9 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(104, 137, 255, 0.04) 0%, transparent 50%);
+    --color-border: rgba(104, 137, 255, 0.14);
+    --color-border-card: rgba(104, 137, 255, 0.26);
+    --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(104, 137, 255, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 38%);
+    --color-text-secondary: #a0aec0;
+}
+
+/* THEME 17: Cobalt 2 - Enhanced cobalt with brighter text & borders (DEFAULT) */
+/* Note: Cobalt 2 is the default theme, values also defined in :root */
+body.theme-cobalt-2,
+html.theme-cobalt-2 {
+    --color-bg-primary: #070a14;
+    --color-bg-primary-solid: #070a14;
+    --color-bg-secondary: #0c1020;
+    --color-bg-elevated: #141c30;
+    --color-bg-surface: rgba(20, 28, 48, 0.8); /* [ADMIN] */
+    --color-accent: #3b7cf5;
+    --color-accent-hover: #2563eb;
+    --color-accent-rgb: 59, 124, 245; /* [ADMIN] */
+    --color-accent-glow: rgba(59, 124, 245, 0.4);
+    --gradient-primary: linear-gradient(180deg, #050810 0%, #080c18 100%); /* [ADMIN] */
+    --gradient-accent: linear-gradient(135deg, #3b7cf5 0%, #2563eb 60%, #1d4ed8 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(59, 124, 245, 0.05) 0%, transparent 50%);
+    /* Brighter borders - from demo2 */
+    --color-border: rgba(100, 150, 255, 0.25);
+    --color-border-card: rgba(100, 150, 255, 0.38);
+    --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 50px rgba(59, 124, 245, 0.12);
+    --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+    /* Brighter text colors - from demo2 */
+    --color-text-primary: #f8fafc;
+    --color-text-secondary: #c8d4e6;
+    --color-text-muted: #8fa3c0;
+}
+
+/* ===================================================================
+   UI DENSITY MODES
+   =================================================================== */
+
+/* Compact Mode */
+body.density-compact,
+html.density-compact {
+    --density-space-xs: 0.25rem;
+    --density-space-sm: 0.375rem;
+    --density-space-md: 0.625rem;
+    --density-space-lg: 0.875rem;
+    --density-space-xl: 1.25rem;
+    --density-space-2xl: 1.75rem;
+    --density-font-sm: 0.8125rem;
+    --density-font-xs: 0.6875rem;
+    --density-table-padding: 0.625rem;
+    --density-card-padding: 0.875rem;
+    --density-input-padding-y: 0.375rem;
+    --density-input-padding-x: 0.75rem;
+    --density-card-gap: 1rem;
+    --density-navbar-height: 44px;
+    
+    /* Update base spacing */
+    --space-xs: var(--density-space-xs);
+    --space-sm: var(--density-space-sm);
+    --space-md: var(--density-space-md);
+    --space-lg: var(--density-space-lg);
+    --space-xl: var(--density-space-xl);
+    --space-2xl: var(--density-space-2xl);
+}
+
+/* Ultra Compact Mode */
+body.density-ultra-compact,
+html.density-ultra-compact {
+    --density-space-xs: 0.125rem;
+    --density-space-sm: 0.25rem;
+    --density-space-md: 0.375rem;
+    --density-space-lg: 0.5rem;
+    --density-space-xl: 0.75rem;
+    --density-space-2xl: 1rem;
+    --density-font-sm: 0.75rem;
+    --density-font-xs: 0.625rem;
+    --density-table-padding: 0.375rem;
+    --density-card-padding: 0.5rem;
+    --density-input-padding-y: 0.25rem;
+    --density-input-padding-x: 0.5rem;
+    --density-card-gap: 0.75rem;
+    --density-navbar-height: 38px;
+    
+    /* Update base spacing */
+    --space-xs: var(--density-space-xs);
+    --space-sm: var(--density-space-sm);
+    --space-md: var(--density-space-md);
+    --space-lg: var(--density-space-lg);
+    --space-xl: var(--density-space-xl);
+    --space-2xl: var(--density-space-2xl);
+}
+
+/* ===================================================================
+   DENSITY-AWARE LAYOUTS (Card Grids with Horizontal Spacing)
+   =================================================================== */
+
+/* Stats grid - respects density card gap */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--density-card-gap);
+    margin-bottom: var(--density-card-gap);
+}
+
+/* Card grids - respects density for horizontal spacing */
+.card-grid,
+.grid.gap-cards {
+    gap: var(--density-card-gap);
+}
+
+/* Ensure admin dashboard uses density-aware spacing */
+.admin-content .grid-cols-4,
+.admin-content .grid-cols-3,
+.admin-content .grid-cols-2 {
+    gap: var(--density-card-gap);
+}
+
+/* Table container padding - respects density */
+.table td,
+.table th {
+    padding: var(--density-table-padding);
+}
+
+/* Card body padding - respects density */
+.card-body,
+.card-header,
+.card-footer {
+    padding: var(--density-card-padding);
+}
+
+/* Input padding - respects density */
+.form-control,
+.form-select {
+    padding: var(--density-input-padding-y) var(--density-input-padding-x);
+}
+
+/* Button sizing - respects density */
+.btn {
+    padding: var(--density-input-padding-y) var(--density-card-padding);
+}
+
+.btn-sm {
+    padding: calc(var(--density-input-padding-y) * 0.75) calc(var(--density-card-padding) * 0.75);
+    font-size: var(--density-font-sm);
+}
+
+/* Navbar height - respects density */
+.app-header,
+.navbar {
+    min-height: var(--density-navbar-height);
+}
+
+/* Font sizes - respects density */
+.text-sm,
+.table td,
+.form-control,
+.btn {
+    font-size: var(--density-font-sm);
+}
+
+.text-xs,
+.badge {
+    font-size: var(--density-font-xs);
 }
 
 /* ===================================================================
@@ -137,12 +682,13 @@ code {
 }
 
 .app-header {
-    background: var(--gradient-surface);
-    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border-card, var(--color-border));
     backdrop-filter: blur(10px);
     position: sticky;
     top: 0;
     z-index: 100;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 
 .app-main {
@@ -300,16 +846,110 @@ code {
 }
 
 /* ===================================================================
+   DROPDOWN MENUS (Bootstrap 5 override for dark theme)
+   =================================================================== */
+
+.dropdown-menu {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-card);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xl), 0 0 30px rgba(0, 0, 0, 0.4);
+    padding: 0.5rem 0;
+    min-width: 12rem;
+}
+
+.dropdown-item {
+    color: var(--color-text-secondary);
+    padding: 0.5rem 1rem;
+    transition: all var(--transition-fast);
+    border-radius: 0;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background: rgba(var(--color-accent-rgb), 0.15);
+    color: var(--color-accent);
+}
+
+.dropdown-item.text-danger {
+    color: var(--color-danger) !important;
+}
+
+.dropdown-item.text-danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--color-danger) !important;
+}
+
+.dropdown-item i {
+    opacity: 0.8;
+}
+
+.dropdown-divider {
+    border-color: var(--color-border);
+    margin: 0.25rem 0;
+}
+
+/* Dropdown toggle button in navbar */
+.btn-outline-light.dropdown-toggle {
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+    background: transparent;
+}
+
+.btn-outline-light.dropdown-toggle:hover,
+.btn-outline-light.dropdown-toggle:focus {
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
+    background: rgba(var(--color-accent-rgb), 0.1);
+}
+
+.btn-outline-light.dropdown-toggle.show {
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
+    background: rgba(var(--color-accent-rgb), 0.15);
+}
+
+/* Nav dropdown toggle */
+.nav-link.dropdown-toggle::after {
+    opacity: 0.6;
+}
+
+.nav-link.dropdown-toggle:hover::after,
+.nav-link.dropdown-toggle.show::after {
+    opacity: 1;
+}
+
+/* ===================================================================
    CARDS
    =================================================================== */
 
 .card {
-    background: var(--gradient-surface);
-    border: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-card, var(--color-border));
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--card-shadow, var(--shadow-lg));
     overflow: hidden;
+    position: relative;
     transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+/* Glossy overlay effect like demo2 */
+.card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--glossy-overlay, transparent);
+    pointer-events: none;
+    border-radius: var(--radius-lg);
 }
 
 .card:hover {
@@ -568,6 +1208,12 @@ textarea.form-control {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.875rem;
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--color-text-secondary);
+    --bs-table-hover-bg: rgba(59, 130, 246, 0.05);
+    --bs-table-hover-color: var(--color-text-primary);
+    --bs-table-striped-bg: rgba(0, 0, 0, 0.1);
+    background: transparent;
 }
 
 .table-modern {
@@ -791,7 +1437,8 @@ textarea.form-control {
 .text-left { text-align: left; }
 .text-center { text-align: center; }
 .text-right { text-align: right; }
-.text-muted { color: var(--color-text-muted); }
+/* Bootstrap 5.3 uses !important on .text-muted, so we must too */
+.text-muted { color: var(--color-text-muted) !important; }
 .text-secondary { color: var(--color-text-secondary); }
 .text-primary { color: var(--color-text-primary); }
 .text-success { color: var(--color-success); }
@@ -1062,6 +1709,134 @@ textarea.form-control {
 }
 
 /* ===================================================================
+   THEME & DENSITY SWITCHER (Navbar Dropdown)
+   =================================================================== */
+
+.theme-switcher {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.theme-switcher-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: 0.875rem;
+}
+
+.theme-switcher-btn:hover {
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
+}
+
+.theme-switcher-btn .icon {
+    font-size: 1rem;
+}
+
+.theme-switcher-dropdown {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    min-width: 220px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-card);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl), 0 0 40px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all var(--transition-fast);
+}
+
+.theme-switcher.open .theme-switcher-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.theme-switcher-section {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.theme-switcher-section:last-child {
+    border-bottom: none;
+}
+
+.theme-switcher-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-muted);
+    margin-bottom: 0.5rem;
+    padding: 0 0.25rem;
+}
+
+.theme-option,
+.density-option {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.theme-option:hover,
+.density-option:hover {
+    background: var(--color-bg-elevated);
+}
+
+.theme-option.active,
+.density-option.active {
+    background: rgba(var(--color-accent-rgb), 0.15);
+    color: var(--color-accent);
+}
+
+.theme-swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.theme-option-name {
+    font-size: 0.8125rem;
+    color: var(--color-text-primary);
+    flex: 1;
+}
+
+.theme-option.active .theme-option-name {
+    color: var(--color-accent);
+}
+
+.density-option-icon {
+    font-size: 0.875rem;
+    width: 20px;
+    text-align: center;
+}
+
+.density-option-name {
+    font-size: 0.8125rem;
+    color: var(--color-text-primary);
+}
+
+.density-option.active .density-option-name {
+    color: var(--color-accent);
+}
+
+/* ===================================================================
    RESPONSIVE
    =================================================================== */
 
@@ -1109,6 +1884,11 @@ textarea.form-control {
 .login-card {
     width: 100%;
     max-width: 400px;
+}
+
+/* Disable hover lift effect on login card for cleaner UX */
+.login-card:hover {
+    transform: none;
 }
 
 .login-header {

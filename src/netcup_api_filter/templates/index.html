@@ -1,0 +1,203 @@
+{# Index Page - Public landing page #}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark" data-theme="cobalt2">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netcup API Filter - Secure DNS API Proxy</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Custom Theme CSS -->
+    <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+    
+    <style>
+        .hero {
+            min-height: 60vh;
+            display: flex;
+            align-items: center;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        }
+        .feature-icon {
+            width: 4rem;
+            height: 4rem;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg fixed-top" data-bs-theme="dark" style="background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-shield-lock me-2"></i>NAF
+            </a>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('account.login') }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-person me-1"></i>Login
+                </a>
+                <a href="{{ url_for('admin.login') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-gear me-1"></i>Admin
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container text-center">
+            <i class="bi bi-shield-lock display-1 text-primary mb-4"></i>
+            <h1 class="display-4 fw-bold mb-3">Netcup API Filter</h1>
+            <p class="lead text-muted mb-4" style="max-width: 600px; margin: 0 auto;">
+                Secure, scoped access to Netcup DNS API. Delegate DNS management without exposing your master credentials.
+            </p>
+            <div class="d-flex gap-3 justify-content-center">
+                <a href="{{ url_for('account.register') }}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-person-plus me-1"></i>Get Started
+                </a>
+                <a href="#features" class="btn btn-outline-light btn-lg">
+                    Learn More
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-5">
+        <div class="container">
+            <h2 class="text-center mb-5">Why Use NAF?</h2>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card h-100 text-center">
+                        <div class="card-body">
+                            <div class="feature-icon bg-primary bg-opacity-10 mx-auto mb-3">
+                                <i class="bi bi-shield-check text-primary fs-3"></i>
+                            </div>
+                            <h5>Scoped Access</h5>
+                            <p class="text-muted">
+                                Grant access to specific domains, record types, and operations. 
+                                No need to share your master API credentials.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 text-center">
+                        <div class="card-body">
+                            <div class="feature-icon bg-success bg-opacity-10 mx-auto mb-3">
+                                <i class="bi bi-key text-success fs-3"></i>
+                            </div>
+                            <h5>Token-Based Auth</h5>
+                            <p class="text-muted">
+                                Generate multiple tokens per realm. Revoke individual tokens 
+                                without affecting others.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 text-center">
+                        <div class="card-body">
+                            <div class="feature-icon bg-info bg-opacity-10 mx-auto mb-3">
+                                <i class="bi bi-journal-text text-info fs-3"></i>
+                            </div>
+                            <h5>Full Audit Log</h5>
+                            <p class="text-muted">
+                                Every API call is logged. Know who changed what, when, 
+                                and from where.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Use Cases Section -->
+    <section class="py-5 bg-dark bg-opacity-50">
+        <div class="container">
+            <h2 class="text-center mb-5">Common Use Cases</h2>
+            <div class="row g-4">
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-transparent border h-100">
+                        <div class="card-body">
+                            <i class="bi bi-house text-primary fs-4 mb-2"></i>
+                            <h6>Dynamic DNS</h6>
+                            <small class="text-muted">
+                                Keep your home IP updated automatically without exposing 
+                                full DNS access.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-transparent border h-100">
+                        <div class="card-body">
+                            <i class="bi bi-shield-lock text-warning fs-4 mb-2"></i>
+                            <h6>Let's Encrypt</h6>
+                            <small class="text-muted">
+                                Automate DNS-01 challenges for wildcard certificates 
+                                with minimal permissions.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-transparent border h-100">
+                        <div class="card-body">
+                            <i class="bi bi-people text-success fs-4 mb-2"></i>
+                            <h6>Team Delegation</h6>
+                            <small class="text-muted">
+                                Give team members access to specific subdomains 
+                                without full control.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="card bg-transparent border h-100">
+                        <div class="card-body">
+                            <i class="bi bi-gear text-info fs-4 mb-2"></i>
+                            <h6>CI/CD Pipelines</h6>
+                            <small class="text-muted">
+                                Deploy with scoped tokens that can only modify 
+                                specific environments.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-5 text-center">
+        <div class="container">
+            <h2 class="mb-4">Ready to Secure Your DNS Access?</h2>
+            <a href="{{ url_for('account.register') }}" class="btn btn-primary btn-lg">
+                <i class="bi bi-rocket me-1"></i>Create Free Account
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="py-4 border-top">
+        <div class="container text-center text-muted">
+            <small>
+                &copy; {{ now().year }} Netcup API Filter • 
+                <a href="#" class="text-muted">Documentation</a> • 
+                <a href="#" class="text-muted">Privacy</a> • 
+                <a href="#" class="text-muted">Terms</a>
+            </small>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

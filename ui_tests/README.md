@@ -1,8 +1,65 @@
-# UI Regression Tests
+# UI Testing Suite
 
-Automated UI coverage is implemented using the Playwright container that
-runs under `tooling/playwright`. The tests are written in Python with
-`pytest` + `pytest-asyncio` and execute inside the container.
+Automated UI coverage using a multi-layer testing strategy:
+
+| Layer | File | Tool | Purpose |
+|-------|------|------|---------|
+| Static Audit | `admin_ux_audit.py` | httpx + BeautifulSoup | Element presence, form fields, 500 errors |
+| Functional | `tests/test_ui_functional.py` | Playwright | JS behavior, CSS validation, navigation consistency |
+| UX Validation | `tests/test_ui_ux_validation.py` | Playwright | Page structure, navigation links |
+| Comprehensive | `tests/test_ui_comprehensive.py` | Playwright | Full admin workflows |
+
+## Testing Layers Explained
+
+### Layer 1: Static Audit (httpx - No JavaScript)
+
+```bash
+python ui_tests/admin_ux_audit.py --base-url http://localhost:5100
+```
+
+**What it tests:**
+- All admin pages return 200 (no 500 errors)
+- Required form fields exist
+- Navigation links present
+- Page structure matches UI_REQUIREMENTS.md
+
+**Limitations:**
+- ❌ No JavaScript execution
+- ❌ Cannot test theme switching
+- ❌ Cannot test form validation
+- ❌ Cannot test dropdowns/modals
+
+**Use for:** Quick sanity checks, CI/CD validation
+
+### Layer 2: Playwright Functional Tests
+
+```bash
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py -v
+```
+
+**What it tests:**
+
+1. **JavaScript Behavior:**
+   - Password toggle reveals/hides text
+   - Entropy calculation updates dynamically
+   - Generate button creates strong passwords
+   - Submit button enables when requirements met
+   - Mismatch warning appears for different passwords
+
+2. **CSS Variable Validation:**
+   - Theme variables defined (`--color-bg-primary`, etc.)
+   - Tables don't have white background on dark theme
+   - Theme applies immediately (no reload needed)
+
+3. **Navigation Consistency Matrix:**
+   - Navbar on all pages
+   - Same links across all pages
+   - No stale breadcrumbs
+   - No icons in H1 headings
+   - Footer with build info
+   - Logout accessible everywhere
+
+**Use for:** After CSS/JS changes, theme modifications
 
 ## Prerequisites
 
@@ -62,9 +119,34 @@ against production.
 ## Running the suite
 
 ```bash
+# All tests
 docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -q
+
+# Specific test file
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py -v
+
+# Specific test class
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py::TestThemeAndCSS -v
 ```
 
 Screenshots stay inside the Playwright container under `/screenshots`; copy any
 artifacts out with `docker cp playwright:/screenshots/<file> ./screenshots/`
 if you need to attach them to an issue or PR.
+
+## Test Organization
+
+```
+ui_tests/
+├── admin_ux_audit.py          # Static audit (httpx, no browser)
+├── browser.py                 # Playwright browser wrapper
+├── config.py                  # Test configuration
+├── conftest.py                # Pytest fixtures
+├── workflows.py               # Common test workflows
+├── tests/
+│   ├── test_ui_functional.py  # JS/CSS/Navigation tests (NEW)
+│   ├── test_ui_ux_validation.py  # Page structure tests
+│   ├── test_ui_comprehensive.py  # Full workflow tests
+│   ├── test_admin_ui.py       # Admin-specific tests
+│   └── ...
+└── baselines/                 # Visual regression baselines
+```

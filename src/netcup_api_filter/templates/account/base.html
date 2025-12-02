@@ -1,0 +1,55 @@
+{# Account Portal Base - Navigation for client/account portal #}
+{% extends "base.html" %}
+
+{% block brand_link %}{{ url_for('account.dashboard') }}{% endblock %}
+
+{% block nav_items %}
+<ul class="navbar-nav me-auto">
+    <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'account.dashboard' %}active{% endif %}" 
+           href="{{ url_for('account.dashboard') }}">
+            <i class="bi bi-speedometer2 me-1"></i>Dashboard
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.endpoint and 'realm' in request.endpoint %}active{% endif %}" 
+           href="{{ url_for('account.realms') }}">
+            <i class="bi bi-globe me-1"></i>Realms
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.endpoint and 'token' in request.endpoint %}active{% endif %}" 
+           href="{{ url_for('account.tokens') }}">
+            <i class="bi bi-key me-1"></i>Tokens
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'account.docs' %}active{% endif %}" 
+           href="{{ url_for('account.api_docs') }}">
+            <i class="bi bi-book me-1"></i>API Docs
+        </a>
+    </li>
+</ul>
+{% endblock %}
+
+{% block user_menu %}
+<div class="dropdown">
+    <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        <i class="bi bi-person-circle me-1"></i>
+        {{ g.account.username if g.account else 'Account' }}
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+            <a class="dropdown-item" href="{{ url_for('account.settings') }}">
+                <i class="bi bi-gear me-2"></i>Settings
+            </a>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+            <a class="dropdown-item text-danger" href="{{ url_for('account.account_logout') }}">
+                <i class="bi bi-box-arrow-right me-2"></i>Logout
+            </a>
+        </li>
+    </ul>
+</div>
+{% endblock %}

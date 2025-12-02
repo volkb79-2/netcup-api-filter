@@ -1,0 +1,128 @@
+{# Account Token Created - Display newly generated token #}
+{% extends "account/base.html" %}
+
+{% block title %}Token Generated - Client Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Success Header -->
+<div class="text-center mb-4">
+    <div class="bg-success bg-opacity-10 rounded-circle d-inline-flex p-4 mb-3">
+        <i class="bi bi-check-circle text-success display-4"></i>
+    </div>
+    <h1 class="h3 mb-1">Token Generated Successfully</h1>
+    <p class="text-muted">Your new API token is ready to use</p>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- Token Display -->
+        <div class="card mb-4 border-warning">
+            <div class="card-header bg-warning text-dark">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Copy Your Token Now - It Won't Be Shown Again!
+            </div>
+            <div class="card-body">
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control font-monospace" id="tokenValue" 
+                           value="{{ token }}" readonly>
+                    <button type="button" class="btn btn-primary" onclick="copyToken()">
+                        <i class="bi bi-clipboard me-1"></i>Copy
+                    </button>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">Length: {{ token | length }} characters</small>
+                    <span class="badge bg-success" id="copyBadge" style="display: none;">
+                        <i class="bi bi-check me-1"></i>Copied!
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Token Details -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i>Token Details
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th class="text-muted w-25">Realm</th>
+                        <td class="font-monospace">{{ realm.realm_value }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Type</th>
+                        <td>{{ realm.realm_type }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Record Types</th>
+                        <td>{{ realm.allowed_record_types | join(', ') }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Operations</th>
+                        <td>{{ realm.allowed_operations | join(', ') }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Prefix</th>
+                        <td><code>{{ token[:20] }}...</code></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Usage Examples -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-code-slash me-1"></i>Quick Start Examples
+            </div>
+            <div class="card-body">
+                <h6>cURL - List Records</h6>
+                <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X GET "{{ request.url_root }}api/dns/records?domain={{ realm.realm_value }}" \
+  -H "Authorization: Bearer {{ token }}"</code></pre>
+                
+                <h6>cURL - Update A Record</h6>
+                <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X PUT "{{ request.url_root }}api/dns/records" \
+  -H "Authorization: Bearer {{ token }}" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname": "{{ realm.realm_value }}", "type": "A", "value": "1.2.3.4"}'</code></pre>
+                
+                <h6>Python</h6>
+                <pre class="bg-dark text-light p-3 rounded small mb-0"><code>import requests
+
+headers = {"Authorization": "Bearer {{ token }}"}
+response = requests.get(
+    "{{ request.url_root }}api/dns/records",
+    params={"domain": "{{ realm.realm_value }}"},
+    headers=headers
+)
+print(response.json())</code></pre>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="d-flex justify-content-between">
+            <a href="{{ url_for('account.token_create') }}" class="btn btn-outline-primary">
+                <i class="bi bi-plus-circle me-1"></i>Generate Another Token
+            </a>
+            <a href="{{ url_for('account.tokens') }}" class="btn btn-primary">
+                <i class="bi bi-list me-1"></i>View All Tokens
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function copyToken() {
+    const tokenInput = document.getElementById('tokenValue');
+    tokenInput.select();
+    tokenInput.setSelectionRange(0, 99999);
+    
+    navigator.clipboard.writeText(tokenInput.value).then(function() {
+        const badge = document.getElementById('copyBadge');
+        badge.style.display = 'inline-block';
+        setTimeout(() => { badge.style.display = 'none'; }, 2000);
+    });
+}
+</script>
+{% endblock %}

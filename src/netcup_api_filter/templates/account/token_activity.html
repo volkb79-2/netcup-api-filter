@@ -1,0 +1,158 @@
+{# Token Activity Page #}
+{% extends "account/base.html" %}
+
+{% block title %}Token Activity{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center">
+            <a href="{{ url_for('account.tokens') }}" class="btn btn-outline-secondary btn-sm me-3">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <div>
+                <h2 class="mb-0">Token Activity</h2>
+                <small class="text-muted">{{ token.name }} • {{ token.prefix }}...</small>
+            </div>
+        </div>
+        <div>
+            <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Token Info -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <small class="text-muted d-block">Token</small>
+                    <strong>{{ token.name }}</strong>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-muted d-block">Realm</small>
+                    <span class="badge bg-primary">{{ token.realm.realm_value }}</span>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-muted d-block">Status</small>
+                    {% if token.is_active %}
+                        <span class="badge bg-success">Active</span>
+                    {% else %}
+                        <span class="badge bg-danger">Revoked</span>
+                    {% endif %}
+                </div>
+                <div class="col-md-3">
+                    <small class="text-muted d-block">Total Requests</small>
+                    <strong>{{ logs | length }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-activity me-2"></i>Recent Activity
+            </h5>
+            <div class="d-flex gap-2">
+                <select class="form-select form-select-sm" id="filter-status" style="width: auto;">
+                    <option value="">All Status</option>
+                    <option value="success">Success</option>
+                    <option value="error">Error</option>
+                    <option value="denied">Denied</option>
+                </select>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if logs %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Operation</th>
+                            <th>Record</th>
+                            <th>Status</th>
+                            <th>Source IP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activity-table">
+                        {% for log in logs %}
+                        <tr data-status="{{ log.status | default('success') }}">
+                            <td>
+                                <span class="text-muted" title="{{ log.timestamp }}">
+                                    {{ log.timestamp | default('--') }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if log.operation == 'read' %}
+                                    <span class="badge bg-info">READ</span>
+                                {% elif log.operation == 'create' %}
+                                    <span class="badge bg-success">CREATE</span>
+                                {% elif log.operation == 'update' %}
+                                    <span class="badge bg-warning">UPDATE</span>
+                                {% elif log.operation == 'delete' %}
+                                    <span class="badge bg-danger">DELETE</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ log.operation | upper }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <code>{{ log.record_name | default('--') }}</code>
+                                {% if log.record_type %}
+                                <span class="badge bg-secondary ms-1">{{ log.record_type }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.status == 'success' %}
+                                    <span class="text-success">
+                                        <i class="bi bi-check-circle me-1"></i>Success
+                                    </span>
+                                {% elif log.status == 'error' %}
+                                    <span class="text-danger" title="{{ log.error_message | default('') }}">
+                                        <i class="bi bi-x-circle me-1"></i>Error
+                                    </span>
+                                {% elif log.status == 'denied' %}
+                                    <span class="text-warning" title="{{ log.error_message | default('') }}">
+                                        <i class="bi bi-shield-x me-1"></i>Denied
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">{{ log.status | default('--') }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <code class="small">{{ log.source_ip | default('--') }}</code>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <p class="text-muted mt-3">No activity recorded yet</p>
+                <p class="text-muted small">API calls made with this token will appear here</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Filter by status
+document.getElementById('filter-status').addEventListener('change', function() {
+    const filter = this.value.toLowerCase();
+    document.querySelectorAll('#activity-table tr').forEach(row => {
+        if (!filter || row.dataset.status === filter) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+});
+</script>
+{% endblock %}

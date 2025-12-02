@@ -144,6 +144,55 @@ See `HTTPS_LOCAL_TESTING.md` for complete setup, debugging, and integration guid
 4. Re-run script → next error or success
 5. Iterate until all prerequisites met
 
+## Python Logging Guidelines
+
+**CRITICAL**: Use structured, level-based logging for debugging and operations.
+
+```python
+import logging
+import os
+
+# Get logger for module (NOT root logger)
+logger = logging.getLogger(__name__)
+
+# Log level from environment (config-driven, not hardcoded)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+```
+
+**Log Level Usage:**
+
+| Level | When to Use | Example |
+|-------|-------------|---------|
+| `DEBUG` | Detailed flow tracing, variable values | `logger.debug(f"Token lookup: username={username}, prefix={prefix}")` |
+| `INFO` | Normal operations, milestones | `logger.info(f"Account {username} approved by admin")` |
+| `WARNING` | Unexpected but recoverable | `logger.warning(f"Token {prefix} near expiry: {days_left} days")` |
+| `ERROR` | Failures requiring attention | `logger.error(f"SMTP send failed: {exc}", exc_info=True)` |
+| `CRITICAL` | System-breaking issues | `logger.critical("Database connection lost")` |
+
+**Rules:**
+- **NEVER** use `print()` for operational messages
+- **ALWAYS** use f-strings with context: `logger.info(f"Action X for user={user}")` 
+- **INCLUDE** relevant IDs in messages: token_prefix, username, realm_value
+- **SECURITY**: Never log full tokens, passwords, or secrets. Log prefixes/IDs only.
+- **DEBUG level** for all detailed tracing (disabled in production by default)
+
+```python
+# ✅ Good: Contextual, leveled, secure
+logger.debug(f"Permission check: token_prefix={token.prefix}, operation={op}")
+logger.info(f"DNS record updated: domain={domain}, type={record_type}, by token={token.prefix}")
+logger.warning(f"IP {source_ip} not in whitelist for token {token.prefix}")
+logger.error(f"Netcup API error: {exc}", exc_info=True)
+
+# ❌ Bad: No context, exposes secrets, wrong level
+print(f"Updated record")  # No context, print instead of logger
+logger.info(f"Token: {full_token}")  # NEVER log full token!
+logger.debug(f"Error occurred")  # Errors should be ERROR level
+```
+
 ## deploy to live server via webhosting
 
 **CRITICAL: ALWAYS use `./build-and-deploy.sh` for deployments**
@@ -170,6 +219,170 @@ See `ENV_DEFAULTS.md` for complete documentation on the environment defaults sys
 flow (default credentials from `.env.defaults` → TestAdmin123!). The password change is persisted to `.env.webhosting`
 (stored in Playwright's writable `/screenshots/` mount) so subsequent test runs automatically
 use the new password. Database resets are only needed when you want to start fresh.
+
+## Deployment State Files (CRITICAL)
+
+**ALWAYS keep deployment state files in sync with actual database state.**
+
+| Target | State File | Purpose |
+|--------|------------|---------|
+| Local | `deployment_state_local.json` | Tracks local deploy credentials |
+| Webhosting | `deployment_state_webhosting.json` | Tracks production credentials |
+
+**Agent responsibilities:**
+1. After `build_deployment.py --local`: Update `deployment_state_local.json` with default credentials (`admin`/`admin`, `must_change_password: true`)
+2. After password change (manual or automated): Update state file with new password
+3. After database reset/rebuild: Reset state file to defaults
+4. **NEVER** leave state file out of sync with database
+
+**State file format:**
+```json
+{
+  "target": "local",
+  "admin": {
+    "username": "admin",
+    "password": "current-actual-password",
+    "must_change_password": false
+  },
+  "last_updated_at": "ISO-8601-timestamp",
+  "updated_by": "agent|ui_test|manual"
+}
+```
+
+**Verification before login attempts:**
+```bash
+# Check database matches state file
+sqlite3 deploy-local/netcup_filter.db "SELECT must_change_password FROM accounts WHERE username='admin';"
+```
+
+## Use-Case-Driven Exploratory Testing
+
+**After major UI/UX changes, run exploratory testing to verify all admin pages work correctly.**
+
+This is a proactive approach to finding issues - test based on user workflows, not just code coverage.
+
+### Testing Layers
+
+| Layer | Tool | What It Tests | Limitations |
+|-------|------|---------------|-------------|
+| **Static Audit** | `admin_ux_audit.py` (httpx) | Element presence, form fields, 500 errors | No JS execution |
+| **Functional Tests** | `test_ui_functional.py` (Playwright) | JS behavior, theme switching, form validation | Slower, needs browser |
+| **Visual Regression** | Screenshot comparison | Layout changes, CSS drift | Requires baselines |
+
+### Layer 1: Quick Static Audit (httpx)
+
+```bash
+# Run after starting local deployment
+python ui_tests/admin_ux_audit.py --base-url http://localhost:5100
+```
+
+The audit script (`ui_tests/admin_ux_audit.py`) systematically:
+- Tests all admin pages against `docs/UI_REQUIREMENTS.md`
+- Verifies forms, inputs, buttons, and navigation links
+- Checks for 500 errors, missing elements, and broken workflows
+- Reports pass/fail with actionable details
+
+**Limitations:** Uses httpx (no JavaScript execution). Cannot verify:
+- Theme/density switcher behavior
+- Password strength calculation
+- Dropdown menus opening
+- Modal dialogs
+- Any client-side validation
+
+**Exit codes:** 0 = all checks passed, N = number of issues found.
+
+### Layer 2: Playwright Functional Tests
+
+```bash
+# Start Playwright container
+cd tooling/playwright && docker compose up -d
+
+# Run functional UI tests
+docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py -v
+```
+
+The functional tests (`ui_tests/tests/test_ui_functional.py`) verify:
+
+**JavaScript Behavior:**
+- Password toggle (eye icon) switches input type
+- Password entropy calculation updates dynamically
+- Generate button creates strong passwords
+- Form validation enables/disables submit button
+- Password mismatch warning displays
+
+**CSS Variable Validation:**
+- Theme CSS variables are defined (`--color-bg-primary`, etc.)
+- Tables respect theme background (not white on dark theme)
+- Theme changes apply immediately without reload
+- Density classes are applied correctly
+
+**Navigation Consistency Matrix:**
+- Navbar present on ALL admin pages
+- Same navigation links across all pages
+- No stale breadcrumbs (removed per UX update)
+- No icons in H1 headings (removed per UX update)
+- Footer with build info on all pages
+- Logout link accessible everywhere
+
+**Interactive Elements:**
+- Dropdown menus open on click
+- Modal dialogs function correctly
+- Form inputs accept and retain values
+- Copy buttons are clickable
+
+### Layer 3: Full Test Suite
+
+```bash
+# Run complete test suite (builds, deploys, runs all layers)
+./run-local-tests.sh
+```
+
+### When to Run Each Layer
+
+| Scenario | Static Audit | Functional Tests | Full Suite |
+|----------|--------------|------------------|------------|
+| Quick sanity check | ✅ | ❌ | ❌ |
+| After template changes | ✅ | ✅ | ❌ |
+| After CSS/theme changes | ❌ | ✅ | ❌ |
+| After JS changes | ❌ | ✅ | ❌ |
+| Before marking task complete | ✅ | ✅ | ✅ |
+| Before deployment | ❌ | ❌ | ✅ |
+
+### Workflow for Agents
+
+**Agents MUST run exploratory testing after:**
+1. Modifying admin templates (login, dashboard, config pages)
+2. Changing form handling or validation logic
+3. Updating navigation or layout components
+4. Modifying CSS themes or variables
+5. Adding/changing JavaScript functionality
+6. Fixing bugs that affect multiple pages
+7. Before marking a UI-related task as complete
+
+**Standard Workflow:**
+1. Deploy locally: `./deploy.sh local --skip-tests`
+2. Run static audit: `python ui_tests/admin_ux_audit.py`
+3. Run functional tests: `docker exec playwright pytest ui_tests/tests/test_ui_functional.py -v`
+4. Fix any issues found
+5. Re-run until all pass
+6. Run full test suite: `./run-local-tests.sh`
+
+### Interactive Testing (for complex issues)
+
+When automated tests aren't enough, use Playwright MCP for interactive exploration:
+
+```bash
+# Start Playwright container
+cd tooling/playwright && docker compose up -d
+
+# Navigate and interact via MCP tools
+# - mcp_playwright_navigate
+# - mcp_playwright_click
+# - mcp_playwright_fill
+# - mcp_playwright_screenshot
+```
+
+This allows stepping through user workflows manually while observing actual browser behavior.
 
 ## Preseeded Test Client
 

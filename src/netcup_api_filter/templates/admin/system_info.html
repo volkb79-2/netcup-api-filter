@@ -1,0 +1,228 @@
+{# Admin System Info - System status and diagnostics #}
+{% extends "admin/base.html" %}
+
+{% block title %}System Info - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">System Information</h1>
+        <p class="text-muted mb-0">Application status and diagnostics</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-secondary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Application Info -->
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-app-indicator me-1"></i>Application
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th class="text-muted w-50">Version</th>
+                        <td class="font-monospace">{{ app.version or 'dev' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Build</th>
+                        <td class="font-monospace">{{ app.build_hash or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Build Date</th>
+                        <td>{{ app.build_date or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Environment</th>
+                        <td>
+                            <span class="badge {% if app.env == 'production' %}bg-success{% else %}bg-warning{% endif %}">
+                                {{ app.env or 'development' }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Uptime</th>
+                        <td>{{ app.uptime or 'Unknown' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-database me-1"></i>Database
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th class="text-muted w-50">Type</th>
+                        <td class="font-monospace">SQLite</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Path</th>
+                        <td class="font-monospace text-break small">{{ db.path or 'In-memory' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Size</th>
+                        <td>{{ db.size or 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Accounts</th>
+                        <td>{{ db.accounts_count or 0 }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Realms</th>
+                        <td>{{ db.realms_count or 0 }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Tokens</th>
+                        <td>{{ db.tokens_count or 0 }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Log Entries</th>
+                        <td>{{ db.logs_count or 0 }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Info -->
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-hdd-stack me-1"></i>Server
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th class="text-muted w-50">Hostname</th>
+                        <td class="font-monospace">{{ server.hostname or 'Unknown' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Platform</th>
+                        <td>{{ server.platform or 'Unknown' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Python</th>
+                        <td class="font-monospace">{{ server.python_version or 'Unknown' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Flask</th>
+                        <td class="font-monospace">{{ server.flask_version or 'Unknown' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Server Time</th>
+                        <td class="font-monospace">{{ server.time or 'Unknown' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Timezone</th>
+                        <td>{{ server.timezone or 'Unknown' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-cloud me-1"></i>External Services
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <span>Netcup API</span>
+                    <span class="badge {% if services.netcup %}bg-success{% else %}bg-danger{% endif %}">
+                        {% if services.netcup %}<i class="bi bi-check-circle me-1"></i>Connected{% else %}<i class="bi bi-x-circle me-1"></i>Not configured{% endif %}
+                    </span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <span>Email (SMTP)</span>
+                    <span class="badge {% if services.email %}bg-success{% else %}bg-warning{% endif %}">
+                        {% if services.email %}<i class="bi bi-check-circle me-1"></i>Configured{% else %}<i class="bi bi-exclamation-triangle me-1"></i>Not configured{% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Logs -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-terminal me-1"></i>Recent Application Logs</span>
+        <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-sm btn-outline-secondary">
+            View Full Logs
+        </a>
+    </div>
+    <div class="card-body p-0">
+        <pre class="mb-0 p-3 bg-dark text-light" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;">{% for line in recent_logs %}{{ line }}
+{% else %}No recent log entries{% endfor %}</pre>
+    </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="card border-danger mt-4">
+    <div class="card-header bg-danger text-white">
+        <i class="bi bi-exclamation-triangle me-1"></i>Danger Zone
+    </div>
+    <div class="card-body">
+        <div class="row g-4">
+            <div class="col-md-4">
+                <h6>Clear Activity Logs</h6>
+                <p class="text-muted small mb-2">Delete all audit log entries older than 30 days.</p>
+                <button type="button" class="btn btn-outline-warning btn-sm" onclick="clearOldLogs()">
+                    <i class="bi bi-trash me-1"></i>Clear Old Logs
+                </button>
+            </div>
+            <div class="col-md-4">
+                <h6>Revoke All Tokens</h6>
+                <p class="text-muted small mb-2">Immediately revoke all active API tokens.</p>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="revokeAllTokens()">
+                    <i class="bi bi-x-circle me-1"></i>Revoke All
+                </button>
+            </div>
+            <div class="col-md-4">
+                <h6>Reset Database</h6>
+                <p class="text-muted small mb-2">Delete ALL data and start fresh. Irreversible!</p>
+                <button type="button" class="btn btn-danger btn-sm" onclick="resetDatabase()">
+                    <i class="bi bi-exclamation-octagon me-1"></i>Reset
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function clearOldLogs() {
+    if (confirm('Delete all audit logs older than 30 days? This cannot be undone.')) {
+        // TODO: Implement API call
+        alert('Feature not yet implemented');
+    }
+}
+
+function revokeAllTokens() {
+    if (confirm('DANGER: This will immediately revoke ALL API tokens for ALL users. They will need to generate new tokens. Continue?')) {
+        if (confirm('Are you absolutely sure? This affects ALL users.')) {
+            // TODO: Implement API call
+            alert('Feature not yet implemented');
+        }
+    }
+}
+
+function resetDatabase() {
+    if (confirm('DANGER: This will DELETE ALL DATA including accounts, realms, tokens, and logs. This is IRREVERSIBLE. Are you sure?')) {
+        if (prompt('Type "RESET" to confirm:') === 'RESET') {
+            // TODO: Implement API call
+            alert('Feature not yet implemented');
+        }
+    }
+}
+</script>
+{% endblock %}

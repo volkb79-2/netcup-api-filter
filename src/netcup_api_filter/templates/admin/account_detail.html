@@ -1,0 +1,349 @@
+{# Admin Account Detail - View and manage single account #}
+{% extends "admin/base.html" %}
+
+{% block title %}{{ account.username }} - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="h3 mb-1 d-flex align-items-center gap-2">
+            <span class="font-monospace">{{ account.username }}</span>
+            {% if account.is_active %}
+            <span class="badge bg-success">Active</span>
+            {% elif account.email_verified %}
+            <span class="badge bg-warning text-dark">Pending</span>
+            {% else %}
+            <span class="badge bg-secondary">Unverified</span>
+            {% endif %}
+        </h1>
+    </div>
+    <div class="d-flex gap-2">
+        {% if not account.is_active and account.email_verified %}
+        <form method="POST" action="{{ url_for('admin.account_approve', account_id=account.id) }}">
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i>Approve
+            </button>
+        </form>
+        {% elif account.is_active %}
+        <form method="POST" action="{{ url_for('admin.account_disable', account_id=account.id) }}">
+            <button type="submit" class="btn btn-warning">
+                <i class="bi bi-slash-circle me-1"></i>Disable
+            </button>
+        </form>
+        {% endif %}
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+            <i class="bi bi-trash me-1"></i>Delete
+        </button>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Account Info Column -->
+    <div class="col-lg-4">
+        <!-- Basic Info Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i>Account Details
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th class="text-muted w-50">ID</th>
+                        <td class="font-monospace">{{ account.id }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Username</th>
+                        <td class="font-monospace">{{ account.username }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Email</th>
+                        <td>
+                            <span class="font-monospace">{{ account.email }}</span>
+                            {% if account.email_verified %}
+                            <i class="bi bi-patch-check-fill text-success ms-1" title="Verified"></i>
+                            {% else %}
+                            <i class="bi bi-question-circle text-warning ms-1" title="Not Verified"></i>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">2FA</th>
+                        <td>
+                            {% if account.totp_enabled %}
+                            <span class="badge bg-success"><i class="bi bi-shield-check me-1"></i>Enabled</span>
+                            {% else %}
+                            <span class="badge bg-secondary"><i class="bi bi-shield me-1"></i>Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Created</th>
+                        <td>{{ account.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Last Login</th>
+                        <td>
+                            {% if account.last_login_at %}
+                            {{ account.last_login_at.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}
+                            <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Quick Actions Card -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning me-1"></i>Quick Actions
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{{ url_for('admin.account_add_realm', account_id=account.id) }}" 
+                   class="list-group-item list-group-item-action d-flex align-items-center">
+                    <i class="bi bi-plus-circle me-2 text-primary"></i>
+                    Add Realm
+                </a>
+                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
+                        onclick="resetPassword()">
+                    <i class="bi bi-key me-2 text-warning"></i>
+                    Reset Password
+                </button>
+                {% if account.totp_enabled %}
+                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
+                        onclick="resetTotp()">
+                    <i class="bi bi-shield-x me-2 text-danger"></i>
+                    Reset 2FA
+                </button>
+                {% endif %}
+                <a href="{{ url_for('admin.audit_logs') }}?account={{ account.id }}" 
+                   class="list-group-item list-group-item-action d-flex align-items-center">
+                    <i class="bi bi-journal-text me-2 text-info"></i>
+                    View Audit Log
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Realms & Tokens Column -->
+    <div class="col-lg-8">
+        <!-- Realms Section -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-globe me-1"></i>Realms ({{ account.realms | length }})</span>
+                <a href="{{ url_for('admin.account_add_realm', account_id=account.id) }}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus me-1"></i>Add Realm
+                </a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Realm</th>
+                            <th>Type</th>
+                            <th>Record Types</th>
+                            <th>Operations</th>
+                            <th>Tokens</th>
+                            <th width="100">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for realm in account.realms %}
+                        <tr class="{% if realm.status == 'pending' %}table-warning{% endif %}">
+                            <td>
+                                <span class="font-monospace">{{ realm.realm_value }}</span>
+                                {% if realm.status == 'pending' %}
+                                <span class="badge bg-warning text-dark ms-1">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ realm.realm_type }}</span>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    {{ realm.allowed_record_types | join(', ') }}
+                                </small>
+                            </td>
+                            <td>
+                                {% for op in realm.allowed_operations %}
+                                <span class="badge {% if op == 'read' %}bg-info{% elif op == 'update' %}bg-warning{% else %}bg-danger{% endif %} me-1">
+                                    {{ op }}
+                                </span>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ realm.tokens | length }}</span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-primary" 
+                                            onclick="showRealmDetail({{ realm.id }})" title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    {% if realm.status == 'pending' %}
+                                    <form method="POST" action="{{ url_for('admin.realm_approve', realm_id=realm.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-success" title="Approve">
+                                            <i class="bi bi-check-lg"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            onclick="deleteRealm({{ realm.id }}, '{{ realm.realm_value }}')" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        
+                        <!-- Tokens for this realm (collapsible) -->
+                        {% if realm.tokens %}
+                        <tr class="realm-tokens" id="realm-tokens-{{ realm.id }}">
+                            <td colspan="6" class="bg-light">
+                                <div class="ps-4">
+                                    <small class="text-muted d-block mb-2">Tokens for {{ realm.realm_value }}:</small>
+                                    <div class="list-group list-group-flush">
+                                        {% for token in realm.tokens %}
+                                        <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                                            <div>
+                                                <code class="text-primary">{{ token.token_prefix }}...</code>
+                                                {% if token.is_active %}
+                                                <span class="badge bg-success ms-1">Active</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary ms-1">Inactive</span>
+                                                {% endif %}
+                                                {% if token.last_used_at %}
+                                                <small class="text-muted ms-2">
+                                                    Last used: {{ token.last_used_at.strftime('%Y-%m-%d') }}
+                                                </small>
+                                                {% endif %}
+                                            </div>
+                                            <div class="btn-group btn-group-sm">
+                                                {% if token.is_active %}
+                                                <button class="btn btn-outline-warning btn-sm" title="Revoke"
+                                                        onclick="revokeToken({{ token.id }})">
+                                                    <i class="bi bi-x-circle"></i>
+                                                </button>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                <i class="bi bi-globe d-block display-6 mb-2"></i>
+                                No realms configured
+                                <br>
+                                <a href="{{ url_for('admin.account_add_realm', account_id=account.id) }}" class="btn btn-sm btn-primary mt-2">
+                                    <i class="bi bi-plus me-1"></i>Add First Realm
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Recent Activity Card -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-activity me-1"></i>Recent Activity</span>
+                <a href="{{ url_for('admin.audit_logs') }}?account={{ account.id }}" class="btn btn-sm btn-outline-secondary">
+                    View All
+                </a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for log in recent_activity %}
+                <div class="list-group-item d-flex justify-content-between align-items-start">
+                    <div>
+                        <small class="text-muted d-block">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        {{ log.action }}
+                        {% if log.details %}
+                        <small class="text-muted d-block">{{ log.details }}</small>
+                        {% endif %}
+                    </div>
+                    <span class="badge bg-secondary">{{ log.actor }}</span>
+                </div>
+                {% else %}
+                <div class="list-group-item text-center text-muted py-4">
+                    No recent activity
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Account Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete Account</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('admin.account_delete', account_id=account.id) }}">
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong>{{ account.username }}</strong>?</p>
+                    <p class="text-danger mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        This will delete all realms and tokens. This action cannot be undone.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Delete Account
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function showRealmDetail(realmId) {
+    const row = document.getElementById('realm-tokens-' + realmId);
+    if (row) {
+        row.classList.toggle('d-none');
+    }
+}
+
+function deleteRealm(realmId, realmValue) {
+    if (confirm(`Are you sure you want to delete realm "${realmValue}"? All associated tokens will be revoked.`)) {
+        // TODO: Implement realm delete API
+        alert('Realm delete not yet implemented');
+    }
+}
+
+function revokeToken(tokenId) {
+    if (confirm('Are you sure you want to revoke this token?')) {
+        // TODO: Implement token revoke API
+        alert('Token revoke not yet implemented');
+    }
+}
+
+function resetPassword() {
+    if (confirm('Send password reset email to {{ account.email }}?')) {
+        // TODO: Implement password reset API
+        alert('Password reset not yet implemented');
+    }
+}
+
+function resetTotp() {
+    if (confirm('This will disable 2FA for this account. The user will need to reconfigure it. Continue?')) {
+        // TODO: Implement TOTP reset API
+        alert('TOTP reset not yet implemented');
+    }
+}
+</script>
+{% endblock %}

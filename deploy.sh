@@ -222,13 +222,23 @@ start_flask_local() {
     log_step "Starting Flask (local mode with mock Netcup API)..."
     cd "$DEPLOY_DIR"
     
+    # Copy gunicorn config if available
+    if [[ -f "${SCRIPT_DIR}/gunicorn.conf.py" ]]; then
+        cp "${SCRIPT_DIR}/gunicorn.conf.py" "${DEPLOY_DIR}/"
+    fi
+    
     NETCUP_FILTER_DB_PATH="${DEPLOY_DIR}/netcup_filter.db" \
     FLASK_ENV=local_test \
+    TEMPLATES_AUTO_RELOAD=true \
+    SEND_FILE_MAX_AGE_DEFAULT=0 \
     SECRET_KEY="local-test-secret-key-for-session-persistence" \
     MOCK_NETCUP_API=true \
     SEED_DEMO_CLIENTS=true \
-    gunicorn -b 0.0.0.0:5100 \
-        --workers=1 \
+    GUNICORN_WORKERS=2 \
+    GUNICORN_THREADS=4 \
+    GUNICORN_RELOAD=true \
+    GUNICORN_LOGLEVEL=debug \
+    gunicorn -c gunicorn.conf.py \
         --daemon \
         --log-file "$LOG_FILE" \
         --error-logfile "$LOG_FILE" \
@@ -351,6 +361,10 @@ phase_deploy() {
             # Fix database permissions
             chmod 666 "$DEPLOY_DIR/netcup_filter.db" 2>/dev/null || true
             chmod 777 "$DEPLOY_DIR" 2>/dev/null || true
+            
+            # Restart Flask to pick up new files
+            stop_flask
+            log_step "Flask will be started in Phase 3..."
             
             log_success "Deployed to $DEPLOY_DIR"
             ;;

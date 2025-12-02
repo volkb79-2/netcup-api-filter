@@ -1,0 +1,167 @@
+{# Link Telegram Account Page #}
+{% extends "account/base.html" %}
+
+{% block title %}Link Telegram Account{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-lg-6 mx-auto">
+            <!-- Header -->
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{ url_for('account.settings') }}" class="btn btn-outline-secondary btn-sm me-3">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <div>
+                    <h2 class="mb-0">Link Telegram Account</h2>
+                    <small class="text-muted">Receive notifications and 2FA codes via Telegram</small>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Current Status -->
+            {% if account.telegram_id %}
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-telegram text-info fs-1 me-3"></i>
+                        <div class="flex-grow-1">
+                            <h5 class="mb-1">Telegram Linked</h5>
+                            <p class="text-muted mb-0">
+                                Chat ID: <code>{{ account.telegram_id }}</code>
+                            </p>
+                        </div>
+                        <form action="{{ url_for('account.unlink_telegram') }}" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-outline-danger">
+                                <i class="bi bi-x-lg me-1"></i>Unlink
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+
+            <!-- Step 1: Start Bot -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <span class="badge bg-info me-2">1</span>
+                        Start the Bot
+                    </h5>
+                    <p class="text-muted mb-3">
+                        Click the button below to open Telegram and start our notification bot:
+                    </p>
+                    
+                    <div class="text-center">
+                        <a href="https://t.me/{{ telegram_bot_username }}" target="_blank" class="btn btn-info btn-lg">
+                            <i class="bi bi-telegram me-2"></i>Open @{{ telegram_bot_username }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Send Code -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <span class="badge bg-info me-2">2</span>
+                        Send Verification Code
+                    </h5>
+                    <p class="text-muted mb-3">
+                        In the Telegram chat, send this verification code:
+                    </p>
+                    
+                    <div class="text-center mb-3">
+                        <div class="d-inline-block p-3 bg-dark rounded">
+                            <code class="fs-4" id="verification-code">{{ verification_code }}</code>
+                            <button type="button" class="btn btn-outline-primary btn-sm ms-2" onclick="copyCode()">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <p class="text-muted text-center small">
+                        <i class="bi bi-clock me-1"></i>
+                        Code expires in 10 minutes
+                    </p>
+                </div>
+            </div>
+
+            <!-- Step 3: Confirm -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <span class="badge bg-info me-2">3</span>
+                        Confirm Link
+                    </h5>
+                    <p class="text-muted mb-3">
+                        After sending the code in Telegram, click below to verify:
+                    </p>
+                    
+                    <form action="{{ url_for('account.link_telegram') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="verify">
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-check-lg me-1"></i>I've Sent the Code
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Benefits -->
+            <div class="card bg-dark bg-opacity-50">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="bi bi-stars me-1 text-warning"></i>Benefits of Telegram Integration
+                    </h6>
+                    <ul class="list-unstyled mb-0 small text-muted">
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-2"></i>
+                            Receive 2FA codes instantly via Telegram
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-2"></i>
+                            Get notified about important account events
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-2"></i>
+                            Alert when suspicious activity is detected
+                        </li>
+                        <li>
+                            <i class="bi bi-check-circle text-success me-2"></i>
+                            Quick token expiry reminders
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyCode() {
+    const code = document.getElementById('verification-code').textContent.trim();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check"></i>';
+        setTimeout(() => btn.innerHTML = originalHtml, 1500);
+    });
+}
+</script>
+{% endblock %}

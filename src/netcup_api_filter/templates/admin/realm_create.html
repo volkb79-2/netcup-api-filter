@@ -1,0 +1,340 @@
+{# Admin Realm Create - Add realm to account with template wizard #}
+{% extends "admin/base.html" %}
+
+{% block title %}Add Realm - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <h1 class="h3 mb-1">Add Realm</h1>
+    <p class="text-muted mb-0">Configure DNS permissions for <strong>{{ account.username }}</strong></p>
+</div>
+
+<form method="POST" action="{{ url_for('admin.account_add_realm', account_id=account.id) }}" id="realmForm">
+    <div class="row g-4">
+        <!-- Template Selection -->
+        <div class="col-lg-4">
+            <div class="card sticky-top" style="top: 1rem;">
+                <div class="card-header">
+                    <i class="bi bi-magic me-1"></i>Configuration Templates
+                </div>
+                <div class="list-group list-group-flush">
+                    <button type="button" class="list-group-item list-group-item-action" 
+                            onclick="applyTemplate('ddns_host')">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <i class="bi bi-house text-primary me-2"></i>
+                                <strong>DDNS Single Host</strong>
+                                <small class="d-block text-muted mt-1">
+                                    Update single hostname IP (home router, VPN)
+                                </small>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button type="button" class="list-group-item list-group-item-action" 
+                            onclick="applyTemplate('ddns_subdomain')">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <i class="bi bi-globe text-success me-2"></i>
+                                <strong>DDNS Subdomain Delegation</strong>
+                                <small class="d-block text-muted mt-1">
+                                    Manage entire subdomain zone (IoT, K8s)
+                                </small>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button type="button" class="list-group-item list-group-item-action" 
+                            onclick="applyTemplate('readonly')">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <i class="bi bi-eye text-info me-2"></i>
+                                <strong>Read-Only Monitoring</strong>
+                                <small class="d-block text-muted mt-1">
+                                    View records without modification
+                                </small>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button type="button" class="list-group-item list-group-item-action" 
+                            onclick="applyTemplate('letsencrypt')">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <i class="bi bi-shield-lock text-warning me-2"></i>
+                                <strong>Let's Encrypt DNS-01</strong>
+                                <small class="d-block text-muted mt-1">
+                                    Automated certificate issuance (TXT only)
+                                </small>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button type="button" class="list-group-item list-group-item-action" 
+                            onclick="applyTemplate('full_dns')">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <i class="bi bi-gear text-secondary me-2"></i>
+                                <strong>Full DNS Management</strong>
+                                <small class="d-block text-muted mt-1">
+                                    Complete control (CI/CD, Terraform)
+                                </small>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button type="button" class="list-group-item list-group-item-action" 
+                            onclick="applyTemplate('cname')">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <i class="bi bi-link-45deg text-danger me-2"></i>
+                                <strong>CNAME Delegation</strong>
+                                <small class="d-block text-muted mt-1">
+                                    CDN/load balancer alias management
+                                </small>
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration Form -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-sliders me-1"></i>Realm Configuration
+                </div>
+                <div class="card-body">
+                    <!-- Realm Type -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Realm Type <span class="text-danger">*</span></label>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <input type="radio" class="btn-check" name="realm_type" id="type_host" value="host" checked>
+                                <label class="btn btn-outline-primary w-100 text-start" for="type_host">
+                                    <i class="bi bi-bullseye me-1"></i>Host
+                                    <small class="d-block text-muted">Exact hostname match</small>
+                                </label>
+                            </div>
+                            <div class="col-md-4">
+                                <input type="radio" class="btn-check" name="realm_type" id="type_subdomain" value="subdomain">
+                                <label class="btn btn-outline-primary w-100 text-start" for="type_subdomain">
+                                    <i class="bi bi-diagram-3 me-1"></i>Subdomain
+                                    <small class="d-block text-muted">Apex + all children</small>
+                                </label>
+                            </div>
+                            <div class="col-md-4">
+                                <input type="radio" class="btn-check" name="realm_type" id="type_subdomain_only" value="subdomain_only">
+                                <label class="btn btn-outline-primary w-100 text-start" for="type_subdomain_only">
+                                    <i class="bi bi-diagram-2 me-1"></i>Subdomain Only
+                                    <small class="d-block text-muted">Children only (no apex)</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Realm Value -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold" for="realm_value">Domain/Subdomain <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-lg font-monospace" 
+                               id="realm_value" name="realm_value" required
+                               placeholder="e.g., home.example.com or *.iot.example.com">
+                        <div class="form-text">
+                            The domain or subdomain this realm controls. Examples:
+                            <ul class="mb-0 mt-1">
+                                <li><code>home.example.com</code> - single hostname</li>
+                                <li><code>iot.example.com</code> - subdomain zone</li>
+                                <li><code>_acme-challenge.example.com</code> - Let's Encrypt validation</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Record Types -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Allowed Record Types <span class="text-danger">*</span></label>
+                        <div class="row g-2">
+                            {% for rt, desc in [
+                                ('A', 'IPv4 address'),
+                                ('AAAA', 'IPv6 address'),
+                                ('CNAME', 'Canonical name'),
+                                ('TXT', 'Text record'),
+                                ('MX', 'Mail exchange'),
+                                ('NS', 'Name server'),
+                                ('SRV', 'Service record'),
+                                ('CAA', 'Certificate authority')
+                            ] %}
+                            <div class="col-md-3 col-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input record-type" 
+                                           id="rt_{{ rt }}" name="record_types" value="{{ rt }}">
+                                    <label class="form-check-label" for="rt_{{ rt }}">
+                                        <strong>{{ rt }}</strong>
+                                        <small class="d-block text-muted">{{ desc }}</small>
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllRecordTypes()">
+                                Select All
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllRecordTypes()">
+                                Clear All
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Operations -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Allowed Operations <span class="text-danger">*</span></label>
+                        <div class="row g-3">
+                            <div class="col-md-3 col-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input operation" 
+                                           id="op_read" name="operations" value="read">
+                                    <label class="form-check-label" for="op_read">
+                                        <i class="bi bi-eye text-info me-1"></i><strong>Read</strong>
+                                        <small class="d-block text-muted">View DNS records</small>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input operation" 
+                                           id="op_update" name="operations" value="update">
+                                    <label class="form-check-label" for="op_update">
+                                        <i class="bi bi-pencil text-warning me-1"></i><strong>Update</strong>
+                                        <small class="d-block text-muted">Modify existing</small>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input operation" 
+                                           id="op_create" name="operations" value="create">
+                                    <label class="form-check-label" for="op_create">
+                                        <i class="bi bi-plus-circle text-success me-1"></i><strong>Create</strong>
+                                        <small class="d-block text-muted">Add new records</small>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input operation" 
+                                           id="op_delete" name="operations" value="delete">
+                                    <label class="form-check-label" for="op_delete">
+                                        <i class="bi bi-trash text-danger me-1"></i><strong>Delete</strong>
+                                        <small class="d-block text-muted">Remove records</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Auto-approve option -->
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="auto_approve" name="auto_approve" checked>
+                        <label class="form-check-label" for="auto_approve">
+                            Auto-approve realm (skip pending queue)
+                        </label>
+                    </div>
+
+                    <!-- Generate token option -->
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="generate_token" name="generate_token" checked>
+                        <label class="form-check-label" for="generate_token">
+                            Generate API token automatically
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Section -->
+            <div class="d-flex justify-content-between mt-4">
+                <a href="{{ url_for('admin.account_detail', account_id=account.id) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Cancel
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i>Add Realm
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const templates = {
+    ddns_host: {
+        realm_type: 'host',
+        record_types: ['A', 'AAAA'],
+        operations: ['read', 'update']
+    },
+    ddns_subdomain: {
+        realm_type: 'subdomain',
+        record_types: ['A', 'AAAA'],
+        operations: ['read', 'update', 'create', 'delete']
+    },
+    readonly: {
+        realm_type: 'subdomain',
+        record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'],
+        operations: ['read']
+    },
+    letsencrypt: {
+        realm_type: 'subdomain',
+        record_types: ['TXT'],
+        operations: ['read', 'update', 'create', 'delete']
+    },
+    full_dns: {
+        realm_type: 'subdomain',
+        record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA'],
+        operations: ['read', 'update', 'create', 'delete']
+    },
+    cname: {
+        realm_type: 'host',
+        record_types: ['CNAME'],
+        operations: ['read', 'update']
+    }
+};
+
+function applyTemplate(name) {
+    const t = templates[name];
+    if (!t) return;
+    
+    // Set realm type
+    document.getElementById('type_' + t.realm_type).checked = true;
+    
+    // Clear and set record types
+    document.querySelectorAll('.record-type').forEach(cb => cb.checked = false);
+    t.record_types.forEach(rt => {
+        const cb = document.getElementById('rt_' + rt);
+        if (cb) cb.checked = true;
+    });
+    
+    // Clear and set operations
+    document.querySelectorAll('.operation').forEach(cb => cb.checked = false);
+    t.operations.forEach(op => {
+        const cb = document.getElementById('op_' + op);
+        if (cb) cb.checked = true;
+    });
+    
+    // Highlight the applied template button
+    document.querySelectorAll('.list-group-item-action').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.closest('.list-group-item-action').classList.add('active');
+}
+
+function selectAllRecordTypes() {
+    document.querySelectorAll('.record-type').forEach(cb => cb.checked = true);
+}
+
+function clearAllRecordTypes() {
+    document.querySelectorAll('.record-type').forEach(cb => cb.checked = false);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,214 @@
+{# Admin Config Netcup - Netcup API credentials configuration #}
+{% extends "admin/base.html" %}
+
+{% block title %}Netcup API Config - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <h1 class="h3 mb-1">Netcup API Configuration</h1>
+    <p class="text-muted mb-0">Configure the upstream Netcup API credentials</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <form method="POST" action="{{ url_for('admin.config_netcup') }}" id="netcupConfigForm">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-cloud me-1"></i>API Credentials
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <label class="form-label" for="customer_number">Customer Number <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control font-monospace" id="customer_number" name="customer_number"
+                               value="{{ config.customer_number or '' }}" required
+                               placeholder="e.g., 12345678">
+                        <div class="form-text">Your Netcup customer number (Kundennummer)</div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label" for="api_key">API Key <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="password" class="form-control font-monospace" id="api_key" name="api_key"
+                                   value="{{ config.api_key or '' }}" required
+                                   placeholder="Your Netcup API key">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePassword('api_key')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Found in Netcup CCP → API → API Key</div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label" for="api_password">API Password <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="password" class="form-control font-monospace" id="api_password" name="api_password"
+                                   value="{{ config.api_password or '' }}" required
+                                   placeholder="Your Netcup API password">
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePassword('api_password')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Found in Netcup CCP → API → API Password</div>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="api_endpoint">API Endpoint</label>
+                        <input type="url" class="form-control font-monospace" id="api_endpoint" name="api_endpoint"
+                               value="{{ config.api_endpoint or 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON' }}"
+                               placeholder="https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON">
+                        <div class="form-text">Leave default unless using a custom endpoint</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="timeout">Request Timeout (seconds)</label>
+                        <input type="number" class="form-control" id="timeout" name="timeout"
+                               value="{{ config.timeout or 30 }}" min="5" max="120">
+                        <div class="form-text">How long to wait for API responses</div>
+                    </div>
+                </div>
+                <div class="card-footer d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-info" onclick="testConnection()">
+                        <i class="bi bi-plug me-1"></i>Test Connection
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i>Save Configuration
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Status Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-activity me-1"></i>Connection Status
+            </div>
+            <div class="card-body">
+                <div id="connectionStatus">
+                    {% if config.last_test_at %}
+                    <div class="d-flex align-items-center mb-2">
+                        {% if config.last_test_success %}
+                        <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                        <span>Connected</span>
+                        {% else %}
+                        <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                        <span>Connection Failed</span>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted d-block">
+                        Last tested: {{ config.last_test_at.strftime('%Y-%m-%d %H:%M') }}
+                    </small>
+                    {% if config.last_test_error %}
+                    <div class="alert alert-danger mt-2 mb-0 small">
+                        {{ config.last_test_error }}
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="text-muted text-center py-3">
+                        <i class="bi bi-question-circle display-6 d-block mb-2"></i>
+                        Not tested yet
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Card -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-question-circle me-1"></i>Setup Guide
+            </div>
+            <div class="card-body">
+                <ol class="mb-0 ps-3">
+                    <li class="mb-2">Log in to <a href="https://www.customercontrolpanel.de/" target="_blank" rel="noopener">Netcup CCP</a></li>
+                    <li class="mb-2">Navigate to "API" section</li>
+                    <li class="mb-2">Generate or copy your API Key</li>
+                    <li class="mb-2">Set up an API Password</li>
+                    <li>Enter credentials here and test</li>
+                </ol>
+            </div>
+            <div class="card-footer">
+                <a href="https://helpcenter.netcup.com/de/wiki/allgemein/api/" 
+                   target="_blank" rel="noopener" class="btn btn-outline-secondary w-100">
+                    <i class="bi bi-book me-1"></i>Netcup API Documentation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = '<i class="bi bi-eye-slash"></i>';
+    } else {
+        input.type = 'password';
+        btn.innerHTML = '<i class="bi bi-eye"></i>';
+    }
+}
+
+function testConnection() {
+    const statusDiv = document.getElementById('connectionStatus');
+    statusDiv.innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border text-primary mb-2" role="status">
+                <span class="visually-hidden">Testing...</span>
+            </div>
+            <div>Testing connection...</div>
+        </div>
+    `;
+    
+    // Collect form data
+    const formData = new FormData(document.getElementById('netcupConfigForm'));
+    formData.append('test_only', 'true');
+    
+    fetch('{{ url_for("admin.config_netcup") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                    <span>Connection Successful</span>
+                </div>
+                <small class="text-muted">Just now</small>
+                ${data.domains ? `<div class="mt-2 small">Found ${data.domains.length} domain(s)</div>` : ''}
+            `;
+        } else {
+            statusDiv.innerHTML = `
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                    <span>Connection Failed</span>
+                </div>
+                <div class="alert alert-danger mt-2 mb-0 small">
+                    ${data.error || 'Unknown error'}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        statusDiv.innerHTML = `
+            <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                <span>Request Failed</span>
+            </div>
+            <div class="alert alert-danger mt-2 mb-0 small">
+                ${error.message}
+            </div>
+        `;
+    });
+}
+</script>
+{% endblock %}

@@ -1,224 +1,184 @@
 """
 UX validation tests for UI elements presence and behavior.
 
-These tests verify that new UI features are present and functioning:
-- Edit/delete buttons in client list
-- Visual indicators (badges) for Active/Email columns
-- Clickable client IDs
-- Labeled toolbar sections
-- Form field defaults
+These tests verify that UI features are present and functioning:
+- Navigation links in admin panel
+- Page headings and structure
+- Form elements on key pages
 """
 
-import asyncio
 import pytest
 from ui_tests import workflows
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
 
+pytestmark = pytest.mark.asyncio
 
-async def test_client_list_has_row_actions(active_profile):
-    """Verify edit/delete buttons present in client list rows."""
+
+async def test_accounts_list_has_rows(active_profile):
+    """Verify accounts list page renders with at least one account."""
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
-        await browser.goto(settings.url("/admin/client/"))
-        await asyncio.sleep(0.5)
+        await browser.goto(settings.url("/admin/accounts"))
+        await browser.verify_status(200)
         
         page_html = await browser.html("body")
         
-        # Check for edit and delete links (Flask-Admin row actions)
-        assert 'title="Edit record"' in page_html or '/edit/' in page_html, \
-            "Edit button not found in client list"
-        assert 'title="Delete record"' in page_html or 'delete' in page_html.lower(), \
-            "Delete button not found in client list"
+        # Check for table with accounts
+        assert '<table' in page_html, "Accounts table not found"
+        # Should have at least demo-user account
+        assert 'demo-user' in page_html or 'admin' in page_html, \
+            "No accounts found in table"
 
 
-async def test_visual_indicators_present(active_profile):
-    """Verify Active/Email columns show badges (✓/✗) not text (True/False)."""
+async def test_account_detail_page_loads(active_profile):
+    """Verify account detail page renders correctly."""
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
-        await browser.goto(settings.url("/admin/client/"))
-        await asyncio.sleep(0.5)
+        await browser.goto(settings.url("/admin/accounts"))
         
+        # Get the first account link
         page_html = await browser.html("body")
-    
-    # Check for badge HTML elements
-    assert '<span class="badge badge-success">✓</span>' in page_content or \
-           '<span class="badge badge-secondary">✗</span>' in page_content, \
-           "Badge indicators not found in client list"
-    
-    # Ensure NO plain "True" or "False" text in Active/Email columns
-    # (They should be rendered as badges instead)
-    html_text = await page.inner_text("table.table")
-    
-    # Check that True/False are not visible as column values
-    # (Note: They might appear in other contexts like form labels)
-    true_false_in_table = "True" in html_text or "False" in html_text
-    
-    # If True/False appear, make sure they're NOT in badge columns
-    if true_false_in_table:
-        # Get all cells and check they don't have True/False as direct text
-        cells = await page.query_selector_all("table.table td")
-        for cell in cells:
-            cell_html = await cell.inner_html()
-            cell_text = await cell.inner_text()
+        
+        # Look for a link to an account detail page
+        import re
+        match = re.search(r'href="(/admin/accounts/\d+)"', page_html)
+        if match:
+            detail_url = match.group(1)
+            await browser.goto(settings.url(detail_url))
+            await browser.verify_status(200)
             
-            # If cell contains badge, it should NOT have plain True/False
-            if "badge" in cell_html:
-                assert cell_text.strip() not in ["True", "False"], \
-                    f"Badge column contains plain text: {cell_text}"
+            # Should show account details
+            heading = await browser.text("main h1")
+            assert heading, "Account detail page should have a heading"
 
 
-@pytest.mark.asyncio
-async def test_client_id_clickable(page):
-    """Verify client IDs are clickable links to edit page."""
-    await admin_login(page)
-    await page.goto(f"{UI_BASE_URL}/admin/client/")
-    await page.wait_for_load_state("networkidle")
-    
-    # Check for client-id-link class
-    client_id_links = await page.query_selector_all("a.client-id-link")
-    assert len(client_id_links) > 0, "No clickable client ID links found"
-    
-    # Verify links point to edit pages
-    first_link = client_id_links[0]
-    href = await first_link.get_attribute("href")
-    assert "/admin/client/edit/" in href, f"Client ID link doesn't point to edit page: {href}"
-    
-    # Verify link is visible and styled
-    is_visible = await first_link.is_visible()
-    assert is_visible, "Client ID link not visible"
+async def test_dashboard_has_stats_cards(active_profile):
+    """Verify dashboard shows statistics cards."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        
+        page_html = await browser.html("body")
+        
+        # Dashboard should show stats cards
+        assert 'card' in page_html, "No cards found on dashboard"
+        # Should mention accounts or some statistics
+        assert 'Account' in page_html or 'Realm' in page_html or 'Token' in page_html, \
+            "Dashboard should show account-related statistics"
 
 
-@pytest.mark.asyncio
-async def test_toolbar_has_labels(page):
-    """Verify Flask-Admin toolbar has labeled sections (not just buttons)."""
-    await admin_login(page)
-    await page.goto(f"{UI_BASE_URL}/admin/client/")
-    await page.wait_for_load_state("networkidle")
-    
-    page_content = await page.content()
-    
-    # Check for toolbar labels
-    assert 'class="toolbar-label"' in page_content, "Toolbar labels not found"
-    
-    # Check for specific label text
-    labels_to_check = ["Filters:", "Show:", "Export:", "Actions:"]
-    
-    for label_text in labels_to_check:
-        # At least some of these should be present (depending on permissions/config)
-        pass  # Will check content below
-    
-    # Verify toolbar is NOT a dark card
-    assert 'class="toolbar-card"' not in page_content, "Old dark toolbar card still present"
-    
-    # Verify new toolbar structure exists
-    assert 'class="list-toolbar"' in page_content, "New labeled toolbar not found"
+async def test_audit_logs_page_structure(active_profile):
+    """Verify audit logs page has proper structure."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await browser.goto(settings.url("/admin/audit"))
+        await browser.verify_status(200)
+        
+        heading = await browser.text("main h1")
+        assert "Audit" in heading, f"Expected 'Audit' in heading, got '{heading}'"
 
 
-@pytest.mark.asyncio
-async def test_form_defaults_preselected(page):
-    """Verify form fields have safe defaults pre-selected."""
-    await admin_login(page)
-    await page.goto(f"{UI_BASE_URL}/admin/client/new/")
-    await page.wait_for_load_state("networkidle")
-    
-    # Check that "Host" is default realm type
-    realm_type_select = await page.query_selector("select#realm_type")
-    assert realm_type_select is not None, "Realm type select not found"
-    
-    selected_realm = await realm_type_select.evaluate("el => el.value")
-    assert selected_realm == "host", f"Realm type default should be 'host', got '{selected_realm}'"
-    
-    # Check that A record is pre-selected
-    a_record_option = await page.query_selector("select#allowed_record_types option[value='A']")
-    assert a_record_option is not None, "A record option not found"
-    
-    is_selected = await a_record_option.evaluate("el => el.selected")
-    assert is_selected, "A record should be pre-selected by default"
-    
-    # Check that 'read' operation is pre-selected
-    read_option = await page.query_selector("select#allowed_operations option[value='read']")
-    assert read_option is not None, "Read operation option not found"
-    
-    is_selected = await read_option.evaluate("el => el.selected")
-    assert is_selected, "Read operation should be pre-selected by default"
+async def test_system_info_page_loads(active_profile):
+    """Verify system info page loads correctly."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await browser.goto(settings.url("/admin/system"))
+        await browser.verify_status(200)
+        
+        heading = await browser.text("main h1")
+        assert "System" in heading, f"Expected 'System' in heading, got '{heading}'"
+        
+        # Should show some system information
+        page_html = await browser.html("body")
+        assert 'Python' in page_html or 'Database' in page_html, \
+            "System info should display system details"
 
 
-@pytest.mark.asyncio
-async def test_client_list_css_styling(page):
-    """Verify CSS styling for toolbar, badges, and client links."""
-    await admin_login(page)
-    await page.goto(f"{UI_BASE_URL}/admin/client/")
-    await page.wait_for_load_state("networkidle")
-    
-    # Check toolbar CSS
-    toolbar = await page.query_selector(".list-toolbar")
-    if toolbar:  # Toolbar might not exist if no filters/actions available
-        toolbar_bg = await toolbar.evaluate("el => window.getComputedStyle(el).backgroundColor")
-        # Should have some background color (not transparent)
-        assert toolbar_bg != "rgba(0, 0, 0, 0)", "Toolbar background not styled"
-    
-    # Check badge CSS
-    badge = await page.query_selector(".badge")
-    if badge:
-        badge_padding = await badge.evaluate("el => window.getComputedStyle(el).padding")
-        # Badge should have padding
-        assert "0px" not in badge_padding, "Badge not styled with padding"
-    
-    # Check client-id-link CSS
-    link = await page.query_selector(".client-id-link")
-    if link:
-        link_color = await link.evaluate("el => window.getComputedStyle(el).color")
-        # Link should have color (not default black)
-        assert link_color not in ["rgb(0, 0, 0)", "rgba(0, 0, 0, 1)"], "Client ID link not styled"
+async def test_config_pages_load(active_profile):
+    """Verify configuration pages load correctly."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        
+        # Test Netcup API config
+        await browser.goto(settings.url("/admin/config/netcup"))
+        await browser.verify_status(200)
+        heading = await browser.text("main h1")
+        assert "Netcup" in heading, f"Expected 'Netcup' in heading, got '{heading}'"
+        
+        # Test Email config
+        await browser.goto(settings.url("/admin/config/email"))
+        await browser.verify_status(200)
+        heading = await browser.text("main h1")
+        assert "Email" in heading, f"Expected 'Email' in heading, got '{heading}'"
 
 
-@pytest.mark.asyncio
-async def test_no_javascript_errors(page):
-    """Verify no JavaScript console errors on key pages."""
-    errors = []
-    
-    def handle_console(msg):
-        if msg.type == "error":
-            errors.append(msg.text)
-    
-    page.on("console", handle_console)
-    
-    # Test admin pages
-    await admin_login(page)
-    
-    pages_to_test = [
-        f"{UI_BASE_URL}/admin/",
-        f"{UI_BASE_URL}/admin/client/",
-        f"{UI_BASE_URL}/admin/auditlog/",
-        f"{UI_BASE_URL}/admin/system_info",
-    ]
-    
-    for url in pages_to_test:
-        await page.goto(url)
-        await page.wait_for_load_state("networkidle")
-    
-    assert len(errors) == 0, f"JavaScript errors detected: {errors}"
+async def test_navigation_links_work(active_profile):
+    """Verify all navigation links are present and working."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        
+        page_html = await browser.html("nav")
+        
+        # Check for key navigation links
+        expected_links = [
+            '/admin/',           # Dashboard
+            '/admin/accounts',   # Accounts
+            '/admin/audit',      # Audit Logs
+            '/admin/config/',    # Config (netcup or email)
+            '/admin/system',     # System Info
+        ]
+        
+        for link in expected_links:
+            assert link in page_html, f"Navigation link {link} not found"
 
 
-@pytest.mark.asyncio
-async def test_responsive_layout(page):
-    """Verify UI remains usable at different viewport sizes."""
-    await admin_login(page)
-    await page.goto(f"{UI_BASE_URL}/admin/client/")
-    
-    # Test desktop view (1920x1080)
-    await page.set_viewport_size({"width": 1920, "height": 1080})
-    await page.wait_for_load_state("networkidle")
-    
-    # Verify table visible
-    table = await page.query_selector("table.table")
-    assert table is not None, "Client list table not found at desktop resolution"
-    
-    # Test tablet view (768x1024)
-    await page.set_viewport_size({"width": 768, "height": 1024})
-    await page.wait_for_load_state("networkidle")
-    
-    # Table should still be visible (might have horizontal scroll)
-    table = await page.query_selector("table.table")
-    assert table is not None, "Client list table not found at tablet resolution"
+async def test_create_account_form_has_fields(active_profile):
+    """Verify account creation form has required fields."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await browser.goto(settings.url("/admin/accounts/new"))
+        await browser.verify_status(200)
+        
+        page_html = await browser.html("form")
+        
+        # Check for required form fields
+        assert 'id="username"' in page_html or 'name="username"' in page_html, \
+            "Username field not found"
+        assert 'id="email"' in page_html or 'name="email"' in page_html, \
+            "Email field not found"
+
+
+async def test_theme_demo_page_loads(active_profile):
+    """Verify theme demo page loads correctly."""
+    async with browser_session() as browser:
+        await browser.goto(settings.url("/theme-demo"))
+        await browser.verify_status(200)
+        
+        # Check for theme demo elements (the page shows demo content with "Clients" h1)
+        page_html = await browser.html("body")
+        # Theme demo has theme selector and demo content
+        assert "theme-demo" in page_html.lower() or "Theme Demo" in page_html or "Clients" in page_html, \
+            "Expected theme demo page content"
+
+
+async def test_no_500_errors_on_admin_pages(active_profile):
+    """Verify no 500 errors on any admin pages."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        
+        pages_to_test = [
+            "/admin/",
+            "/admin/accounts",
+            "/admin/accounts/pending",
+            "/admin/audit",
+            "/admin/config/netcup",
+            "/admin/config/email",
+            "/admin/system",
+            "/admin/change-password",
+        ]
+        
+        for page in pages_to_test:
+            await browser.goto(settings.url(page))
+            body = await browser.text("body")
+            assert "Internal Server Error" not in body, f"500 error on {page}"
+            assert "500" not in await browser.text("title"), f"500 error on {page}"

@@ -1,0 +1,260 @@
+{# API Documentation Page #}
+{% extends "account/base.html" %}
+
+{% block title %}API Documentation{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0">API Documentation</h2>
+            <small class="text-muted">Learn how to use the NAF DNS API</small>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-3 mb-4">
+            <!-- Navigation -->
+            <div class="card sticky-top" style="top: 1rem;">
+                <div class="card-header">
+                    <strong>Contents</strong>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="#authentication" class="list-group-item list-group-item-action">Authentication</a>
+                    <a href="#endpoints" class="list-group-item list-group-item-action">Endpoints</a>
+                    <a href="#examples" class="list-group-item list-group-item-action">Examples</a>
+                    <a href="#errors" class="list-group-item list-group-item-action">Error Handling</a>
+                    <a href="#rate-limits" class="list-group-item list-group-item-action">Rate Limits</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-9">
+            <!-- Authentication -->
+            <section id="authentication" class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-key me-2"></i>Authentication
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        All API requests require authentication via a Bearer token in the 
+                        <code>Authorization</code> header.
+                    </p>
+                    
+                    <div class="bg-dark p-3 rounded">
+                        <code class="text-success">
+                            Authorization: Bearer naf_yourusername_&lt;random64&gt;
+                        </code>
+                    </div>
+                    
+                    <h6 class="mt-4">Token Format</h6>
+                    <p>
+                        NAF tokens follow the format: <code>naf_&lt;username&gt;_&lt;random64&gt;</code>
+                    </p>
+                    <ul class="text-muted small">
+                        <li>Prefix: <code>naf_</code></li>
+                        <li>Username: Your account username</li>
+                        <li>Random: 64 characters of cryptographically secure randomness</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Endpoints -->
+            <section id="endpoints" class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-signpost-2 me-2"></i>API Endpoints
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Method</th>
+                                    <th>Endpoint</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge bg-info">GET</span></td>
+                                    <td><code>/api/dns/records</code></td>
+                                    <td>List all DNS records in your realm</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-success">POST</span></td>
+                                    <td><code>/api/dns/records</code></td>
+                                    <td>Create a new DNS record</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-warning">PUT</span></td>
+                                    <td><code>/api/dns/records/{id}</code></td>
+                                    <td>Update an existing record</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-danger">DELETE</span></td>
+                                    <td><code>/api/dns/records/{id}</code></td>
+                                    <td>Delete a record</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <h6 class="mt-4">Query Parameters</h6>
+                    <ul>
+                        <li><code>hostname</code> - Filter by hostname</li>
+                        <li><code>type</code> - Filter by record type (A, AAAA, TXT, etc.)</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Examples -->
+            <section id="examples" class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-code-slash me-2"></i>Examples
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <h6>List Records (curl)</h6>
+                    <pre class="bg-dark p-3 rounded"><code class="text-light">curl -X GET "{{ base_url }}/api/dns/records" \
+  -H "Authorization: Bearer YOUR_TOKEN"</code></pre>
+
+                    <h6 class="mt-4">Create A Record (curl)</h6>
+                    <pre class="bg-dark p-3 rounded"><code class="text-light">curl -X POST "{{ base_url }}/api/dns/records" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "hostname": "home.example.com",
+    "type": "A",
+    "destination": "203.0.113.50"
+  }'</code></pre>
+
+                    <h6 class="mt-4">Update Record (curl)</h6>
+                    <pre class="bg-dark p-3 rounded"><code class="text-light">curl -X PUT "{{ base_url }}/api/dns/records/12345" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "destination": "203.0.113.51"
+  }'</code></pre>
+
+                    <h6 class="mt-4">Delete Record (curl)</h6>
+                    <pre class="bg-dark p-3 rounded"><code class="text-light">curl -X DELETE "{{ base_url }}/api/dns/records/12345" \
+  -H "Authorization: Bearer YOUR_TOKEN"</code></pre>
+
+                    <h6 class="mt-4">Python Example</h6>
+                    <pre class="bg-dark p-3 rounded"><code class="text-light">import requests
+
+BASE_URL = "{{ base_url }}"
+TOKEN = "naf_youruser_..."
+
+headers = {"Authorization": f"Bearer {TOKEN}"}
+
+# Get records
+response = requests.get(
+    f"{BASE_URL}/api/dns/records",
+    headers=headers
+)
+print(response.json())</code></pre>
+                </div>
+            </section>
+
+            <!-- Errors -->
+            <section id="errors" class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>Error Handling
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        The API returns standard HTTP status codes and JSON error responses.
+                    </p>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-bordered mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Meaning</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>200</code></td>
+                                    <td>Success</td>
+                                </tr>
+                                <tr>
+                                    <td><code>201</code></td>
+                                    <td>Created</td>
+                                </tr>
+                                <tr>
+                                    <td><code>400</code></td>
+                                    <td>Bad Request - Invalid parameters</td>
+                                </tr>
+                                <tr>
+                                    <td><code>401</code></td>
+                                    <td>Unauthorized - Invalid or missing token</td>
+                                </tr>
+                                <tr>
+                                    <td><code>403</code></td>
+                                    <td>Forbidden - Operation not allowed for this token</td>
+                                </tr>
+                                <tr>
+                                    <td><code>404</code></td>
+                                    <td>Not Found - Record doesn't exist</td>
+                                </tr>
+                                <tr>
+                                    <td><code>429</code></td>
+                                    <td>Too Many Requests - Rate limit exceeded</td>
+                                </tr>
+                                <tr>
+                                    <td><code>500</code></td>
+                                    <td>Internal Server Error</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <h6 class="mt-4">Error Response Format</h6>
+                    <pre class="bg-dark p-3 rounded"><code class="text-light">{
+  "error": "error_code",
+  "message": "Human-readable error description"
+}</code></pre>
+                </div>
+            </section>
+
+            <!-- Rate Limits -->
+            <section id="rate-limits" class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-speedometer me-2"></i>Rate Limits
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        API requests are rate-limited per token. Default limits depend on your 
+                        token configuration.
+                    </p>
+                    
+                    <h6>Rate Limit Headers</h6>
+                    <ul>
+                        <li><code>X-RateLimit-Limit</code> - Maximum requests per window</li>
+                        <li><code>X-RateLimit-Remaining</code> - Requests remaining in current window</li>
+                        <li><code>X-RateLimit-Reset</code> - Unix timestamp when window resets</li>
+                    </ul>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-1"></i>
+                        If you need higher rate limits, contact your administrator.
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+{% endblock %}

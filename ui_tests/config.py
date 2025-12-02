@@ -42,9 +42,12 @@ class UiTargetProfile:
     
     @property
     def client_token(self) -> str:
-        """Full authentication token in client_id:secret_key format."""
-        return f"{self.client_id}:{self.client_secret_key}"
-
+        """Full authentication token (Bearer token value).
+        
+        New token format is: naf_<username>_<random64>
+        The secret_key field contains the full token.
+        """
+        return self.client_secret_key
 
 class UiTestConfig:
     """Configuration loaded from deployment_state.json.

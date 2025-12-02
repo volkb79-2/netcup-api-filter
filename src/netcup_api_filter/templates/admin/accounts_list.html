@@ -1,0 +1,304 @@
+{# Admin Accounts List - All accounts with filtering and bulk actions #}
+{% extends "admin/base.html" %}
+
+{% block title %}Accounts - Admin - Netcup API Filter{% endblock %}
+
+{% block extra_head %}
+<!-- List.js for client-side filtering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Accounts</h1>
+        <p class="text-muted mb-0">Manage user accounts and permissions</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin.accounts_pending') }}" class="btn btn-outline-warning">
+            <i class="bi bi-clock-history me-1"></i>Pending
+            {% if pending_count %}<span class="badge bg-warning text-dark">{{ pending_count }}</span>{% endif %}
+        </a>
+        <a href="{{ url_for('admin.account_create') }}" class="btn btn-primary">
+            <i class="bi bi-person-plus me-1"></i>Create Account
+        </a>
+    </div>
+</div>
+
+<!-- Filters Card -->
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-3 align-items-end">
+            <!-- Client-side filter -->
+            <div class="col-md-4">
+                <label class="form-label small text-muted">
+                    <i class="bi bi-funnel me-1"></i>Quick Filter
+                    <span class="badge bg-secondary ms-1" title="Filters visible rows only">Client-side</span>
+                </label>
+                <input type="text" class="form-control search" placeholder="Type to filter..." id="quickFilter">
+            </div>
+            
+            <!-- Server-side filters -->
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Status</label>
+                <select name="status" class="form-select">
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Statuses</option>
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                    <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                </select>
+            </div>
+            
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Search</label>
+                <input type="text" name="search" class="form-control" 
+                       placeholder="Username or email..." 
+                       value="{{ search }}">
+            </div>
+            
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-secondary w-100">
+                    <i class="bi bi-search me-1"></i>Search
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar (hidden until selection) -->
+<div class="card mb-3 d-none" id="bulkActionsBar">
+    <div class="card-body py-2 d-flex align-items-center justify-content-between">
+        <span>
+            <strong id="selectedCount">0</strong> accounts selected
+        </span>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-success" onclick="bulkAction('enable')">
+                <i class="bi bi-check-circle me-1"></i>Enable
+            </button>
+            <button class="btn btn-sm btn-outline-warning" onclick="bulkAction('disable')">
+                <i class="bi bi-slash-circle me-1"></i>Disable
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="bulkAction('delete')">
+                <i class="bi bi-trash me-1"></i>Delete
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                Clear
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Accounts Table -->
+<div class="card" id="accountsList">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th width="40">
+                        <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll()">
+                    </th>
+                    <th width="60" class="sort" data-sort="status">Status</th>
+                    <th class="sort" data-sort="username">Username</th>
+                    <th class="sort" data-sort="email">Email</th>
+                    <th width="100" class="sort" data-sort="realms">Realms</th>
+                    <th width="100" class="sort" data-sort="tokens">Tokens</th>
+                    <th width="140" class="sort" data-sort="last_login">Last Login</th>
+                    <th width="120">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="list">
+                {% for account in accounts %}
+                <tr data-account-id="{{ account.id }}">
+                    <td>
+                        <input type="checkbox" class="form-check-input row-checkbox" 
+                               value="{{ account.id }}" onchange="updateBulkActions()">
+                    </td>
+                    <td class="status">
+                        {% if account.is_active %}
+                        <span class="badge bg-success" title="Active">
+                            <i class="bi bi-check-circle"></i>
+                        </span>
+                        {% elif account.email_verified %}
+                        <span class="badge bg-warning" title="Pending Approval">
+                            <i class="bi bi-clock-history"></i>
+                        </span>
+                        {% else %}
+                        <span class="badge bg-secondary" title="Unverified">
+                            <i class="bi bi-question-circle"></i>
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="username">
+                        <a href="{{ url_for('admin.account_detail', account_id=account.id) }}" 
+                           class="text-decoration-none fw-medium font-monospace">
+                            {{ account.username }}
+                        </a>
+                    </td>
+                    <td class="email">
+                        <span class="font-monospace">{{ account.email }}</span>
+                        {% if account.email_verified %}
+                        <i class="bi bi-patch-check-fill text-success ms-1" title="Verified"></i>
+                        {% endif %}
+                    </td>
+                    <td class="realms text-center">
+                        {% set approved_realms = account.realms | selectattr('status', 'eq', 'approved') | list | length %}
+                        {% set total_realms = account.realms | length %}
+                        <span class="badge bg-secondary">{{ approved_realms }}</span>
+                        {% if total_realms > approved_realms %}
+                        <small class="text-muted">/{{ total_realms }}</small>
+                        {% endif %}
+                    </td>
+                    <td class="tokens text-center">
+                        {% set active_tokens = 0 %}
+                        {% set total_tokens = 0 %}
+                        {% for realm in account.realms %}
+                            {% set total_tokens = total_tokens + realm.tokens | length %}
+                            {% set active_tokens = active_tokens + (realm.tokens | selectattr('is_active') | list | length) %}
+                        {% endfor %}
+                        <span class="badge {% if active_tokens > 0 %}bg-success{% else %}bg-secondary{% endif %}">
+                            {{ active_tokens }}
+                        </span>
+                        {% if total_tokens > active_tokens %}
+                        <small class="text-muted">/{{ total_tokens }}</small>
+                        {% endif %}
+                    </td>
+                    <td class="last_login">
+                        {% if account.last_login_at %}
+                        <small class="text-muted" title="{{ account.last_login_at.strftime('%Y-%m-%d %H:%M') }}">
+                            {{ account.last_login_at.strftime('%Y-%m-%d') }}
+                        </small>
+                        {% else %}
+                        <small class="text-muted">Never</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('admin.account_detail', account_id=account.id) }}" 
+                               class="btn btn-outline-primary" title="View Details">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% if not account.is_active and account.email_verified %}
+                            <form method="POST" action="{{ url_for('admin.account_approve', account_id=account.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-outline-success" title="Approve">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                            {% elif account.is_active %}
+                            <form method="POST" action="{{ url_for('admin.account_disable', account_id=account.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-outline-warning" title="Disable">
+                                    <i class="bi bi-slash-circle"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox display-6 d-block mb-2"></i>
+                        No accounts found
+                        {% if search or status_filter != 'all' %}
+                        <br><small>Try adjusting your filters</small>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if pagination.pages > 1 %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted">
+            Showing {{ pagination.first }} - {{ pagination.last }} of {{ pagination.total }}
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if pagination.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('admin.accounts_list', page=pagination.prev_num, status=status_filter, search=search) }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                
+                {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                    {% if page %}
+                    <li class="page-item {% if page == pagination.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.accounts_list', page=page, status=status_filter, search=search) }}">
+                            {{ page }}
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if pagination.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('admin.accounts_list', page=pagination.next_num, status=status_filter, search=search) }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Initialize List.js for client-side filtering
+document.addEventListener('DOMContentLoaded', function() {
+    new List('accountsList', {
+        valueNames: ['status', 'username', 'email', 'realms', 'tokens', 'last_login']
+    });
+});
+
+// Bulk action functions
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateBulkActions();
+}
+
+function updateBulkActions() {
+    const checked = document.querySelectorAll('.row-checkbox:checked');
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const countEl = document.getElementById('selectedCount');
+    
+    if (checked.length > 0) {
+        bulkBar.classList.remove('d-none');
+        countEl.textContent = checked.length;
+    } else {
+        bulkBar.classList.add('d-none');
+    }
+}
+
+function clearSelection() {
+    document.getElementById('selectAll').checked = false;
+    document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
+    updateBulkActions();
+}
+
+function bulkAction(action) {
+    const checked = document.querySelectorAll('.row-checkbox:checked');
+    const ids = Array.from(checked).map(cb => cb.value);
+    
+    if (ids.length === 0) return;
+    
+    if (action === 'delete') {
+        if (!confirm(`Are you sure you want to delete ${ids.length} account(s)? This cannot be undone.`)) {
+            return;
+        }
+    }
+    
+    // TODO: Implement bulk action API call
+    alert(`Bulk ${action} for ${ids.length} accounts: ${ids.join(', ')}`);
+}
+</script>
+{% endblock %}

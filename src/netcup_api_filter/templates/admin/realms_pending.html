@@ -1,0 +1,187 @@
+{# Admin Pending Realms - Realm requests awaiting approval #}
+{% extends "admin/base.html" %}
+
+{% block title %}Pending Realms - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Pending Realm Requests</h1>
+        <p class="text-muted mb-0">Review and approve realm permission requests</p>
+    </div>
+</div>
+
+{% if realms %}
+<!-- Bulk Actions -->
+<div class="mb-3 d-flex gap-2">
+    <button class="btn btn-success" onclick="approveAll()">
+        <i class="bi bi-check-all me-1"></i>Approve All
+    </button>
+</div>
+
+<!-- Pending Realms Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th>Realm</th>
+                    <th>Type</th>
+                    <th>Record Types</th>
+                    <th>Operations</th>
+                    <th>Requested</th>
+                    <th width="140">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for realm in realms %}
+                <tr id="realm-{{ realm.id }}">
+                    <td>
+                        <a href="{{ url_for('admin.account_detail', account_id=realm.account.id) }}" 
+                           class="text-decoration-none font-monospace">
+                            {{ realm.account.username }}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="font-monospace">{{ realm.realm_value }}</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-secondary">{{ realm.realm_type }}</span>
+                    </td>
+                    <td>
+                        <small>{{ realm.allowed_record_types | join(', ') }}</small>
+                    </td>
+                    <td>
+                        {% for op in realm.allowed_operations %}
+                        <span class="badge {% if op == 'read' %}bg-info{% elif op == 'update' %}bg-warning{% elif op == 'create' %}bg-success{% else %}bg-danger{% endif %} me-1">
+                            {{ op }}
+                        </span>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        <small class="text-muted">{{ realm.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <form method="POST" action="{{ url_for('admin.realm_approve', realm_id=realm.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-success" title="Approve">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                            <button type="button" class="btn btn-outline-primary" 
+                                    onclick="showDetails({{ realm.id }})" title="Details">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger" 
+                                    onclick="rejectRealm({{ realm.id }}, '{{ realm.realm_value }}')" title="Reject">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-inbox display-3 text-success d-block mb-3"></i>
+        <h4>No Pending Realm Requests</h4>
+        <p class="text-muted mb-0">All realm requests have been processed.</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Reject Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reject Realm Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="rejectForm">
+                <div class="modal-body">
+                    <p>Reject access to <strong id="rejectRealmValue"></strong>?</p>
+                    <div class="mb-3">
+                        <label class="form-label">Reason (optional)</label>
+                        <textarea name="reason" class="form-control" rows="3" 
+                                  placeholder="Explain why this request is being rejected..."></textarea>
+                    </div>
+                    <div class="form-check">
+                        <input type="checkbox" name="send_email" class="form-check-input" id="sendRejectEmail" checked>
+                        <label class="form-check-label" for="sendRejectEmail">
+                            Send notification email to user
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-x-lg me-1"></i>Reject
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Realm Request Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailsContent">
+                <!-- Populated by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <form method="POST" id="approveForm" class="d-inline">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-lg me-1"></i>Approve
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function rejectRealm(id, realmValue) {
+    document.getElementById('rejectRealmValue').textContent = realmValue;
+    document.getElementById('rejectForm').action = `/admin/realms/${id}/reject`;
+    new bootstrap.Modal(document.getElementById('rejectModal')).show();
+}
+
+function showDetails(id) {
+    // In a real implementation, this would fetch details via AJAX
+    // For now, just show the approve form
+    document.getElementById('approveForm').action = `/admin/realms/${id}/approve`;
+    document.getElementById('detailsContent').innerHTML = `
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-1"></i>
+            Loading realm details...
+        </div>
+    `;
+    new bootstrap.Modal(document.getElementById('detailsModal')).show();
+}
+
+function approveAll() {
+    if (confirm('Are you sure you want to approve all pending realm requests?')) {
+        // TODO: Implement bulk approve API
+        alert('Bulk approve not yet implemented');
+    }
+}
+</script>
+{% endblock %}

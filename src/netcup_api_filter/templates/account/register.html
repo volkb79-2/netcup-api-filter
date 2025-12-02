@@ -1,0 +1,142 @@
+{# Account Register - New account registration #}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark" data-theme="cobalt2">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Netcup API Filter</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Custom Theme CSS -->
+    <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+    
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        }
+        .register-card {
+            width: 100%;
+            max-width: 500px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <div class="register-card mx-auto">
+            <!-- Logo/Header -->
+            <div class="text-center mb-4">
+                <i class="bi bi-shield-lock display-4 text-primary"></i>
+                <h1 class="h4 mt-3">Create Account</h1>
+                <p class="text-muted">Join Netcup API Filter</p>
+            </div>
+            
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+            
+            <!-- Registration Form -->
+            <div class="card">
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('account.register') }}">
+                        <div class="mb-3">
+                            <label class="form-label" for="username">Username <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                <input type="text" class="form-control font-monospace" id="username" name="username" 
+                                       required pattern="[a-z0-9_]{3,32}" autocomplete="username"
+                                       placeholder="lowercase letters, numbers, underscore">
+                            </div>
+                            <div class="form-text">3-32 characters, lowercase letters, numbers, and underscores only</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label" for="email">Email <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                                <input type="email" class="form-control" id="email" name="email" 
+                                       required autocomplete="email"
+                                       placeholder="you@example.com">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label" for="password">Password <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                <input type="password" class="form-control" id="password" name="password" 
+                                       required minlength="8" autocomplete="new-password">
+                                <button type="button" class="btn btn-outline-secondary" 
+                                        onclick="togglePassword('password')" tabindex="-1">
+                                    <i class="bi bi-eye" id="passwordIcon"></i>
+                                </button>
+                            </div>
+                            <div class="form-text">Minimum 8 characters</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="form-label" for="confirm_password">Confirm Password <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                <input type="password" class="form-control" id="confirm_password" name="confirm_password" 
+                                       required autocomplete="new-password">
+                            </div>
+                        </div>
+                        
+                        <div class="form-check mb-4">
+                            <input type="checkbox" class="form-check-input" id="terms" name="terms" required>
+                            <label class="form-check-label" for="terms">
+                                I agree to the <a href="#" target="_blank">Terms of Service</a> and 
+                                <a href="#" target="_blank">Privacy Policy</a>
+                            </label>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-person-plus me-1"></i>Create Account
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Footer Links -->
+            <div class="text-center mt-4">
+                <span class="text-muted">Already have an account?</span>
+                <a href="{{ url_for('account.login') }}" class="ms-1">Login</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(inputId + 'Icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.className = 'bi bi-eye-slash';
+            } else {
+                input.type = 'password';
+                icon.className = 'bi bi-eye';
+            }
+        }
+    </script>
+</body>
+</html>

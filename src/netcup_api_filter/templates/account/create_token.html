@@ -1,0 +1,151 @@
+{# Create Token Page #}
+{% extends "account/base.html" %}
+
+{% block title %}Create Token{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <!-- Header -->
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{ url_for('account.tokens') }}" class="btn btn-outline-secondary btn-sm me-3">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <div>
+                    <h2 class="mb-0">Create API Token</h2>
+                    <small class="text-muted">Generate a new token for API access</small>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Token Form -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-key me-2"></i>Token Configuration
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('account.create_token', realm_id=realm.id) if realm else url_for('account.create_token_general') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <!-- Realm Selection (if not pre-selected) -->
+                        {% if not realm %}
+                        <div class="mb-4">
+                            <label for="realm" class="form-label">Realm</label>
+                            <select class="form-select" id="realm" name="realm_id" required>
+                                <option value="">Select a realm...</option>
+                                {% for r in realms %}
+                                <option value="{{ r.id }}">{{ r.realm_value }} ({{ r.realm_type }})</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Select the realm this token will have access to</div>
+                        </div>
+                        {% else %}
+                        <input type="hidden" name="realm_id" value="{{ realm.id }}">
+                        <div class="mb-4">
+                            <label class="form-label">Realm</label>
+                            <div class="form-control-plaintext">
+                                <span class="badge bg-primary me-2">{{ realm.realm_type }}</span>
+                                <strong>{{ realm.realm_value }}</strong>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Token Name -->
+                        <div class="mb-4">
+                            <label for="name" class="form-label">Token Name</label>
+                            <input type="text" class="form-control" id="name" name="name"
+                                   placeholder="e.g., home-router-ddns, certbot-wildcard" required>
+                            <div class="form-text">
+                                A descriptive name to identify this token's purpose
+                            </div>
+                        </div>
+
+                        <!-- Expiry -->
+                        <div class="mb-4">
+                            <label for="expires" class="form-label">Expiration</label>
+                            <select class="form-select" id="expires" name="expires_in">
+                                <option value="">Never expires</option>
+                                <option value="30">30 days</option>
+                                <option value="90">90 days</option>
+                                <option value="180">6 months</option>
+                                <option value="365">1 year</option>
+                            </select>
+                            <div class="form-text">
+                                Optional: Set an expiration date for security
+                            </div>
+                        </div>
+
+                        <!-- IP Whitelist -->
+                        <div class="mb-4">
+                            <label for="ip-whitelist" class="form-label">
+                                IP Whitelist <span class="text-muted">(optional)</span>
+                            </label>
+                            <input type="text" class="form-control" id="ip-whitelist" name="ip_whitelist"
+                                   placeholder="192.168.1.100, 10.0.0.0/8">
+                            <div class="form-text">
+                                Comma-separated list of IPs or CIDR ranges. Leave empty to allow all.
+                            </div>
+                        </div>
+
+                        <!-- Rate Limiting -->
+                        <div class="mb-4">
+                            <label for="rate-limit" class="form-label">
+                                Rate Limit <span class="text-muted">(optional)</span>
+                            </label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="rate-limit" name="rate_limit_per_minute"
+                                       placeholder="60" min="1" max="1000">
+                                <span class="input-group-text">requests per minute</span>
+                            </div>
+                            <div class="form-text">
+                                Optional: Limit API calls. Default is no limit.
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        <div class="mb-4">
+                            <label for="notes" class="form-label">
+                                Notes <span class="text-muted">(optional)</span>
+                            </label>
+                            <textarea class="form-control" id="notes" name="notes" rows="2"
+                                      placeholder="Additional notes about this token's usage"></textarea>
+                        </div>
+
+                        <!-- Submit -->
+                        <div class="d-flex justify-content-end gap-2">
+                            <a href="{{ url_for('account.tokens') }}" class="btn btn-outline-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-plus-lg me-1"></i>Generate Token
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Security Notice -->
+            <div class="alert alert-warning mt-4">
+                <h6 class="alert-heading">
+                    <i class="bi bi-exclamation-triangle me-1"></i>Important
+                </h6>
+                <p class="mb-0 small">
+                    The token will only be displayed <strong>once</strong> after creation. 
+                    Make sure to copy and store it securely. You cannot retrieve it later.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

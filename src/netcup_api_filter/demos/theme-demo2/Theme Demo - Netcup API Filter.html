@@ -1,0 +1,3988 @@
+<!DOCTYPE html>
+<!-- saved from url=(0032)http://localhost:5100/theme-demo -->
+<html lang="en" data-arp=""><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theme Demo - Netcup API Filter</title>
+    <link href="/theme-demo2/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            /* Default theme variables - will be overridden by theme selection */
+            --color-bg-primary: #0a0e1a;
+            --color-bg-secondary: #111827;
+            --color-bg-elevated: #1a2234;
+            --color-bg-surface: rgba(26, 34, 52, 0.8);
+            --color-accent: #3b82f6;
+            --color-accent-hover: #2563eb;
+            --color-success: #10b981;
+            --color-warning: #f59e0b;
+            --color-danger: #ef4444;
+            --color-info: #06b6d4;
+            --color-text-primary: #f3f4f6;
+            --color-text-secondary: #9ca3af;
+            --color-text-muted: #6b7280;
+            --color-border: rgba(255, 255, 255, 0.1);
+            --navbar-height: 56px;
+            --border-radius-sm: 0.375rem;
+            --border-radius-md: 0.5rem;
+            --border-radius-lg: 0.75rem;
+            
+            /* Compactness variables - default (comfortable) */
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 0.75rem;
+            --spacing-lg: 1rem;
+            --spacing-xl: 1.25rem;
+            --spacing-2xl: 1.5rem;
+            --font-size-sm: 0.875rem;
+            --font-size-xs: 0.75rem;
+            --table-padding: 1rem;
+            --card-padding: 1.25rem;
+            --input-padding-y: 0.625rem;
+            --input-padding-x: 1rem;
+        }
+        
+        /* Compact mode */
+        body.compact {
+            --spacing-xs: 0.125rem;
+            --spacing-sm: 0.25rem;
+            --spacing-md: 0.5rem;
+            --spacing-lg: 0.625rem;
+            --spacing-xl: 0.75rem;
+            --spacing-2xl: 1rem;
+            --font-size-sm: 0.8125rem;
+            --font-size-xs: 0.6875rem;
+            --table-padding: 0.5rem;
+            --card-padding: 0.75rem;
+            --input-padding-y: 0.375rem;
+            --input-padding-x: 0.625rem;
+            --navbar-height: 44px;
+        }
+        
+        /* Ultra compact mode */
+        body.ultra-compact {
+            --spacing-xs: 0.0625rem;
+            --spacing-sm: 0.125rem;
+            --spacing-md: 0.25rem;
+            --spacing-lg: 0.375rem;
+            --spacing-xl: 0.5rem;
+            --spacing-2xl: 0.625rem;
+            --font-size-sm: 0.75rem;
+            --font-size-xs: 0.625rem;
+            --table-padding: 0.375rem;
+            --card-padding: 0.5rem;
+            --input-padding-y: 0.25rem;
+            --input-padding-x: 0.5rem;
+            --navbar-height: 38px;
+        }
+
+        /* ==========================================
+           THEME 1: Deep Ocean (Reference - unchanged)
+           ========================================== */
+        .theme-deep-ocean {
+            --color-bg-primary: #0a0e1a;
+            --color-bg-secondary: #111827;
+            --color-bg-elevated: #1a2234;
+            --color-accent: #3b82f6;
+            --color-accent-hover: #2563eb;
+            --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+
+        /* ==========================================
+           THEME 2: Graphite (Kept - enhanced)
+           Deep black with electric blue
+           ========================================== */
+        .theme-graphite {
+            --color-bg-primary: linear-gradient(180deg, #07070a 0%, #0a0a0f 100%);
+            --color-bg-primary-solid: #08080c;
+            --color-bg-secondary: #101014;
+            --color-bg-elevated: #18181f;
+            --color-accent: #3b82f6;
+            --color-accent-hover: #2563eb;
+            --color-accent-glow: rgba(59, 130, 246, 0.4);
+            --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+            --color-border: rgba(59, 130, 246, 0.15);
+            --color-border-card: rgba(59, 130, 246, 0.25);
+            --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 40px rgba(59, 130, 246, 0.05);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 40%);
+        }
+
+        /* ==========================================
+           THEME 3: Zinc (Kept - enhanced)
+           Modern zinc with teal
+           ========================================== */
+        .theme-zinc {
+            --color-bg-primary: linear-gradient(180deg, #08090a 0%, #0c0d0e 100%);
+            --color-bg-primary-solid: #0a0b0c;
+            --color-bg-secondary: #141516;
+            --color-bg-elevated: #1e2021;
+            --color-accent: #2dd4bf;
+            --color-accent-hover: #14b8a6;
+            --color-accent-glow: rgba(45, 212, 191, 0.4);
+            --gradient-accent: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 60%, #0d9488 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(45, 212, 191, 0.03) 0%, transparent 50%);
+            --color-border: rgba(45, 212, 191, 0.12);
+            --color-border-card: rgba(45, 212, 191, 0.22);
+            --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 40px rgba(45, 212, 191, 0.05);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.035) 0%, transparent 40%);
+            --color-text-secondary: #a1a1aa;
+            --color-text-muted: #71717a;
+        }
+
+        /* ==========================================
+           THEME 4: Obsidian Noir
+           Ultra-dark with violet luxe
+           ========================================== */
+        .theme-obsidian-noir {
+            --color-bg-primary: linear-gradient(180deg, #06060a 0%, #0a0a10 100%);
+            --color-bg-primary-solid: #08080d;
+            --color-bg-secondary: #0f0f16;
+            --color-bg-elevated: #16161f;
+            --color-accent: #a78bfa;
+            --color-accent-hover: #8b5cf6;
+            --color-accent-glow: rgba(167, 139, 250, 0.4);
+            --gradient-accent: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 60%, #7c3aed 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(167, 139, 250, 0.04) 0%, transparent 50%);
+            --color-border: rgba(167, 139, 250, 0.15);
+            --color-border-card: rgba(167, 139, 250, 0.28);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(139, 92, 246, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 35%);
+        }
+
+        /* ==========================================
+           THEME 5: Ember
+           Warm charcoal with orange fire
+           ========================================== */
+        .theme-ember {
+            --color-bg-primary: linear-gradient(180deg, #0a0806 0%, #0e0b08 100%);
+            --color-bg-primary-solid: #0b0907;
+            --color-bg-secondary: #151210;
+            --color-bg-elevated: #1e1915;
+            --color-accent: #f97316;
+            --color-accent-hover: #ea580c;
+            --color-accent-glow: rgba(249, 115, 22, 0.45);
+            --gradient-accent: linear-gradient(135deg, #f97316 0%, #ea580c 60%, #c2410c 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(249, 115, 22, 0.04) 0%, transparent 50%);
+            --color-border: rgba(249, 115, 22, 0.18);
+            --color-border-card: rgba(249, 115, 22, 0.32);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(249, 115, 22, 0.1);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+            --color-warning: #fb923c;
+        }
+
+        /* ==========================================
+           THEME 6: Arctic
+           Cool steel with ice blue
+           ========================================== */
+        .theme-arctic {
+            --color-bg-primary: linear-gradient(180deg, #080a0d 0%, #0b0e12 100%);
+            --color-bg-primary-solid: #090b0f;
+            --color-bg-secondary: #10141a;
+            --color-bg-elevated: #181d25;
+            --color-accent: #38bdf8;
+            --color-accent-hover: #0ea5e9;
+            --color-accent-glow: rgba(56, 189, 248, 0.4);
+            --gradient-accent: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 60%, #0284c7 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(56, 189, 248, 0.04) 0%, transparent 50%);
+            --color-border: rgba(56, 189, 248, 0.14);
+            --color-border-card: rgba(56, 189, 248, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.45), 0 0 45px rgba(56, 189, 248, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 38%);
+            --color-info: #7dd3fc;
+        }
+
+        /* ==========================================
+           THEME 7: Jade
+           Rich black with emerald luxury
+           ========================================== */
+        .theme-jade {
+            --color-bg-primary: linear-gradient(180deg, #050807 0%, #080b09 100%);
+            --color-bg-primary-solid: #060908;
+            --color-bg-secondary: #0d110f;
+            --color-bg-elevated: #141a17;
+            --color-accent: #34d399;
+            --color-accent-hover: #10b981;
+            --color-accent-glow: rgba(52, 211, 153, 0.4);
+            --gradient-accent: linear-gradient(135deg, #34d399 0%, #10b981 60%, #059669 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(52, 211, 153, 0.04) 0%, transparent 50%);
+            --color-border: rgba(52, 211, 153, 0.14);
+            --color-border-card: rgba(52, 211, 153, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(52, 211, 153, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 35%);
+            --color-success: #6ee7b7;
+        }
+
+        /* ==========================================
+           THEME 8: Rose Quartz
+           Dark elegance with pink luxury
+           ========================================== */
+        .theme-rose-quartz {
+            --color-bg-primary: linear-gradient(180deg, #0a080a 0%, #0e0b0d 100%);
+            --color-bg-primary-solid: #0b090a;
+            --color-bg-secondary: #141114;
+            --color-bg-elevated: #1c181b;
+            --color-accent: #f472b6;
+            --color-accent-hover: #ec4899;
+            --color-accent-glow: rgba(244, 114, 182, 0.4);
+            --gradient-accent: linear-gradient(135deg, #f472b6 0%, #ec4899 60%, #db2777 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(244, 114, 182, 0.04) 0%, transparent 50%);
+            --color-border: rgba(244, 114, 182, 0.14);
+            --color-border-card: rgba(244, 114, 182, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(236, 72, 153, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+        }
+
+        /* ==========================================
+           THEME 9: Gold Dust
+           Luxurious dark with gold accents
+           ========================================== */
+        .theme-gold-dust {
+            --color-bg-primary: linear-gradient(180deg, #090806 0%, #0c0a07 100%);
+            --color-bg-primary-solid: #0a0907;
+            --color-bg-secondary: #13110d;
+            --color-bg-elevated: #1b1814;
+            --color-accent: #fbbf24;
+            --color-accent-hover: #f59e0b;
+            --color-accent-glow: rgba(251, 191, 36, 0.45);
+            --gradient-accent: linear-gradient(135deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(251, 191, 36, 0.04) 0%, transparent 50%);
+            --color-border: rgba(251, 191, 36, 0.16);
+            --color-border-card: rgba(251, 191, 36, 0.30);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(251, 191, 36, 0.1);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 35%);
+            --color-warning: #fde68a;
+        }
+
+        /* ==========================================
+           THEME 10: Crimson
+           Deep black with red sophistication
+           ========================================== */
+        .theme-crimson {
+            --color-bg-primary: linear-gradient(180deg, #080606 0%, #0c0808 100%);
+            --color-bg-primary-solid: #090707;
+            --color-bg-secondary: #120e0e;
+            --color-bg-elevated: #1a1414;
+            --color-accent: #f87171;
+            --color-accent-hover: #ef4444;
+            --color-accent-glow: rgba(248, 113, 113, 0.4);
+            --gradient-accent: linear-gradient(135deg, #f87171 0%, #ef4444 60%, #dc2626 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(248, 113, 113, 0.04) 0%, transparent 50%);
+            --color-border: rgba(248, 113, 113, 0.14);
+            --color-border-card: rgba(248, 113, 113, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(239, 68, 68, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 35%);
+            --color-danger: #fca5a5;
+        }
+
+        /* ==========================================
+           THEME 11: Amethyst
+           Royal purple with crystal clarity
+           ========================================== */
+        .theme-amethyst {
+            --color-bg-primary: linear-gradient(180deg, #08060a 0%, #0b080e 100%);
+            --color-bg-primary-solid: #09070b;
+            --color-bg-secondary: #100d15;
+            --color-bg-elevated: #17131d;
+            --color-accent: #c084fc;
+            --color-accent-hover: #a855f7;
+            --color-accent-glow: rgba(192, 132, 252, 0.4);
+            --gradient-accent: linear-gradient(135deg, #c084fc 0%, #a855f7 60%, #9333ea 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(192, 132, 252, 0.05) 0%, transparent 50%);
+            --color-border: rgba(192, 132, 252, 0.16);
+            --color-border-card: rgba(192, 132, 252, 0.30);
+            --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 55px rgba(168, 85, 247, 0.1);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.055) 0%, transparent 35%);
+        }
+
+        /* ==========================================
+           THEME 12: Sapphire
+           Deep indigo with bright blue
+           ========================================== */
+        .theme-sapphire {
+            --color-bg-primary: linear-gradient(180deg, #06070c 0%, #090a10 100%);
+            --color-bg-primary-solid: #07080d;
+            --color-bg-secondary: #0d0f18;
+            --color-bg-elevated: #141722;
+            --color-accent: #818cf8;
+            --color-accent-hover: #6366f1;
+            --color-accent-glow: rgba(129, 140, 248, 0.4);
+            --gradient-accent: linear-gradient(135deg, #818cf8 0%, #6366f1 60%, #4f46e5 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(129, 140, 248, 0.05) 0%, transparent 50%);
+            --color-border: rgba(129, 140, 248, 0.16);
+            --color-border-card: rgba(129, 140, 248, 0.28);
+            --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 55px rgba(99, 102, 241, 0.1);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 38%);
+        }
+
+        /* ==========================================
+           THEME 13: Slate Luxe
+           Refined slate with cyan elegance
+           ========================================== */
+        .theme-slate-luxe {
+            --color-bg-primary: linear-gradient(180deg, #080a0e 0%, #0c0f14 100%);
+            --color-bg-primary-solid: #0a0c10;
+            --color-bg-secondary: #111520;
+            --color-bg-elevated: #181d2a;
+            --color-accent: #22d3ee;
+            --color-accent-hover: #06b6d4;
+            --color-accent-glow: rgba(34, 211, 238, 0.4);
+            --gradient-accent: linear-gradient(135deg, #22d3ee 0%, #06b6d4 60%, #0891b2 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(34, 211, 238, 0.04) 0%, transparent 50%);
+            --color-border: rgba(34, 211, 238, 0.14);
+            --color-border-card: rgba(34, 211, 238, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 50px rgba(6, 182, 212, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 38%);
+            --color-text-secondary: #94a3b8;
+        }
+
+        /* ==========================================
+           THEME 14: Navy
+           Classic dark blue accent
+           ========================================== */
+        .theme-navy {
+            --color-bg-primary: linear-gradient(180deg, #060810 0%, #0a0d16 100%);
+            --color-bg-primary-solid: #080a12;
+            --color-bg-secondary: #0e1220;
+            --color-bg-elevated: #151a2c;
+            --color-accent: #4f7cff;
+            --color-accent-hover: #3b68eb;
+            --color-accent-glow: rgba(79, 124, 255, 0.35);
+            --gradient-accent: linear-gradient(135deg, #4f7cff 0%, #3b68eb 60%, #2952d4 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(79, 124, 255, 0.04) 0%, transparent 50%);
+            --color-border: rgba(79, 124, 255, 0.14);
+            --color-border-card: rgba(79, 124, 255, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(79, 124, 255, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 38%);
+        }
+
+        /* ==========================================
+           THEME 15: Cobalt
+           Rich cobalt blue sophistication
+           ========================================== */
+        .theme-cobalt {
+            --color-bg-primary: linear-gradient(180deg, #050810 0%, #080c18 100%);
+            --color-bg-primary-solid: #070a14;
+            --color-bg-secondary: #0c1020;
+            --color-bg-elevated: #12182c;
+            --color-accent: #2563eb;
+            --color-accent-hover: #1d4ed8;
+            --color-accent-glow: rgba(37, 99, 235, 0.4);
+            --gradient-accent: linear-gradient(135deg, #2563eb 0%, #1d4ed8 60%, #1e40af 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(37, 99, 235, 0.05) 0%, transparent 50%);
+            --color-border: rgba(37, 99, 235, 0.16);
+            --color-border-card: rgba(37, 99, 235, 0.28);
+            --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 50px rgba(37, 99, 235, 0.1);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 35%);
+        }
+
+        /* ==========================================
+           THEME 16: Midnight Blue
+           Deep midnight with steel blue accent
+           ========================================== */
+        .theme-midnight-blue {
+            --color-bg-primary: linear-gradient(180deg, #06090f 0%, #0a0e18 100%);
+            --color-bg-primary-solid: #080b12;
+            --color-bg-secondary: #0d1220;
+            --color-bg-elevated: #14192e;
+            --color-accent: #6889ff;
+            --color-accent-hover: #5070f0;
+            --color-accent-glow: rgba(104, 137, 255, 0.35);
+            --gradient-accent: linear-gradient(135deg, #6889ff 0%, #5070f0 60%, #3d5bd9 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(104, 137, 255, 0.04) 0%, transparent 50%);
+            --color-border: rgba(104, 137, 255, 0.14);
+            --color-border-card: rgba(104, 137, 255, 0.26);
+            --card-shadow: 0 4px 28px rgba(0, 0, 0, 0.5), 0 0 45px rgba(104, 137, 255, 0.08);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 38%);
+            --color-text-secondary: #a0aec0;
+        }
+
+        /* ==========================================
+           THEME 17: Cobalt 2
+           Enhanced cobalt with brighter text & borders
+           ========================================== */
+        .theme-cobalt-2 {
+            --color-bg-primary: linear-gradient(180deg, #050810 0%, #080c18 100%);
+            --color-bg-primary-solid: #070a14;
+            --color-bg-secondary: #0c1020;
+            --color-bg-elevated: #141c30;
+            --color-accent: #3b7cf5;
+            --color-accent-hover: #2563eb;
+            --color-accent-glow: rgba(59, 124, 245, 0.4);
+            --gradient-accent: linear-gradient(135deg, #3b7cf5 0%, #2563eb 60%, #1d4ed8 100%);
+            --gradient-bg: linear-gradient(145deg, rgba(59, 124, 245, 0.05) 0%, transparent 50%);
+            /* Brighter borders */
+            --color-border: rgba(100, 150, 255, 0.25);
+            --color-border-card: rgba(100, 150, 255, 0.38);
+            --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 50px rgba(59, 124, 245, 0.12);
+            --glossy-overlay: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, transparent 35%);
+            /* Brighter text colors */
+            --color-text-primary: #f8fafc;
+            --color-text-secondary: #c8d4e6;
+            --color-text-muted: #8fa3c0;
+        }
+
+        /* ==========================================
+           BASE STYLES (Apply to all themes)
+           ========================================== */
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--color-bg-primary-solid, var(--color-bg-primary));
+            color: var(--color-text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Gradient background overlay for enhanced themes */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--gradient-bg, transparent);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* Theme Selector Fixed Panel */
+        .theme-selector {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--color-bg-secondary);
+            border-right: 1px solid var(--color-border-card, var(--color-border));
+            padding: 1rem;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .theme-selector::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+        }
+
+        .theme-selector h3 {
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .theme-option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: var(--border-radius-md);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .theme-option:hover {
+            background: var(--color-bg-elevated);
+        }
+
+        .theme-option.active {
+            border-color: var(--color-accent);
+            background: var(--color-bg-elevated);
+        }
+
+        .theme-swatch {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--border-radius-sm);
+            flex-shrink: 0;
+        }
+
+        .theme-name {
+            font-size: 0.875rem;
+            color: var(--color-text-primary);
+        }
+        
+        /* Density Controls */
+        .density-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .density-btn {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-secondary);
+            border: 1px solid var(--color-border);
+            padding: 0.5rem 0.75rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+        
+        .density-btn:hover {
+            background: var(--color-bg-surface);
+            color: var(--color-text-primary);
+            border-color: var(--color-accent);
+        }
+        
+        .density-btn.active {
+            background: var(--color-accent);
+            color: white;
+            border-color: var(--color-accent);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 280px;
+            min-height: 100vh;
+        }
+
+        /* Navbar */
+        .navbar-custom {
+            background: var(--color-bg-secondary);
+            border-bottom: 1px solid var(--color-border-card, var(--color-border));
+            height: var(--navbar-height);
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+        }
+
+        .navbar-custom::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--color-text-primary);
+            font-weight: 600;
+            font-size: 1.125rem;
+            text-decoration: none;
+        }
+
+        .navbar-brand:hover {
+            color: var(--color-accent);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .nav-link {
+            color: var(--color-text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius-sm);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }
+
+        .nav-link:hover {
+            color: var(--color-text-primary);
+            background: var(--color-bg-elevated);
+        }
+
+        .nav-link.active {
+            color: var(--color-accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-dropdown {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--color-text-secondary);
+            padding: 0.5rem 0.75rem;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .user-dropdown:hover {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+        }
+
+        /* Page Container */
+        .page-container {
+            padding: var(--spacing-2xl);
+            max-width: 1400px;
+        }
+
+        /* Page Header */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .page-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin: 0;
+        }
+
+        /* Cards */
+        .card-custom {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-lg);
+            overflow: hidden;
+            box-shadow: var(--card-shadow, 0 4px 16px rgba(0, 0, 0, 0.2));
+            position: relative;
+        }
+
+        .card-custom::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+            border-radius: var(--border-radius-lg);
+        }
+
+        .card-header-custom {
+            padding: var(--spacing-md) var(--card-padding);
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .card-title {
+            font-size: var(--font-size-sm);
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin: 0;
+        }
+
+        .card-body-custom {
+            padding: var(--card-padding);
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Buttons */
+        .btn-primary-custom {
+            background: var(--gradient-accent);
+            color: white;
+            border: none;
+            padding: var(--input-padding-y) var(--spacing-xl);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            box-shadow: 0 2px 6px var(--color-accent-glow, rgba(59, 130, 246, 0.25));
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-primary-custom:hover {
+            filter: brightness(1.08);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px var(--color-accent-glow, rgba(59, 130, 246, 0.35));
+        }
+
+        .btn-secondary-custom {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+            border: 1px solid var(--color-border);
+            padding: var(--input-padding-y) var(--spacing-xl);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary-custom:hover {
+            background: var(--color-bg-surface);
+            border-color: var(--color-accent);
+        }
+
+        .btn-danger, .btn-danger-custom {
+            background: linear-gradient(135deg, var(--color-danger) 0%, #dc2626 100%);
+            color: white;
+            border: none;
+            padding: var(--input-padding-y) var(--spacing-xl);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+        }
+
+        .btn-danger:hover, .btn-danger-custom:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: none;
+            color: var(--color-text-secondary);
+            padding: 0.375rem;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-icon:hover {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+        }
+
+        /* Search Bar */
+        .search-bar {
+            display: flex;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-md);
+            padding: var(--spacing-md);
+            background: var(--color-bg-elevated);
+            border-radius: var(--border-radius-md);
+            border: 1px solid var(--color-border);
+            position: relative;
+        }
+
+        .search-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+            border-radius: var(--border-radius-md);
+        }
+
+        .search-input {
+            flex: 1;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: var(--input-padding-y) var(--input-padding-x);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+        }
+
+        .search-input::placeholder {
+            color: var(--color-text-muted);
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px var(--color-accent-glow, rgba(59, 130, 246, 0.15));
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .table-custom {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table-custom th {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-xs);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: var(--spacing-md) var(--table-padding);
+            text-align: left;
+            border-bottom: 2px solid var(--color-border-card, var(--color-border));
+        }
+
+        .table-custom td {
+            padding: var(--spacing-md) var(--table-padding);
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            font-size: var(--font-size-sm);
+        }
+
+        .table-custom tbody tr:hover {
+            background: var(--color-bg-elevated);
+        }
+
+        .table-custom tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Badges */
+        .badge-custom {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.625rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--color-success);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--color-danger);
+        }
+
+        .badge-info {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--color-info);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--color-warning);
+        }
+
+        .badge-record {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-secondary);
+            padding: 0.2rem 0.5rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-right: 0.25rem;
+        }
+
+        /* Monospace */
+        .mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.8125rem;
+            background: var(--color-bg-primary);
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--border-radius-sm);
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .form-label {
+            display: block;
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-sm);
+            font-weight: 500;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .form-input {
+            width: 100%;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: var(--input-padding-y) var(--input-padding-x);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px var(--color-accent-glow, rgba(59, 130, 246, 0.15));
+        }
+
+        .form-input.mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .form-select {
+            width: 100%;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: var(--input-padding-y) var(--input-padding-x);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            cursor: pointer;
+            /* Fix dropdown styling */
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 16px 12px;
+            padding-right: 2.5rem;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+        
+        .form-select:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px var(--color-accent-glow, rgba(59, 130, 246, 0.15));
+        }
+        
+        .form-select option {
+            background: var(--color-bg-elevated);
+            color: var(--color-text-primary);
+            padding: 0.5rem;
+        }
+
+        .form-textarea {
+            width: 100%;
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: var(--input-padding-y) var(--input-padding-x);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            min-height: 80px;
+            resize: vertical;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        }
+
+        .form-checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: var(--spacing-sm);
+        }
+
+        .form-checkbox-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm) var(--spacing-md);
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .form-checkbox-item:hover {
+            border-color: var(--color-accent);
+        }
+
+        .form-checkbox-item.selected {
+            border-color: var(--color-accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .form-checkbox-item input[type="checkbox"] {
+            accent-color: var(--color-accent);
+        }
+
+        .form-checkbox-item label {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-primary);
+            cursor: pointer;
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            background: var(--color-bg-elevated);
+            border-radius: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid var(--color-border);
+        }
+
+        .toggle-switch.active {
+            background: var(--gradient-accent);
+            border-color: var(--color-accent);
+            box-shadow: 0 0 12px var(--color-accent-glow, rgba(59, 130, 246, 0.3));
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-switch.active::after {
+            left: 24px;
+        }
+
+        /* Template Cards */
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .template-card {
+            background: var(--color-bg-elevated);
+            border: 2px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-md);
+            padding: var(--spacing-lg);
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .template-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+        }
+
+        .template-card:hover {
+            border-color: var(--color-accent);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 30px var(--color-accent-glow, rgba(59, 130, 246, 0.15));
+        }
+
+        .template-card.selected {
+            border-color: var(--color-accent);
+            background: linear-gradient(180deg, var(--color-bg-elevated) 0%, rgba(59, 130, 246, 0.08) 100%);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 25px var(--color-accent-glow, rgba(59, 130, 246, 0.12));
+        }
+
+        .template-icon {
+            font-size: 1.5rem;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .template-name {
+            font-weight: 600;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-primary);
+            margin-bottom: var(--spacing-xs);
+        }
+
+        .template-desc {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .template-badges {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.25rem;
+        }
+
+        /* Pagination */
+        .pagination-custom {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-md);
+        }
+
+        .page-btn {
+            min-width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-secondary);
+            border-radius: var(--border-radius-sm);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .page-btn:hover {
+            border-color: var(--color-accent);
+            color: var(--color-text-primary);
+            box-shadow: 0 0 8px var(--color-accent-glow, rgba(59, 130, 246, 0.2));
+        }
+
+        .page-btn.active {
+            background: var(--gradient-accent);
+            border-color: var(--color-accent);
+            color: white;
+            box-shadow: 0 2px 10px var(--color-accent-glow, rgba(59, 130, 246, 0.3));
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: var(--spacing-md);
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .stat-card {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-md);
+            padding: var(--spacing-lg);
+            text-align: center;
+            position: relative;
+            box-shadow: var(--card-shadow, 0 2px 12px rgba(0, 0, 0, 0.15));
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-accent);
+        }
+
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: 0.25rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Section Divider */
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+            margin: var(--spacing-lg) 0;
+            color: var(--color-text-muted);
+            font-size: var(--font-size-sm);
+        }
+
+        .section-divider::before,
+        .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--color-border);
+        }
+
+        /* Row Layout */
+        .row-flex {
+            display: flex;
+            gap: var(--spacing-lg);
+        }
+
+        .col-main {
+            flex: 2;
+        }
+
+        .col-sidebar {
+            flex: 1;
+            min-width: 280px;
+        }
+
+        /* Info Box */
+        .info-box {
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-md);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-md);
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--card-shadow, 0 2px 12px rgba(0, 0, 0, 0.15));
+        }
+
+        .info-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+        }
+
+        .info-box-title {
+            font-size: var(--font-size-sm);
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: var(--spacing-sm);
+            position: relative;
+            z-index: 1;
+        }
+
+        .info-box-content {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+            position: relative;
+            z-index: 1;
+        }
+
+        .info-box.warning {
+            border-color: var(--color-warning);
+            background: linear-gradient(180deg, var(--color-bg-elevated) 0%, rgba(245, 158, 11, 0.06) 100%);
+        }
+
+        /* Action Row */
+        .action-row {
+            display: flex;
+            gap: var(--spacing-md);
+            padding-top: var(--spacing-lg);
+            border-top: 1px solid var(--color-border);
+            margin-top: var(--spacing-lg);
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .row-flex {
+                flex-direction: column;
+            }
+            .col-sidebar {
+                min-width: 100%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .theme-selector {
+                display: none;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+        }
+
+        /* ==========================================
+           ADDITIONAL UI COMPONENTS
+           ========================================== */
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: calc(var(--navbar-height) + 1rem);
+            right: 1rem;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-width: 380px;
+        }
+
+        .toast {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 1rem 1.25rem;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-md);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px var(--color-accent-glow, rgba(59, 130, 246, 0.1));
+            animation: slideIn 0.3s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .toast::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+        }
+
+        .toast.toast-success::before { background: var(--color-success); }
+        .toast.toast-error::before { background: var(--color-danger); }
+        .toast.toast-warning::before { background: var(--color-warning); }
+        .toast.toast-info::before { background: var(--color-info); }
+
+        .toast-icon {
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .toast-content {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .toast-message {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            padding: 0.25rem;
+            font-size: 1rem;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .toast-close:hover {
+            opacity: 1;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1100;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .modal {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px var(--color-accent-glow, rgba(59, 130, 246, 0.1));
+            max-width: 500px;
+            width: 90%;
+            animation: scaleIn 0.2s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .modal::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--glossy-overlay, transparent);
+            pointer-events: none;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--color-border);
+            position: relative;
+            z-index: 1;
+        }
+
+        .modal-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            padding: 0.5rem;
+            font-size: 1.25rem;
+            border-radius: var(--border-radius-sm);
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--color-text-primary);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+            color: var(--color-text-secondary);
+            position: relative;
+            z-index: 1;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--color-border);
+            background: rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 1;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Alert Banners */
+        .alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 1rem 1.25rem;
+            border-radius: var(--border-radius-md);
+            margin-bottom: 1rem;
+            border: 1px solid;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+            color: #34d399;
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .alert-info {
+            background: rgba(6, 182, 212, 0.1);
+            border-color: rgba(6, 182, 212, 0.3);
+            color: #22d3ee;
+        }
+
+        .alert-icon {
+            font-size: 1.125rem;
+            flex-shrink: 0;
+        }
+
+        .alert-content {
+            flex: 1;
+        }
+
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .alert-dismiss {
+            background: none;
+            border: none;
+            color: inherit;
+            opacity: 0.6;
+            cursor: pointer;
+            padding: 0.25rem;
+            transition: opacity 0.2s;
+        }
+
+        .alert-dismiss:hover {
+            opacity: 1;
+        }
+
+        /* Password Field with Toggle */
+        .password-field {
+            position: relative;
+        }
+
+        .password-field input {
+            padding-right: 3rem;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            padding: 0.25rem;
+            font-size: 1.125rem;
+            transition: color 0.2s;
+        }
+
+        .password-toggle:hover {
+            color: var(--color-text-primary);
+        }
+
+        /* Code Block with Copy */
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-md);
+            padding: 1rem;
+            position: relative;
+            margin: 1rem 0;
+        }
+
+        .code-block pre {
+            margin: 0;
+            font-family: 'JetBrains Mono', 'Consolas', monospace;
+            font-size: 0.8125rem;
+            color: var(--color-text-secondary);
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .code-copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-muted);
+            padding: 0.375rem 0.625rem;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .code-copy-btn:hover {
+            background: var(--color-accent);
+            border-color: var(--color-accent);
+            color: white;
+        }
+
+        .code-copy-btn.copied {
+            background: var(--color-success);
+            border-color: var(--color-success);
+            color: white;
+        }
+
+        /* Timeline View */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0.5rem;
+            top: 0.5rem;
+            bottom: 0.5rem;
+            width: 2px;
+            background: var(--color-border);
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1.5rem;
+        }
+
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: -1.625rem;
+            top: 0.25rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--color-bg-secondary);
+            border: 2px solid var(--color-accent);
+            z-index: 1;
+        }
+
+        .timeline-item.success .timeline-dot {
+            border-color: var(--color-success);
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        .timeline-item.error .timeline-dot {
+            border-color: var(--color-danger);
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .timeline-time {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .timeline-title {
+            font-weight: 500;
+            color: var(--color-text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .timeline-desc {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+        }
+
+        .timeline-meta {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .timeline-meta button {
+            background: none;
+            border: none;
+            color: var(--color-accent);
+            cursor: pointer;
+            padding: 0;
+            font-size: var(--font-size-xs);
+        }
+
+        .timeline-meta button:hover {
+            text-decoration: underline;
+        }
+
+        /* Compact Timeline (vertical bullet layout per 4.4.1) */
+        .timeline-compact {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            position: relative;
+            padding-left: 1rem;
+        }
+
+        /* Vertical line running down the left side */
+        .timeline-compact::before {
+            content: '';
+            position: absolute;
+            left: 0.375rem;
+            top: 0.75rem;
+            bottom: 0.75rem;
+            width: 2px;
+            background: var(--color-border);
+        }
+
+        .timeline-compact-item {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 0 1.5rem;
+            padding: 0.5rem 0;
+            position: relative;
+        }
+
+        /* Bullet point */
+        .timeline-compact-item::before {
+            content: '';
+            position: absolute;
+            left: -0.75rem;
+            top: 0.75rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--color-bg-elevated);
+            border: 2px solid var(--color-text-muted);
+        }
+
+        .timeline-compact-item.success::before {
+            border-color: var(--color-success);
+            background: var(--color-success);
+        }
+
+        .timeline-compact-item.error::before {
+            border-color: var(--color-danger);
+            background: var(--color-danger);
+        }
+
+        /* Connecting vertical line segment */
+        .timeline-compact-item::after {
+            content: '';
+            position: absolute;
+            left: -0.4375rem;
+            top: 1.25rem;
+            bottom: -0.5rem;
+            width: 2px;
+            background: var(--color-border);
+        }
+
+        .timeline-compact-item:last-child::after {
+            display: none;
+        }
+
+        .timeline-compact-left {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .timeline-compact-datetime {
+            font-size: var(--font-size-sm);
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        .timeline-compact-source {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .timeline-compact-source button {
+            background: none;
+            border: none;
+            color: var(--color-accent);
+            cursor: pointer;
+            padding: 0;
+            font-size: var(--font-size-xs);
+        }
+
+        .timeline-compact-source button:hover {
+            text-decoration: underline;
+        }
+
+        .timeline-compact-right {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .timeline-compact-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .timeline-compact-action {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            font-size: var(--font-size-sm);
+            font-family: var(--font-mono);
+        }
+
+        .timeline-compact-status {
+            font-size: var(--font-size-sm);
+        }
+
+        .timeline-compact-badge {
+            font-size: var(--font-size-xs);
+            padding: 0.125rem 0.5rem;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+
+        .timeline-compact-badge.success {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--color-success);
+        }
+
+        .timeline-compact-badge.error {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--color-danger);
+        }
+
+        .timeline-compact-desc {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-secondary);
+        }
+
+        /* Compact Form Styles (2-column layout) */
+        .form-compact {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .form-compact-section {
+            grid-column: 1 / -1;
+            border-top: 1px solid var(--color-border);
+            padding-top: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .form-compact-section-title {
+            font-size: var(--font-size-sm);
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .form-compact-column {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .form-compact .form-group-custom {
+            margin-bottom: 0;
+        }
+
+        /* Permission grid (inline checkboxes) */
+        .permissions-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .permissions-grid .form-check-inline {
+            margin: 0;
+            padding: 0.375rem 0.75rem;
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-sm);
+            transition: all 0.2s;
+        }
+
+        .permissions-grid .form-check-inline:hover {
+            border-color: var(--color-accent);
+        }
+
+        .permissions-grid .form-check-inline.checked {
+            background: rgba(var(--color-accent-rgb, 99, 102, 241), 0.1);
+            border-color: var(--color-accent);
+        }
+
+        /* Toggle slider control */
+        .toggle-slider {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .toggle-slider input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider-track {
+            width: 40px;
+            height: 20px;
+            background: var(--color-border);
+            border-radius: 10px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-slider input:checked + .toggle-slider-track {
+            background: var(--color-accent);
+        }
+
+        .toggle-slider-thumb {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-slider input:checked + .toggle-slider-track .toggle-slider-thumb {
+            transform: translateX(20px);
+        }
+
+        .toggle-slider-label {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--color-border);
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            padding: 0.75rem 1.25rem;
+            background: none;
+            border: none;
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-sm);
+            font-weight: 500;
+            cursor: pointer;
+            position: relative;
+            transition: color 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--color-text-primary);
+        }
+
+        .tab.active {
+            color: var(--color-accent);
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--color-accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Search Input with Icon */
+        .search-input-container {
+            position: relative;
+        }
+
+        .search-input-container .search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--color-text-muted);
+            pointer-events: none;
+        }
+
+        .search-input-container input {
+            padding-left: 2.75rem;
+        }
+
+        /* Toggle Slider */
+        .toggle-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .toggle-slider {
+            width: 44px;
+            height: 24px;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .toggle-slider::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            background: var(--color-text-muted);
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: all 0.3s;
+        }
+
+        .toggle-slider.active {
+            background: var(--color-accent);
+            border-color: var(--color-accent);
+        }
+
+        .toggle-slider.active::after {
+            background: white;
+            left: 22px;
+        }
+
+        .toggle-label {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+        }
+
+        /* Dropdown Menu */
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            padding: 0.5rem 1rem;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-size: var(--font-size-sm);
+            transition: all 0.2s;
+        }
+
+        .dropdown-toggle:hover {
+            border-color: var(--color-accent);
+        }
+
+        .dropdown-toggle .caret {
+            font-size: 0.75rem;
+            transition: transform 0.2s;
+        }
+
+        .dropdown.open .dropdown-toggle .caret {
+            transform: rotate(180deg);
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 0.5rem;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-md);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            min-width: 180px;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+
+        .dropdown.open .dropdown-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            padding: 0.625rem 1rem;
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+        }
+
+        .dropdown-item:first-child {
+            border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+        }
+
+        .dropdown-item:last-child {
+            border-radius: 0 0 var(--border-radius-md) var(--border-radius-md);
+        }
+
+        .dropdown-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--color-text-primary);
+        }
+
+        .dropdown-item.danger {
+            color: var(--color-danger);
+        }
+
+        .dropdown-item.danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: var(--color-border);
+            margin: 0.375rem 0;
+        }
+
+        /* Expandable Row */
+        .expandable-row {
+            cursor: pointer;
+        }
+
+        .expandable-row:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .row-expand-icon {
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+
+        .expandable-row.expanded .row-expand-icon {
+            transform: rotate(90deg);
+        }
+
+        .row-details {
+            display: none;
+        }
+        
+        .row-details td {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1rem 1.5rem;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            border-top: 1px solid var(--color-border);
+        }
+
+        .expandable-row.expanded + .row-details {
+            display: table-row;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--color-border);
+            border-top-color: var(--color-accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .spinner.spinner-sm {
+            width: 16px;
+            height: 16px;
+            border-width: 1.5px;
+        }
+
+        .spinner.spinner-lg {
+            width: 40px;
+            height: 40px;
+            border-width: 3px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-overlay {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 2rem;
+            color: var(--color-text-secondary);
+        }
+
+        /* Tooltip */
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+        }
+
+        .tooltip-trigger {
+            color: var(--color-text-muted);
+            cursor: help;
+        }
+
+        .tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--color-bg-elevated);
+            border: 1px solid var(--color-border-card, var(--color-border));
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-xs);
+            color: var(--color-text-secondary);
+            white-space: nowrap;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+            z-index: 50;
+        }
+
+        .tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: var(--color-border-card, var(--color-border));
+        }
+
+        .tooltip-container:hover .tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--color-bg-elevated);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid var(--color-border);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--gradient-accent);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-bar.animated .progress-fill {
+            animation: progressPulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes progressPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* Badge Variants */
+        .badge-outline {
+            background: transparent;
+            border: 1px solid currentColor;
+            padding: 0.25rem 0.625rem;
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-xs);
+            font-weight: 500;
+        }
+
+        .badge-outline.badge-success { color: var(--color-success); }
+        .badge-outline.badge-warning { color: var(--color-warning); }
+        .badge-outline.badge-danger { color: var(--color-danger); }
+        .badge-outline.badge-info { color: var(--color-info); }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--color-text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state-desc {
+            font-size: var(--font-size-sm);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Skeleton Loading */
+        .skeleton {
+            background: linear-gradient(90deg, 
+                var(--color-bg-elevated) 0%, 
+                rgba(255, 255, 255, 0.05) 50%, 
+                var(--color-bg-elevated) 100%);
+            background-size: 200% 100%;
+            animation: skeletonShimmer 1.5s infinite;
+            border-radius: var(--border-radius-sm);
+        }
+
+        .skeleton-text {
+            height: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .skeleton-text.short { width: 40%; }
+        .skeleton-text.medium { width: 70%; }
+
+        @keyframes skeletonShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body class="theme-cobalt-2">
+
+<!-- Theme Selector Panel -->
+<div class="theme-selector">
+    <h3>🎨 Select Theme</h3>
+    
+    <div class="theme-option" onclick="setTheme('deep-ocean', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #3b82f6, #0a0e1a)"></div>
+        <span class="theme-name">1. Deep Ocean</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('graphite', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 50%, #07070a 100%)"></div>
+        <span class="theme-name">2. Graphite</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('zinc', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #2dd4bf 0%, #0d9488 50%, #08090a 100%)"></div>
+        <span class="theme-name">3. Zinc</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('navy', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #4f7cff 0%, #2952d4 50%, #060810 100%)"></div>
+        <span class="theme-name">4. Navy</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('cobalt', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #050810 100%)"></div>
+        <span class="theme-name">5. Cobalt</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('midnight-blue', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #6889ff 0%, #3d5bd9 50%, #06090f 100%)"></div>
+        <span class="theme-name">6. Midnight Blue</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('obsidian-noir', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 50%, #06060a 100%)"></div>
+        <span class="theme-name">7. Obsidian Noir</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('ember', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #f97316 0%, #c2410c 50%, #0a0806 100%)"></div>
+        <span class="theme-name">8. Ember</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('arctic', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #38bdf8 0%, #0284c7 50%, #080a0d 100%)"></div>
+        <span class="theme-name">9. Arctic</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('jade', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #34d399 0%, #059669 50%, #050807 100%)"></div>
+        <span class="theme-name">10. Jade</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('rose-quartz', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #f472b6 0%, #db2777 50%, #0a080a 100%)"></div>
+        <span class="theme-name">11. Rose Quartz</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('gold-dust', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #fbbf24 0%, #d97706 50%, #090806 100%)"></div>
+        <span class="theme-name">12. Gold Dust</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('crimson', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #f87171 0%, #dc2626 50%, #080606 100%)"></div>
+        <span class="theme-name">13. Crimson</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('amethyst', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #c084fc 0%, #9333ea 50%, #08060a 100%)"></div>
+        <span class="theme-name">14. Amethyst</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('sapphire', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #818cf8 0%, #4f46e5 50%, #06070c 100%)"></div>
+        <span class="theme-name">15. Sapphire</span>
+    </div>
+    
+    <div class="theme-option" onclick="setTheme('slate-luxe', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #22d3ee 0%, #0891b2 50%, #080a0e 100%)"></div>
+        <span class="theme-name">16. Slate Luxe</span>
+    </div>
+    
+    <div class="theme-option active" onclick="setTheme('cobalt-2', this)">
+        <div class="theme-swatch" style="background: linear-gradient(135deg, #3b7cf5 0%, #1d4ed8 50%, #050810 100%); border: 1px solid rgba(100, 150, 255, 0.4);"></div>
+        <span class="theme-name">17. Cobalt 2 ★</span>
+    </div>
+    
+    <h3 style="margin-top: 1.5rem;">📐 UI Density</h3>
+    
+    <div class="density-controls">
+        <button class="density-btn active" onclick="setDensity('comfortable', this)">Comfortable</button>
+        <button class="density-btn" onclick="setDensity('compact', this)">Compact</button>
+        <button class="density-btn" onclick="setDensity('ultra-compact', this)">Ultra Compact</button>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+    <!-- Navbar -->
+    <nav class="navbar-custom">
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <a href="http://localhost:5100/theme-demo#" class="navbar-brand">
+                <span style="font-size: 1.5rem;">⚡</span>
+                Netcup API Filter
+            </a>
+            <div class="nav-links">
+                <a href="http://localhost:5100/theme-demo#" class="nav-link">Dashboard</a>
+                <a href="http://localhost:5100/theme-demo#" class="nav-link active">Clients</a>
+                <a href="http://localhost:5100/theme-demo#" class="nav-link">Audit Logs</a>
+                <a href="http://localhost:5100/theme-demo#" class="nav-link">Netcup API</a>
+                <a href="http://localhost:5100/theme-demo#" class="nav-link">Email</a>
+                <a href="http://localhost:5100/theme-demo#" class="nav-link">System</a>
+            </div>
+        </div>
+        <div class="user-menu">
+            <div class="user-dropdown">
+                <span>admin</span>
+                <span>▼</span>
+            </div>
+            <button class="btn-secondary-custom" style="padding: 0.5rem 0.875rem;">Logout</button>
+        </div>
+    </nav>
+
+    <div class="page-container">
+        <!-- Stats Section -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">12</div>
+                <div class="stat-label">Total Clients</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">8</div>
+                <div class="stat-label">Active Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">156</div>
+                <div class="stat-label">Requests (24h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">3</div>
+                <div class="stat-label">Errors (24h)</div>
+            </div>
+        </div>
+
+        <!-- DEMO SECTION 1: Complex Table (Client List) -->
+        <div class="page-header">
+            <h1 class="page-title">Clients</h1>
+            <button class="btn-primary-custom">+ Create Client</button>
+        </div>
+
+        <div class="card-custom">
+            <div class="card-header-custom">
+                <h2 class="card-title">Client List</h2>
+                <span style="color: var(--color-text-muted); font-size: 0.875rem;">12 records</span>
+            </div>
+            
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="🔍 Quick filter (client-side)...">
+                <input type="text" class="search-input" placeholder="Server search...">
+                <select class="form-select" style="width: auto;">
+                    <option>Status: All</option>
+                    <option>Active</option>
+                    <option>Inactive</option>
+                </select>
+                <button class="btn-secondary-custom">Search</button>
+            </div>
+            
+            <div class="table-container">
+                <table class="table-custom">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox"></th>
+                            <th>Status</th>
+                            <th>Client ID</th>
+                            <th>Realm</th>
+                            <th>Record Types</th>
+                            <th>Operations</th>
+                            <th>Last Used</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_ddns_home</span></td>
+                            <td><span>🏠</span> home.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">AAAA</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                                <span class="badge-record">U</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">5 min ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_cert</span></td>
+                            <td><span>🔒</span> _acme.example.com</td>
+                            <td>
+                                <span class="badge-record">TXT</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                                <span class="badge-record">C</span>
+                                <span class="badge-record">D</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">1 hour ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-danger">● Inactive</span></td>
+                            <td><span class="mono">client_old_backup</span></td>
+                            <td><span>🌐</span> *.backup.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">CNAME</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">30 days ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_monitoring</span></td>
+                            <td><span>👁️</span> api.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">AAAA</span>
+                                <span class="badge-record">TXT</span>
+                                <span class="badge-record">MX</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">2 hours ago</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><span class="badge-custom badge-success">● Active</span></td>
+                            <td><span class="mono">client_full_mgmt</span></td>
+                            <td><span>⚙️</span> infra.example.com</td>
+                            <td>
+                                <span class="badge-record">A</span>
+                                <span class="badge-record">AAAA</span>
+                                <span class="badge-record">CNAME</span>
+                                <span class="badge-record">TXT</span>
+                                <span class="badge-record">MX</span>
+                                <span class="badge-record">NS</span>
+                            </td>
+                            <td>
+                                <span class="badge-record">R</span>
+                                <span class="badge-record">C</span>
+                                <span class="badge-record">U</span>
+                                <span class="badge-record">D</span>
+                            </td>
+                            <td style="color: var(--color-text-muted);">Yesterday</td>
+                            <td>
+                                <button class="btn-icon" title="Edit">🛠️</button>
+                                <button class="btn-icon" title="Logs">📋</button>
+                                <button class="btn-icon" title="Delete">❌</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="pagination-custom">
+                <button class="page-btn">◀</button>
+                <button class="page-btn active">1</button>
+                <button class="page-btn">2</button>
+                <button class="page-btn">3</button>
+                <button class="page-btn">▶</button>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 2: Complex Form (Create Client) -->
+        <div class="page-header">
+            <h1 class="page-title">Create New Client</h1>
+        </div>
+
+        <!-- Template Selection -->
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Step 1: Select Configuration Template</h2>
+            </div>
+            <div class="card-body-custom">
+                <div class="template-grid">
+                    <div class="template-card selected">
+                        <div class="template-icon">🏠</div>
+                        <div class="template-name">DDNS Single Host</div>
+                        <div class="template-desc">Update single hostname IP</div>
+                        <div class="template-badges">
+                            <span class="badge-record">A</span>
+                            <span class="badge-record">AAAA</span>
+                            <span class="badge-record">R</span>
+                            <span class="badge-record">U</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">🌐</div>
+                        <div class="template-name">DDNS Subdomain</div>
+                        <div class="template-desc">Manage entire subdomain zone</div>
+                        <div class="template-badges">
+                            <span class="badge-record">A</span>
+                            <span class="badge-record">AAAA</span>
+                            <span class="badge-record">CNAME</span>
+                            <span class="badge-record">Full</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">👁️</div>
+                        <div class="template-name">Read-Only</div>
+                        <div class="template-desc">View records without modification</div>
+                        <div class="template-badges">
+                            <span class="badge-record">All</span>
+                            <span class="badge-record">R</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">🔒</div>
+                        <div class="template-name">LetsEncrypt</div>
+                        <div class="template-desc">DNS-01 challenge automation</div>
+                        <div class="template-badges">
+                            <span class="badge-record">TXT</span>
+                            <span class="badge-record">R</span>
+                            <span class="badge-record">C</span>
+                            <span class="badge-record">D</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">⚙️</div>
+                        <div class="template-name">Full Management</div>
+                        <div class="template-desc">Complete DNS control</div>
+                        <div class="template-badges">
+                            <span class="badge-record">All</span>
+                            <span class="badge-record">Full</span>
+                        </div>
+                    </div>
+                    <div class="template-card">
+                        <div class="template-icon">🔗</div>
+                        <div class="template-name">CNAME Only</div>
+                        <div class="template-desc">CDN/Load balancer aliases</div>
+                        <div class="template-badges">
+                            <span class="badge-record">CNAME</span>
+                            <span class="badge-record">Full</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Client Details Form -->
+        <div class="row-flex">
+            <div class="col-main">
+                <div class="card-custom">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Step 2: Client Details</h2>
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span style="color: var(--color-text-secondary); font-size: 0.875rem;">Active</span>
+                            <div class="toggle-switch active" onclick="this.classList.toggle(&#39;active', this)"></div>
+                        </div>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="form-group">
+                            <label class="form-label">Client ID *</label>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <input type="text" class="form-input mono" placeholder="client_ddns_home" style="flex: 1;">
+                                <button class="btn-secondary-custom">Generate ID</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <input type="text" class="form-input" placeholder="Home network DDNS updater">
+                        </div>
+
+                        <div class="section-divider">Realm Configuration</div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                            <div class="form-group">
+                                <label class="form-label">Realm Type *</label>
+                                <select class="form-select">
+                                    <option>Host</option>
+                                    <option>Subdomain</option>
+                                    <option>Zone</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Realm Value *</label>
+                                <input type="text" class="form-input mono" placeholder="home.example.com">
+                            </div>
+                        </div>
+
+                        <div class="section-divider">Permissions</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Allowed Record Types *</label>
+                            <div class="form-checkbox-group">
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="rt_a" checked="">
+                                    <label for="rt_a">A</label>
+                                </div>
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="rt_aaaa" checked="">
+                                    <label for="rt_aaaa">AAAA</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_cname">
+                                    <label for="rt_cname">CNAME</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_txt">
+                                    <label for="rt_txt">TXT</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_mx">
+                                    <label for="rt_mx">MX</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_ns">
+                                    <label for="rt_ns">NS</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="rt_srv">
+                                    <label for="rt_srv">SRV</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Allowed Operations *</label>
+                            <div class="form-checkbox-group">
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="op_r" checked="">
+                                    <label for="op_r">Read</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="op_c">
+                                    <label for="op_c">Create</label>
+                                </div>
+                                <div class="form-checkbox-item selected">
+                                    <input type="checkbox" id="op_u" checked="">
+                                    <label for="op_u">Update</label>
+                                </div>
+                                <div class="form-checkbox-item">
+                                    <input type="checkbox" id="op_d">
+                                    <label for="op_d">Delete</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-divider">Security</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Allowed IP Ranges (one per line)</label>
+                            <textarea class="form-textarea" placeholder="192.168.1.0/24
+10.0.0.0/8"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Token Expires</label>
+                            <input type="date" class="form-input" placeholder="Leave empty for no expiration">
+                        </div>
+
+                        <div class="section-divider">Notifications</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Email Address</label>
+                            <input type="email" class="form-input mono" placeholder="admin@example.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Notification Events</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox"> Token expired
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox" checked=""> Failed login attempt
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox"> Successful login
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox" checked=""> Access from non-whitelisted IP
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-text-secondary);">
+                                    <input type="checkbox" checked=""> Unauthorized API call
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="action-row">
+                            <button class="btn-primary-custom">Save &amp; Generate Token</button>
+                            <button class="btn-secondary-custom">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-sidebar">
+                <div class="info-box">
+                    <div class="info-box-title">📋 Selected Template</div>
+                    <div class="info-box-content">
+                        <p><strong>🏠 DDNS Single Host</strong></p>
+                        <p style="margin-top: 0.5rem;">Use Cases:</p>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.25rem;">
+                            <li>Home network with dynamic IP</li>
+                            <li>VPN server with changing IP</li>
+                            <li>Single server DDNS</li>
+                        </ul>
+                        <p style="margin-top: 0.75rem;">Example realm: <code class="mono">home.example.com</code></p>
+                    </div>
+                </div>
+
+                <div class="info-box warning">
+                    <div class="info-box-title">⚠️ Security Notice</div>
+                    <div class="info-box-content">
+                        The token will only be shown <strong>once</strong> after creation. Store it securely!
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <div class="info-box-title">📖 Quick Reference</div>
+                    <div class="info-box-content">
+                        <p><strong>Realm Types:</strong></p>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.25rem;">
+                            <li><strong>Host</strong> - Single hostname</li>
+                            <li><strong>Subdomain</strong> - All hosts under subdomain</li>
+                            <li><strong>Zone</strong> - Entire DNS zone</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 3: Alerts & Notifications -->
+        <div class="page-header">
+            <h1 class="page-title">Alerts &amp; Notifications</h1>
+        </div>
+
+        <!-- Alert Banners -->
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Alert Banners</h2>
+            </div>
+            <div class="card-body-custom">
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <div class="alert-content">
+                        <div class="alert-title">Client Created Successfully</div>
+                        <div>The client <code class="mono">client_ddns_home</code> has been created. Copy the token now!</div>
+                    </div>
+                    <button class="alert-dismiss">✕</button>
+                </div>
+
+                <div class="alert alert-warning">
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        <div class="alert-title">Token Expiring Soon</div>
+                        <div>Client <code class="mono">client_cert</code> token expires in 7 days. Consider regenerating.</div>
+                    </div>
+                    <button class="alert-dismiss">✕</button>
+                </div>
+
+                <div class="alert alert-error">
+                    <span class="alert-icon">❌</span>
+                    <div class="alert-content">
+                        <div class="alert-title">Authentication Failed</div>
+                        <div>Multiple failed login attempts detected from IP 192.168.1.100. Account temporarily locked.</div>
+                    </div>
+                    <button class="alert-dismiss">✕</button>
+                </div>
+
+                <div class="alert alert-info">
+                    <span class="alert-icon">ℹ️</span>
+                    <div class="alert-content">
+                        <div class="alert-title">Scheduled Maintenance</div>
+                        <div>System maintenance is scheduled for Dec 1, 2025 at 02:00 UTC. Expect brief interruptions.</div>
+                    </div>
+                    <button class="alert-dismiss">✕</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications (fixed position demo) -->
+        
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 4: Modal Dialog -->
+        <div class="page-header">
+            <h1 class="page-title">Modal Dialogs</h1>
+        </div>
+
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Modal Examples</h2>
+            </div>
+            <div class="card-body-custom">
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <button class="btn-primary-custom" onclick="document.getElementById(&#39;modal1&#39;).style.display=&#39;flex&#39;">Open Confirm Modal</button>
+                    <button class="btn-secondary-custom" onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;flex&#39;">Open Info Modal</button>
+                    <button class="btn-danger" onclick="document.getElementById(&#39;modal3&#39;).style.display=&#39;flex&#39;">Open Delete Modal</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal 1: Confirm -->
+        <div class="modal-overlay" id="modal1" style="display: none;" onclick="if(event.target===this)this.style.display=&#39;none&#39;">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="modal-title">⚠️ Confirm Action</div>
+                    <button class="modal-close" onclick="document.getElementById(&#39;modal1&#39;).style.display=&#39;none&#39;">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to regenerate the token for <strong>client_ddns_home</strong>?</p>
+                    <p style="margin-top: 0.75rem; color: var(--color-warning);">⚠️ The current token will be invalidated immediately.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary-custom" onclick="document.getElementById(&#39;modal1&#39;).style.display=&#39;none&#39;">Cancel</button>
+                    <button class="btn-primary-custom">Regenerate Token</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal 2: Info (IP Lookup) -->
+        <div class="modal-overlay" id="modal2" style="display: none;" onclick="if(event.target===this)this.style.display=&#39;none&#39;">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="modal-title">🌍 IP Information</div>
+                    <button class="modal-close" onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;none&#39;">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.75rem 1rem;">
+                        <span style="color: var(--color-text-muted);">IP Address:</span>
+                        <span class="mono">203.0.113.50</span>
+                        <span style="color: var(--color-text-muted);">Type:</span>
+                        <span>Public IPv4</span>
+                        <span style="color: var(--color-text-muted);">Location:</span>
+                        <span>Berlin, Germany 🇩🇪</span>
+                        <span style="color: var(--color-text-muted);">ISP:</span>
+                        <span>Deutsche Telekom AG</span>
+                        <span style="color: var(--color-text-muted);">Organization:</span>
+                        <span>T-Mobile</span>
+                    </div>
+                    <p style="margin-top: 1rem; font-size: var(--font-size-xs); color: var(--color-text-muted);">Data provided by MaxMind GeoIP</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary-custom" onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;none&#39;">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal 3: Danger/Delete -->
+        <div class="modal-overlay" id="modal3" style="display: none;" onclick="if(event.target===this)this.style.display=&#39;none&#39;">
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="modal-title">🗑️ Delete Client</div>
+                    <button class="modal-close" onclick="document.getElementById(&#39;modal3&#39;).style.display=&#39;none&#39;">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to <strong style="color: var(--color-danger);">permanently delete</strong> the client <code class="mono">client_old_backup</code>?</p>
+                    <p style="margin-top: 0.75rem;">This action cannot be undone. All associated audit logs will also be deleted.</p>
+                    <div class="form-group" style="margin-top: 1rem;">
+                        <label class="form-label">Type the client ID to confirm:</label>
+                        <input type="text" class="form-input mono" placeholder="client_old_backup">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary-custom" onclick="document.getElementById(&#39;modal3&#39;).style.display=&#39;none&#39;">Cancel</button>
+                    <button class="btn-danger">Delete Client</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 5: Form Elements -->
+        <div class="page-header">
+            <h1 class="page-title">Additional Form Elements</h1>
+        </div>
+
+        <div class="row-flex">
+            <div class="col-main">
+                <div class="card-custom" style="margin-bottom: 1.5rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Password &amp; Security Fields</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="form-group">
+                            <label class="form-label">Current Password</label>
+                            <div class="password-field">
+                                <input type="password" class="form-input" id="pwd1" value="mySecretPassword123">
+                                <button class="password-toggle" onclick="togglePassword(&#39;pwd1&#39;, this)">👁️</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">API Key</label>
+                            <div class="password-field">
+                                <input type="password" class="form-input mono" id="pwd2" value="sk-12345abcdef67890xyz">
+                                <button class="password-toggle" onclick="togglePassword(&#39;pwd2&#39;, this)">👁️</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Search with Icon</label>
+                            <div class="search-input-container">
+                                <span class="search-icon">🔍</span>
+                                <input type="text" class="form-input" placeholder="Search clients...">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Auto-Refresh</label>
+                            <div class="toggle-slider-container">
+                                <div class="toggle-slider" onclick="this.classList.toggle(&#39;active', this)"></div>
+                                <span class="toggle-label">Refresh every 2 seconds</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs Demo -->
+                <div class="card-custom" style="margin-bottom: 1.5rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Tabs Navigation</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="tabs">
+                            <button class="tab active" onclick="switchTab(event, &#39;tab1', this)">General</button>
+                            <button class="tab" onclick="switchTab(event, &#39;tab2', this)">Security</button>
+                            <button class="tab" onclick="switchTab(event, &#39;tab3', this)">Notifications</button>
+                            <button class="tab" onclick="switchTab(event, &#39;tab4', this)">API</button>
+                        </div>
+                        <div id="tab1" class="tab-content active">
+                            <p>General settings content goes here. Configure basic client information, realm settings, and description.</p>
+                        </div>
+                        <div id="tab2" class="tab-content">
+                            <p>Security settings: IP whitelisting, token expiration, and allowed operations.</p>
+                        </div>
+                        <div id="tab3" class="tab-content">
+                            <p>Email notifications: Configure alerts for login attempts, token expiration, and more.</p>
+                        </div>
+                        <div id="tab4" class="tab-content">
+                            <p>API settings: Endpoint URLs, rate limiting, and connection timeout configuration.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-sidebar">
+                <!-- Dropdown Menu -->
+                <div class="card-custom" style="margin-bottom: 1rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Dropdown Menu</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="dropdown" id="dropdown1">
+                            <button class="dropdown-toggle" onclick="toggleDropdown(&#39;dropdown1', this)">
+                                <span>👤</span>
+                                <span>admin</span>
+                                <span class="caret">▼</span>
+                            </button>
+                            <div class="dropdown-menu">
+                                <button class="dropdown-item">👤 Profile</button>
+                                <button class="dropdown-item">🔑 Change Password</button>
+                                <button class="dropdown-item">⚙️ Settings</button>
+                                <div class="dropdown-divider"></div>
+                                <button class="dropdown-item danger">🚪 Logout</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tooltip Demo -->
+                <div class="card-custom" style="margin-bottom: 1rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Tooltips</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <p style="margin-bottom: 1rem;">Hover over the icons for tooltips:</p>
+                        <div style="display: flex; gap: 1.5rem;">
+                            <div class="tooltip-container">
+                                <span class="tooltip-trigger">ⓘ</span>
+                                <div class="tooltip">Client-side filter only</div>
+                            </div>
+                            <div class="tooltip-container">
+                                <span class="tooltip-trigger">⚠️</span>
+                                <div class="tooltip">Token shown once!</div>
+                            </div>
+                            <div class="tooltip-container">
+                                <span class="tooltip-trigger">🔒</span>
+                                <div class="tooltip">TLS/SSL Enabled</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Bars -->
+                <div class="card-custom" style="margin-bottom: 1rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Progress Indicators</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div style="margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="font-size: var(--font-size-sm);">Storage Used</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--color-text-muted);">73%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 73%;"></div>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="font-size: var(--font-size-sm);">API Quota</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--color-text-muted);">25%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 25%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <span style="font-size: var(--font-size-sm);">Uploading...</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--color-text-muted);">45%</span>
+                            </div>
+                            <div class="progress-bar animated">
+                                <div class="progress-fill" style="width: 45%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 6: Timeline & Activity -->
+        <div class="page-header">
+            <h1 class="page-title">Activity Timeline</h1>
+        </div>
+
+        <!-- Standard Timeline (Vertical) -->
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Standard Timeline (Vertical)</h2>
+                <div class="toggle-slider-container">
+                    <div class="toggle-slider active" onclick="this.classList.toggle(&#39;active', this)"></div>
+                    <span class="toggle-label">Live Updates</span>
+                </div>
+            </div>
+            <div class="card-body-custom">
+                <div class="timeline">
+                    <div class="timeline-item success">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-time">14:32 - Nov 30, 2025</div>
+                        <div class="timeline-title">updateDnsRecords ✅</div>
+                        <div class="timeline-desc">Updated A record: <code class="mono">home.example.com</code> → 203.0.113.50</div>
+                        <div class="timeline-meta">
+                            IP: 203.0.113.50 
+                            <button onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;flex&#39;">🌍 Info</button>
+                        </div>
+                    </div>
+                    <div class="timeline-item success">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-time">14:30 - Nov 30, 2025</div>
+                        <div class="timeline-title">infoDnsRecords ✅</div>
+                        <div class="timeline-desc">Read 3 records for <code class="mono">home.example.com</code></div>
+                        <div class="timeline-meta">IP: 203.0.113.50</div>
+                    </div>
+                    <div class="timeline-item error">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-time">14:25 - Nov 30, 2025</div>
+                        <div class="timeline-title">updateDnsRecords ❌ DENIED</div>
+                        <div class="timeline-desc">Attempted to modify TXT record (not permitted)</div>
+                        <div class="timeline-meta">IP: 192.168.1.100 <button>🌍 Info</button></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compact Timeline (2-column layout) -->
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Compact Timeline (Space-Efficient)</h2>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <span style="font-size: var(--font-size-xs); color: var(--color-text-muted);">5 entries</span>
+                    <button class="btn-secondary-custom" style="font-size: var(--font-size-xs); padding: 0.375rem 0.75rem;">📥 Export</button>
+                    <label class="toggle-slider">
+                        <input type="checkbox">
+                        <span class="toggle-slider-track">
+                            <span class="toggle-slider-thumb"></span>
+                        </span>
+                        <span class="toggle-slider-label">Live Update</span>
+                    </label>
+                </div>
+            </div>
+            <div class="card-body-custom">
+                <div class="timeline-compact">
+                    <div class="timeline-compact-item success">
+                        <div class="timeline-compact-left">
+                            <span class="timeline-compact-datetime">● 14:32 - 30.11.2025</span>
+                            <span class="timeline-compact-source">
+                                source: 203.0.113.50 
+                                <button onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;flex&#39;">🌍 Info</button>
+                            </span>
+                        </div>
+                        <div class="timeline-compact-right">
+                            <div class="timeline-compact-header">
+                                <span class="timeline-compact-action">updateDnsRecords</span>
+                                <span class="timeline-compact-status">✅</span>
+                            </div>
+                            <div class="timeline-compact-desc">Updated A record: <code class="mono">home.example.com</code> → 1.2.3.4</div>
+                        </div>
+                    </div>
+                    <div class="timeline-compact-item success">
+                        <div class="timeline-compact-left">
+                            <span class="timeline-compact-datetime">● 14:30 - 30.11.2025</span>
+                            <span class="timeline-compact-source">
+                                source: 203.0.113.50 
+                                <button onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;flex&#39;">🌍 Info</button>
+                            </span>
+                        </div>
+                        <div class="timeline-compact-right">
+                            <div class="timeline-compact-header">
+                                <span class="timeline-compact-action">infoDnsRecords</span>
+                                <span class="timeline-compact-status">✅</span>
+                            </div>
+                            <div class="timeline-compact-desc">Read 3 records for <code class="mono">home.example.com</code></div>
+                        </div>
+                    </div>
+                    <div class="timeline-compact-item error">
+                        <div class="timeline-compact-left">
+                            <span class="timeline-compact-datetime">● 14:25 - 30.11.2025</span>
+                            <span class="timeline-compact-source">
+                                source: 203.0.222.22 
+                                <button onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;flex&#39;">🌍 Info</button>
+                            </span>
+                        </div>
+                        <div class="timeline-compact-right">
+                            <div class="timeline-compact-header">
+                                <span class="timeline-compact-action">updateDnsRecords</span>
+                                <span class="timeline-compact-badge error">❌ NOT WHITELISTED</span>
+                            </div>
+                            <div class="timeline-compact-desc">Attempted to modify TXT record (not permitted)</div>
+                        </div>
+                    </div>
+                    <div class="timeline-compact-item success">
+                        <div class="timeline-compact-left">
+                            <span class="timeline-compact-datetime">● 14:20 - 30.11.2025</span>
+                            <span class="timeline-compact-source">source: 203.0.113.50</span>
+                        </div>
+                        <div class="timeline-compact-right">
+                            <div class="timeline-compact-header">
+                                <span class="timeline-compact-action">login</span>
+                                <span class="timeline-compact-status">✅</span>
+                            </div>
+                            <div class="timeline-compact-desc">Successful authentication for <code class="mono">client_ddns_home</code></div>
+                        </div>
+                    </div>
+                    <div class="timeline-compact-item error">
+                        <div class="timeline-compact-left">
+                            <span class="timeline-compact-datetime">● 14:18 - 30.11.2025</span>
+                            <span class="timeline-compact-source">
+                                source: 10.0.0.1 
+                                <button onclick="document.getElementById(&#39;modal2&#39;).style.display=&#39;flex&#39;">🌍 Info</button>
+                            </span>
+                        </div>
+                        <div class="timeline-compact-right">
+                            <div class="timeline-compact-header">
+                                <span class="timeline-compact-action">login</span>
+                                <span class="timeline-compact-badge error">Failed</span>
+                            </div>
+                            <div class="timeline-compact-desc">Invalid token provided</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row-flex">
+            <div class="col-main">
+                <!-- Compact Client Form (Step 2.1) -->
+                <div class="card-custom" style="margin-bottom: 1rem;">
+                    <div class="card-header-custom" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2 class="card-title">Client Details (Compact Form)</h2>
+                        <label class="toggle-slider">
+                            <input type="checkbox" checked="">
+                            <span class="toggle-slider-track">
+                                <span class="toggle-slider-thumb"></span>
+                            </span>
+                            <span class="toggle-slider-label">Active</span>
+                        </label>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="form-compact">
+                            <!-- Left Column -->
+                            <div class="form-compact-column">
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">Client ID *</label>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <input type="text" class="form-control-custom" placeholder="client_ddns_home" style="flex: 1;">
+                                        <button class="btn-secondary-custom" style="white-space: nowrap;">Generate ID</button>
+                                    </div>
+                                </div>
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">Description</label>
+                                    <input type="text" class="form-control-custom" placeholder="Home DDNS client">
+                                </div>
+                            </div>
+                            <!-- Right Column -->
+                            <div class="form-compact-column">
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">Token Lifetime</label>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <select class="form-select-custom" style="flex: 0 0 auto; width: auto;">
+                                            <option>1 month</option>
+                                            <option>3 months</option>
+                                            <option>6 months</option>
+                                            <option>1 year</option>
+                                            <option>Never</option>
+                                        </select>
+                                        <input type="date" class="form-control-custom" style="flex: 1;">
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 1rem;">
+                                    <div class="form-group-custom" style="flex: 0 0 auto;">
+                                        <label class="form-label-custom">Realm Type *</label>
+                                        <select class="form-select-custom">
+                                            <option>Host</option>
+                                            <option>Subdomain</option>
+                                            <option>Domain</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group-custom" style="flex: 1;">
+                                        <label class="form-label-custom">Realm Value *</label>
+                                        <input type="text" class="form-control-custom mono" placeholder="example.com">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Permissions Section -->
+                            <div class="form-compact-section">
+                                <div class="form-compact-section-title">─── Permissions ───</div>
+                            </div>
+                            <div class="form-compact-column">
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">Record Types *</label>
+                                    <div class="permissions-grid">
+                                        <label class="form-check-inline checked">
+                                            <input type="checkbox" checked=""> A
+                                        </label>
+                                        <label class="form-check-inline checked">
+                                            <input type="checkbox" checked=""> AAAA
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> CNAME
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> TXT
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> MX
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> NS
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> SRV
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> SSHFP
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-compact-column">
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">Operations *</label>
+                                    <div class="permissions-grid">
+                                        <label class="form-check-inline checked">
+                                            <input type="checkbox" checked=""> Read
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> Create
+                                        </label>
+                                        <label class="form-check-inline checked">
+                                            <input type="checkbox" checked=""> Update
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> Delete
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Security & Notifications Section -->
+                            <div class="form-compact-section">
+                                <div class="form-compact-section-title">─── Security &amp; Notifications ───</div>
+                            </div>
+                            <div class="form-compact-column">
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">Notifications</label>
+                                    <label class="toggle-slider" style="margin-bottom: 0.5rem;">
+                                        <input type="checkbox" checked="">
+                                        <span class="toggle-slider-track">
+                                            <span class="toggle-slider-thumb"></span>
+                                        </span>
+                                        <span class="toggle-slider-label">Email</span>
+                                    </label>
+                                    <input type="email" class="form-control-custom" placeholder="admin@example.com" style="margin-bottom: 0.75rem;">
+                                    <div style="display: flex; flex-direction: column; gap: 0.375rem; font-size: var(--font-size-sm);">
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> Token expired
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox" checked=""> Failed login attempt
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox"> Successful login
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox" checked=""> IP not whitelisted
+                                        </label>
+                                        <label class="form-check-inline">
+                                            <input type="checkbox" checked=""> Unauthorized API call
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-compact-column">
+                                <div class="form-group-custom">
+                                    <label class="form-label-custom">IP Restrictions</label>
+                                    <label class="form-label-custom" style="font-weight: 400; font-size: var(--font-size-xs);">Allowed IP Ranges (one per line)</label>
+                                    <textarea class="form-control-custom mono" rows="4" placeholder="192.168.1.0/24
+10.0.0.0/8"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem;">
+                            <button class="btn-primary-custom">Save &amp; Generate Token</button>
+                            <button class="btn-secondary-custom">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Code Block with Copy -->
+                <div class="card-custom" style="margin-bottom: 1rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">API Example</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <p style="margin-bottom: 0.75rem; font-size: var(--font-size-sm);">Example curl command:</p>
+                        <div class="code-block">
+                            <button class="code-copy-btn" onclick="copyCode(this)">📋 Copy</button>
+                            <pre>curl -X POST https://naf.example.com/api \
+  -H "Authorization: Bearer client_ddns:abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{"action":"infoDnsRecords",
+       "param":{"domainname":"home.example.com"}}'</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-sidebar">
+                <!-- Badges Collection -->
+                <div class="card-custom" style="margin-bottom: 1rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Badge Variants</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <p style="margin-bottom: 0.75rem; font-size: var(--font-size-sm);">Solid badges:</p>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                            <span class="badge-custom badge-success">● Active</span>
+                            <span class="badge-custom badge-danger">● Inactive</span>
+                            <span class="badge-custom badge-warning">● Pending</span>
+                            <span class="badge-custom badge-info">● Syncing</span>
+                        </div>
+                        <p style="margin-bottom: 0.75rem; font-size: var(--font-size-sm);">Outline badges:</p>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <span class="badge-outline badge-success">✓ Success</span>
+                            <span class="badge-outline badge-danger">✗ Failed</span>
+                            <span class="badge-outline badge-warning">⚠ Warning</span>
+                            <span class="badge-outline badge-info">ℹ Info</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 7: Loading States -->
+        <div class="page-header">
+            <h1 class="page-title">Loading &amp; Empty States</h1>
+        </div>
+
+        <div class="row-flex">
+            <div class="col-main">
+                <div class="card-custom" style="margin-bottom: 1.5rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Loading Spinners</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div style="display: flex; align-items: center; gap: 2rem;">
+                            <div style="text-align: center;">
+                                <div class="spinner spinner-sm"></div>
+                                <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 0.5rem;">Small</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div class="spinner"></div>
+                                <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 0.5rem;">Default</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div class="spinner spinner-lg"></div>
+                                <div style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 0.5rem;">Large</div>
+                            </div>
+                            <div class="loading-overlay" style="flex: 1; padding: 1rem;">
+                                <div class="spinner"></div>
+                                <span>Loading clients...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-custom" style="margin-bottom: 1.5rem;">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Skeleton Loading</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                            <div class="stat-card">
+                                <div class="skeleton skeleton-text short" style="margin: 0 auto;"></div>
+                                <div class="skeleton skeleton-text" style="width: 60%; margin: 0.5rem auto 0;"></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="skeleton skeleton-text short" style="margin: 0 auto;"></div>
+                                <div class="skeleton skeleton-text" style="width: 60%; margin: 0.5rem auto 0;"></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="skeleton skeleton-text short" style="margin: 0 auto;"></div>
+                                <div class="skeleton skeleton-text" style="width: 60%; margin: 0.5rem auto 0;"></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="skeleton skeleton-text short" style="margin: 0 auto;"></div>
+                                <div class="skeleton skeleton-text" style="width: 60%; margin: 0.5rem auto 0;"></div>
+                            </div>
+                        </div>
+                        <div class="skeleton skeleton-text" style="margin-bottom: 0.75rem;"></div>
+                        <div class="skeleton skeleton-text medium"></div>
+                        <div class="skeleton skeleton-text short" style="margin-top: 0.75rem;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-sidebar">
+                <div class="card-custom">
+                    <div class="card-header-custom">
+                        <h2 class="card-title">Empty State</h2>
+                    </div>
+                    <div class="card-body-custom">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <div class="empty-state-title">No Clients Yet</div>
+                            <div class="empty-state-desc">Create your first client to get started with the API filter.</div>
+                            <button class="btn-primary-custom">+ Create Client</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-divider">
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        </div>
+
+        <!-- DEMO SECTION 8: Expandable Table Rows -->
+        <div class="page-header">
+            <h1 class="page-title">Expandable Audit Logs</h1>
+        </div>
+
+        <div class="card-custom" style="margin-bottom: 1.5rem;">
+            <div class="card-header-custom">
+                <h2 class="card-title">Audit Logs with Expandable Details</h2>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button class="btn-secondary-custom" style="font-size: var(--font-size-sm);">📥 Export ODS</button>
+                    <button class="btn-danger" style="font-size: var(--font-size-sm);">🗑️ Trim Logs</button>
+                </div>
+            </div>
+            <div class="card-body-custom" style="padding: 0;">
+                <table class="table-custom" style="margin: 0;">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th>Timestamp</th>
+                            <th>Client</th>
+                            <th>Action</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="expandable-row" onclick="this.classList.toggle(&#39;expanded', this)">
+                            <td><span class="row-expand-icon">▶</span></td>
+                            <td>2025-11-30 14:32:15</td>
+                            <td><span class="mono">client_ddns</span></td>
+                            <td>updateDnsRecords</td>
+                            <td><span class="badge-custom badge-success">✅ Success</span></td>
+                        </tr>
+                        <tr class="row-details">
+                            <td colspan="5">
+                                <strong>Request:</strong>
+                                <div class="code-block" style="margin: 0.5rem 0;">
+                                    <pre>{"action":"updateDnsRecords","param":{"domainname":"home.example.com","records":[{"hostname":"home","type":"A","destination":"203.0.113.50"}]}}</pre>
+                                </div>
+                                <strong>Response:</strong>
+                                <div class="code-block" style="margin: 0.5rem 0;">
+                                    <pre>{"status":"success","message":"DNS records updated successfully"}</pre>
+                                </div>
+                                <div style="margin-top: 0.75rem;">
+                                    <span style="color: var(--color-text-muted);">Source IP:</span> 203.0.113.50 
+                                    <button style="background: none; border: none; color: var(--color-accent); cursor: pointer;">🌍 Lookup</button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr class="expandable-row" onclick="this.classList.toggle(&#39;expanded', this)">
+                            <td><span class="row-expand-icon">▶</span></td>
+                            <td>2025-11-30 14:28:03</td>
+                            <td><span class="mono">unknown</span></td>
+                            <td>login</td>
+                            <td><span class="badge-custom badge-danger">❌ Failed</span></td>
+                        </tr>
+                        <tr class="row-details">
+                            <td colspan="5">
+                                <strong>Error Details:</strong>
+                                <div class="code-block" style="margin: 0.5rem 0;">
+                                    <pre>{"error":"InvalidToken","message":"The provided authentication token is invalid or expired"}</pre>
+                                </div>
+                                <div style="margin-top: 0.75rem;">
+                                    <span style="color: var(--color-text-muted);">Source IP:</span> 192.168.1.100 
+                                    <span style="color: var(--color-warning); margin-left: 1rem;">⚠️ Multiple failed attempts from this IP</span>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr class="expandable-row" onclick="this.classList.toggle(&#39;expanded', this)">
+                            <td><span class="row-expand-icon">▶</span></td>
+                            <td>2025-11-30 14:25:47</td>
+                            <td><span class="mono">client_cert</span></td>
+                            <td>infoDnsRecords</td>
+                            <td><span class="badge-custom badge-success">✅ Success</span></td>
+                        </tr>
+                        <tr class="row-details">
+                            <td colspan="5">
+                                <strong>Request:</strong>
+                                <div class="code-block" style="margin: 0.5rem 0;">
+                                    <pre>{"action":"infoDnsRecords","param":{"domainname":"_acme-challenge.example.com"}}</pre>
+                                </div>
+                                <strong>Response:</strong>
+                                <div class="code-block" style="margin: 0.5rem 0;">
+                                    <pre>{"status":"success","records":[{"id":"12345","hostname":"_acme-challenge","type":"TXT","destination":"abc123...","ttl":300}]}</pre>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function setTheme(themeName, clickedElement) {
+    // Get current density classes
+    const densityClasses = ['compact', 'ultra-compact'];
+    const currentDensity = densityClasses.find(c => document.body.classList.contains(c)) || '';
+    
+    // Remove all theme classes
+    document.body.className = '';
+    // Add new theme class
+    document.body.classList.add('theme-' + themeName);
+    // Restore density class if any
+    if (currentDensity) {
+        document.body.classList.add(currentDensity);
+    }
+    
+    // Update active state in selector
+    document.querySelectorAll('.theme-option').forEach(el => {
+        el.classList.remove('active');
+    });
+    // Use passed element or find by theme name
+    if (clickedElement) {
+        clickedElement.classList.add('active');
+    } else {
+        const themeOption = document.querySelector(`.theme-option[onclick*="'${themeName}'"]`);
+        if (themeOption) themeOption.classList.add('active');
+    }
+}
+
+function setDensity(density, clickedElement) {
+    // Remove density classes
+    document.body.classList.remove('compact', 'ultra-compact');
+    
+    // Add new density if not comfortable (default)
+    if (density === 'compact') {
+        document.body.classList.add('compact');
+    } else if (density === 'ultra-compact') {
+        document.body.classList.add('ultra-compact');
+    }
+    
+    // Update active state
+    document.querySelectorAll('.density-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    // Use passed element or find by density name
+    if (clickedElement) {
+        clickedElement.classList.add('active');
+    } else {
+        const densityBtn = document.querySelector(`.density-btn[onclick*="'${density}'"]`);
+        if (densityBtn) densityBtn.classList.add('active');
+    }
+}
+
+// Toggle password visibility
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        button.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        button.textContent = '👁️';
+    }
+}
+
+// Switch tabs
+function switchTab(event, tabId) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    // Remove active from all tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    // Show selected tab content
+    document.getElementById(tabId).classList.add('active');
+    // Mark clicked tab as active
+    event.currentTarget.classList.add('active');
+}
+
+// Toggle dropdown
+function toggleDropdown(dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    dropdown.classList.toggle('open');
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.dropdown')) {
+        document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+    }
+});
+
+// Copy code to clipboard
+function copyCode(button) {
+    const codeBlock = button.parentElement;
+    const code = codeBlock.querySelector('pre').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+        button.classList.add('copied');
+        button.textContent = '✓ Copied!';
+        setTimeout(() => {
+            button.classList.remove('copied');
+            button.textContent = '📋 Copy';
+        }, 2000);
+    });
+}
+
+// Toggle checkbox items
+document.querySelectorAll('.form-checkbox-item').forEach(item => {
+    item.addEventListener('click', function(e) {
+        if (e.target.tagName !== 'INPUT') {
+            const checkbox = this.querySelector('input[type="checkbox"]');
+            checkbox.checked = !checkbox.checked;
+            this.classList.toggle('selected', checkbox.checked);
+        } else {
+            this.classList.toggle('selected', e.target.checked);
+        }
+    });
+});
+
+// Template card selection
+document.querySelectorAll('.template-card').forEach(card => {
+    card.addEventListener('click', function() {
+        document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+        this.classList.add('selected');
+    });
+});
+
+// Demo: Auto-hide toast notifications after 8 seconds
+setTimeout(() => {
+    const toastContainer = document.getElementById('toastDemo');
+    if (toastContainer) {
+        toastContainer.style.transition = 'opacity 0.5s';
+        toastContainer.style.opacity = '0';
+        setTimeout(() => toastContainer.remove(), 500);
+    }
+}, 8000);
+</script>
+
+
+</body></html>

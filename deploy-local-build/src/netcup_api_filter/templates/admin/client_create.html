@@ -1,6 +1,0 @@
-{% extends 'admin/model/create.html' %}
-
-{% block extra_scripts %}
-    {{ super() }}
-    <script {{ admin_csp_nonce_attribute }} src="{{ url_for('static', filename='js/client-token.js') }}" data-generate-url="{{ url_for('.generate_token_view') }}"></script>
-{% endblock %}

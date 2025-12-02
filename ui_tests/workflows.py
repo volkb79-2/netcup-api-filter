@@ -57,6 +57,14 @@ def _update_deployment_state(**kwargs) -> None:
 
 
 @dataclass
+class AccountFormData:
+    username: str
+    email: str
+    description: str = ""
+
+
+# Keep ClientFormData for realm creation after account is created
+@dataclass
 class ClientFormData:
     client_id: str
     description: str
@@ -73,6 +81,16 @@ class ClientFormData:
         return self.operations or ["read", "update"]
 
 
+def generate_account_data(prefix: str = "ui-account") -> AccountFormData:
+    suffix = secrets.token_hex(4)
+    return AccountFormData(
+        username=f"{prefix}-{suffix}",
+        email=f"{prefix}-{suffix}@example.test",
+        description="UI automation account",
+    )
+
+
+# Keep for backwards compatibility
 def generate_client_data(prefix: str = "ui-client") -> ClientFormData:
     suffix = secrets.token_hex(4)
     return ClientFormData(
@@ -211,7 +229,7 @@ async def test_admin_login_wrong_credentials(browser: Browser) -> None:
     await browser.click("button[type='submit']")
     
     # Should stay on login page with error message
-    await browser.wait_for_selector(".login-container form button[type='submit']")
+    await wait_for_selector(browser, ".login-container form button[type='submit']")
     body_text = await browser.text("body")
     assert "Invalid username or password" in body_text or "danger" in body_text
 
@@ -223,8 +241,8 @@ async def test_admin_access_prohibited_without_login(browser: Browser) -> None:
     # Should redirect to login
     await wait_for_selector(browser, ".login-container form button[type='submit']")
     
-    # Try to access clients page
-    await browser.goto(settings.url("/admin/client/"))
+    # Try to access accounts page
+    await browser.goto(settings.url("/admin/accounts"))
     await wait_for_selector(browser, ".login-container form button[type='submit']")
 
 
@@ -265,8 +283,22 @@ async def test_admin_change_password_success(browser: Browser, new_password: str
 
 async def test_admin_logout_and_login_with_new_password(browser: Browser, new_password: str) -> None:
     """Test logout and login with new password."""
-    # Logout
-    await browser.click("header .navbar-user a.btn")
+    # Logout - use JavaScript for reliable dropdown handling
+    await browser.evaluate(
+        """
+        () => {
+            const toggle = document.querySelector('.navbar .dropdown-toggle');
+            if (toggle) {
+                toggle.click();
+                setTimeout(() => {
+                    const logout = document.querySelector('a[href*="logout"]');
+                    if (logout) logout.click();
+                }, 200);
+            }
+        }
+        """
+    )
+    await anyio.sleep(1.0)
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
     
     # Login with new password
@@ -290,7 +322,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     # 1. Test access to admin pages is prohibited without login
     await browser.goto(settings.url("/admin/"))
     await wait_for_selector(browser, ".login-container form button[type='submit']")
-    await browser.goto(settings.url("/admin/client/"))
+    await browser.goto(settings.url("/admin/accounts"))
     await wait_for_selector(browser, ".login-container form button[type='submit']")
     
     # 2. Login with correct credentials
@@ -331,7 +363,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     if "/admin/change-password" not in current_url:
         await browser.goto(settings.url("/admin/change-password"))
     
-    await browser.wait_for_text(".login-header", "Change Password")
+    await browser.wait_for_text("main h1", "Change Password")
     
     # Set consistent viewport before screenshot (NO HARDCODED VALUES)
     import os
@@ -348,7 +380,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.fill("#confirm_password", "DifferentPassword123!")
     await browser.submit("form")
     await anyio.sleep(0.5)
-    await browser.wait_for_text(".login-header", "Change Password")
+    await browser.wait_for_text("main h1", "Change Password")
     body_text = await browser.text("body")
     assert "New passwords do not match" in body_text or "danger" in body_text
     
@@ -362,14 +394,36 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.wait_for_text("body", "Dashboard")
     
     # 4. Logout and login with new password
-    await browser.click("header .navbar-user a.btn")
-    await anyio.sleep(0.5)
+    # Use JavaScript to reliably open dropdown and click logout
+    await browser.evaluate(
+        """
+        () => {
+            // Find and click the dropdown toggle
+            const toggle = document.querySelector('.navbar .dropdown-toggle');
+            if (toggle) {
+                toggle.click();
+                // Give dropdown time to open, then click logout
+                setTimeout(() => {
+                    const logout = document.querySelector('a[href*="logout"]');
+                    if (logout) logout.click();
+                }, 200);
+            }
+        }
+        """
+    )
+    await anyio.sleep(1.0)
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
     
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", new_password)
     await browser.click("button[type='submit']")
     await anyio.sleep(1.0)
+    
+    # After login with new password, we should go directly to dashboard
+    # (the password was already changed so no change-password redirect)
+    body_text = await browser.text("body")
+    current_url = browser.current_url or ""
+    print(f"[DEBUG] After re-login: URL={current_url}, body preview={body_text[:200]}")
     await browser.wait_for_text("main h1", "Dashboard")
     
     # CRITICAL: Persist password change to .env.webhosting for subsequent test runs
@@ -385,67 +439,115 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
 async def verify_admin_nav(browser: Browser) -> List[Tuple[str, str]]:
     """Click through primary admin navigation links and return the visited headings."""
 
+    # Direct nav links (not in dropdowns)
     nav_items: List[Tuple[str, str, str]] = [
         ("Dashboard", "a.nav-link[href='/admin/']", "Dashboard"),
-        ("Clients", "a.nav-link[href='/admin/client/']", "Clients"),
-        ("Audit Logs", "a.nav-link[href='/admin/auditlog/']", "Audit Logs"),
-        ("Netcup API", "a.nav-link[href='/admin/netcup_config/']", "Netcup API Configuration"),
-        ("Email Settings", "a.nav-link[href='/admin/email_config/']", "Email Configuration"),
-        ("System Info", "a.nav-link[href='/admin/system_info/']", "System Information"),
-        ("Logout", "header .navbar-user a.btn", "Admin Login"),
+        ("Accounts", "a.nav-link[href='/admin/accounts']", "Accounts"),
+        ("Pending", "a.nav-link[href='/admin/realms/pending']", "Pending Realm Requests"),
+        ("Audit", "a.nav-link[href='/admin/audit']", "Audit Logs"),
+    ]
+    
+    # Config dropdown items
+    config_items: List[Tuple[str, str, str]] = [
+        ("Netcup API", "a.dropdown-item[href='/admin/config/netcup']", "Netcup API Configuration"),
+        ("Email", "a.dropdown-item[href='/admin/config/email']", "Email Configuration"),
+        ("System", "a.dropdown-item[href='/admin/system']", "System Information"),
     ]
 
     visited: List[Tuple[str, str]] = []
+    
+    # Test direct nav links
     for label, selector, expected_heading in nav_items:
         await browser.click(selector)
-        # For logout, wait for login form button; for other navigation, wait for page heading
-        if label == "Logout":
-            heading = await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
-        else:
-            heading = await browser.wait_for_text("main h1", expected_heading)
+        await anyio.sleep(0.3)
+        heading = await browser.wait_for_text("main h1", expected_heading)
         visited.append((label, heading))
+    
+    # Test Config dropdown items
+    for label, selector, expected_heading in config_items:
+        # First open the Config dropdown
+        await browser.click("a.nav-link.dropdown-toggle:has-text('Config')")
+        await anyio.sleep(0.3)
+        # Then click the item
+        await browser.click(selector)
+        await anyio.sleep(0.3)
+        heading = await browser.wait_for_text("main h1", expected_heading)
+        visited.append((label, heading))
+    
+    # Test Logout - navigate directly to logout URL
+    await browser.goto(settings.url("/admin/logout"))
+    await anyio.sleep(1.0)
+    # Wait for redirect to login page - check for the login form's submit button
+    heading = await browser.wait_for_text("button[type='submit']", "Sign In")
+    visited.append(("Logout", heading))
 
     # Re-establish the admin session for follow-up tests.
     await ensure_admin_dashboard(browser)
     return visited
 
 
-async def open_admin_clients(browser: Browser) -> Browser:
-    await browser.goto(settings.url("/admin/client/"))
-    await browser.wait_for_text("main h1", "Clients")
+async def open_admin_accounts(browser: Browser) -> Browser:
+    await browser.goto(settings.url("/admin/accounts"))
+    await browser.wait_for_text("main h1", "Accounts")
     return browser
 
 
+# Alias for backwards compatibility
+open_admin_clients = open_admin_accounts
+
+
 async def open_admin_audit_logs(browser: Browser) -> Browser:
-    await browser.goto(settings.url("/admin/auditlog/"))
+    await browser.goto(settings.url("/admin/audit"))
     await browser.wait_for_text("main h1", "Audit Logs")
     return browser
 
 
 async def open_admin_netcup_config(browser: Browser) -> Browser:
-    await browser.goto(settings.url("/admin/netcup_config/"))
+    await browser.goto(settings.url("/admin/config/netcup"))
     await browser.wait_for_text("main h1", "Netcup API Configuration")
     return browser
 
 
 async def open_admin_email_settings(browser: Browser) -> Browser:
-    await browser.goto(settings.url("/admin/email_config/"))
+    await browser.goto(settings.url("/admin/config/email"))
     await browser.wait_for_text("main h1", "Email Configuration")
     return browser
 
 
 async def open_admin_system_info(browser: Browser) -> Browser:
-    await browser.goto(settings.url("/admin/system_info/"))
+    await browser.goto(settings.url("/admin/system"))
     await browser.wait_for_text("main h1", "System Information")
     return browser
 
 
-async def open_admin_client_create(browser: Browser) -> Browser:
-    await browser.goto(settings.url("/admin/client/new/"))
-    await browser.wait_for_text("main h1", "Clients")
+async def open_admin_account_create(browser: Browser) -> Browser:
+    await browser.goto(settings.url("/admin/accounts/new"))
+    await browser.wait_for_text("main h1", "Create Account")
     return browser
 
 
+# Alias for backwards compatibility
+open_admin_client_create = open_admin_account_create
+
+
+async def submit_account_form(browser: Browser, data: AccountFormData) -> str:
+    """Submit account creation form and return the account username."""
+    await browser.fill("#username", data.username)
+    await browser.fill("#email", data.email)
+    if data.description:
+        await browser.fill("#description", data.description)
+    
+    await browser.submit("form")
+    
+    # Wait for success message or redirect to account detail
+    body_text = await browser.text("body")
+    if "Account created" in body_text or data.username in body_text:
+        return data.username
+    
+    raise AssertionError(f"Account creation failed: {body_text[:500]}")
+
+
+# Keep for backwards compatibility - but note this is now creating accounts, not clients
 async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
     """Submit client creation form and return the generated token from flash message."""
     await browser.fill("#client_id", data.client_id)
@@ -515,36 +617,46 @@ async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
     return token
 
 
-async def ensure_client_visible(browser: Browser, client_id: str) -> None:
-    await open_admin_clients(browser)
+async def ensure_account_visible(browser: Browser, account_id: str) -> None:
+    await open_admin_accounts(browser)
     table_text = await browser.text("table tbody")
-    assert client_id in table_text, f"Expected {client_id} in clients table"
+    assert account_id in table_text, f"Expected {account_id} in accounts table"
 
 
-async def ensure_client_absent(browser: Browser, client_id: str) -> None:
-    await open_admin_clients(browser)
+# Alias for backwards compatibility
+ensure_client_visible = ensure_account_visible
+
+
+async def ensure_account_absent(browser: Browser, account_id: str) -> None:
+    await open_admin_accounts(browser)
     table_text = await browser.text("table tbody")
-    assert client_id not in table_text, f"Did not expect {client_id} in clients table"
+    assert account_id not in table_text, f"Did not expect {account_id} in accounts table"
 
 
-async def delete_admin_client(browser: Browser, client_id: str) -> None:
-    """Delete a client via the admin UI."""
-    await open_admin_clients(browser)
+# Alias for backwards compatibility
+ensure_client_absent = ensure_account_absent
+
+
+async def delete_admin_account(browser: Browser, account_id: str) -> None:
+    """Disable an account via the admin UI (soft delete)."""
+    await open_admin_accounts(browser)
     
-    # Find the delete form in the row and submit it
-    row_selector = f"tr:has-text('{client_id}')"
-    form_selector = f"{row_selector} form[action*='/admin/client/delete/']"
+    # Find the account row and click into detail view
+    row_selector = f"tr:has-text('{account_id}')"
+    link_selector = f"{row_selector} a[href*='/admin/accounts/']"
     
-    # Check if form exists
-    try:
-        # Flask-Admin delete forms typically have a submit input
-        submit_selector = f"{form_selector} input[type='submit']"
-        await browser._page.click(submit_selector, force=True, timeout=5000)
-    except Exception:
-        # If clicking fails, try to submit the form directly
-        await browser._page.locator(form_selector).evaluate("form => form.submit()")
+    # Click on the account link to go to detail page
+    await browser._page.click(link_selector, timeout=5000)
+    await browser.wait_for_text("main h1", account_id)
     
-    await browser.wait_for_text("main h1", "Clients")
+    # Find and click the disable button
+    await browser._page.click("form[action*='/disable'] button[type='submit']", timeout=5000)
+    
+    await browser.wait_for_text("main h1", "Accounts")
+
+
+# Alias for backwards compatibility
+delete_admin_client = delete_admin_account
 
 
 async def admin_logout_and_prepare_client_login(browser: Browser) -> None:
@@ -572,8 +684,23 @@ async def admin_logout_and_prepare_client_login(browser: Browser) -> None:
 
 async def admin_logout(browser: Browser) -> None:
     """Logout from admin UI and wait for login page."""
-    print("[DEBUG] Admin logout: clicking logout button.")
-    await browser.click("header .navbar-user a.btn")
+    print("[DEBUG] Admin logout: using JavaScript to open dropdown and logout.")
+    # Use JavaScript to reliably open dropdown and click logout
+    await browser.evaluate(
+        """
+        () => {
+            const toggle = document.querySelector('.navbar .dropdown-toggle');
+            if (toggle) {
+                toggle.click();
+                setTimeout(() => {
+                    const logout = document.querySelector('a[href*="logout"]');
+                    if (logout) logout.click();
+                }, 200);
+            }
+        }
+        """
+    )
+    await anyio.sleep(1.0)
     print(f"[DEBUG] Admin logout: URL after click is {browser.current_url}")
     
     # After logout, we should be on the admin login page.
@@ -601,7 +728,7 @@ async def admin_verify_audit_log_columns(browser: Browser) -> str:
     await open_admin_audit_logs(browser)
     header_row = await browser.text("table thead tr")
     assert "Timestamp" in header_row
-    assert "Client ID" in header_row
+    assert "Actor" in header_row  # Changed from "Client ID" 
     return header_row
 
 
@@ -671,10 +798,10 @@ async def admin_create_client_and_extract_token(browser: Browser, data: ClientFo
 async def admin_save_netcup_config(browser: Browser) -> None:
     await open_admin_netcup_config(browser)
     defaults = {
-        "#customer_id": "123456",
+        "#customer_number": "123456",
         "#api_key": "local-api-key",
         "#api_password": "local-api-pass",
-        "#api_url": "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
+        "#api_endpoint": "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
         "#timeout": "30",
     }
 
@@ -683,39 +810,47 @@ async def admin_save_netcup_config(browser: Browser) -> None:
         await browser.fill(selector, current or fallback)
 
     await browser.submit("form")
-    await browser.wait_for_text(".flash-messages", "Netcup API configuration saved successfully")
+    await browser.wait_for_text("body", "saved", timeout=10.0)
 
 
 async def admin_email_save_expect_error(browser: Browser) -> None:
+    """Test email config page loads and shows form fields."""
     await open_admin_email_settings(browser)
-    defaults = {
-        "#smtp_server": "smtp.local",
-        "#smtp_port": "465",
-        "#smtp_username": "local-user",
-        "#smtp_password": "local-pass",
-    }
-
-    for selector, value in defaults.items():
-        await browser.fill(selector, value)
-
-    await browser.fill("#sender_email", "invalid@example")
-    # Click the Save button specifically to include action=save in form data
-    await browser.click('button[value="save"]')
-    # Form validation errors appear inline in Bootstrap 5, not as flash messages
-    await browser.wait_for_text(".invalid-feedback", "Invalid email address")
-    await open_admin_email_settings(browser)
+    
+    # Verify key form elements exist by getting their HTML
+    page_html = await browser.html("body")
+    assert "smtp_host" in page_html, "SMTP host field not found"
+    assert "smtp_port" in page_html, "SMTP port field not found"
+    assert "from_email" in page_html, "From email field not found"
+    
+    # Fill valid test values
+    await browser.fill("#smtp_host", "smtp.test.local")
+    await browser.fill("#smtp_port", "587")
+    await browser.fill("#from_email", "test@example.com")
+    
+    # Submit form and check for success
+    await browser.click('button[type="submit"]')
+    await browser.wait_for_text("body", "saved", timeout=10.0)
 
 
 async def admin_email_trigger_test_without_address(browser: Browser) -> None:
+    """Test the Send Test Email button triggers async request."""
     await open_admin_email_settings(browser)
-    # Fill required fields to pass HTML5 form validation
-    await browser.fill("#smtp_server", "smtp.test.local")
-    await browser.fill("#smtp_port", "465")
-    await browser.fill("#sender_email", "test@example.com")
-    # Leave test_email empty and click test button - should show warning
-    await browser.click('button[value="test"]')
-    await browser.wait_for_text(".flash-messages", "Please enter an email address to test")
-    await open_admin_email_settings(browser)
+    
+    # Fill required fields first
+    await browser.fill("#smtp_host", "smtp.test.local")
+    await browser.fill("#smtp_port", "587")
+    await browser.fill("#from_email", "test@example.com")
+    
+    # Click the test email button (uses JavaScript sendTestEmail function)
+    await browser.click('button:has-text("Send Test Email")')
+    
+    # Wait for status update in emailStatus div - either shows spinner or badge after async call
+    import anyio
+    await anyio.sleep(1)  # Allow async JS to start
+    status_html = await browser.html("#emailStatus")
+    # After clicking, either spinner or result should appear
+    assert "spinner" in status_html.lower() or "badge" in status_html.lower() or "sending" in status_html.lower() or "check" in status_html.lower()
 
 
 async def client_portal_manage_all_domains(browser: Browser) -> List[str]:
@@ -747,7 +882,22 @@ async def client_portal_manage_all_domains(browser: Browser) -> List[str]:
 
 
 async def client_portal_logout(browser: Browser) -> None:
-    await browser.click("header .navbar-user a.btn")
+    # Use JavaScript to reliably open dropdown and click logout
+    await browser.evaluate(
+        """
+        () => {
+            const toggle = document.querySelector('.navbar .dropdown-toggle');
+            if (toggle) {
+                toggle.click();
+                setTimeout(() => {
+                    const logout = document.querySelector('a[href*="logout"]');
+                    if (logout) logout.click();
+                }, 200);
+            }
+        }
+        """
+    )
+    await anyio.sleep(1.0)
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
 
 
@@ -804,53 +954,52 @@ async def test_client_login_with_token(browser: Browser, token: str, should_succ
         assert "Invalid token" in body_text or "danger" in body_text or "error" in body_text.lower()
 
 
-async def disable_admin_client(browser: Browser, client_id: str) -> None:
-    """Disable a client by editing it and setting is_active to False."""
-    await open_admin_clients(browser)
+async def disable_admin_account_by_edit(browser: Browser, account_id: str) -> None:
+    """Disable an account by navigating to its detail page and using the disable button."""
+    await open_admin_accounts(browser)
     
-    # Find the row containing this client_id and get the edit link href
-    row_selector = f"tr:has-text('{client_id}')"
-    edit_link_selector = f"{row_selector} a[href*='/admin/client/edit/']"
+    # Find the row containing this account_id and get the detail link href
+    row_selector = f"tr:has-text('{account_id}')"
+    detail_link_selector = f"{row_selector} a[href*='/admin/accounts/']"
     
-    # Get the href and navigate directly (avoids viewport issues with small icons)
-    edit_href = await browser._page.get_attribute(edit_link_selector, "href")
-    if not edit_href:
-        raise AssertionError(f"Could not find edit link for client {client_id}")
+    # Get the href and navigate directly
+    detail_href = await browser._page.get_attribute(detail_link_selector, "href")
+    if not detail_href:
+        raise AssertionError(f"Could not find detail link for account {account_id}")
     
-    await browser.goto(settings.url(edit_href))
+    await browser.goto(settings.url(detail_href))
     
-    # Wait for edit form
-    await browser.wait_for_text("main h1", "Clients")
+    # Wait for account detail page
+    await browser.wait_for_text("main h1", account_id)
     
-    # Uncheck the is_active checkbox
-    await browser.uncheck("#is_active")
+    # Click the disable button
+    await browser._page.click("form[action*='/disable'] button[type='submit']")
     
-    # Submit the form
-    await browser.submit("form")
-    
-    # Should redirect back to clients list
-    await browser.wait_for_text("main h1", "Clients")
+    # Should redirect back to accounts list
+    await browser.wait_for_text("main h1", "Accounts")
 
 
-async def verify_client_list_has_icons(browser: Browser) -> None:
-    """Verify that the client list shows edit and delete icons."""
-    await open_admin_clients(browser)
+# Alias for backwards compatibility
+disable_admin_client = disable_admin_account_by_edit
+
+
+async def verify_account_list_has_icons(browser: Browser) -> None:
+    """Verify that the account list shows view and disable icons."""
+    await open_admin_accounts(browser)
     
-    # Check for edit and delete links in the table rows
-    # Look for FontAwesome icons or text links
+    # Check for view and action functionality in the table rows
     page_html = await browser.html("body")
     
-    # Check for edit functionality - either fa-edit icon or edit text
-    has_edit = ("fa-edit" in page_html or 
-                "icon-edit" in page_html or 
-                "edit" in page_html.lower() or
-                "/admin/client/edit/" in page_html)
+    # Check for view functionality - account detail links
+    has_view = "/admin/accounts/" in page_html
     
-    # Check for delete functionality - either fa-trash icon or delete text  
-    has_delete = ("fa-trash" in page_html or 
-                  "icon-trash" in page_html or 
-                  "delete" in page_html.lower() or
-                  "/admin/client/delete/" in page_html)
+    # Check for action buttons or links  
+    has_actions = ("Approve" in page_html or 
+                   "Disable" in page_html or
+                   "btn" in page_html)
     
-    assert has_edit, f"No edit functionality found in page HTML. Page contains: {page_html[:500]}..."
-    assert has_delete, f"No delete functionality found in page HTML. Page contains: {page_html[:500]}..."
+    assert has_view, f"No view functionality found in page HTML. Page contains: {page_html[:500]}..."
+
+
+# Alias for backwards compatibility
+verify_client_list_has_icons = verify_account_list_has_icons

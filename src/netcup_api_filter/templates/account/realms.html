@@ -1,0 +1,127 @@
+{# Account Realms List - User's realms #}
+{% extends "account/base.html" %}
+
+{% block title %}My Realms - Client Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-globe me-2"></i>My Realms
+        </h1>
+        <p class="text-muted mb-0">Manage your DNS permission scopes</p>
+    </div>
+    <a href="{{ url_for('account.request_realm') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i>Request Realm
+    </a>
+</div>
+
+<!-- Pending Realms Alert -->
+{% if pending_realms %}
+<div class="alert alert-warning d-flex align-items-center mb-4">
+    <i class="bi bi-clock-history me-2"></i>
+    <div>
+        You have <strong>{{ pending_realms | length }}</strong> realm request(s) pending approval.
+    </div>
+</div>
+{% endif %}
+
+<!-- Realms Grid -->
+<div class="row g-4">
+    {% for realm in realms %}
+    <div class="col-lg-6">
+        <div class="card h-100 {% if realm.status == 'pending' %}border-warning{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="font-monospace fw-bold">{{ realm.realm_value }}</span>
+                </div>
+                <div>
+                    {% if realm.status == 'approved' %}
+                    <span class="badge bg-success">Active</span>
+                    {% elif realm.status == 'pending' %}
+                    <span class="badge bg-warning text-dark">Pending</span>
+                    {% else %}
+                    <span class="badge bg-secondary">{{ realm.status | title }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label small text-muted">Type</label>
+                        <div>
+                            {% if realm.realm_type == 'host' %}
+                            <i class="bi bi-bullseye me-1 text-primary"></i>Host
+                            {% elif realm.realm_type == 'subdomain' %}
+                            <i class="bi bi-diagram-3 me-1 text-success"></i>Subdomain
+                            {% else %}
+                            <i class="bi bi-diagram-2 me-1 text-info"></i>Subdomain Only
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small text-muted">Active Tokens</label>
+                        <div>
+                            {% set active_tokens = realm.tokens.filter_by(is_active=True).count() if realm.tokens else 0 %}
+                            {% set total_tokens = realm.tokens.count() if realm.tokens else 0 %}
+                            <span class="badge bg-success">{{ active_tokens }}</span>
+                            <small class="text-muted">/ {{ total_tokens }} total</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label small text-muted">Record Types</label>
+                        <div>
+                            {% for rt in realm.get_allowed_record_types() %}
+                            <span class="badge bg-secondary me-1">{{ rt }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small text-muted">Operations</label>
+                        <div>
+                            {% for op in realm.get_allowed_operations() %}
+                            <span class="badge {% if op == 'read' %}bg-info{% elif op == 'update' %}bg-warning{% elif op == 'create' %}bg-success{% else %}bg-danger{% endif %} me-1">
+                                {{ op | title }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent">
+                <div class="d-flex gap-2">
+                    {% if realm.status == 'approved' %}
+                    <a href="{{ url_for('account.create_new_token', realm_id=realm.id) }}" class="btn btn-outline-success flex-grow-1">
+                        <i class="bi bi-key me-1"></i>Create Token
+                    </a>
+                    {% else %}
+                    <span class="btn btn-outline-secondary flex-grow-1 disabled">
+                        <i class="bi bi-clock me-1"></i>Awaiting Approval
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-globe display-3 text-muted d-block mb-3"></i>
+                <h4>No Realms Yet</h4>
+                <p class="text-muted mb-4">Request your first realm to start managing DNS records.</p>
+                <a href="{{ url_for('account.request_realm') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i>Request Your First Realm
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

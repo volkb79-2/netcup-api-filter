@@ -1,3 +1,91 @@
+/* ===================================================================
+   THEME & DENSITY MANAGEMENT
+   Alpine.js Store with localStorage persistence
+   =================================================================== */
+
+// Initialize Alpine.js store before Alpine loads
+document.addEventListener('alpine:init', () => {
+    Alpine.store('theme', {
+        // Available themes and densities
+        themes: ['cobalt-2', 'graphite', 'obsidian-noir', 'ember', 'jade', 'gold-dust'],
+        densities: ['comfortable', 'compact', 'ultra-compact'],
+        
+        // Current settings (loaded from localStorage)
+        current: localStorage.getItem('naf-theme') || 'cobalt-2',
+        density: localStorage.getItem('naf-density') || 'comfortable',
+        
+        // Initialize theme on page load
+        init() {
+            this.applyTheme(this.current);
+            this.applyDensity(this.density);
+        },
+        
+        // Set and apply theme
+        set(themeName) {
+            if (this.themes.includes(themeName)) {
+                this.current = themeName;
+                localStorage.setItem('naf-theme', themeName);
+                this.applyTheme(themeName);
+            }
+        },
+        
+        // Set and apply density
+        setDensity(densityName) {
+            if (this.densities.includes(densityName)) {
+                this.density = densityName;
+                localStorage.setItem('naf-density', densityName);
+                this.applyDensity(densityName);
+            }
+        },
+        
+        // Apply theme class to body
+        applyTheme(themeName) {
+            const body = document.body;
+            // Remove all theme classes
+            this.themes.forEach(t => {
+                body.classList.remove(`theme-${t}`);
+            });
+            // Apply new theme (cobalt-2 is default, no class needed)
+            if (themeName !== 'cobalt-2') {
+                body.classList.add(`theme-${themeName}`);
+            }
+        },
+        
+        // Apply density class to body
+        applyDensity(densityName) {
+            const body = document.body;
+            // Remove all density classes
+            this.densities.forEach(d => {
+                body.classList.remove(`density-${d}`);
+            });
+            // Apply new density (comfortable is default, no class needed)
+            if (densityName !== 'comfortable') {
+                body.classList.add(`density-${densityName}`);
+            }
+        }
+    });
+});
+
+// Apply theme/density immediately (before Alpine loads) to prevent flash
+(function() {
+    const theme = localStorage.getItem('naf-theme') || 'cobalt-2';
+    const density = localStorage.getItem('naf-density') || 'comfortable';
+    
+    // Apply theme class
+    if (theme !== 'cobalt-2') {
+        document.body.classList.add(`theme-${theme}`);
+    }
+    
+    // Apply density class
+    if (density !== 'comfortable') {
+        document.body.classList.add(`density-${density}`);
+    }
+})();
+
+/* ===================================================================
+   UTILITY FUNCTIONS
+   =================================================================== */
+
 // Copy to clipboard utility
 function copyToClipboard(text, element) {
     navigator.clipboard.writeText(text).then(() => {

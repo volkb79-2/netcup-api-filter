@@ -1,0 +1,240 @@
+{# Account Security - Security settings and 2FA #}
+{% extends "account/base.html" %}
+
+{% block title %}Security - Client Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <h1 class="h3 mb-1">
+        <i class="bi bi-shield-lock me-2"></i>Security Settings
+    </h1>
+    <p class="text-muted mb-0">Manage your password and two-factor authentication</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <!-- Change Password -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-key me-1"></i>Change Password
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('account.change_password') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="current_password">Current Password</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="current_password" 
+                                   name="current_password" required>
+                            <button type="button" class="btn btn-outline-secondary" 
+                                    onclick="togglePassword('current_password')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="new_password">New Password</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="new_password" 
+                                   name="new_password" required minlength="8">
+                            <button type="button" class="btn btn-outline-secondary" 
+                                    onclick="togglePassword('new_password')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Minimum 8 characters</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="confirm_password">Confirm New Password</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="confirm_password" 
+                                   name="confirm_password" required>
+                            <button type="button" class="btn btn-outline-secondary" 
+                                    onclick="togglePassword('confirm_password')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-key me-1"></i>Update Password
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <!-- Two-Factor Authentication -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-shield-check me-1"></i>Two-Factor Authentication</span>
+                {% if current_user.totp_enabled %}
+                <span class="badge bg-success">Enabled</span>
+                {% else %}
+                <span class="badge bg-secondary">Disabled</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if current_user.totp_enabled %}
+                <p class="text-muted">
+                    Two-factor authentication is enabled for your account. You'll need your 
+                    authenticator app to log in.
+                </p>
+                <button type="button" class="btn btn-outline-danger" 
+                        data-bs-toggle="modal" data-bs-target="#disable2faModal">
+                    <i class="bi bi-shield-x me-1"></i>Disable 2FA
+                </button>
+                {% else %}
+                <p class="text-muted">
+                    Add an extra layer of security to your account by enabling two-factor 
+                    authentication using an authenticator app.
+                </p>
+                <a href="{{ url_for('account.setup_2fa') }}" class="btn btn-success">
+                    <i class="bi bi-shield-plus me-1"></i>Enable 2FA
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Active Sessions -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-display me-1"></i>Active Sessions
+            </div>
+            <div class="list-group list-group-flush">
+                {% for session in sessions %}
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-{% if session.is_current %}display{% else %}laptop{% endif %} me-2"></i>
+                        {% if session.is_current %}
+                        <strong>Current Session</strong>
+                        {% else %}
+                        {{ session.device or 'Unknown Device' }}
+                        {% endif %}
+                        <small class="d-block text-muted">
+                            {{ session.ip_address }} • {{ session.last_active.strftime('%Y-%m-%d %H:%M') }}
+                        </small>
+                    </div>
+                    {% if not session.is_current %}
+                    <form method="POST" action="{{ url_for('account.revoke_session', session_id=session.id) }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="list-group-item text-center text-muted py-3">
+                    <i class="bi bi-display me-1"></i> Current session only
+                </div>
+                {% endfor %}
+            </div>
+            <div class="card-footer">
+                <form method="POST" action="{{ url_for('account.revoke_all_sessions') }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-right me-1"></i>Sign Out All Other Sessions
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Security Events -->
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-shield-exclamation me-1"></i>Recent Security Events
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>IP Address</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in security_events %}
+                <tr>
+                    <td>
+                        {% if event.action == 'login' %}
+                        <i class="bi bi-box-arrow-in-right text-success me-1"></i>
+                        {% elif event.action == 'login_failed' %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% elif event.action == 'password_changed' %}
+                        <i class="bi bi-key text-warning me-1"></i>
+                        {% else %}
+                        <i class="bi bi-shield text-info me-1"></i>
+                        {% endif %}
+                        {{ event.action | replace('_', ' ') | title }}
+                    </td>
+                    <td class="font-monospace small">{{ event.ip_address }}</td>
+                    <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="text-center text-muted py-3">
+                        No recent security events
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Disable 2FA Modal -->
+<div class="modal fade" id="disable2faModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Disable Two-Factor Authentication</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('account.disable_2fa') }}">
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Disabling 2FA will make your account less secure.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Enter your password to confirm:</label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Enter a 2FA code:</label>
+                        <input type="text" class="form-control" name="totp_code" 
+                               pattern="[0-9]{6}" maxlength="6" required
+                               placeholder="123456">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-shield-x me-1"></i>Disable 2FA
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+    } else {
+        input.type = 'password';
+    }
+}
+</script>
+{% endblock %}

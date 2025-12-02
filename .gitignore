@@ -160,6 +160,7 @@ netcup_filter.log
 # Deployment artifacts
 deploy/
 deploy-local/
+deploy-local-build/
 deploy.zip
 deploy.zip.sha256
 

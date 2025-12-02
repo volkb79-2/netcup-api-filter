@@ -1,0 +1,285 @@
+{# Admin Audit Logs - Filterable activity log with auto-refresh #}
+{% extends "admin/base.html" %}
+
+{% block title %}Audit Logs - Admin - Netcup API Filter{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Audit Logs</h1>
+        <p class="text-muted mb-0">System activity and security events</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="form-check form-switch">
+            <input type="checkbox" class="form-check-input" id="autoRefresh" onchange="toggleAutoRefresh()">
+            <label class="form-check-label" for="autoRefresh">Auto-refresh</label>
+        </div>
+        <button class="btn btn-outline-secondary" onclick="refreshLogs()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+        <button class="btn btn-outline-primary" onclick="exportLogs()">
+            <i class="bi bi-download me-1"></i>Export
+        </button>
+    </div>
+</div>
+
+<!-- Filters Card -->
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Date Range</label>
+                <select name="range" class="form-select">
+                    <option value="today" {% if range == 'today' %}selected{% endif %}>Today</option>
+                    <option value="week" {% if range == 'week' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="month" {% if range == 'month' %}selected{% endif %}>Last 30 Days</option>
+                    <option value="all" {% if range == 'all' %}selected{% endif %}>All Time</option>
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Action Type</label>
+                <select name="action" class="form-select">
+                    <option value="all">All Actions</option>
+                    <option value="login" {% if action_filter == 'login' %}selected{% endif %}>Login</option>
+                    <option value="logout" {% if action_filter == 'logout' %}selected{% endif %}>Logout</option>
+                    <option value="account" {% if action_filter == 'account' %}selected{% endif %}>Account</option>
+                    <option value="realm" {% if action_filter == 'realm' %}selected{% endif %}>Realm</option>
+                    <option value="token" {% if action_filter == 'token' %}selected{% endif %}>Token</option>
+                    <option value="config" {% if action_filter == 'config' %}selected{% endif %}>Config</option>
+                    <option value="api" {% if action_filter == 'api' %}selected{% endif %}>API Call</option>
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Actor</label>
+                <select name="actor" class="form-select">
+                    <option value="all">All Actors</option>
+                    <option value="admin" {% if actor_filter == 'admin' %}selected{% endif %}>Admin</option>
+                    <option value="system" {% if actor_filter == 'system' %}selected{% endif %}>System</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.id }}" {% if actor_filter == account.id|string %}selected{% endif %}>
+                        {{ account.username }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Search</label>
+                <input type="text" name="search" class="form-control" 
+                       placeholder="Search details..." value="{{ search }}">
+            </div>
+            
+            <div class="col-md-3">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-secondary flex-grow-1">
+                        <i class="bi bi-filter me-1"></i>Filter
+                    </button>
+                    <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-outline-secondary">
+                        Clear
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Logs Table -->
+<div class="card" id="logsTable">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th width="160" class="sort" data-sort="timestamp">Timestamp</th>
+                    <th width="100" class="sort" data-sort="actor">Actor</th>
+                    <th width="120" class="sort" data-sort="action">Action</th>
+                    <th class="sort" data-sort="details">Details</th>
+                    <th width="140">IP Address</th>
+                </tr>
+            </thead>
+            <tbody class="list">
+                {% for log in logs %}
+                <tr>
+                    <td class="timestamp">
+                        <small class="font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                    </td>
+                    <td class="actor">
+                        {% if log.actor == 'admin' %}
+                        <span class="badge bg-danger">Admin</span>
+                        {% elif log.actor == 'system' %}
+                        <span class="badge bg-secondary">System</span>
+                        {% elif log.account_id %}
+                        <a href="{{ url_for('admin.account_detail', account_id=log.account_id) }}" 
+                           class="text-decoration-none font-monospace">
+                            {{ log.actor }}
+                        </a>
+                        {% else %}
+                        <span class="font-monospace">{{ log.actor }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="action">
+                        {% set action_class = {
+                            'login': 'success',
+                            'logout': 'secondary',
+                            'login_failed': 'danger',
+                            'account_created': 'primary',
+                            'account_approved': 'success',
+                            'account_disabled': 'warning',
+                            'account_deleted': 'danger',
+                            'realm_created': 'primary',
+                            'realm_approved': 'success',
+                            'realm_rejected': 'warning',
+                            'token_created': 'primary',
+                            'token_revoked': 'warning',
+                            'config_updated': 'info',
+                            'api_call': 'secondary'
+                        } %}
+                        <span class="badge bg-{{ action_class.get(log.action, 'secondary') }}">
+                            {{ log.action | replace('_', ' ') | title }}
+                        </span>
+                    </td>
+                    <td class="details">
+                        <span class="text-wrap">{{ log.details or '' }}</span>
+                        {% if log.target_type and log.target_id %}
+                        <small class="text-muted d-block">
+                            {{ log.target_type }}: {{ log.target_id }}
+                        </small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <small class="font-monospace text-muted">{{ log.ip_address or 'N/A' }}</small>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center py-5 text-muted">
+                        <i class="bi bi-journal display-6 d-block mb-2"></i>
+                        No logs found
+                        {% if search or action_filter != 'all' or actor_filter != 'all' %}
+                        <br><small>Try adjusting your filters</small>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if pagination and pagination.pages > 1 %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted">
+            Showing {{ pagination.first }} - {{ pagination.last }} of {{ pagination.total }}
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if pagination.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('admin.audit_logs', page=pagination.prev_num, range=range, action=action_filter, actor=actor_filter, search=search) }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                
+                {% for page in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                    {% if page %}
+                    <li class="page-item {% if page == pagination.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.audit_logs', page=page, range=range, action=action_filter, actor=actor_filter, search=search) }}">
+                            {{ page }}
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if pagination.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('admin.audit_logs', page=pagination.next_num, range=range, action=action_filter, actor=actor_filter, search=search) }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Stats Summary -->
+<div class="row g-4 mt-3">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="display-6 text-primary">{{ stats.total_today or 0 }}</div>
+                <small class="text-muted">Events Today</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="display-6 text-success">{{ stats.logins_today or 0 }}</div>
+                <small class="text-muted">Logins Today</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="display-6 text-danger">{{ stats.failed_logins or 0 }}</div>
+                <small class="text-muted">Failed Logins (24h)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="display-6 text-info">{{ stats.api_calls or 0 }}</div>
+                <small class="text-muted">API Calls (24h)</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let refreshInterval = null;
+
+function toggleAutoRefresh() {
+    const enabled = document.getElementById('autoRefresh').checked;
+    if (enabled) {
+        refreshInterval = setInterval(refreshLogs, 5000);
+    } else if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+function refreshLogs() {
+    // Reload the page to get fresh data
+    // In a real implementation, this would be an AJAX call
+    location.reload();
+}
+
+function exportLogs() {
+    // Build export URL with current filters
+    const params = new URLSearchParams(window.location.search);
+    params.set('format', 'csv');
+    window.location.href = '{{ url_for("admin.audit_logs") }}?' + params.toString();
+}
+
+// Initialize List.js for client-side sorting
+document.addEventListener('DOMContentLoaded', function() {
+    new List('logsTable', {
+        valueNames: ['timestamp', 'actor', 'action', 'details']
+    });
+});
+</script>
+{% endblock %}

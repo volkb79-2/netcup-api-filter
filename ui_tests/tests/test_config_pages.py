@@ -1,41 +1,58 @@
+"""Tests for admin configuration pages."""
 import pytest
-from playwright.async_api import Page, expect
+from ui_tests.browser import browser_session
+from ui_tests import workflows
 from ui_tests.config import settings
 
-@pytest.mark.asyncio
-async def test_netcup_config_page(admin_page):
-    """Test that the Netcup Config page loads and displays the form."""
-    page = admin_page  # Already awaited by fixture
-    base_url = settings.base_url
-    
-    await page.goto(f"{base_url}/admin/netcup_config/")
-    
-    # Check title
-    await expect(page.locator("h1")).to_contain_text("Netcup API Configuration")
-    
-    # Check form fields
-    await expect(page.locator("input[name='customer_id']")).to_be_visible()
-    await expect(page.locator("input[name='api_key']")).to_be_visible()
-    await expect(page.locator("input[name='api_password']")).to_be_visible()
-    
-    # Check submit button (renders as button element)
-    await expect(page.locator("button[type='submit']")).to_be_visible()
 
-@pytest.mark.asyncio
-async def test_email_config_page(admin_page):
-    """Test that the Email Config page loads and displays the form with two buttons."""
-    page = admin_page  # Already awaited by fixture
-    base_url = settings.base_url
-    
-    await page.goto(f"{base_url}/admin/email_config/")
-    
-    # Check title
-    await expect(page.locator("h1")).to_contain_text("Email Configuration")
-    
-    # Check form fields
-    await expect(page.locator("input[name='smtp_server']")).to_be_visible()
-    await expect(page.locator("input[name='test_email']")).to_be_visible()
-    
-    # Check buttons (Save and Test)
-    await expect(page.locator("button[value='save']")).to_be_visible()
-    await expect(page.locator("button[value='test']")).to_be_visible()
+pytestmark = pytest.mark.asyncio
+
+
+async def test_netcup_config_page(active_profile):
+    """Test that the Netcup Config page loads and displays the form."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.open_admin_netcup_config(browser)
+        
+        # Check page heading
+        heading = await browser.text("main h1")
+        assert "Netcup" in heading
+        
+        # Check form fields exist
+        page_html = await browser.html("body")
+        assert "customer_number" in page_html
+        assert "api_key" in page_html
+        assert "api_password" in page_html
+        assert "api_endpoint" in page_html
+
+
+async def test_email_config_page(active_profile):
+    """Test that the Email Config page loads and displays the form."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.open_admin_email_settings(browser)
+        
+        # Check page heading
+        heading = await browser.text("main h1")
+        assert "Email" in heading
+        
+        # Check form fields exist
+        page_html = await browser.html("body")
+        assert "smtp_host" in page_html
+        assert "from_email" in page_html
+        assert "smtp_port" in page_html
+
+
+async def test_system_info_page(active_profile):
+    """Test that the System Info page loads with status information."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await workflows.open_admin_system_info(browser)
+        
+        # Check page heading  
+        heading = await browser.text("main h1")
+        assert "System" in heading
+        
+        # Check for system info sections
+        page_html = await browser.html("body")
+        assert "Python" in page_html or "Flask" in page_html
