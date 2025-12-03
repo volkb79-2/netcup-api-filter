@@ -26,6 +26,7 @@
                 
                 <!-- Login Form -->
                 <form method="POST" action="{{ url_for('admin.login') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
                         <input type="text" 
@@ -51,8 +52,9 @@
                             <button class="btn btn-outline-secondary" 
                                     type="button" 
                                     onclick="togglePassword('password', this)"
-                                    title="Show/Hide Password">
-                                <i class="bi bi-eye"></i>
+                                    title="Show/Hide Password"
+                                    aria-label="Toggle password visibility">
+                                <i class="bi bi-eye" aria-hidden="true"></i>
                             </button>
                         </div>
                     </div>

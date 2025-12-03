@@ -1,0 +1,153 @@
+{# Account DNS Record Create - Create new DNS record #}
+{% extends "account/base.html" %}
+
+{% block title %}New DNS Record - {{ realm.realm_value }} - Account Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{{ url_for('account.realms') }}">Realms</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('account.realm_detail', realm_id=realm.id) }}">{{ realm.realm_value }}</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('account.dns_records', realm_id=realm.id) }}">DNS Records</a></li>
+            <li class="breadcrumb-item active">New Record</li>
+        </ol>
+    </nav>
+    <h1 class="h3 mb-1">Create DNS Record</h1>
+    <p class="text-muted mb-0">Add a new DNS record for <code>{{ realm.realm_value }}.{{ realm.domain }}</code></p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-plus-circle me-1"></i>New Record
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="mb-3">
+                        <label for="hostname" class="form-label">Hostname</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="hostname" name="hostname"
+                                   {% if realm.realm_type == 'host' %}
+                                   value="{{ realm.realm_value }}" readonly
+                                   {% else %}
+                                   placeholder="{{ realm.realm_value }}"
+                                   {% endif %}
+                                   aria-describedby="hostnameHelp">
+                            <span class="input-group-text">.{{ realm.domain }}</span>
+                        </div>
+                        <div id="hostnameHelp" class="form-text">
+                            {% if realm.realm_type == 'host' %}
+                            Fixed to <code>{{ realm.realm_value }}</code> (host realm)
+                            {% elif realm.realm_type == 'subdomain' %}
+                            Enter hostname within <code>*.{{ realm.realm_value }}</code> or <code>{{ realm.realm_value }}</code>
+                            {% else %}
+                            Enter hostname under <code>*.{{ realm.realm_value }}</code> (not the apex)
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="type" class="form-label">Record Type</label>
+                        <select class="form-select" id="type" name="type" required>
+                            {% for rt in allowed_types %}
+                            <option value="{{ rt }}">{{ rt }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="destination" class="form-label">Destination / Value</label>
+                        <input type="text" class="form-control" id="destination" name="destination" required
+                               placeholder="e.g., 192.0.2.1 or example.com">
+                        <div class="form-text">
+                            <span id="destinationHelp">Enter the target IP address or hostname</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="priorityGroup" style="display: none;">
+                        <label for="priority" class="form-label">Priority</label>
+                        <input type="number" class="form-control" id="priority" name="priority"
+                               min="0" max="65535" placeholder="10">
+                        <div class="form-text">Required for MX and SRV records (lower = higher priority)</div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle me-1"></i>Create Record
+                        </button>
+                        <a href="{{ url_for('account.dns_records', realm_id=realm.id) }}" class="btn btn-secondary">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i>Record Type Guide
+            </div>
+            <div class="card-body small">
+                <dl class="mb-0">
+                    <dt>A</dt>
+                    <dd>IPv4 address (e.g., 192.0.2.1)</dd>
+                    
+                    <dt>AAAA</dt>
+                    <dd>IPv6 address (e.g., 2001:db8::1)</dd>
+                    
+                    <dt>CNAME</dt>
+                    <dd>Alias to another domain</dd>
+                    
+                    <dt>MX</dt>
+                    <dd>Mail server with priority</dd>
+                    
+                    <dt>TXT</dt>
+                    <dd>Text record (SPF, DKIM, etc.)</dd>
+                    
+                    <dt>NS</dt>
+                    <dd>Nameserver delegation</dd>
+                    
+                    <dt>SRV</dt>
+                    <dd>Service location record</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('type').addEventListener('change', function() {
+    const type = this.value;
+    const priorityGroup = document.getElementById('priorityGroup');
+    const destinationHelp = document.getElementById('destinationHelp');
+    
+    // Show priority for MX and SRV
+    if (type === 'MX' || type === 'SRV') {
+        priorityGroup.style.display = 'block';
+    } else {
+        priorityGroup.style.display = 'none';
+    }
+    
+    // Update destination help text
+    const helpTexts = {
+        'A': 'Enter an IPv4 address (e.g., 192.0.2.1)',
+        'AAAA': 'Enter an IPv6 address (e.g., 2001:db8::1)',
+        'CNAME': 'Enter the target hostname (e.g., example.com)',
+        'MX': 'Enter the mail server hostname',
+        'TXT': 'Enter the text content (e.g., "v=spf1 include:_spf.example.com ~all")',
+        'NS': 'Enter the nameserver hostname',
+        'SRV': 'Enter weight port target (e.g., 5 5269 xmpp.example.com)'
+    };
+    destinationHelp.textContent = helpTexts[type] || 'Enter the record value';
+});
+</script>
+{% endblock %}

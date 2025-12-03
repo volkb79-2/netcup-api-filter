@@ -1,0 +1,126 @@
+{# Token Regeneration Confirmation #}
+{% extends "account/base.html" %}
+
+{% block title %}Regenerate Token - Account Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{{ url_for('account.dashboard') }}">Dashboard</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('account.realm_detail', realm_id=realm.id) }}">{{ realm.realm_value }}</a></li>
+            <li class="breadcrumb-item active">Regenerate Token</li>
+        </ol>
+    </nav>
+    <h1 class="h3 mb-1">
+        <i class="bi bi-arrow-repeat me-2"></i>Regenerate Token
+    </h1>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-exclamation-triangle text-warning me-1"></i>
+                Confirm Token Regeneration
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning mb-4">
+                    <h6 class="alert-heading mb-2">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        Important
+                    </h6>
+                    <p class="mb-0">
+                        Regenerating this token will:
+                    </p>
+                    <ul class="mb-0 mt-2">
+                        <li>Create a <strong>new token</strong> with the same configuration</li>
+                        <li><strong>Revoke</strong> the current token immediately</li>
+                        <li>Show the new token <strong>once only</strong> - save it securely</li>
+                    </ul>
+                </div>
+                
+                <h6 class="mb-3">Token Details</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th class="text-muted w-25">Token Name</th>
+                        <td><code>{{ token.token_name }}</code></td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Current Prefix</th>
+                        <td><code>{{ token.token_prefix }}...</code></td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Description</th>
+                        <td>{{ token.token_description or 'None' }}</td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Realm</th>
+                        <td>
+                            <span class="badge bg-secondary">{{ realm.realm_type }}</span>
+                            <code>{{ realm.realm_value }}</code>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Record Types</th>
+                        <td>
+                            {% if token.allowed_record_types %}
+                                {% for rt in token.get_allowed_record_types() %}
+                                <span class="badge bg-info me-1">{{ rt }}</span>
+                                {% endfor %}
+                            {% else %}
+                            <span class="text-muted">All (from realm)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Operations</th>
+                        <td>
+                            {% if token.allowed_operations %}
+                                {% for op in token.get_allowed_operations() %}
+                                <span class="badge bg-secondary me-1">{{ op | title }}</span>
+                                {% endfor %}
+                            {% else %}
+                            <span class="text-muted">All (from realm)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">IP Whitelist</th>
+                        <td>
+                            {% if token.ip_ranges %}
+                            <code>{{ token.ip_ranges }}</code>
+                            {% else %}
+                            <span class="text-muted">None (all IPs allowed)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Expires</th>
+                        <td>
+                            {% if token.expires_at %}
+                            {{ token.expires_at.strftime('%Y-%m-%d') }}
+                            {% else %}
+                            <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+                
+                <form method="POST" class="mt-4">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('account.realm_detail', realm_id=realm.id) }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-arrow-repeat me-1"></i>Regenerate Token
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

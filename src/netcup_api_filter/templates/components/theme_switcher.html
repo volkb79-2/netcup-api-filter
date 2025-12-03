@@ -1,0 +1,70 @@
+{# 
+   Theme Switcher Component
+   
+   Dropdown with theme and density options.
+   Uses localStorage for persistence.
+   Ported from /component-demo-bs5
+#}
+
+<div class="dropdown">
+    <button class="btn btn-sm btn-outline-secondary border-0" 
+            data-bs-toggle="dropdown" 
+            aria-expanded="false"
+            title="Theme & Density">
+        <i class="bi bi-palette2"></i>
+    </button>
+    <div class="dropdown-menu dropdown-menu-end" style="min-width: 220px;">
+        <h6 class="dropdown-header">
+            <i class="bi bi-brush me-2"></i>Theme
+        </h6>
+        
+        {# Theme Options - 7 core themes from component-demo-bs5 #}
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('cobalt-2')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #3b7cf5, #070a14)"></span>
+            <span>Cobalt 2</span>
+            <span class="ms-auto text-muted small">★</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('graphite')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #3b82f6, #08080c)"></span>
+            <span>Graphite</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('obsidian-noir')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #a78bfa, #08080d)"></span>
+            <span>Obsidian Noir</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('ember')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #f97316, #0b0907)"></span>
+            <span>Ember</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('jade')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #34d399, #060908)"></span>
+            <span>Jade</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('rose-quartz')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #f472b6, #0b090a)"></span>
+            <span>Rose Quartz</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setTheme('gold-dust')">
+            <span class="theme-swatch" style="background: linear-gradient(135deg, #fbbf24, #0a0907)"></span>
+            <span>Gold Dust</span>
+        </button>
+        
+        <div class="dropdown-divider"></div>
+        
+        <h6 class="dropdown-header">
+            <i class="bi bi-arrows-collapse me-2"></i>Density
+        </h6>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setDensity('comfortable')">
+            <i class="bi bi-distribute-vertical"></i>
+            <span>Comfortable</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setDensity('compact')">
+            <i class="bi bi-arrows-collapse"></i>
+            <span>Compact</span>
+        </button>
+        <button class="dropdown-item d-flex align-items-center gap-2" onclick="setDensity('ultra-compact')">
+            <i class="bi bi-arrows-vertical"></i>
+            <span>Ultra Compact</span>
+        </button>
+    </div>
+</div>

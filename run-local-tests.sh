@@ -3,10 +3,38 @@ set -euo pipefail
 
 # Run complete local test suite against production-like deployment
 # This mirrors the webhosting environment exactly
+#
+# Options:
+#   --with-mocks    Start mock services (Mailpit, GeoIP, Netcup API mocks)
+#   --skip-build    Skip rebuilding deployment if deploy-local exists
+#   [test_path]     Optional: specific test path (default: ui_tests/tests)
 
 # NO HARDCODED PATHS - use REPO_ROOT from environment
 WORKSPACE_DIR="${REPO_ROOT:?REPO_ROOT must be set (source .env.workspace)}"
 DEPLOY_LOCAL_DIR="${WORKSPACE_DIR}/deploy-local"
+
+# Parse arguments
+WITH_MOCKS=0
+SKIP_BUILD=0
+TEST_PATH=""
+
+for arg in "$@"; do
+    case $arg in
+        --with-mocks)
+            WITH_MOCKS=1
+            ;;
+        --skip-build)
+            SKIP_BUILD=1
+            ;;
+        -*)
+            echo "Unknown option: $arg"
+            exit 1
+            ;;
+        *)
+            TEST_PATH="$arg"
+            ;;
+    esac
+done
 
 # Colors for output
 BLUE='\033[0;34m'
@@ -17,16 +45,27 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}=== Local Test Suite (Production Parity) ===${NC}"
 echo ""
 
+# 0. Start mock services if requested
+if [ "$WITH_MOCKS" -eq 1 ]; then
+    echo -e "${BLUE}Starting mock services (Mailpit, GeoIP, Netcup API)...${NC}"
+    "${WORKSPACE_DIR}/tooling/mock-services/start.sh" --wait
+    echo ""
+fi
+
 # 1. Build and extract deployment (same as webhosting gets)
-if [ ! -d "${DEPLOY_LOCAL_DIR}" ]; then
-    echo -e "${YELLOW}Building fresh deployment...${NC}"
-    cd "${WORKSPACE_DIR}"
-    # Use --local flag to ensure deployment_state_local.json is created with fresh credentials
-    ./build_deployment.py --local 2>&1 | grep -E "^[0-9]|Database initialized|Created admin" || true
-    rm -rf "${DEPLOY_LOCAL_DIR}"
-    mkdir -p "${DEPLOY_LOCAL_DIR}"
-    unzip -o -q deploy.zip -d "${DEPLOY_LOCAL_DIR}/"
-    echo -e "${GREEN}✓ Deployment extracted${NC}"
+if [ ! -d "${DEPLOY_LOCAL_DIR}" ] || [ "$SKIP_BUILD" -eq 0 ]; then
+    if [ -d "${DEPLOY_LOCAL_DIR}" ] && [ "$SKIP_BUILD" -eq 1 ]; then
+        echo -e "${GREEN}✓ Using existing deploy-local (--skip-build)${NC}"
+    else
+        echo -e "${YELLOW}Building fresh deployment...${NC}"
+        cd "${WORKSPACE_DIR}"
+        # Use --local flag to ensure deployment_state_local.json is created with fresh credentials
+        ./build_deployment.py --local 2>&1 | grep -E "^[0-9]|Database initialized|Created admin" || true
+        rm -rf "${DEPLOY_LOCAL_DIR}"
+        mkdir -p "${DEPLOY_LOCAL_DIR}"
+        unzip -o -q deploy.zip -d "${DEPLOY_LOCAL_DIR}/"
+        echo -e "${GREEN}✓ Deployment extracted${NC}"
+    fi
 else
     echo -e "${GREEN}✓ Using existing deploy-local${NC}"
 fi
@@ -134,12 +173,12 @@ if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwri
     # The workspace is mounted at /workspaces/netcup-api-filter in the container
     # We use the wrapper script which handles user permissions and environment variables
     echo -e "${BLUE}Running tests in Playwright container...${NC}"
-    "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${1:-ui_tests/tests}" -v
+    "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${TEST_PATH:-ui_tests/tests}" -v
 
 else
     echo -e "${YELLOW}Playwright container not running. Running tests locally...${NC}"
     # Run tests locally if Playwright container is not available
-    pytest ui_tests/tests -v --tb=short
+    pytest "${TEST_PATH:-ui_tests/tests}" -v --tb=short
 fi
 
 TEST_EXIT_CODE=$?

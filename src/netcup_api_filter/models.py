@@ -158,6 +158,10 @@ class Account(db.Model):
     telegram_chat_id = db.Column(db.String(64))  # NULL = Telegram not linked
     telegram_enabled = db.Column(db.Integer, default=0)
     
+    # Recovery codes (JSON array of hashed codes, NULL = not generated)
+    recovery_codes = db.Column(db.Text)  # JSON: ["hash1", "hash2", ...]
+    recovery_codes_generated_at = db.Column(db.DateTime)
+    
     # Notifications (separate from login email)
     notification_email = db.Column(db.String(255))  # Optional, for alerts
     notify_new_ip = db.Column(db.Integer, default=1)
@@ -314,6 +318,21 @@ class AccountRealm(db.Model):
         
         logger.warning(f"Unknown realm_type: {self.realm_type}")
         return False
+    
+    def matches_domain(self, domain: str) -> bool:
+        """
+        Check if a domain (zone) matches this realm's authorized domain.
+        
+        This is used to verify API calls are targeting the correct DNS zone.
+        The realm must be for the same domain that's being accessed.
+        
+        Args:
+            domain: Domain/zone being accessed (e.g., example.com)
+        
+        Returns:
+            True if the realm authorizes access to this domain
+        """
+        return domain.lower() == self.domain.lower()
     
     def __repr__(self):
         return f'<AccountRealm {self.domain}:{self.realm_type}:{self.realm_value}>'

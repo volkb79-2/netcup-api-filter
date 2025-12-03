@@ -1,0 +1,193 @@
+{# Admin Realms List - All realms across all accounts #}
+{% extends "admin/base.html" %}
+
+{% block title %}Realms - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Realms</h1>
+        <p class="text-muted mb-0">Manage all realm assignments across accounts</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin.realms_pending') }}" class="btn btn-outline-warning">
+            <i class="bi bi-clock-history me-1"></i>Pending Requests
+            {% if pending_count %}
+            <span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>
+            {% endif %}
+        </a>
+    </div>
+</div>
+
+<!-- Search & Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('admin.realms_list') }}" class="row g-3">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" name="search" 
+                           placeholder="Search by domain, realm value, or username..." 
+                           value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="status">
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+                    <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i>Filter
+                </button>
+            </div>
+            <div class="col-md-2">
+                <a href="{{ url_for('admin.realms_list') }}" class="btn btn-outline-secondary w-100">
+                    <i class="bi bi-x-lg me-1"></i>Clear
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Realms Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Realm</th>
+                    <th>Type</th>
+                    <th>Account</th>
+                    <th>Record Types</th>
+                    <th>Tokens</th>
+                    <th>Created</th>
+                    <th width="100">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in realms %}
+                <tr>
+                    <td>
+                        {% if item.realm.status == 'approved' %}
+                        <span class="badge bg-success">Active</span>
+                        {% elif item.realm.status == 'pending' %}
+                        <span class="badge bg-warning">Pending</span>
+                        {% elif item.realm.status == 'rejected' %}
+                        <span class="badge bg-danger">Rejected</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ item.realm.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.realm_detail', realm_id=item.realm.id) }}" class="text-decoration-none">
+                            <span class="font-monospace">{{ item.realm.realm_value or '@' }}</span>
+                            <small class="text-muted">.{{ item.realm.domain }}</small>
+                        </a>
+                    </td>
+                    <td>
+                        <span class="badge bg-info bg-opacity-25 text-info">{{ item.realm.realm_type }}</span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.account_detail', account_id=item.realm.account.id) }}" 
+                           class="text-decoration-none">
+                            <i class="bi bi-person me-1"></i>{{ item.realm.account.username }}
+                        </a>
+                    </td>
+                    <td>
+                        {% for rt in item.realm.get_allowed_record_types()[:4] %}
+                        <span class="badge bg-dark">{{ rt }}</span>
+                        {% endfor %}
+                        {% if item.realm.get_allowed_record_types()|length > 4 %}
+                        <span class="text-muted">+{{ item.realm.get_allowed_record_types()|length - 4 }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-success">{{ item.active_token_count }}</span>
+                        {% if item.token_count > item.active_token_count %}
+                        <span class="text-muted small">/ {{ item.token_count }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <small class="text-muted">{{ item.realm.created_at.strftime('%Y-%m-%d') }}</small>
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('admin.realm_detail', realm_id=item.realm.id) }}" 
+                               class="btn btn-outline-primary" title="View Details">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% if item.realm.status == 'pending' %}
+                            <form action="{{ url_for('admin.realm_approve', realm_id=item.realm.id) }}" 
+                                  method="POST" class="d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline-success" title="Approve">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center py-5 text-muted">
+                        <i class="bi bi-globe display-6 d-block mb-2"></i>
+                        No realms found
+                        {% if search or status_filter != 'all' %}
+                        <br>
+                        <a href="{{ url_for('admin.realms_list') }}" class="btn btn-sm btn-outline-secondary mt-2">
+                            Clear Filters
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if pagination.pages > 1 %}
+    <div class="card-footer">
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center mb-0">
+                <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.realms_list', page=pagination.prev_num, status=status_filter, search=search) }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                
+                {% for page_num in pagination.iter_pages(left_edge=1, left_current=2, right_current=2, right_edge=1) %}
+                {% if page_num %}
+                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.realms_list', page=page_num, status=status_filter, search=search) }}">
+                        {{ page_num }}
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+                {% endfor %}
+                
+                <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.realms_list', page=pagination.next_num, status=status_filter, search=search) }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <div class="text-center mt-2">
+            <small class="text-muted">
+                Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }} - 
+                {{ min(pagination.page * pagination.per_page, pagination.total) }} of {{ pagination.total }} realms
+            </small>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{# 
+   Footer Component
+   
+   Displays build info and copyright.
+   
+   Variables expected:
+   - build_info: dict with git_short, built_at (optional)
+#}
+
+<footer class="app-footer">
+    <div class="container-fluid">
+        <div class="text-center py-3">
+            <span class="small text-muted" style="opacity: 0.6;">
+                Netcup API Filter
+                {% if build_info %}
+                <span class="mx-1">·</span>
+                <span class="font-monospace">{{ build_info.get('git_short', 'dev') }}</span>
+                <span class="mx-1">·</span>
+                {{ build_info.get('built_at', '')[:10] if build_info.get('built_at') else '' }}
+                {% endif %}
+            </span>
+        </div>
+    </div>
+</footer>

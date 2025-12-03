@@ -621,8 +621,9 @@ main() {
     
     local elapsed=$((SECONDS - start_time))
     
-    # Cleanup for local deployment
-    if [[ "$DEPLOYMENT_TARGET" == "local" ]]; then
+    # Cleanup for local deployment - only stop Flask if tests ran
+    # When --skip-tests is used, keep Flask running for manual testing
+    if [[ "$DEPLOYMENT_TARGET" == "local" && "$SKIP_TESTS" == "false" ]]; then
         stop_flask
     fi
     

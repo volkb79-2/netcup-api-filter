@@ -124,7 +124,14 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <code class="small">{{ log.source_ip | default('--') }}</code>
+                                {% if log.source_ip %}
+                                <div>
+                                    <code class="small">{{ log.source_ip }}</code>
+                                </div>
+                                <small class="text-muted">{{ geoip_location(log.source_ip) }}</small>
+                                {% else %}
+                                <code class="small">--</code>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

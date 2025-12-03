@@ -126,7 +126,9 @@
                         <label for="recovery-code" class="form-label">Recovery Code</label>
                         <input type="text" class="form-control font-monospace text-center" 
                                id="recovery-code" name="code"
-                               placeholder="XXXX-XXXX-XXXX" required>
+                               placeholder="XXXX-XXXX" maxlength="9" required
+                               style="letter-spacing: 0.2em;">
+                        <div class="form-text">Format: XXXX-XXXX (include the dash)</div>
                     </div>
                 </div>
                 <div class="modal-footer">

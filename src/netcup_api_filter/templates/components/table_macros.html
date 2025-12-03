@@ -1,0 +1,272 @@
+{# 
+   Table Macros - Reusable table components
+   
+   Usage:
+   {% from 'components/table_macros.html' import render_search_bar, render_pagination, render_auto_refresh %}
+#}
+
+{# Two-tier search bar with tooltip explanation #}
+{% macro render_search_bar(client_filter_id="search-filter", server_search_url=None, placeholder="Search...") %}
+<div class="search-toolbar mb-3">
+    <div class="row g-2 align-items-center">
+        {# Client-side quick filter #}
+        <div class="col-md-4">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-funnel"></i></span>
+                <input type="text" 
+                       class="form-control search" 
+                       id="{{ client_filter_id }}"
+                       placeholder="Quick filter..."
+                       data-bs-toggle="tooltip"
+                       data-bs-placement="bottom"
+                       title="Filters visible rows only (client-side, instant)">
+            </div>
+            <small class="text-muted">
+                <i class="bi bi-info-circle"></i> Filters visible rows only
+            </small>
+        </div>
+        
+        {% if server_search_url %}
+        {# Server-side search #}
+        <div class="col-md-5">
+            <form action="{{ server_search_url }}" method="get" class="d-flex gap-2">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" 
+                           class="form-control" 
+                           name="q" 
+                           placeholder="{{ placeholder }}"
+                           value="{{ request.args.get('q', '') }}"
+                           data-bs-toggle="tooltip"
+                           data-bs-placement="bottom"
+                           title="Searches entire database with pagination">
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search"></i> Search
+                </button>
+            </form>
+            <small class="text-muted">
+                <i class="bi bi-database"></i> Searches all records
+            </small>
+        </div>
+        {% endif %}
+        
+        <div class="col-md-3 text-end">
+            {% if caller %}{{ caller() }}{% endif %}
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{# Pagination component #}
+{% macro render_pagination(pagination, endpoint, args={}) %}
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="mt-3">
+    <div class="d-flex justify-content-between align-items-center">
+        <small class="text-muted">
+            Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }}-{{ [pagination.page * pagination.per_page, pagination.total]|min }} of {{ pagination.total }}
+        </small>
+        
+        <ul class="pagination pagination-sm mb-0">
+            {# First page #}
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for(endpoint, page=1, **args) }}" title="First">
+                    <i class="bi bi-chevron-double-left"></i>
+                </a>
+            </li>
+            
+            {# Previous page #}
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for(endpoint, page=pagination.page - 1, **args) if pagination.has_prev else '#' }}">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+            </li>
+            
+            {# Page numbers #}
+            {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if page_num %}
+                    <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for(endpoint, page=page_num, **args) }}">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">…</span>
+                    </li>
+                {% endif %}
+            {% endfor %}
+            
+            {# Next page #}
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for(endpoint, page=pagination.page + 1, **args) if pagination.has_next else '#' }}">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            
+            {# Last page #}
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for(endpoint, page=pagination.pages, **args) }}" title="Last">
+                    <i class="bi bi-chevron-double-right"></i>
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>
+{% endif %}
+{% endmacro %}
+
+
+{# Auto-refresh slider for log tables #}
+{% macro render_auto_refresh(default_interval=5, enabled_by_default=true, refresh_target_id="data-table") %}
+<div class="auto-refresh-control d-inline-flex align-items-center gap-2">
+    <label class="form-label mb-0 small text-muted">Auto-refresh:</label>
+    <div class="form-check form-switch d-inline-flex align-items-center mb-0">
+        <input class="form-check-input" 
+               type="checkbox" 
+               role="switch" 
+               id="auto-refresh-toggle"
+               {% if enabled_by_default %}checked{% endif %}
+               onchange="toggleAutoRefresh(this.checked)">
+    </div>
+    <input type="range" 
+           class="form-range" 
+           id="auto-refresh-interval"
+           min="2" 
+           max="30" 
+           value="{{ default_interval }}"
+           style="width: 80px;"
+           onchange="updateRefreshInterval(this.value)"
+           {% if not enabled_by_default %}disabled{% endif %}>
+    <span class="small text-muted" id="auto-refresh-display">{{ default_interval }}s</span>
+    
+    <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="refreshNow()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+<script>
+(function() {
+    let refreshInterval = {{ default_interval }} * 1000;
+    let refreshTimer = null;
+    let isEnabled = {{ 'true' if enabled_by_default else 'false' }};
+    let isPaused = false;
+    const targetId = '{{ refresh_target_id }}';
+    
+    function startRefresh() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        if (isEnabled && !isPaused) {
+            refreshTimer = setInterval(refreshNow, refreshInterval);
+        }
+    }
+    
+    window.toggleAutoRefresh = function(enabled) {
+        isEnabled = enabled;
+        document.getElementById('auto-refresh-interval').disabled = !enabled;
+        if (enabled) {
+            startRefresh();
+        } else if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+    };
+    
+    window.updateRefreshInterval = function(seconds) {
+        refreshInterval = parseInt(seconds) * 1000;
+        document.getElementById('auto-refresh-display').textContent = seconds + 's';
+        startRefresh();
+    };
+    
+    window.refreshNow = function() {
+        // HTMX-powered refresh, or fallback to full page reload
+        const target = document.getElementById(targetId);
+        if (target && typeof htmx !== 'undefined') {
+            htmx.trigger(target, 'refresh');
+        } else {
+            location.reload();
+        }
+    };
+    
+    // Pause on user interaction (hover, focus)
+    const container = document.getElementById(targetId);
+    if (container) {
+        container.addEventListener('mouseenter', () => { isPaused = true; });
+        container.addEventListener('mouseleave', () => { isPaused = false; startRefresh(); });
+        container.addEventListener('focusin', () => { isPaused = true; });
+        container.addEventListener('focusout', () => { isPaused = false; startRefresh(); });
+    }
+    
+    // Initialize
+    if (isEnabled) startRefresh();
+})();
+</script>
+{% endmacro %}
+
+
+{# Status badge #}
+{% macro status_badge(status, text=None) %}
+{% set badge_class = {
+    'active': 'bg-success',
+    'enabled': 'bg-success',
+    'approved': 'bg-success',
+    'success': 'bg-success',
+    'pending': 'bg-warning text-dark',
+    'waiting': 'bg-warning text-dark',
+    'disabled': 'bg-secondary',
+    'inactive': 'bg-secondary',
+    'expired': 'bg-secondary',
+    'revoked': 'bg-danger',
+    'rejected': 'bg-danger',
+    'error': 'bg-danger',
+    'failed': 'bg-danger'
+}.get(status|lower, 'bg-secondary') %}
+<span class="badge {{ badge_class }}">{{ text or status|title }}</span>
+{% endmacro %}
+
+
+{# Action buttons group #}
+{% macro action_buttons(view_url=None, edit_url=None, delete_url=None, extra_buttons=[]) %}
+<div class="btn-group btn-group-sm">
+    {% if view_url %}
+    <a href="{{ view_url }}" class="btn btn-outline-primary" title="View">
+        <i class="bi bi-eye"></i>
+    </a>
+    {% endif %}
+    {% if edit_url %}
+    <a href="{{ edit_url }}" class="btn btn-outline-secondary" title="Edit">
+        <i class="bi bi-pencil"></i>
+    </a>
+    {% endif %}
+    {% for btn in extra_buttons %}
+    <a href="{{ btn.url }}" class="btn btn-outline-{{ btn.color|default('secondary') }}" title="{{ btn.title }}">
+        <i class="bi bi-{{ btn.icon }}"></i>
+    </a>
+    {% endfor %}
+    {% if delete_url %}
+    <button type="button" 
+            class="btn btn-outline-danger" 
+            title="Delete"
+            data-bs-toggle="modal" 
+            data-bs-target="#confirmDelete"
+            data-delete-url="{{ delete_url }}">
+        <i class="bi bi-trash"></i>
+    </button>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# Sortable table header #}
+{% macro sortable_header(column, label, current_sort=None, current_order='asc') %}
+{% set is_active = current_sort == column %}
+{% set next_order = 'desc' if (is_active and current_order == 'asc') else 'asc' %}
+<th class="sortable {% if is_active %}{{ current_order }}{% endif %}">
+    <a href="?sort={{ column }}&order={{ next_order }}" class="text-decoration-none text-reset d-flex align-items-center gap-1">
+        {{ label }}
+        {% if is_active %}
+            <i class="bi bi-arrow-{{ 'up' if current_order == 'asc' else 'down' }}"></i>
+        {% else %}
+            <i class="bi bi-arrow-down-up opacity-50"></i>
+        {% endif %}
+    </a>
+</th>
+{% endmacro %}

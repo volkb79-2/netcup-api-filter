@@ -21,6 +21,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('account.change_password') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label class="form-label" for="current_password">Current Password</label>
                         <div class="input-group">
@@ -117,11 +118,14 @@
                         {{ session.device or 'Unknown Device' }}
                         {% endif %}
                         <small class="d-block text-muted">
-                            {{ session.ip_address }} • {{ session.last_active.strftime('%Y-%m-%d %H:%M') }}
+                            {{ session.ip_address }} 
+                            <span class="ms-1">({{ geoip_location(session.ip_address) }})</span>
+                            • {{ session.last_active.strftime('%Y-%m-%d %H:%M') }}
                         </small>
                     </div>
                     {% if not session.is_current %}
                     <form method="POST" action="{{ url_for('account.revoke_session', session_id=session.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-sm btn-outline-danger">
                             <i class="bi bi-x-lg"></i>
                         </button>
@@ -136,6 +140,7 @@
             </div>
             <div class="card-footer">
                 <form method="POST" action="{{ url_for('account.revoke_all_sessions') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline-danger btn-sm">
                         <i class="bi bi-box-arrow-right me-1"></i>Sign Out All Other Sessions
                     </button>
@@ -174,7 +179,10 @@
                         {% endif %}
                         {{ event.action | replace('_', ' ') | title }}
                     </td>
-                    <td class="font-monospace small">{{ event.ip_address }}</td>
+                    <td>
+                        <div class="font-monospace small">{{ event.ip_address }}</div>
+                        <small class="text-muted">{{ geoip_location(event.ip_address) }}</small>
+                    </td>
                     <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                 </tr>
                 {% else %}
@@ -198,6 +206,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="{{ url_for('account.disable_2fa') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="alert alert-warning">
                         <i class="bi bi-exclamation-triangle me-1"></i>

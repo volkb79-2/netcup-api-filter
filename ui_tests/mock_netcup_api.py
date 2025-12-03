@@ -94,6 +94,16 @@ def create_mock_api_app() -> Flask:
                 "longmessage": str(e)
             }), 500
     
+    @app.route('/health', methods=['GET'])
+    def health():
+        """Health check endpoint for container orchestration."""
+        return jsonify({
+            "status": "healthy",
+            "service": "mock-netcup-api",
+            "active_sessions": len(SESSIONS),
+            "known_zones": len(DNS_ZONES)
+        }), 200
+    
     def handle_login(param: Dict[str, Any]) -> tuple:
         """Handle login action."""
         customer_id = param.get('customernumber')
@@ -402,10 +412,13 @@ def seed_test_domain(domain: str, records: List[Dict[str, Any]] | None = None):
     DNS_RECORDS[domain] = records
 
 
+# Create app instance for gunicorn (e.g., gunicorn mock_netcup_api:app)
+app = create_mock_api_app()
+seed_test_domain("test.example.com")
+
+
 if __name__ == '__main__':
     # For testing the mock server directly
-    app = create_mock_api_app()
-    seed_test_domain("test.example.com")
     print(f"Mock Netcup API server running on http://localhost:5555")
     print(f"Test credentials: customer_id={MOCK_CUSTOMER_ID}, api_key={MOCK_API_KEY}, api_password={MOCK_API_PASSWORD}")
     app.run(host='0.0.0.0', port=5555, debug=True)

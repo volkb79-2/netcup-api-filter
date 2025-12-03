@@ -1,0 +1,190 @@
+{# 
+   Form Macros - Reusable form components
+   
+   Usage:
+   {% from 'components/form_macros.html' import render_field, render_password_field, render_submit %}
+#}
+
+{# Standard form field with label, input, help text, and validation #}
+{% macro render_field(field, label=None, placeholder=None, help_text=None, monospace=False, autofocus=False) %}
+<div class="mb-3">
+    <label for="{{ field.id }}" class="form-label">
+        {{ label or field.label.text }}
+        {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
+    </label>
+    {{ field(
+        class="form-control" ~ (" font-monospace" if monospace else "") ~ (" is-invalid" if field.errors else ""),
+        placeholder=placeholder or "",
+        autofocus=autofocus
+    ) }}
+    {% if help_text %}
+    <div class="form-text">{{ help_text }}</div>
+    {% endif %}
+    {% for error in field.errors %}
+    <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# Password field with toggle visibility and optional generate button #}
+{% macro render_password_field(field, label=None, show_generate=False, show_strength=False, field_id=None) %}
+{% set fid = field_id or field.id %}
+<div class="mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <label for="{{ fid }}" class="form-label mb-0">
+            {{ label or field.label.text }}
+            {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
+        </label>
+        {% if show_generate %}
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="generatePassword('{{ fid }}')">
+            <i class="bi bi-shuffle"></i> Generate
+        </button>
+        {% endif %}
+    </div>
+    
+    <div class="input-group">
+        {{ field(
+            class="form-control font-monospace" ~ (" is-invalid" if field.errors else ""),
+            id=fid
+        ) }}
+        <button class="btn btn-outline-secondary" type="button" 
+                onclick="togglePasswordVisibility('{{ fid }}')" 
+                title="Toggle visibility">
+            <i class="bi bi-eye" id="{{ fid }}-toggle-icon"></i>
+        </button>
+    </div>
+    
+    {% if show_strength %}
+    <div class="mt-2">
+        <div class="strength-meter">
+            <div class="strength-meter-fill" id="{{ fid }}-strength-bar" style="width: 0%"></div>
+        </div>
+        <div class="d-flex justify-content-between mt-1">
+            <small class="text-muted">Strength: <span id="{{ fid }}-strength-text">Enter password</span></small>
+            <small class="text-muted">Entropy: <span id="{{ fid }}-entropy" class="font-monospace">0</span> bits</small>
+        </div>
+    </div>
+    
+    {# Character class indicators #}
+    <div class="row mt-2">
+        <div class="col-6">
+            <div class="small" id="{{ fid }}-char-classes">
+                <div class="text-muted" id="{{ fid }}-has-upper"><i class="bi bi-circle"></i> Uppercase</div>
+                <div class="text-muted" id="{{ fid }}-has-lower"><i class="bi bi-circle"></i> Lowercase</div>
+                <div class="text-muted" id="{{ fid }}-has-number"><i class="bi bi-circle"></i> Number</div>
+                <div class="text-muted" id="{{ fid }}-has-special"><i class="bi bi-circle"></i> Special char</div>
+            </div>
+        </div>
+        <div class="col-6 text-end">
+            <div class="card bg-body-tertiary d-inline-block px-3 py-2">
+                <div class="small text-muted">Entropy</div>
+                <div class="h4 mb-0 text-primary" id="{{ fid }}-entropy-badge">0</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% for error in field.errors %}
+    <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# Confirm password field with mismatch warning #}
+{% macro render_confirm_password_field(field, match_field_id, label=None) %}
+<div class="mb-3">
+    <label for="{{ field.id }}" class="form-label">
+        {{ label or field.label.text }}
+        {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
+    </label>
+    
+    <div class="input-group">
+        {{ field(
+            class="form-control font-monospace" ~ (" is-invalid" if field.errors else ""),
+            oninput="checkPasswordMatch('{{ match_field_id }}', '{{ field.id }}')"
+        ) }}
+        <button class="btn btn-outline-secondary" type="button" 
+                onclick="togglePasswordVisibility('{{ field.id }}')" 
+                title="Toggle visibility">
+            <i class="bi bi-eye" id="{{ field.id }}-toggle-icon"></i>
+        </button>
+    </div>
+    
+    {# Mismatch warning (hidden by default) #}
+    <div class="text-danger small mt-1 d-none" id="{{ field.id }}-mismatch">
+        <i class="bi bi-exclamation-triangle"></i> Passwords do not match
+    </div>
+    
+    {% for error in field.errors %}
+    <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# Submit button with optional cancel #}
+{% macro render_submit(label="Submit", cancel_url=None, cancel_label="Cancel", btn_class="btn-primary") %}
+<div class="submit-row d-flex gap-2 {% if not cancel_url %}justify-content-center{% endif %}">
+    <button type="submit" class="btn {{ btn_class }}">
+        {{ label }}
+    </button>
+    {% if cancel_url %}
+    <a href="{{ cancel_url }}" class="btn btn-secondary">{{ cancel_label }}</a>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# Checkbox field #}
+{% macro render_checkbox(field, label=None, help_text=None) %}
+<div class="mb-3 form-check">
+    {{ field(class="form-check-input") }}
+    <label class="form-check-label" for="{{ field.id }}">
+        {{ label or field.label.text }}
+    </label>
+    {% if help_text %}
+    <div class="form-text">{{ help_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# Select field #}
+{% macro render_select(field, label=None, help_text=None) %}
+<div class="mb-3">
+    <label for="{{ field.id }}" class="form-label">
+        {{ label or field.label.text }}
+        {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
+    </label>
+    {{ field(class="form-select" ~ (" is-invalid" if field.errors else "")) }}
+    {% if help_text %}
+    <div class="form-text">{{ help_text }}</div>
+    {% endif %}
+    {% for error in field.errors %}
+    <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+
+{# Textarea field #}
+{% macro render_textarea(field, label=None, rows=4, help_text=None, monospace=False) %}
+<div class="mb-3">
+    <label for="{{ field.id }}" class="form-label">
+        {{ label or field.label.text }}
+        {% if field.flags.required %}<span class="text-danger">*</span>{% endif %}
+    </label>
+    {{ field(
+        class="form-control" ~ (" font-monospace" if monospace else "") ~ (" is-invalid" if field.errors else ""),
+        rows=rows
+    ) }}
+    {% if help_text %}
+    <div class="form-text">{{ help_text }}</div>
+    {% endif %}
+    {% for error in field.errors %}
+    <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endfor %}
+</div>
+{% endmacro %}

@@ -21,12 +21,14 @@
     <div class="d-flex gap-2">
         {% if not account.is_active and account.email_verified %}
         <form method="POST" action="{{ url_for('admin.account_approve', account_id=account.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-success">
                 <i class="bi bi-check-lg me-1"></i>Approve
             </button>
         </form>
         {% elif account.is_active %}
         <form method="POST" action="{{ url_for('admin.account_disable', account_id=account.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-warning">
                 <i class="bi bi-slash-circle me-1"></i>Disable
             </button>
@@ -184,6 +186,7 @@
                                     </button>
                                     {% if realm.status == 'pending' %}
                                     <form method="POST" action="{{ url_for('admin.realm_approve', realm_id=realm.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-outline-success" title="Approve">
                                             <i class="bi bi-check-lg"></i>
                                         </button>
@@ -290,6 +293,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="{{ url_for('admin.account_delete', account_id=account.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <p>Are you sure you want to delete <strong>{{ account.username }}</strong>?</p>
                     <p class="text-danger mb-0">

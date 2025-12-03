@@ -1,15 +1,13 @@
 {# Account Settings - User profile settings #}
 {% extends "account/base.html" %}
 
-{% block title %}Settings - Client Portal - Netcup API Filter{% endblock %}
+{% block title %}Settings - Account Portal - Netcup API Filter{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
 <div class="mb-4">
-    <h1 class="h3 mb-1">
-        <i class="bi bi-gear me-2"></i>Account Settings
-    </h1>
-    <p class="text-muted mb-0">Manage your profile and preferences</p>
+    <h1 class="h3 mb-1">Account Settings</h1>
+    <p class="text-muted mb-0">Manage your profile, security, and preferences</p>
 </div>
 
 <div class="row g-4">
@@ -21,18 +19,57 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('account.settings') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="update_profile">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label" for="username">Username</label>
                             <input type="text" class="form-control font-monospace" id="username" 
-                                   value="{{ current_user.username }}" disabled>
+                                   value="{{ account.username }}" disabled>
                             <div class="form-text">Username cannot be changed</div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="email">Email <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" id="email" name="email" 
-                                   value="{{ current_user.email }}" required>
+                            <label class="form-label" for="email">Email</label>
+                            <input type="email" class="form-control" id="email" 
+                                   value="{{ account.email }}" disabled>
+                            <div class="form-text">Contact admin to change email</div>
                         </div>
+                    </div>
+                    
+                    <div class="row g-3 mt-2">
+                        <div class="col-12">
+                            <label class="form-label" for="notification_email">Notification Email (optional)</label>
+                            <input type="email" class="form-control" id="notification_email" name="notification_email" 
+                                   value="{{ account.notification_email or '' }}" 
+                                   placeholder="Separate email for alerts (if different from primary)">
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <h6 class="mb-3">Notification Preferences</h6>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="notify_new_ip" 
+                               name="notify_new_ip" value="1" {% if account.notify_new_ip %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_new_ip">
+                            Token used from new IP address
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="notify_failed_auth" 
+                               name="notify_failed_auth" value="1" {% if account.notify_failed_auth %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_failed_auth">
+                            Failed authentication attempts
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="notify_token_expiring" 
+                               name="notify_token_expiring" value="1" {% if account.notify_token_expiring %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_token_expiring">
+                            Token expiring soon (7 days before)
+                        </label>
                     </div>
                     
                     <hr class="my-4">
@@ -46,45 +83,98 @@
             </div>
         </div>
 
-        <!-- Notification Preferences -->
+        <!-- Security Settings -->
         <div class="card mb-4">
             <div class="card-header">
-                <i class="bi bi-bell me-1"></i>Notification Preferences
+                <i class="bi bi-shield-lock me-1"></i>Security
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('account.settings_notifications') }}">
-                    <div class="form-check mb-3">
-                        <input type="checkbox" class="form-check-input" id="notify_realm_approved" 
-                               name="notify_realm_approved" {% if prefs.notify_realm_approved %}checked{% endif %}>
-                        <label class="form-check-label" for="notify_realm_approved">
-                            Email me when realm requests are approved
-                        </label>
+                <div class="row g-3">
+                    <!-- Password -->
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">Password</h6>
+                                <p class="text-muted mb-0 small">Secure your account with a strong password</p>
+                            </div>
+                            <a href="{{ url_for('account.change_password_page') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-key me-1"></i>Change Password
+                            </a>
+                        </div>
                     </div>
                     
-                    <div class="form-check mb-3">
-                        <input type="checkbox" class="form-check-input" id="notify_token_usage" 
-                               name="notify_token_usage" {% if prefs.notify_token_usage %}checked{% endif %}>
-                        <label class="form-check-label" for="notify_token_usage">
-                            Weekly summary of API token usage
-                        </label>
+                    <hr>
+                    
+                    <!-- TOTP 2FA -->
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">
+                                    Authenticator App (TOTP)
+                                    {% if account.totp_enabled %}
+                                    <span class="badge bg-success ms-2">Enabled</span>
+                                    {% endif %}
+                                </h6>
+                                <p class="text-muted mb-0 small">Use Google Authenticator, Authy, or similar app</p>
+                            </div>
+                            {% if account.totp_enabled %}
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableTotpModal">
+                                <i class="bi bi-x-circle me-1"></i>Disable
+                            </button>
+                            {% else %}
+                            <a href="{{ url_for('account.setup_totp') }}" class="btn btn-outline-success">
+                                <i class="bi bi-plus-circle me-1"></i>Enable
+                            </a>
+                            {% endif %}
+                        </div>
                     </div>
                     
-                    <div class="form-check mb-3">
-                        <input type="checkbox" class="form-check-input" id="notify_security" 
-                               name="notify_security" {% if prefs.notify_security %}checked{% endif %}>
-                        <label class="form-check-label" for="notify_security">
-                            Security alerts (new logins, token revocations)
-                        </label>
+                    <hr>
+                    
+                    <!-- Telegram 2FA -->
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">
+                                    Telegram
+                                    {% if account.telegram_enabled %}
+                                    <span class="badge bg-success ms-2">Linked</span>
+                                    {% endif %}
+                                </h6>
+                                <p class="text-muted mb-0 small">Receive 2FA codes via Telegram</p>
+                            </div>
+                            {% if account.telegram_enabled %}
+                            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#unlinkTelegramModal">
+                                <i class="bi bi-x-circle me-1"></i>Unlink
+                            </button>
+                            {% else %}
+                            <a href="{{ url_for('account.link_telegram') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-telegram me-1"></i>Link
+                            </a>
+                            {% endif %}
+                        </div>
                     </div>
                     
-                    <hr class="my-4">
+                    <hr>
                     
-                    <div class="d-flex justify-content-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save me-1"></i>Save Preferences
-                        </button>
+                    <!-- Recovery Codes -->
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">
+                                    Recovery Codes
+                                    {% if account.recovery_codes %}
+                                    <span class="badge bg-success ms-2">Active</span>
+                                    {% endif %}
+                                </h6>
+                                <p class="text-muted mb-0 small">Backup codes for account recovery</p>
+                            </div>
+                            <a href="{{ url_for('account.view_recovery_codes') }}" class="btn btn-outline-primary">
+                                <i class="bi bi-key me-1"></i>Manage
+                            </a>
+                        </div>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
@@ -100,7 +190,7 @@
                     <tr>
                         <th class="text-muted">Status</th>
                         <td>
-                            {% if current_user.is_active %}
+                            {% if account.is_active %}
                             <span class="badge bg-success">Active</span>
                             {% else %}
                             <span class="badge bg-warning">Pending</span>
@@ -110,7 +200,7 @@
                     <tr>
                         <th class="text-muted">Email Verified</th>
                         <td>
-                            {% if current_user.email_verified %}
+                            {% if account.email_verified %}
                             <i class="bi bi-check-circle-fill text-success"></i> Verified
                             {% else %}
                             <i class="bi bi-x-circle-fill text-danger"></i> Not Verified
@@ -118,26 +208,28 @@
                         </td>
                     </tr>
                     <tr>
-                        <th class="text-muted">Two-Factor Auth</th>
+                        <th class="text-muted">2FA Methods</th>
                         <td>
-                            {% if current_user.totp_enabled %}
-                            <i class="bi bi-shield-check text-success"></i> Enabled
-                            {% else %}
-                            <i class="bi bi-shield text-muted"></i> Disabled
+                            <i class="bi bi-envelope-fill text-success" title="Email (mandatory)"></i>
+                            {% if account.totp_enabled %}
+                            <i class="bi bi-phone text-success ms-1" title="TOTP enabled"></i>
+                            {% endif %}
+                            {% if account.telegram_enabled %}
+                            <i class="bi bi-telegram text-success ms-1" title="Telegram linked"></i>
                             {% endif %}
                         </td>
                     </tr>
                     <tr>
                         <th class="text-muted">Member Since</th>
-                        <td>{{ current_user.created_at.strftime('%Y-%m-%d') }}</td>
+                        <td>{{ account.created_at.strftime('%Y-%m-%d') }}</td>
                     </tr>
                     <tr>
                         <th class="text-muted">Last Login</th>
                         <td>
-                            {% if current_user.last_login_at %}
-                            {{ current_user.last_login_at.strftime('%Y-%m-%d %H:%M') }}
+                            {% if account.last_login_at %}
+                            {{ account.last_login_at.strftime('%Y-%m-%d %H:%M') }}
                             {% else %}
-                            N/A
+                            <span class="text-muted">N/A</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -146,21 +238,33 @@
         </div>
 
         <!-- Quick Links -->
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-link-45deg me-1"></i>Quick Links
             </div>
             <div class="list-group list-group-flush">
-                <a href="{{ url_for('account.security') }}" class="list-group-item list-group-item-action">
-                    <i class="bi bi-shield-lock me-2"></i>Security Settings
+                <a href="{{ url_for('account.dashboard') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-house me-2"></i>Dashboard
                 </a>
-                <a href="{{ url_for('account.activity') }}" class="list-group-item list-group-item-action">
-                    <i class="bi bi-clock-history me-2"></i>Activity Log
+                <a href="{{ url_for('account.export_activity') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-download me-2"></i>Export Activity
                 </a>
-                <a href="#" class="list-group-item list-group-item-action text-danger" 
-                   data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
-                    <i class="bi bi-trash me-2"></i>Delete Account
+                <a href="{{ url_for('account.api_docs') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-book me-2"></i>API Documentation
                 </a>
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <i class="bi bi-exclamation-triangle me-1"></i>Danger Zone
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Permanently delete your account and all associated data.</p>
+                <button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
+                    <i class="bi bi-trash me-1"></i>Delete Account
+                </button>
             </div>
         </div>
     </div>
@@ -174,7 +278,9 @@
                 <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete Account</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="{{ url_for('account.delete') }}">
+            <form method="POST" action="{{ url_for('account.settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete_account">
                 <div class="modal-body">
                     <p>Are you sure you want to delete your account?</p>
                     <ul class="text-danger">
@@ -185,7 +291,7 @@
                     <div class="mb-3">
                         <label class="form-label">Type your username to confirm:</label>
                         <input type="text" class="form-control" name="confirm_username" 
-                               placeholder="{{ current_user.username }}" required>
+                               placeholder="{{ account.username }}" required>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -193,6 +299,64 @@
                     <button type="submit" class="btn btn-danger">
                         <i class="bi bi-trash me-1"></i>Delete My Account
                     </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Disable TOTP Modal -->
+<div class="modal fade" id="disableTotpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Disable Authenticator</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('account.settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="disable_totp">
+                <div class="modal-body">
+                    <p>Are you sure you want to disable TOTP authentication?</p>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        You will need to set it up again if you want to use an authenticator app.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Enter your current password:</label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Disable TOTP</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Unlink Telegram Modal -->
+<div class="modal fade" id="unlinkTelegramModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Unlink Telegram</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('account.settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="unlink_telegram">
+                <div class="modal-body">
+                    <p>Are you sure you want to unlink your Telegram account?</p>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-1"></i>
+                        You will no longer receive 2FA codes via Telegram.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Unlink Telegram</button>
                 </div>
             </form>
         </div>

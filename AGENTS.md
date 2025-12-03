@@ -266,7 +266,8 @@ This is a proactive approach to finding issues - test based on user workflows, n
 | Layer | Tool | What It Tests | Limitations |
 |-------|------|---------------|-------------|
 | **Static Audit** | `admin_ux_audit.py` (httpx) | Element presence, form fields, 500 errors | No JS execution |
-| **Functional Tests** | `test_ui_functional.py` (Playwright) | JS behavior, theme switching, form validation | Slower, needs browser |
+| **Interactive Tests** | `test_ui_interactive.py` (Playwright) | JS behavior, theme switching, CSS validation | Slower, needs browser |
+| **User Journeys** | `test_user_journeys.py` (Playwright) | End-to-end workflows, navigation, error handling | Slower, needs browser |
 | **Visual Regression** | Screenshot comparison | Layout changes, CSS drift | Requires baselines |
 
 ### Layer 1: Quick Static Audit (httpx)
@@ -297,11 +298,23 @@ The audit script (`ui_tests/admin_ux_audit.py`) systematically:
 # Start Playwright container
 cd tooling/playwright && docker compose up -d
 
-# Run functional UI tests
-docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py -v
+# Run interactive UI tests (28 tests - JS, CSS, navigation)
+docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
+  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py -v --timeout=180
+
+# Run user journey tests (15 tests - end-to-end workflows)
+docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
+  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_user_journeys.py -v --timeout=180
+
+# Run all UI tests together (43 tests)
+docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
+  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py \
+  /workspaces/netcup-api-filter/ui_tests/tests/test_user_journeys.py -v --timeout=180
 ```
 
-The functional tests (`ui_tests/tests/test_ui_functional.py`) verify:
+#### test_ui_interactive.py (28 tests)
+
+Verifies interactive UI elements and CSS consistency:
 
 **JavaScript Behavior:**
 - Password toggle (eye icon) switches input type
@@ -329,6 +342,41 @@ The functional tests (`ui_tests/tests/test_ui_functional.py`) verify:
 - Modal dialogs function correctly
 - Form inputs accept and retain values
 - Copy buttons are clickable
+
+**Known Non-Critical Errors:**
+- List.js initialization fails on pages without tables (expected)
+
+#### test_user_journeys.py (15 tests)
+
+Verifies complete user workflows end-to-end:
+
+**Admin Account Management:**
+- Create and manage accounts (full CRUD)
+- Bulk operations workflow (select, action, confirm)
+- Account approval workflow
+
+**Configuration Review:**
+- Netcup API config review
+- Email config with SMTP test
+- System info and dependencies
+
+**Audit Log Workflow:**
+- Filtering by time, status, action
+- ODS export functionality
+- Auto-refresh toggle
+
+**Password & Theme:**
+- Password change full flow
+- Theme customization persistence
+- Density adjustment
+
+**Error Handling:**
+- 404 error page styling
+- Invalid routes handled gracefully
+
+**Dashboard Statistics:**
+- Stat cards render correctly
+- Quick action buttons functional
 
 ### Layer 3: Full Test Suite
 
@@ -362,10 +410,11 @@ The functional tests (`ui_tests/tests/test_ui_functional.py`) verify:
 **Standard Workflow:**
 1. Deploy locally: `./deploy.sh local --skip-tests`
 2. Run static audit: `python ui_tests/admin_ux_audit.py`
-3. Run functional tests: `docker exec playwright pytest ui_tests/tests/test_ui_functional.py -v`
-4. Fix any issues found
-5. Re-run until all pass
-6. Run full test suite: `./run-local-tests.sh`
+3. Run interactive tests: `docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" playwright pytest ui_tests/tests/test_ui_interactive.py -v --timeout=180`
+4. Run user journey tests: `docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" playwright pytest ui_tests/tests/test_user_journeys.py -v --timeout=180`
+5. Fix any issues found
+6. Re-run until all pass
+7. Run full test suite: `./run-local-tests.sh`
 
 ### Interactive Testing (for complex issues)
 

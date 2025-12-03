@@ -1,7 +1,7 @@
 {# Account Realm Detail - Single realm with tokens #}
 {% extends "account/base.html" %}
 
-{% block title %}{{ realm.realm_value }} - Client Portal - Netcup API Filter{% endblock %}
+{% block title %}{{ realm.realm_value }} - Account Portal - Netcup API Filter{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
@@ -15,7 +15,6 @@
     <div class="d-flex justify-content-between align-items-start">
         <div>
             <h1 class="h3 mb-1 d-flex align-items-center gap-2">
-                <i class="bi bi-globe me-1"></i>
                 <span class="font-monospace">{{ realm.realm_value }}</span>
                 {% if realm.status == 'approved' %}
                 <span class="badge bg-success">Active</span>
@@ -59,7 +58,7 @@
                     <tr>
                         <th class="text-muted">Record Types</th>
                         <td>
-                            {% for rt in realm.allowed_record_types %}
+                            {% for rt in realm.get_allowed_record_types() %}
                             <span class="badge bg-secondary me-1">{{ rt }}</span>
                             {% endfor %}
                         </td>
@@ -67,7 +66,7 @@
                     <tr>
                         <th class="text-muted">Operations</th>
                         <td>
-                            {% for op in realm.allowed_operations %}
+                            {% for op in realm.get_allowed_operations() %}
                             <span class="badge {% if op == 'read' %}bg-info{% elif op == 'update' %}bg-warning{% elif op == 'create' %}bg-success{% else %}bg-danger{% endif %} me-1">
                                 {{ op | title }}
                             </span>
@@ -80,6 +79,13 @@
                     </tr>
                 </table>
             </div>
+            {% if realm.status == 'approved' and 'read' in realm.get_allowed_operations() %}
+            <div class="card-footer">
+                <a href="{{ url_for('account.dns_records', realm_id=realm.id) }}" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-list-ul me-1"></i>View DNS Records
+                </a>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Scope Explanation -->
@@ -102,13 +108,56 @@
                 </ul>
             </div>
         </div>
+        
+        {% if can_ddns and realm.status == 'approved' %}
+        <!-- Quick Actions: Update to My IP -->
+        <div class="card mt-4">
+            <div class="card-header bg-primary bg-opacity-10">
+                <i class="bi bi-lightning me-1 text-primary"></i>Quick Actions
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('account.ddns_update', realm_id=realm.id) }}" id="ddnsForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <p class="small text-muted mb-3">
+                        Update your DNS record to your current public IP address.
+                    </p>
+                    
+                    <div class="d-flex align-items-center justify-content-between mb-3 p-2 bg-light rounded">
+                        <div>
+                            <small class="text-muted d-block">Your IP</small>
+                            <code class="fs-6" id="currentIp">{{ client_ip }}</code>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshIp()">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                    
+                    {% if realm.realm_type != 'host' %}
+                    <div class="mb-3">
+                        <label for="hostname" class="form-label small">Hostname to update</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" id="hostname" name="hostname" 
+                                   value="{{ realm.realm_value }}" placeholder="e.g., home">
+                            <span class="input-group-text">.{{ realm.domain }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-cloud-upload me-1"></i>Update to My IP
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Tokens -->
     <div class="col-lg-8">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-key me-1"></i>API Tokens ({{ realm.tokens | length }})</span>
+                <span><i class="bi bi-key me-1"></i>API Tokens ({{ tokens | length }})</span>
                 {% if realm.status == 'approved' %}
                 <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" class="btn btn-sm btn-primary">
                     <i class="bi bi-plus me-1"></i>New Token
@@ -119,18 +168,21 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
-                            <th>Token Prefix</th>
+                            <th>Name</th>
                             <th>Status</th>
                             <th>Created</th>
                             <th>Last Used</th>
-                            <th width="120">Actions</th>
+                            <th width="160">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for token in realm.tokens %}
+                        {% for token in tokens %}
                         <tr>
                             <td>
-                                <code class="text-primary">{{ token.token_prefix }}...</code>
+                                <code class="text-primary">{{ token.token_name }}</code>
+                                {% if token.token_description %}
+                                <small class="text-muted d-block">{{ token.token_description | truncate(40) }}</small>
+                                {% endif %}
                             </td>
                             <td>
                                 {% if token.is_active %}
@@ -151,10 +203,20 @@
                             </td>
                             <td>
                                 {% if token.is_active %}
-                                <button type="button" class="btn btn-sm btn-outline-danger" 
-                                        onclick="revokeToken({{ token.id }}, '{{ token.token_prefix }}')">
-                                    <i class="bi bi-x-circle me-1"></i>Revoke
-                                </button>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('account.token_activity', token_id=token.id) }}" 
+                                       class="btn btn-outline-secondary" title="Activity">
+                                        <i class="bi bi-activity"></i>
+                                    </a>
+                                    <a href="{{ url_for('account.regenerate_token', token_id=token.id) }}" 
+                                       class="btn btn-outline-warning" title="Regenerate">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            onclick="revokeToken({{ token.id }}, '{{ token.token_name }}')" title="Revoke">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                </div>
                                 {% else %}
                                 <span class="text-muted small">Revoked</span>
                                 {% endif %}
@@ -207,6 +269,19 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Export Activity -->
+        <div class="card mt-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-download me-1"></i>Export</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">Export activity logs for this account in ODS format (compatible with LibreOffice Calc, Excel).</p>
+                <a href="{{ url_for('account.export_activity') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Download Activity Export
+                </a>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -219,8 +294,9 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" id="revokeForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
-                    <p>Are you sure you want to revoke token <code id="revokeTokenPrefix"></code>?</p>
+                    <p>Are you sure you want to revoke token <code id="revokeTokenName"></code>?</p>
                     <div class="alert alert-warning mb-0">
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         This action cannot be undone. Any services using this token will stop working immediately.
@@ -240,10 +316,29 @@
 
 {% block extra_scripts %}
 <script>
-function revokeToken(tokenId, prefix) {
-    document.getElementById('revokeTokenPrefix').textContent = prefix + '...';
+function revokeToken(tokenId, tokenName) {
+    document.getElementById('revokeTokenName').textContent = tokenName;
     document.getElementById('revokeForm').action = `/account/tokens/${tokenId}/revoke`;
     new bootstrap.Modal(document.getElementById('revokeModal')).show();
+}
+
+function refreshIp() {
+    const ipDisplay = document.getElementById('currentIp');
+    const originalText = ipDisplay.textContent;
+    ipDisplay.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Detecting...';
+    
+    fetch('/api/myip')
+        .then(response => response.json())
+        .then(data => {
+            if (data.ip) {
+                ipDisplay.textContent = data.ip;
+            } else {
+                ipDisplay.textContent = originalText;
+            }
+        })
+        .catch(() => {
+            ipDisplay.textContent = originalText;
+        });
 }
 </script>
 {% endblock %}

@@ -10,6 +10,7 @@ Unlike the httpx-based audit script (admin_ux_audit.py), these tests:
 See AGENTS.md section "Use-Case-Driven Exploratory Testing" for context.
 """
 
+import asyncio
 import pytest
 import re
 from ui_tests import workflows
@@ -48,11 +49,20 @@ class TestThemeAndCSS:
                 "() => document.documentElement.className"
             )
             
-            # Open theme dropdown and change theme
-            # Theme switcher is in navbar
-            dropdown = await browser.query_selector('[data-bs-toggle="dropdown"]')
-            if dropdown:
-                await browser.click('[data-bs-toggle="dropdown"]')
+            # Theme switcher uses Alpine.js - look for the palette button
+            # The button has a bi-palette2 icon
+            theme_btn = await browser.query_selector('button[title="Theme & Density"]')
+            if not theme_btn:
+                # Try alternative selector
+                theme_btn = await browser.query_selector('.bi-palette2')
+                if theme_btn:
+                    # Click the parent button
+                    theme_btn = await browser.query_selector('button:has(.bi-palette2)')
+            
+            if theme_btn:
+                await theme_btn.click()
+                # Wait for Alpine.js to show the dropdown
+                await asyncio.sleep(0.2)
                 
                 # Try to find and click a different theme option
                 theme_options = await browser.query_selector_all('[onclick*="setTheme"]')

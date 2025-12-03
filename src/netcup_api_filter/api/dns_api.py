@@ -63,6 +63,40 @@ def my_ip():
     })
 
 
+@dns_api_bp.route('/geoip/<ip>')
+def geoip_lookup(ip):
+    """Look up geolocation for an IP address.
+    
+    Returns:
+        JSON with location data including country, city, coordinates
+    """
+    try:
+        from ..geoip_service import lookup
+        
+        result = lookup(ip)
+        
+        if result.error:
+            return jsonify({
+                'ip': ip,
+                'error': result.error
+            }), 200  # Still 200 - valid response, just no location data
+        
+        return jsonify(result.to_dict())
+    
+    except ImportError:
+        logger.warning("geoip_service module not available")
+        return jsonify({
+            'ip': ip,
+            'error': 'GeoIP service not available'
+        }), 503
+    except Exception as e:
+        logger.exception(f"Error in GeoIP lookup for {ip}")
+        return jsonify({
+            'ip': ip,
+            'error': str(e)
+        }), 500
+
+
 # ============================================================================
 # DNS Record Operations (Bearer Token Auth)
 # ============================================================================

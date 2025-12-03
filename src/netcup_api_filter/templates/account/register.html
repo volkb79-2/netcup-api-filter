@@ -53,6 +53,7 @@
             <div class="card">
                 <div class="card-body p-4">
                     <form method="POST" action="{{ url_for('account.register') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="mb-3">
                             <label class="form-label" for="username">Username <span class="text-danger">*</span></label>
                             <div class="input-group">

@@ -13,6 +13,7 @@
 <div class="row g-4">
     <div class="col-lg-8">
         <form method="POST" action="{{ url_for('admin.config_netcup') }}" id="netcupConfigForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="card">
                 <div class="card-header">
                     <i class="bi bi-cloud me-1"></i>API Credentials

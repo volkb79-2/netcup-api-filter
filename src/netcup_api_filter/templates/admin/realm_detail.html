@@ -1,0 +1,280 @@
+{# Admin Realm Detail View #}
+{% extends "admin/base.html" %}
+
+{% block title %}Realm: {{ realm.realm_value or '@' }}.{{ realm.domain }} - Admin{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb Navigation -->
+<nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.realms_list') }}">Realms</a></li>
+        <li class="breadcrumb-item active">{{ realm.realm_value or '@' }}.{{ realm.domain }}</li>
+    </ol>
+</nav>
+
+<!-- Page Header with Actions -->
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <span class="font-monospace">{{ realm.realm_value or '@' }}</span>
+            <small class="text-muted">.{{ realm.domain }}</small>
+        </h1>
+        <div class="d-flex gap-2 align-items-center">
+            {% if realm.status == 'approved' %}
+            <span class="badge bg-success">Active</span>
+            {% elif realm.status == 'pending' %}
+            <span class="badge bg-warning text-dark">Pending Approval</span>
+            {% elif realm.status == 'rejected' %}
+            <span class="badge bg-danger">Rejected</span>
+            {% endif %}
+            <span class="badge bg-info">{{ realm.realm_type }}</span>
+            <span class="text-muted">•</span>
+            <span class="text-muted">Created {{ realm.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+    </div>
+    <div class="btn-group">
+        {% if realm.status == 'pending' %}
+        <form action="{{ url_for('admin.realm_approve', realm_id=realm.id) }}" method="POST" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i>Approve
+            </button>
+        </form>
+        <form action="{{ url_for('admin.realm_reject', realm_id=realm.id) }}" method="POST" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger">
+                <i class="bi bi-x-lg me-1"></i>Reject
+            </button>
+        </form>
+        {% elif realm.status == 'approved' %}
+        <form action="{{ url_for('admin.realm_revoke', realm_id=realm.id) }}" method="POST" class="d-inline"
+              onsubmit="return confirm('Revoke this realm? All associated tokens will be deactivated.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-danger">
+                <i class="bi bi-slash-circle me-1"></i>Revoke
+            </button>
+        </form>
+        {% elif realm.status == 'rejected' %}
+        <form action="{{ url_for('admin.realm_approve', realm_id=realm.id) }}" method="POST" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-success">
+                <i class="bi bi-check-lg me-1"></i>Re-approve
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <!-- Realm Details Card -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-globe me-2"></i>Realm Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <th width="40%" class="text-muted">Domain</th>
+                            <td><code>{{ realm.domain }}</code></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Realm Value</th>
+                            <td><code>{{ realm.realm_value or '@ (root)' }}</code></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Realm Type</th>
+                            <td>
+                                {% if realm.realm_type == 'single_hostname' %}
+                                <i class="bi bi-bullseye me-1"></i>Single Hostname
+                                {% elif realm.realm_type == 'full_subdomain' %}
+                                <i class="bi bi-diagram-3 me-1"></i>Full Subdomain
+                                {% elif realm.realm_type == 'root_only' %}
+                                <i class="bi bi-at me-1"></i>Root Only
+                                {% else %}
+                                {{ realm.realm_type }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Owner Account</th>
+                            <td>
+                                <a href="{{ url_for('admin.account_detail', account_id=realm.account.id) }}">
+                                    <i class="bi bi-person me-1"></i>{{ realm.account.username }}
+                                </a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Status</th>
+                            <td>
+                                {% if realm.status == 'approved' %}
+                                <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Approved</span>
+                                {% elif realm.status == 'pending' %}
+                                <span class="text-warning"><i class="bi bi-clock-fill me-1"></i>Pending</span>
+                                {% elif realm.status == 'rejected' %}
+                                <span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Rejected</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Permissions Card -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-shield-check me-2"></i>Permissions
+                </h5>
+            </div>
+            <div class="card-body">
+                <h6 class="text-muted mb-2">Allowed Record Types</h6>
+                <div class="mb-3">
+                    {% for rt in realm.get_allowed_record_types() %}
+                    <span class="badge bg-primary me-1 mb-1">{{ rt }}</span>
+                    {% else %}
+                    <span class="text-muted">No record types configured</span>
+                    {% endfor %}
+                </div>
+                
+                <h6 class="text-muted mb-2">Allowed Operations</h6>
+                <div>
+                    {% for op in realm.get_allowed_operations() %}
+                    <span class="badge bg-secondary me-1 mb-1">{{ op }}</span>
+                    {% else %}
+                    <span class="text-muted">No operations configured</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Associated Tokens -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-key me-2"></i>Associated Tokens
+        </h5>
+        <span class="badge bg-success">{{ active_tokens|length }} Active</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Token Name</th>
+                    <th>Status</th>
+                    <th>Last Used</th>
+                    <th>Expires</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for token in tokens %}
+                <tr>
+                    <td>
+                        <i class="bi bi-key me-1"></i>
+                        {{ token.name or 'Unnamed Token' }}
+                        <br>
+                        <code class="small text-muted">{{ token.token_prefix }}...</code>
+                    </td>
+                    <td>
+                        {% if token.is_active %}
+                        <span class="badge bg-success">Active</span>
+                        {% elif token.revoked %}
+                        <span class="badge bg-danger">Revoked</span>
+                        {% elif token.expires_at and token.expires_at < now %}
+                        <span class="badge bg-warning text-dark">Expired</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if token.last_used_at %}
+                        <small>{{ token.last_used_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        {% else %}
+                        <span class="text-muted">Never</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if token.expires_at %}
+                        <small class="{% if token.expires_at < now %}text-danger{% endif %}">
+                            {{ token.expires_at.strftime('%Y-%m-%d') }}
+                        </small>
+                        {% else %}
+                        <span class="text-muted">Never</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.token_detail', token_id=token.id) }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center py-4 text-muted">
+                        <i class="bi bi-key display-6 d-block mb-2"></i>
+                        No tokens associated with this realm
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-clock-history me-2"></i>Recent Activity
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if activity_logs %}
+        <div class="timeline">
+            {% for log in activity_logs[:10] %}
+            <div class="timeline-item d-flex mb-3">
+                <div class="timeline-icon me-3">
+                    {% if 'created' in log.action %}
+                    <i class="bi bi-plus-circle text-success"></i>
+                    {% elif 'approved' in log.action %}
+                    <i class="bi bi-check-circle text-success"></i>
+                    {% elif 'rejected' in log.action or 'revoked' in log.action %}
+                    <i class="bi bi-x-circle text-danger"></i>
+                    {% elif 'updated' in log.action %}
+                    <i class="bi bi-pencil text-info"></i>
+                    {% else %}
+                    <i class="bi bi-record-circle text-muted"></i>
+                    {% endif %}
+                </div>
+                <div class="timeline-content flex-grow-1">
+                    <div class="d-flex justify-content-between">
+                        <strong>{{ log.action }}</strong>
+                        <small class="text-muted">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                    </div>
+                    {% if log.details %}
+                    <small class="text-muted">{{ log.details }}</small>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">
+            <i class="bi bi-clock-history display-6 d-block mb-2"></i>
+            No activity recorded for this realm
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

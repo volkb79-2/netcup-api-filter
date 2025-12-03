@@ -1,0 +1,157 @@
+{# Recovery Codes Management Page #}
+{% extends "account/base.html" %}
+
+{% block title %}Recovery Codes{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-lg-6 mx-auto">
+            <!-- Header -->
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{ url_for('account.settings') }}" class="btn btn-outline-secondary btn-sm me-3">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <div>
+                    <h2 class="mb-0">Recovery Codes</h2>
+                    <small class="text-muted">Backup codes for account recovery</small>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Status Card -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <i class="bi bi-key me-2 text-primary"></i>
+                        Recovery Codes Status
+                    </h5>
+                    
+                    {% if remaining_codes > 0 %}
+                    <div class="alert alert-success mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-check fs-3 me-3"></i>
+                            <div>
+                                <strong>{{ remaining_codes }} recovery code{{ 's' if remaining_codes != 1 else '' }} remaining</strong>
+                                <div class="small text-muted">
+                                    {% if account.recovery_codes_generated_at %}
+                                    Generated {{ account.recovery_codes_generated_at.strftime('%Y-%m-%d at %H:%M') }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if remaining_codes <= 3 %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Low on recovery codes!</strong> Consider generating new codes.
+                    </div>
+                    {% endif %}
+                    
+                    {% else %}
+                    <div class="alert alert-warning mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-exclamation fs-3 me-3"></i>
+                            <div>
+                                <strong>No recovery codes</strong>
+                                <div class="small">Generate recovery codes to have a backup login method</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- About Recovery Codes -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">What are recovery codes?</h5>
+                    <p class="text-muted mb-3">
+                        Recovery codes are backup codes that can be used to access your account if you lose 
+                        access to your primary two-factor authentication method (like your phone or authenticator app).
+                    </p>
+                    
+                    <ul class="text-muted small mb-0">
+                        <li>Each code can only be used <strong>once</strong></li>
+                        <li>10 codes are generated at a time</li>
+                        <li>Store them in a safe, secure location</li>
+                        <li>Generating new codes <strong>invalidates all old codes</strong></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Generate New Codes -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <i class="bi bi-arrow-repeat me-2"></i>
+                        Generate New Codes
+                    </h5>
+                    
+                    {% if remaining_codes > 0 %}
+                    <div class="alert alert-warning small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Warning:</strong> Generating new codes will invalidate all your existing recovery codes.
+                    </div>
+                    {% endif %}
+                    
+                    <p class="text-muted small">
+                        Enter your password to confirm and generate new recovery codes.
+                    </p>
+                    
+                    <form action="{{ url_for('account.generate_recovery_codes') }}" method="post" id="generate-codes-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        <div class="mb-4">
+                            <label for="password" class="form-label">Confirm Password</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="password" name="password" 
+                                       required autocomplete="current-password">
+                                <button type="button" class="btn btn-outline-secondary" 
+                                        onclick="togglePassword('password', this)">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-key me-1"></i>
+                                Generate New Recovery Codes
+                            </button>
+                            <a href="{{ url_for('account.settings') }}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    const icon = button.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+</script>
+{% endblock %}

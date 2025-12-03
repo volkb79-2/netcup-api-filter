@@ -1,0 +1,47 @@
+{# 
+   Flash Messages Component
+   
+   Displays Flask flash messages with proper styling.
+   Per UI_REQUIREMENTS.md: width adapts for centered forms (+20%)
+   
+   Usage:
+   {% include 'components/flash_messages.html' %}
+   
+   Variables expected:
+   - centered_form: boolean (optional) - if true, messages are wider
+#}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container mb-4 {% if centered_form %}flash-centered-form{% endif %}">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show d-flex align-items-center" 
+             role="alert">
+            {# Icon based on category #}
+            {% if category == 'error' or category == 'danger' %}
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            {% elif category == 'success' %}
+            <i class="bi bi-check-circle-fill me-2"></i>
+            {% elif category == 'warning' %}
+            <i class="bi bi-exclamation-circle-fill me-2"></i>
+            {% else %}
+            <i class="bi bi-info-circle-fill me-2"></i>
+            {% endif %}
+            
+            <div class="flex-grow-1">{{ message }}</div>
+            
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
+
+<style>
+/* Flash messages for centered forms are 20% wider */
+.flash-centered-form {
+    max-width: calc(500px * 1.2); /* form-panel max-width * 1.2 */
+    margin-left: auto;
+    margin-right: auto;
+}
+</style>

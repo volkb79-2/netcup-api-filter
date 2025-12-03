@@ -66,6 +66,7 @@
                     <td>
                         <div class="btn-group btn-group-sm">
                             <form method="POST" action="{{ url_for('admin.realm_approve', realm_id=realm.id) }}" class="d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-success" title="Approve">
                                     <i class="bi bi-check-lg"></i>
                                 </button>
@@ -107,6 +108,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" id="rejectForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <p>Reject access to <strong id="rejectRealmValue"></strong>?</p>
                     <div class="mb-3">
@@ -146,6 +148,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 <form method="POST" id="approveForm" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-success">
                         <i class="bi bi-check-lg me-1"></i>Approve
                     </button>
@@ -178,10 +181,37 @@ function showDetails(id) {
 }
 
 function approveAll() {
-    if (confirm('Are you sure you want to approve all pending realm requests?')) {
-        // TODO: Implement bulk approve API
-        alert('Bulk approve not yet implemented');
+    const realmIds = Array.from(document.querySelectorAll('tr[id^="realm-"]')).map(tr => parseInt(tr.id.replace('realm-', '')));
+    
+    if (realmIds.length === 0) return;
+    
+    if (!confirm(`Are you sure you want to approve all ${realmIds.length} pending realm request(s)?`)) {
+        return;
     }
+    
+    // Call bulk API
+    fetch('/admin/api/realms/bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({
+            action: 'approve',
+            realm_ids: realmIds
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            location.reload();
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error.message);
+    });
 }
 </script>
 {% endblock %}

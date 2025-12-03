@@ -171,8 +171,14 @@ def register_account(
     
     logger.info(f"Registration request created: {username} ({email})")
     
-    # TODO: Send verification email
-    # send_verification_email(email, reg_request.verification_code)
+    # Send verification email
+    from .notification_service import send_verification_email
+    send_verification_email(
+        email=email,
+        username=username,
+        code=reg_request.verification_code,
+        expires_minutes=VERIFICATION_EXPIRY_MINUTES
+    )
     
     return RegistrationResult(success=True, request_id=reg_request.id)
 
@@ -245,8 +251,14 @@ def resend_verification(request_id: int) -> RegistrationResult:
     
     logger.info(f"Verification code resent for: {reg_request.username}")
     
-    # TODO: Send verification email
-    # send_verification_email(reg_request.email, reg_request.verification_code)
+    # Send verification email
+    from .notification_service import send_verification_email
+    send_verification_email(
+        email=reg_request.email,
+        username=reg_request.username,
+        code=reg_request.verification_code,
+        expires_minutes=VERIFICATION_EXPIRY_MINUTES
+    )
     
     return RegistrationResult(success=True, request_id=request_id)
 
@@ -380,6 +392,7 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
     Verify 2FA code and complete login.
     
     On success, creates session and returns account.
+    Also accepts recovery codes as fallback.
     """
     # Get pending 2FA from session
     account_id = session.get(SESSION_KEY_2FA_PENDING)
@@ -392,6 +405,26 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
         return TwoFactorResult(success=False, error="Account not found")
     
     method = session.get(SESSION_KEY_2FA_METHOD, 'email')
+    
+    # Check if code looks like a recovery code (format: XXXX-XXXX)
+    if len(code) == 9 and '-' in code:
+        from .recovery_codes import verify_recovery_code
+        if verify_recovery_code(account, code):
+            # Recovery code verified - complete login
+            clear_2fa_session()
+            create_session(account)
+            account.last_login_at = datetime.utcnow()
+            db.session.commit()
+            
+            log_login_attempt(
+                username=account.username,
+                source_ip=source_ip,
+                success=True,
+                reason="Recovery code used"
+            )
+            
+            logger.info(f"Login complete for {account.username} via recovery code")
+            return TwoFactorResult(success=True, account=account)
     
     if method == 'totp':
         # Verify TOTP code
@@ -661,7 +694,9 @@ def approve_account(account_id: int, approved_by: Account) -> tuple[bool, str | 
     
     logger.info(f"Account approved: {account.username} by {approved_by.username}")
     
-    # TODO: Notify user of approval
+    # Notify user of approval
+    from .notification_service import notify_account_approved
+    notify_account_approved(account)
     
     return True, None
 

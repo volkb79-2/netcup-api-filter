@@ -179,12 +179,14 @@
                             </a>
                             {% if not account.is_active and account.email_verified %}
                             <form method="POST" action="{{ url_for('admin.account_approve', account_id=account.id) }}" class="d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-outline-success" title="Approve">
                                     <i class="bi bi-check-lg"></i>
                                 </button>
                             </form>
                             {% elif account.is_active %}
                             <form method="POST" action="{{ url_for('admin.account_disable', account_id=account.id) }}" class="d-inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-outline-warning" title="Disable">
                                     <i class="bi bi-slash-circle"></i>
                                 </button>
@@ -287,18 +289,51 @@ function clearSelection() {
 
 function bulkAction(action) {
     const checked = document.querySelectorAll('.row-checkbox:checked');
-    const ids = Array.from(checked).map(cb => cb.value);
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
     
     if (ids.length === 0) return;
     
-    if (action === 'delete') {
-        if (!confirm(`Are you sure you want to delete ${ids.length} account(s)? This cannot be undone.`)) {
-            return;
-        }
+    const actionLabels = {
+        'enable': 'enable',
+        'disable': 'disable',
+        'delete': 'permanently delete'
+    };
+    
+    if (!confirm(`Are you sure you want to ${actionLabels[action]} ${ids.length} account(s)?${action === 'delete' ? ' This cannot be undone.' : ''}`)) {
+        return;
     }
     
-    // TODO: Implement bulk action API call
-    alert(`Bulk ${action} for ${ids.length} accounts: ${ids.join(', ')}`);
+    // Show loading state
+    const bulkBar = document.getElementById('bulkActionsBar');
+    bulkBar.querySelectorAll('button').forEach(btn => btn.disabled = true);
+    
+    // Call bulk API
+    fetch('/admin/api/accounts/bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({
+            action: action,
+            account_ids: ids
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            // Reload to show updated state
+            location.reload();
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error.message);
+    })
+    .finally(() => {
+        bulkBar.querySelectorAll('button').forEach(btn => btn.disabled = false);
+    });
 }
 </script>
 {% endblock %}

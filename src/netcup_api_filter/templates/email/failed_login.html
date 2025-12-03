@@ -1,0 +1,86 @@
+{# 
+   Failed Login Attempt Notification Template
+   Sent when there are failed login attempts on an account.
+   
+   Variables:
+   - username: The account username
+   - attempt_count: Number of failed attempts
+   - ip_address: IP address of the attempts
+   - location: Optional location info
+   - timestamp: When the attempts occurred
+   - settings_url: URL to security settings
+#}
+{% extends "email/base.html" %}
+
+{% block title %}Security Alert - Netcup API Filter{% endblock %}
+
+{% block content %}
+<h2 style="margin: 0 0 20px; color: #ef4444; font-size: 20px; font-weight: 600;">
+    🚨 Failed Login Attempts Detected
+</h2>
+
+<p style="margin: 0 0 20px; color: #9ca3af; font-size: 15px; line-height: 1.6;">
+    Hi <strong style="color: #f3f4f6;">{{ username }}</strong>,
+</p>
+
+<p style="margin: 0 0 25px; color: #9ca3af; font-size: 15px; line-height: 1.6;">
+    We detected <strong style="color: #ef4444;">{{ attempt_count }} failed login attempt{% if attempt_count != 1 %}s{% endif %}</strong> on your account.
+</p>
+
+<!-- Alert Box -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px;">
+    <tr>
+        <td style="padding: 20px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                    <td style="color: #6b7280; font-size: 13px; padding: 5px 0;">IP Address:</td>
+                    <td style="color: #f3f4f6; font-size: 13px; padding: 5px 0; font-family: 'Courier New', monospace;">{{ ip_address }}</td>
+                </tr>
+                {% if location %}
+                <tr>
+                    <td style="color: #6b7280; font-size: 13px; padding: 5px 0;">Location:</td>
+                    <td style="color: #f3f4f6; font-size: 13px; padding: 5px 0;">{{ location }}</td>
+                </tr>
+                {% endif %}
+                <tr>
+                    <td style="color: #6b7280; font-size: 13px; padding: 5px 0;">Time:</td>
+                    <td style="color: #f3f4f6; font-size: 13px; padding: 5px 0;">{{ timestamp }}</td>
+                </tr>
+                <tr>
+                    <td style="color: #6b7280; font-size: 13px; padding: 5px 0;">Failed Attempts:</td>
+                    <td style="color: #ef4444; font-size: 13px; padding: 5px 0; font-weight: 600;">{{ attempt_count }}</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<hr style="border: none; border-top: 1px solid rgba(59, 130, 246, 0.15); margin: 30px 0;">
+
+<p style="margin: 0 0 15px; color: #9ca3af; font-size: 14px; line-height: 1.6;">
+    <strong style="color: #f3f4f6;">If this was you:</strong><br>
+    Make sure you're using the correct password. You can reset it if needed.
+</p>
+
+<p style="margin: 0 0 25px; color: #9ca3af; font-size: 14px; line-height: 1.6;">
+    <strong style="color: #ef4444;">If this wasn't you:</strong><br>
+    Someone may be trying to access your account. We recommend:
+</p>
+
+<ul style="margin: 0 0 25px 20px; padding: 0; color: #9ca3af; font-size: 13px; line-height: 1.8;">
+    <li>Change your password immediately</li>
+    <li>Enable two-factor authentication (2FA)</li>
+    <li>Review your recent account activity</li>
+</ul>
+
+<!-- Security Settings Button -->
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+    <tr>
+        <td align="center" style="padding: 10px 0;">
+            <a href="{{ settings_url }}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; padding: 14px 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
+                Review Security Settings
+            </a>
+        </td>
+    </tr>
+</table>
+{% endblock %}

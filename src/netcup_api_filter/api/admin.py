@@ -376,6 +376,83 @@ def account_add_realm(account_id):
 
 
 # ============================================================================
+# Realm Management
+# ============================================================================
+
+@admin_bp.route('/realms')
+@require_admin
+def realms_list():
+    """List all realms across all accounts."""
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    
+    status_filter = request.args.get('status', 'all')
+    search = request.args.get('search', '').strip()
+    
+    # Use explicit join condition to avoid ambiguity with multiple foreign keys
+    query = AccountRealm.query.join(Account, AccountRealm.account_id == Account.id)
+    
+    if status_filter == 'approved':
+        query = query.filter(AccountRealm.status == 'approved')
+    elif status_filter == 'pending':
+        query = query.filter(AccountRealm.status == 'pending')
+    elif status_filter == 'rejected':
+        query = query.filter(AccountRealm.status == 'rejected')
+    
+    if search:
+        query = query.filter(
+            db.or_(
+                AccountRealm.realm_value.ilike(f'%{search}%'),
+                AccountRealm.domain.ilike(f'%{search}%'),
+                Account.username.ilike(f'%{search}%')
+            )
+        )
+    
+    pagination = query.order_by(AccountRealm.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    
+    # Get token counts for each realm
+    realm_data = []
+    for realm in pagination.items:
+        token_count = APIToken.query.filter_by(realm_id=realm.id).count()
+        active_token_count = APIToken.query.filter_by(realm_id=realm.id, is_active=1).count()
+        realm_data.append({
+            'realm': realm,
+            'token_count': token_count,
+            'active_token_count': active_token_count
+        })
+    
+    return render_template('admin/realms_list.html',
+                          realms=realm_data,
+                          pagination=pagination,
+                          status_filter=status_filter,
+                          search=search)
+
+
+@admin_bp.route('/realms/<int:realm_id>')
+@require_admin
+def realm_detail(realm_id):
+    """Realm detail view."""
+    realm = AccountRealm.query.get_or_404(realm_id)
+    tokens = APIToken.query.filter_by(realm_id=realm_id).order_by(APIToken.created_at.desc()).all()
+    
+    # Recent activity for this realm
+    recent_activity = (
+        ActivityLog.query
+        .filter(ActivityLog.realm_id == realm_id)
+        .order_by(ActivityLog.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    
+    return render_template('admin/realm_detail.html',
+                          realm=realm,
+                          tokens=tokens,
+                          recent_activity=recent_activity)
+
+
+# ============================================================================
 # Realm Approvals
 # ============================================================================
 
@@ -414,6 +491,90 @@ def realm_reject(realm_id):
         flash(result.error, 'error')
     
     return redirect(request.referrer or url_for('admin.realms_pending'))
+
+
+@admin_bp.route('/realms/<int:realm_id>/revoke', methods=['POST'])
+@require_admin
+def realm_revoke(realm_id):
+    """Revoke an approved realm."""
+    realm = AccountRealm.query.get_or_404(realm_id)
+    
+    if realm.status != 'approved':
+        flash('Only approved realms can be revoked', 'error')
+        return redirect(url_for('admin.realm_detail', realm_id=realm_id))
+    
+    # Revoke the realm
+    realm.status = 'revoked'
+    
+    # Deactivate all associated tokens
+    revoked_count = 0
+    for token in realm.tokens:
+        if token.is_active:
+            token.revoked = True
+            token.revoked_at = datetime.utcnow()
+            token.revoked_by = g.admin.username
+            token.revoked_reason = 'Realm revoked'
+            revoked_count += 1
+    
+    db.session.commit()
+    
+    # Log the action
+    log_activity('realm_revoked', 'success', 
+                details=f'Revoked realm {realm.realm_value}.{realm.domain}, deactivated {revoked_count} tokens',
+                actor=g.admin.username)
+    
+    flash(f'Realm revoked. {revoked_count} tokens deactivated.', 'success')
+    return redirect(url_for('admin.realm_detail', realm_id=realm_id))
+
+
+# ============================================================================
+# Token Management
+# ============================================================================
+
+@admin_bp.route('/tokens/<int:token_id>')
+@require_admin
+def token_detail(token_id):
+    """Token detail view."""
+    token = APIToken.query.get_or_404(token_id)
+    
+    # Get related activity logs
+    activity_logs = ActivityLog.query.filter(
+        ActivityLog.details.contains(token.token_prefix)
+    ).order_by(ActivityLog.created_at.desc()).limit(20).all()
+    
+    return render_template('admin/token_detail.html',
+                          token=token,
+                          realm=token.realm,
+                          account=token.realm.account if token.realm else None,
+                          activity_logs=activity_logs,
+                          now=datetime.utcnow())
+
+
+@admin_bp.route('/tokens/<int:token_id>/revoke', methods=['POST'])
+@require_admin
+def token_revoke(token_id):
+    """Revoke a token."""
+    token = APIToken.query.get_or_404(token_id)
+    
+    if token.revoked:
+        flash('Token is already revoked', 'warning')
+        return redirect(url_for('admin.token_detail', token_id=token_id))
+    
+    # Revoke the token
+    token.revoked = True
+    token.revoked_at = datetime.utcnow()
+    token.revoked_by = g.admin.username
+    token.revoked_reason = request.form.get('reason', 'Revoked by admin')
+    
+    db.session.commit()
+    
+    # Log the action
+    log_activity('token_revoked', 'success', 
+                details=f'Revoked token {token.token_prefix} for realm {token.realm.realm_value}.{token.realm.domain}',
+                actor=g.admin.username)
+    
+    flash('Token has been revoked', 'success')
+    return redirect(url_for('admin.token_detail', token_id=token_id))
 
 
 # ============================================================================
@@ -509,6 +670,136 @@ def audit_trim():
     logger.info(f"Audit logs trimmed: {deleted} entries by {g.admin.username}")
     
     return redirect(url_for('admin.audit_logs'))
+
+
+@admin_bp.route('/audit/export')
+@require_admin
+def audit_export():
+    """Export audit logs to ODS format."""
+    from io import BytesIO
+    from flask import send_file
+    
+    # Get filter parameters
+    time_range = request.args.get('range', '24h')
+    status_filter = request.args.get('status', 'all')
+    action_filter = request.args.get('action', 'all')
+    
+    query = ActivityLog.query
+    
+    # Time range filter
+    if time_range == '1h':
+        since = datetime.utcnow() - timedelta(hours=1)
+    elif time_range == '24h':
+        since = datetime.utcnow() - timedelta(hours=24)
+    elif time_range == '7d':
+        since = datetime.utcnow() - timedelta(days=7)
+    elif time_range == '30d':
+        since = datetime.utcnow() - timedelta(days=30)
+    else:
+        since = None
+    
+    if since:
+        query = query.filter(ActivityLog.created_at >= since)
+    
+    # Status filter
+    if status_filter == 'success':
+        query = query.filter_by(status='success')
+    elif status_filter == 'denied':
+        query = query.filter_by(status='denied')
+    elif status_filter == 'error':
+        query = query.filter_by(status='error')
+    
+    # Action filter
+    if action_filter != 'all':
+        query = query.filter_by(action=action_filter)
+    
+    # Limit to prevent huge exports
+    logs = query.order_by(ActivityLog.created_at.desc()).limit(10000).all()
+    
+    # Create ODS file
+    output = create_audit_ods_export(logs, f'Audit Logs Export - {time_range}')
+    
+    logger.info(f"Audit logs exported by {g.admin.username}: {len(logs)} entries")
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.oasis.opendocument.spreadsheet',
+        as_attachment=True,
+        download_name=f'audit_logs_{datetime.utcnow().strftime("%Y%m%d_%H%M")}.ods'
+    )
+
+
+def create_audit_ods_export(logs, title):
+    """Create ODS file from audit logs."""
+    from io import BytesIO
+    import zipfile
+    
+    # ODS is a zip file with XML content
+    output = BytesIO()
+    
+    # Build content.xml
+    rows_xml = []
+    
+    # Header row
+    headers = ['Timestamp', 'Username', 'Action', 'Status', 'Source IP', 'Details']
+    header_cells = ''.join([f'<table:table-cell office:value-type="string"><text:p>{h}</text:p></table:table-cell>' for h in headers])
+    rows_xml.append(f'<table:table-row>{header_cells}</table:table-row>')
+    
+    def escape_xml(s):
+        """Escape XML special characters."""
+        if not s:
+            return ''
+        return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+    
+    # Data rows
+    for log in logs:
+        # Get username from account if available
+        username = ''
+        if log.account_id:
+            account = Account.query.get(log.account_id)
+            if account:
+                username = account.username
+        
+        cells = [
+            log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '',
+            username,
+            log.action or '',
+            log.status or '',
+            log.source_ip or '',
+            log.details or ''
+        ]
+        cells_xml = ''.join([f'<table:table-cell office:value-type="string"><text:p>{escape_xml(c)}</text:p></table:table-cell>' for c in cells])
+        rows_xml.append(f'<table:table-row>{cells_xml}</table:table-row>')
+    
+    content_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    office:version="1.2">
+    <office:body>
+        <office:spreadsheet>
+            <table:table table:name="{escape_xml(title)}">
+                {''.join(rows_xml)}
+            </table:table>
+        </office:spreadsheet>
+    </office:body>
+</office:document-content>'''
+    
+    # Create minimal ODS (zip with XML files)
+    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('mimetype', 'application/vnd.oasis.opendocument.spreadsheet')
+        zf.writestr('content.xml', content_xml)
+        
+        # Minimal manifest
+        manifest_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+    <manifest:file-entry manifest:media-type="application/vnd.oasis.opendocument.spreadsheet" manifest:full-path="/"/>
+    <manifest:file-entry manifest:media-type="text/xml" manifest:full-path="content.xml"/>
+</manifest:manifest>'''
+        zf.writestr('META-INF/manifest.xml', manifest_xml)
+    
+    output.seek(0)
+    return output
 
 
 # ============================================================================
@@ -712,6 +1003,182 @@ def api_stats():
             ActivityLog.created_at >= since,
             ActivityLog.status == 'error'
         ).count(),
+    })
+
+
+# ============================================================================
+# Bulk Actions (P7.6)
+# ============================================================================
+
+@admin_bp.route('/api/accounts/bulk', methods=['POST'])
+@require_admin
+def api_accounts_bulk():
+    """Perform bulk action on multiple accounts.
+    
+    JSON body:
+    {
+        "action": "enable|disable|delete",
+        "account_ids": [1, 2, 3]
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid JSON'}), 400
+    
+    action = data.get('action')
+    account_ids = data.get('account_ids', [])
+    
+    if not action or action not in ['enable', 'disable', 'delete']:
+        return jsonify({'error': 'Invalid action'}), 400
+    
+    if not account_ids or not isinstance(account_ids, list):
+        return jsonify({'error': 'No accounts specified'}), 400
+    
+    # Get accounts (excluding admin accounts)
+    accounts = Account.query.filter(
+        Account.id.in_(account_ids),
+        Account.is_admin == 0
+    ).all()
+    
+    if not accounts:
+        return jsonify({'error': 'No valid accounts found'}), 404
+    
+    results = {'success': [], 'failed': []}
+    
+    for account in accounts:
+        try:
+            if action == 'enable':
+                account.is_active = 1
+                results['success'].append({
+                    'id': account.id,
+                    'username': account.username,
+                    'action': 'enabled'
+                })
+            elif action == 'disable':
+                account.is_active = 0
+                results['success'].append({
+                    'id': account.id,
+                    'username': account.username,
+                    'action': 'disabled'
+                })
+            elif action == 'delete':
+                db.session.delete(account)
+                results['success'].append({
+                    'id': account.id,
+                    'username': account.username,
+                    'action': 'deleted'
+                })
+        except Exception as e:
+            results['failed'].append({
+                'id': account.id,
+                'username': account.username,
+                'error': str(e)
+            })
+    
+    try:
+        db.session.commit()
+        logger.info(f"Bulk {action}: {len(results['success'])} accounts by admin {g.admin.username}")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Bulk action failed: {e}")
+        return jsonify({'error': 'Database error', 'details': str(e)}), 500
+    
+    return jsonify({
+        'action': action,
+        'total': len(accounts),
+        'success': len(results['success']),
+        'failed': len(results['failed']),
+        'results': results
+    })
+
+
+@admin_bp.route('/api/realms/bulk', methods=['POST'])
+@require_admin
+def api_realms_bulk():
+    """Perform bulk action on multiple realms.
+    
+    JSON body:
+    {
+        "action": "approve|reject|revoke",
+        "realm_ids": [1, 2, 3],
+        "reason": "optional reason for reject/revoke"
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid JSON'}), 400
+    
+    action = data.get('action')
+    realm_ids = data.get('realm_ids', [])
+    reason = data.get('reason', '')
+    
+    if not action or action not in ['approve', 'reject', 'revoke']:
+        return jsonify({'error': 'Invalid action'}), 400
+    
+    if not realm_ids or not isinstance(realm_ids, list):
+        return jsonify({'error': 'No realms specified'}), 400
+    
+    realms = AccountRealm.query.filter(AccountRealm.id.in_(realm_ids)).all()
+    
+    if not realms:
+        return jsonify({'error': 'No valid realms found'}), 404
+    
+    results = {'success': [], 'failed': []}
+    
+    for realm in realms:
+        try:
+            if action == 'approve' and realm.status == 'pending':
+                realm.status = 'approved'
+                realm.approved_by_id = g.admin.id
+                realm.approved_at = datetime.utcnow()
+                results['success'].append({
+                    'id': realm.id,
+                    'realm': realm.realm_value,
+                    'action': 'approved'
+                })
+            elif action == 'reject' and realm.status == 'pending':
+                realm.status = 'rejected'
+                realm.rejection_reason = reason
+                results['success'].append({
+                    'id': realm.id,
+                    'realm': realm.realm_value,
+                    'action': 'rejected'
+                })
+            elif action == 'revoke' and realm.status == 'approved':
+                realm.status = 'rejected'
+                realm.rejection_reason = reason or 'Revoked by admin'
+                results['success'].append({
+                    'id': realm.id,
+                    'realm': realm.realm_value,
+                    'action': 'revoked'
+                })
+            else:
+                results['failed'].append({
+                    'id': realm.id,
+                    'realm': realm.realm_value,
+                    'error': f'Cannot {action} realm in {realm.status} status'
+                })
+        except Exception as e:
+            results['failed'].append({
+                'id': realm.id,
+                'realm': realm.realm_value,
+                'error': str(e)
+            })
+    
+    try:
+        db.session.commit()
+        logger.info(f"Bulk {action}: {len(results['success'])} realms by admin {g.admin.username}")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Bulk realm action failed: {e}")
+        return jsonify({'error': 'Database error', 'details': str(e)}), 500
+    
+    return jsonify({
+        'action': action,
+        'total': len(realms),
+        'success': len(results['success']),
+        'failed': len(results['failed']),
+        'results': results
     })
 
 

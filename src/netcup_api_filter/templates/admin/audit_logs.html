@@ -153,7 +153,14 @@
                         {% endif %}
                     </td>
                     <td>
-                        <small class="font-monospace text-muted">{{ log.ip_address or 'N/A' }}</small>
+                        {% if log.ip_address %}
+                        <div>
+                            <small class="font-monospace">{{ log.ip_address }}</small>
+                        </div>
+                        <small class="text-muted">{{ geoip_location(log.ip_address) }}</small>
+                        {% else %}
+                        <small class="font-monospace text-muted">N/A</small>
+                        {% endif %}
                     </td>
                 </tr>
                 {% else %}
@@ -271,8 +278,7 @@ function refreshLogs() {
 function exportLogs() {
     // Build export URL with current filters
     const params = new URLSearchParams(window.location.search);
-    params.set('format', 'csv');
-    window.location.href = '{{ url_for("admin.audit_logs") }}?' + params.toString();
+    window.location.href = '{{ url_for("admin.audit_export") }}?' + params.toString();
 }
 
 // Initialize List.js for client-side sorting

@@ -11,6 +11,7 @@
 </div>
 
 <form method="POST" action="{{ url_for('admin.account_create') }}" id="createAccountForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row g-4">
         <!-- Account Details -->
         <div class="col-lg-6">

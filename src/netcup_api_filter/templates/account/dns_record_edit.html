@@ -1,0 +1,136 @@
+{# Account DNS Record Edit - Edit existing DNS record #}
+{% extends "account/base.html" %}
+
+{% block title %}Edit DNS Record - {{ realm.realm_value }} - Account Portal - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{{ url_for('account.realms') }}">Realms</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('account.realm_detail', realm_id=realm.id) }}">{{ realm.realm_value }}</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('account.dns_records', realm_id=realm.id) }}">DNS Records</a></li>
+            <li class="breadcrumb-item active">Edit Record</li>
+        </ol>
+    </nav>
+    <h1 class="h3 mb-1">Edit DNS Record</h1>
+    <p class="text-muted mb-0">
+        Modify <span class="badge bg-primary">{{ record.type }}</span> record for 
+        <code>{{ record.hostname or '@' }}.{{ realm.domain }}</code>
+    </p>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-pencil me-1"></i>Edit Record
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Hostname</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" value="{{ record.hostname or '@' }}" readonly disabled>
+                            <span class="input-group-text">.{{ realm.domain }}</span>
+                        </div>
+                        <div class="form-text text-muted">Hostname cannot be changed. Delete and recreate if needed.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Record Type</label>
+                        <input type="text" class="form-control" value="{{ record.type }}" readonly disabled>
+                        <div class="form-text text-muted">Record type cannot be changed. Delete and recreate if needed.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="destination" class="form-label">Destination / Value</label>
+                        <input type="text" class="form-control" id="destination" name="destination" 
+                               value="{{ record.destination }}" required>
+                        <div class="form-text">
+                            {% if record.type == 'A' %}
+                            Enter an IPv4 address (e.g., 192.0.2.1)
+                            {% elif record.type == 'AAAA' %}
+                            Enter an IPv6 address (e.g., 2001:db8::1)
+                            {% elif record.type == 'CNAME' %}
+                            Enter the target hostname
+                            {% elif record.type == 'MX' %}
+                            Enter the mail server hostname
+                            {% elif record.type == 'TXT' %}
+                            Enter the text content
+                            {% else %}
+                            Enter the record value
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    {% if record.type in ['MX', 'SRV'] %}
+                    <div class="mb-3">
+                        <label for="priority" class="form-label">Priority</label>
+                        <input type="number" class="form-control" id="priority" name="priority"
+                               value="{{ record.priority or '' }}" min="0" max="65535">
+                        <div class="form-text">Lower value = higher priority</div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-1"></i>Save Changes
+                        </button>
+                        <a href="{{ url_for('account.dns_records', realm_id=realm.id) }}" class="btn btn-secondary">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i>Current Record
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th class="text-muted">ID</th>
+                        <td><code>{{ record.id }}</code></td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Hostname</th>
+                        <td><code>{{ record.hostname or '@' }}</code></td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Type</th>
+                        <td><span class="badge bg-primary">{{ record.type }}</span></td>
+                    </tr>
+                    <tr>
+                        <th class="text-muted">Current Value</th>
+                        <td><code class="small">{{ record.destination | truncate(30) }}</code></td>
+                    </tr>
+                    {% if record.ttl %}
+                    <tr>
+                        <th class="text-muted">TTL</th>
+                        <td>{{ record.ttl }}s</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header bg-warning bg-opacity-10">
+                <i class="bi bi-exclamation-triangle me-1 text-warning"></i>Note
+            </div>
+            <div class="card-body small">
+                <p class="mb-0">DNS changes may take time to propagate (TTL-dependent). 
+                Changes typically become visible within a few minutes to several hours.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

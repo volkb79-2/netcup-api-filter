@@ -184,12 +184,37 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         print("[DEBUG] On password change page, generating new secure password...")
         # Generate a cryptographically secure random password
         original_password = settings.admin_password
-        new_password = generate_token()  # Generates 32-char secure token
+        # generate_token only uses alphanumeric, but password form requires special char
+        base_token = generate_token()  # Generates 63-65 char alphanumeric token
+        new_password = base_token[:60] + "!@#$"  # Add special chars to meet requirements
         print(f"[DEBUG] Generated new password (length: {len(new_password)})")
         
         await browser.fill("#current_password", original_password)
         await browser.fill("#new_password", new_password)
         await browser.fill("#confirm_password", new_password)
+        
+        # Wait for JavaScript validation to enable the submit button
+        print("[DEBUG] Waiting for form validation to enable submit button...")
+        await anyio.sleep(0.5)  # Give JavaScript time to validate
+        
+        # Wait for submit button to be enabled
+        submit_enabled = False
+        for _ in range(10):  # Try up to 5 seconds
+            try:
+                is_disabled = await browser._page.locator("#submitBtn").get_attribute("disabled")
+                if is_disabled is None:  # Not disabled means enabled
+                    submit_enabled = True
+                    break
+                print(f"[DEBUG] Submit button still disabled, retrying...")
+            except Exception:
+                pass
+            await anyio.sleep(0.5)
+        
+        if not submit_enabled:
+            print("[WARN] Submit button still disabled, trying to trigger validation...")
+            # Trigger input event on the form fields to run validation
+            await browser._page.locator("#confirm_password").blur()
+            await anyio.sleep(0.5)
         
         # Submit password change form and wait for redirect
         print("[DEBUG] Submitting password change...")

@@ -156,6 +156,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" id="revokeForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <p>Are you sure you want to revoke token <code id="revokeTokenPrefix"></code>?</p>
                     <div class="alert alert-warning mb-0">

@@ -1,0 +1,262 @@
+{# Admin Token Detail View #}
+{% extends "admin/base.html" %}
+
+{% block title %}Token: {{ token.name or token.token_prefix }} - Admin{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb Navigation -->
+<nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.realms_list') }}">Realms</a></li>
+        {% if realm %}
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('admin.realm_detail', realm_id=realm.id) }}">
+                {{ realm.realm_value or '@' }}.{{ realm.domain }}
+            </a>
+        </li>
+        {% endif %}
+        <li class="breadcrumb-item active">Token</li>
+    </ol>
+</nav>
+
+<!-- Page Header with Actions -->
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-key me-2"></i>{{ token.name or 'Unnamed Token' }}
+        </h1>
+        <div class="d-flex gap-2 align-items-center">
+            {% if token.is_active %}
+            <span class="badge bg-success">Active</span>
+            {% elif token.revoked %}
+            <span class="badge bg-danger">Revoked</span>
+            {% elif token.expires_at and token.expires_at < now %}
+            <span class="badge bg-warning text-dark">Expired</span>
+            {% else %}
+            <span class="badge bg-secondary">Inactive</span>
+            {% endif %}
+            <span class="text-muted">•</span>
+            <code class="text-muted">{{ token.token_prefix }}...</code>
+        </div>
+    </div>
+    <div class="btn-group">
+        {% if token.is_active %}
+        <form action="{{ url_for('admin.token_revoke', token_id=token.id) }}" method="POST"
+              onsubmit="return confirm('Revoke this token? This cannot be undone.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger">
+                <i class="bi bi-slash-circle me-1"></i>Revoke Token
+            </button>
+        </form>
+        {% elif token.revoked %}
+        <button class="btn btn-secondary" disabled>
+            <i class="bi bi-slash-circle me-1"></i>Already Revoked
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <!-- Token Details Card -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Token Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <th width="40%" class="text-muted">Token Name</th>
+                            <td>{{ token.name or 'Unnamed' }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Token Prefix</th>
+                            <td><code>{{ token.token_prefix }}</code></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Owner Account</th>
+                            <td>
+                                {% if account %}
+                                <a href="{{ url_for('admin.account_detail', account_id=account.id) }}">
+                                    <i class="bi bi-person me-1"></i>{{ account.username }}
+                                </a>
+                                {% else %}
+                                <span class="text-muted">Unknown</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Associated Realm</th>
+                            <td>
+                                {% if realm %}
+                                <a href="{{ url_for('admin.realm_detail', realm_id=realm.id) }}">
+                                    <code>{{ realm.realm_value or '@' }}.{{ realm.domain }}</code>
+                                </a>
+                                {% else %}
+                                <span class="text-muted">No realm</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Created</th>
+                            <td>{{ token.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Usage Stats Card -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-graph-up me-2"></i>Usage Statistics
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tbody>
+                        <tr>
+                            <th width="40%" class="text-muted">Total Requests</th>
+                            <td>{{ token.request_count or 0 }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Last Used</th>
+                            <td>
+                                {% if token.last_used_at %}
+                                {{ token.last_used_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                                {% else %}
+                                <span class="text-muted">Never used</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Last IP Address</th>
+                            <td>
+                                {% if token.last_used_ip %}
+                                <code>{{ token.last_used_ip }}</code>
+                                {% else %}
+                                <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Expires</th>
+                            <td>
+                                {% if token.expires_at %}
+                                <span class="{% if token.expires_at < now %}text-danger{% endif %}">
+                                    {{ token.expires_at.strftime('%Y-%m-%d %H:%M') }}
+                                    {% if token.expires_at < now %}(Expired){% endif %}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">Never expires</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if token.revoked %}
+                        <tr>
+                            <th class="text-muted">Revoked At</th>
+                            <td class="text-danger">
+                                {{ token.revoked_at.strftime('%Y-%m-%d %H:%M') if token.revoked_at else 'Unknown' }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Revoked By</th>
+                            <td class="text-danger">{{ token.revoked_by or 'Unknown' }}</td>
+                        </tr>
+                        {% if token.revoked_reason %}
+                        <tr>
+                            <th class="text-muted">Reason</th>
+                            <td class="text-danger">{{ token.revoked_reason }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- IP Whitelist (if applicable) -->
+{% if token.ip_whitelist %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-shield-lock me-2"></i>IP Whitelist
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            {% for ip in token.ip_whitelist.split(',') %}
+            <div class="col-auto mb-2">
+                <span class="badge bg-info"><code>{{ ip.strip() }}</code></span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-clock-history me-2"></i>Recent Activity
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if activity_logs %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Action</th>
+                        <th>Status</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in activity_logs %}
+                    <tr>
+                        <td>
+                            <small>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ log.action }}</span>
+                        </td>
+                        <td>
+                            {% if log.status == 'success' %}
+                            <span class="badge bg-success">Success</span>
+                            {% elif log.status == 'denied' %}
+                            <span class="badge bg-danger">Denied</span>
+                            {% elif log.status == 'error' %}
+                            <span class="badge bg-warning text-dark">Error</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ log.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ log.details or '-' }}</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">
+            <i class="bi bi-clock-history display-6 d-block mb-2"></i>
+            No activity recorded for this token
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

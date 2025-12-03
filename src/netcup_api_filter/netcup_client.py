@@ -18,11 +18,13 @@ class NetcupClient:
     """Client for interacting with Netcup CCP API"""
     
     def __init__(self, customer_id: str, api_key: str, api_password: str, 
-                 api_url: str = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON"):
+                 api_url: str = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
+                 timeout: int = 30):
         self.customer_id = customer_id
         self.api_key = api_key
         self.api_password = api_password
         self.api_url = api_url
+        self.timeout = timeout
         self.session_id: Optional[str] = None
         
     def _make_request(self, action: str, param: Dict[str, Any]) -> Dict[str, Any]:
@@ -33,7 +35,7 @@ class NetcupClient:
         }
         
         try:
-            response = requests.post(self.api_url, json=payload, timeout=30)
+            response = requests.post(self.api_url, json=payload, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
             

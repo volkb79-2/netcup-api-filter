@@ -9,6 +9,7 @@ This application factory uses:
 import logging
 import os
 from flask import Flask
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config_defaults import get_default, require_default
@@ -16,6 +17,9 @@ from .database import init_db, db
 from .api import account_bp, admin_bp, dns_api_bp
 
 logger = logging.getLogger(__name__)
+
+# Initialize CSRF protection globally
+csrf = CSRFProtect()
 
 
 def create_app(config_path: str = "config.yaml") -> Flask:
@@ -112,6 +116,15 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     init_db(app)
     
     # =========================================================================
+    # CSRF Protection
+    # =========================================================================
+    
+    csrf.init_app(app)
+    
+    # Exempt API endpoints from CSRF (they use Bearer tokens)
+    csrf.exempt(dns_api_bp)
+    
+    # =========================================================================
     # Rate Limiting
     # =========================================================================
     
@@ -165,6 +178,22 @@ def create_app(config_path: str = "config.yaml") -> Flask:
             return {'build_info': get_build_info() or {}}
         except Exception:
             return {'build_info': {}}
+    
+    @app.context_processor
+    def inject_geoip_functions():
+        """Inject GeoIP lookup functions into templates."""
+        try:
+            from .geoip_service import geoip_location, lookup as geoip_lookup
+            return {
+                'geoip_location': geoip_location,
+                'geoip_lookup': geoip_lookup
+            }
+        except ImportError:
+            # GeoIP not available - provide stub functions
+            return {
+                'geoip_location': lambda ip: 'Unknown',
+                'geoip_lookup': lambda ip: None
+            }
     
     # =========================================================================
     # Error Handlers

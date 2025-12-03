@@ -257,7 +257,9 @@ def request_realm(
     
     logger.info(f"Realm requested: {domain_normalized}/{realm_type}:{realm_value_normalized} for {account.username}")
     
-    # TODO: Notify admin of pending realm request
+    # Notify admin of pending realm request
+    from .notification_service import notify_realm_pending
+    notify_realm_pending(realm)
     
     return RealmResult(success=True, realm=realm)
 
@@ -279,7 +281,9 @@ def approve_realm(realm_id: int, approved_by: Account) -> RealmResult:
     
     logger.info(f"Realm approved: {realm.realm_type}:{realm.realm_value} by {approved_by.username}")
     
-    # TODO: Notify user of approval
+    # Notify user of approval
+    from .notification_service import notify_realm_approved
+    notify_realm_approved(realm)
     
     return RealmResult(success=True, realm=realm)
 
@@ -300,7 +304,9 @@ def reject_realm(realm_id: int, rejected_by: Account, reason: str) -> RealmResul
     
     logger.info(f"Realm rejected: {realm.realm_type}:{realm.realm_value} by {rejected_by.username}")
     
-    # TODO: Notify user of rejection
+    # Notify user of rejection
+    from .notification_service import notify_realm_rejected
+    notify_realm_rejected(realm, reason)
     
     return RealmResult(success=True, realm=realm)
 

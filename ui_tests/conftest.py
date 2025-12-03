@@ -149,6 +149,50 @@ async def mock_smtp_server():
     await server.stop()
 
 
+@pytest.fixture(scope='function')
+def mailpit():
+    """Fixture that provides a Mailpit client for SMTP testing.
+    
+    Requires Mailpit container to be running:
+        cd tooling/mock-services && docker compose up -d mailpit
+    
+    Usage:
+        def test_email(mailpit):
+            # Clear mailbox before test
+            mailpit.clear()
+            
+            # ... trigger email sending to mailpit:1025 ...
+            
+            # Wait for and check email
+            msg = mailpit.wait_for_message(
+                predicate=lambda m: "verification" in m.subject.lower(),
+                timeout=10.0
+            )
+            assert msg is not None
+            assert "Click here" in msg.text
+    
+    See ui_tests/mailpit_client.py for full API documentation.
+    """
+    from ui_tests.mailpit_client import MailpitClient
+    
+    client = MailpitClient()
+    # Clear mailbox before test for isolation
+    try:
+        client.clear()
+    except Exception:
+        pytest.skip("Mailpit not available - start with: cd tooling/mock-services && docker compose up -d mailpit")
+    
+    yield client
+    
+    # Clear mailbox after test
+    try:
+        client.clear()
+    except Exception:
+        pass  # Ignore cleanup errors
+    
+    client.close()
+
+
 # ============================================================================
 # UI Page Fixtures
 # ============================================================================

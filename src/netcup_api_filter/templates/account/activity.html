@@ -63,6 +63,7 @@
                         {% if log.ip_address %}
                         <small class="text-muted">
                             <i class="bi bi-geo-alt me-1"></i>{{ log.ip_address }}
+                            <span class="ms-1 text-muted-50">({{ geoip_location(log.ip_address) }})</span>
                         </small>
                         {% endif %}
                     </div>
