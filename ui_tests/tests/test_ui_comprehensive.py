@@ -22,9 +22,7 @@ from ui_tests.browser import browser_session
 from ui_tests.config import settings
 from ui_tests import workflows
 
-
 pytestmark = pytest.mark.asyncio
-
 
 # ============================================================================
 # ADMIN DASHBOARD TESTS
@@ -42,16 +40,15 @@ async def test_admin_dashboard_statistics_display(active_profile):
         # Should show statistics (uses Accounts terminology now, not Clients)
         assert 'Total Accounts' in page_text or 'Accounts' in page_text
         assert 'Active' in page_text or 'active' in page_text
-        assert 'Logs' in page_text or 'Audit' in page_text
+        assert 'Audit' in page_text or 'API Calls' in page_text
         
-        # Should show recent activity section
-        assert 'Recent' in page_text or 'Activity' in page_text or 'Logs' in page_text
+        # Should show dashboard metrics sections (Most Active Clients, Rate Limited IPs, Quick Actions)
+        assert 'Most Active' in page_text or 'Rate Limited' in page_text or 'Quick Actions' in page_text or 'Pending' in page_text
         
         # Verify cards have icons or visual elements
         page_html = await browser.html('body')
         # Modern dashboard should have cards/statistics layout
         assert 'card' in page_html.lower() or 'stat' in page_html.lower() or 'dashboard' in page_html.lower()
-
 
 async def test_admin_dashboard_quick_actions(active_profile):
     """Test dashboard quick action buttons work."""
@@ -69,7 +66,6 @@ async def test_admin_dashboard_quick_actions(active_profile):
         
         # At least some quick actions should be present
         assert has_add or has_view_logs or has_settings, "Dashboard should have quick action links"
-
 
 async def test_admin_navigation_accessibility(active_profile):
     """Test all navigation items are accessible and have proper labels."""
@@ -91,47 +87,10 @@ async def test_admin_navigation_accessibility(active_profile):
         # Check if navigation is visually structured
         assert 'nav-' in nav_html or 'menu' in nav_html.lower() or 'navbar' in nav_html.lower()
 
-
 # ============================================================================
 # CLIENT MANAGEMENT TESTS - DEPRECATED
 # These tests expect old "Client" model. Needs rewrite for Account → Realm → Token.
 # ============================================================================
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account → Realm → Token architecture")
-async def test_admin_client_list_table_features(active_profile):
-    """DEPRECATED: Test expected old /admin/clients page."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account → Realm → Token architecture")
-async def test_admin_client_form_all_fields(active_profile):
-    """DEPRECATED: Test expected old client form with #client_id field."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account → Realm → Token architecture")
-async def test_admin_client_form_realm_type_selector(active_profile):
-    """DEPRECATED: Test expected old client form structure."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account → Realm → Token architecture")
-async def test_admin_client_multiselect_operations(active_profile):
-    """DEPRECATED: Test expected select[name='allowed_operations'] which is now checkboxes."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account → Realm → Token architecture")
-async def test_admin_client_record_types_multiselect(active_profile):
-    """DEPRECATED: Test expected select[name='allowed_record_types'] which is now checkboxes."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account → Realm → Token architecture")
-async def test_admin_client_edit_preserves_data(active_profile):
-    """DEPRECATED: Test expected old client edit form."""
-    pass
-
 
 # ============================================================================
 # AUDIT LOGS TESTS
@@ -152,7 +111,6 @@ async def test_admin_audit_logs_table_columns(active_profile):
         assert 'Timestamp' in thead_text or 'Time' in thead_text or 'Date' in thead_text
         assert 'Actor' in thead_text or 'Account' in thead_text or 'User' in thead_text or 'Token' in thead_text
         assert 'Action' in thead_text or 'Operation' in thead_text or 'Event' in thead_text
-
 
 async def test_admin_audit_logs_sorting(active_profile):
     """Test audit logs table supports sorting by clicking headers."""
@@ -182,7 +140,6 @@ async def test_admin_audit_logs_sorting(active_profile):
                 h1_text = await browser.text('main h1')
                 assert 'Audit' in h1_text or 'Logs' in h1_text
 
-
 async def test_admin_audit_logs_pagination_or_limit(active_profile):
     """Test audit logs table has pagination or reasonable limits."""
     
@@ -206,7 +163,6 @@ async def test_admin_audit_logs_pagination_or_limit(active_profile):
         
         # At least one should be present for usability
         assert has_pagination or has_limit_info, "Should have pagination or row limit info"
-
 
 # ============================================================================
 # CONFIGURATION TESTS
@@ -233,7 +189,6 @@ async def test_admin_netcup_config_all_fields(active_profile, mock_netcup_api_se
         
         # NOTE: Test/Verify button not implemented in current UI
         # Form has only "Save Configuration" button
-
 
 async def test_admin_netcup_config_test_connection(active_profile, mock_netcup_api_server, mock_netcup_credentials):
     """Test Netcup API connection test button works with mock server."""
@@ -267,7 +222,6 @@ async def test_admin_netcup_config_test_connection(active_profile, mock_netcup_a
             page_text = await browser.text('body')
             assert 'success' in page_text.lower() or 'connection' in page_text.lower() or 'ok' in page_text.lower()
 
-
 async def test_admin_email_config_all_fields(active_profile, mock_smtp_server):
     """Test email configuration form has all required fields."""
     
@@ -291,7 +245,6 @@ async def test_admin_email_config_all_fields(active_profile, mock_smtp_server):
         # Test email section
         assert 'test' in form_html.lower()
 
-
 async def test_admin_email_config_validation(active_profile):
     """Test email configuration form accepts input (validation via HTML5 constraints)."""
     
@@ -311,7 +264,6 @@ async def test_admin_email_config_validation(active_profile):
         from_email_input = await browser.query_selector('input[name="from_email"]')
         assert from_email_input, "From email field should exist"
 
-
 async def test_admin_system_info_display(active_profile):
     """Test system information page displays environment details."""
     
@@ -330,36 +282,11 @@ async def test_admin_system_info_display(active_profile):
             import pytest
             pytest.skip("System info page not implemented or not accessible")
 
-
 # ============================================================================
 # CLIENT PORTAL TESTS - DEPRECATED
 # These tests expect old "/client/*" routes and client form structure.
 # The new architecture uses Account-based UI with different routes.
 # ============================================================================
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_dashboard_layout(active_profile, mock_netcup_api_server, mock_netcup_credentials):
-    """DEPRECATED: Test expected old /client/login and /admin/client/new/ routes."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_domain_detail_table(active_profile, mock_netcup_api_server, mock_netcup_credentials):
-    """DEPRECATED: Test expected old /client/domains/ routes."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_activity_log_display(active_profile, mock_netcup_api_server, mock_netcup_credentials):
-    """DEPRECATED: Test expected old client activity routes."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_navigation_breadcrumbs(active_profile, mock_netcup_api_server, mock_netcup_credentials):
-    """DEPRECATED: Test expected old client navigation structure."""
-    pass
-
 
 # ============================================================================
 # VISUAL AND LAYOUT TESTS
@@ -377,7 +304,6 @@ async def test_responsive_layout_meta_tags(active_profile):
         assert 'viewport' in page_html.lower()
         assert 'width=device-width' in page_html.lower() or 'initial-scale' in page_html.lower()
 
-
 async def test_modern_ui_styling(active_profile):
     """Test pages use modern UI framework (Bootstrap, etc.)."""
     
@@ -392,13 +318,6 @@ async def test_modern_ui_styling(active_profile):
         has_css_framework = 'btn' in page_html.lower() and 'card' in page_html.lower()
         
         assert has_bootstrap or has_modern_classes or has_css_framework, "Should use modern UI framework"
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_flash_messages_styling(active_profile):
-    """DEPRECATED: Test expected old client creation to trigger flash messages."""
-    pass
-
 
 async def test_footer_present_all_pages(active_profile):
     """Test footer is present on all pages."""
@@ -420,7 +339,6 @@ async def test_footer_present_all_pages(active_profile):
         has_footer = await browser.query_selector('footer')
         assert has_footer is not None, "Audit logs should have footer"
 
-
 # ============================================================================
 # ERROR HANDLING TESTS
 # ============================================================================
@@ -440,8 +358,3 @@ async def test_404_page_exists(active_profile):
         # Should show error indication
         assert '404' in page_text or 'not found' in page_text.lower() or 'error' in page_text.lower()
 
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_form_validation_messages_clear(active_profile):
-    """DEPRECATED: Test expected old client form validation."""
-    pass

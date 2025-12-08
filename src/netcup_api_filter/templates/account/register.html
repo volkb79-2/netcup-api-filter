@@ -77,25 +77,49 @@
                         
                         <div class="mb-3">
                             <label class="form-label" for="password">Password <span class="text-danger">*</span></label>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span></span>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="generatePassword()" title="Generate secure password">
+                                    <i class="bi bi-shuffle me-1"></i>Generate
+                                </button>
+                            </div>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="bi bi-key"></i></span>
-                                <input type="password" class="form-control" id="password" name="password" 
-                                       required minlength="8" autocomplete="new-password">
+                                <input type="password" class="form-control font-monospace" id="password" name="password" 
+                                       required minlength="20" autocomplete="new-password"
+                                       oninput="checkPasswordStrength()">
                                 <button type="button" class="btn btn-outline-secondary" 
                                         onclick="togglePassword('password')" tabindex="-1">
                                     <i class="bi bi-eye" id="passwordIcon"></i>
                                 </button>
                             </div>
-                            <div class="form-text">Minimum 8 characters</div>
+                            <div class="d-flex align-items-center mt-2 gap-2">
+                                <div class="progress flex-grow-1" style="height: 4px;">
+                                    <div class="progress-bar" id="passwordStrength" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <span class="badge" id="entropyBadge" style="min-width: 70px;">0 bit</span>
+                            </div>
+                            <div class="d-flex gap-2 mt-2 flex-wrap" id="charsetIndicators">
+                                <span class="badge bg-secondary" id="hasLower" title="Lowercase letters (a-z)"><i class="bi bi-x-lg"></i> a-z</span>
+                                <span class="badge bg-secondary" id="hasUpper" title="Uppercase letters (A-Z)"><i class="bi bi-x-lg"></i> A-Z</span>
+                                <span class="badge bg-secondary" id="hasNumber" title="Numbers (0-9)"><i class="bi bi-x-lg"></i> 0-9</span>
+                                <span class="badge bg-secondary" id="hasSpecial" title="Special characters"><i class="bi bi-x-lg"></i> @#$</span>
+                            </div>
+                            <small class="text-muted" id="passwordHint">Minimum 20 characters, 100 bit entropy required. Safe printable ASCII characters allowed.</small>
                         </div>
                         
                         <div class="mb-4">
                             <label class="form-label" for="confirm_password">Confirm Password <span class="text-danger">*</span></label>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="bi bi-key"></i></span>
-                                <input type="password" class="form-control" id="confirm_password" name="confirm_password" 
-                                       required autocomplete="new-password">
+                                <input type="password" class="form-control font-monospace" id="confirm_password" name="confirm_password" 
+                                       required autocomplete="new-password" oninput="checkPasswordMatch()">
+                                <button type="button" class="btn btn-outline-secondary" 
+                                        onclick="togglePassword('confirm_password')" tabindex="-1">
+                                    <i class="bi bi-eye" id="confirm_passwordIcon"></i>
+                                </button>
                             </div>
+                            <small class="text-danger d-none" id="passwordMismatch">Passwords do not match</small>
                         </div>
                         
                         <div class="form-check mb-4">
@@ -127,6 +151,12 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        // Charset for password generation - safe printable ASCII
+        // Excludes: ! (shell history), ` (command substitution), ' " (quoting), \ (escape)
+        const GENERATE_CHARSET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-=_+;:,.|/?@#$%^&*()[]{}~<>';
+        const MIN_ENTROPY_BITS = 100;
+        const MIN_PASSWORD_LENGTH = 20;
+
         function togglePassword(inputId) {
             const input = document.getElementById(inputId);
             const icon = document.getElementById(inputId + 'Icon');
@@ -138,6 +168,153 @@
                 icon.className = 'bi bi-eye';
             }
         }
+
+        function generatePassword() {
+            // Generate password with ~128 bits of entropy
+            const length = 21;
+            const array = new Uint32Array(length);
+            crypto.getRandomValues(array);
+            let password = '';
+            for (let i = 0; i < length; i++) {
+                password += GENERATE_CHARSET[array[i] % GENERATE_CHARSET.length];
+            }
+            
+            const input = document.getElementById('password');
+            input.value = password;
+            input.type = 'text';
+            input.nextElementSibling.querySelector('i').className = 'bi bi-eye-slash';
+            checkPasswordStrength();
+            
+            // Also fill confirm field
+            const confirmInput = document.getElementById('confirm_password');
+            confirmInput.value = password;
+            confirmInput.type = 'text';
+            const confirmIcon = document.getElementById('confirm_passwordIcon');
+            if (confirmIcon) confirmIcon.className = 'bi bi-eye-slash';
+            checkPasswordMatch();
+            updateSubmitButton();
+        }
+
+        function calculateEntropy(password) {
+            if (!password) return 0;
+            let poolSize = 0;
+            if (/[a-z]/.test(password)) poolSize += 26;
+            if (/[A-Z]/.test(password)) poolSize += 26;
+            if (/[0-9]/.test(password)) poolSize += 10;
+            if (/[^a-zA-Z0-9]/.test(password)) poolSize += 32;
+            if (poolSize === 0) return 0;
+            return Math.floor(password.length * Math.log2(poolSize));
+        }
+
+        function updateCharsetIndicators(password) {
+            const hasLower = /[a-z]/.test(password);
+            const hasUpper = /[A-Z]/.test(password);
+            const hasNumber = /[0-9]/.test(password);
+            const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+            
+            updateIndicator('hasLower', hasLower, 'a-z');
+            updateIndicator('hasUpper', hasUpper, 'A-Z');
+            updateIndicator('hasNumber', hasNumber, '0-9');
+            updateIndicator('hasSpecial', hasSpecial, '@#$');
+        }
+
+        function updateIndicator(id, hasClass, label) {
+            const el = document.getElementById(id);
+            if (hasClass) {
+                el.className = 'badge bg-success';
+                el.innerHTML = `<i class="bi bi-check-lg"></i> ${label}`;
+            } else {
+                el.className = 'badge bg-secondary';
+                el.innerHTML = `<i class="bi bi-x-lg"></i> ${label}`;
+            }
+        }
+
+        function checkPasswordStrength() {
+            const password = document.getElementById('password').value;
+            const strengthBar = document.getElementById('passwordStrength');
+            const hint = document.getElementById('passwordHint');
+            const entropyBadge = document.getElementById('entropyBadge');
+            
+            updateCharsetIndicators(password);
+            const entropy = calculateEntropy(password);
+            entropyBadge.textContent = `${entropy} bit`;
+            
+            if (entropy < 50) {
+                entropyBadge.className = 'badge bg-danger';
+                hint.textContent = 'Very weak - too easy to crack';
+                hint.className = 'text-danger small';
+            } else if (entropy < 75) {
+                entropyBadge.className = 'badge bg-warning text-dark';
+                hint.textContent = 'Weak - increase length or complexity';
+                hint.className = 'text-warning small';
+            } else if (entropy < MIN_ENTROPY_BITS) {
+                entropyBadge.className = 'badge bg-info text-dark';
+                hint.textContent = `Need ${MIN_ENTROPY_BITS - entropy} more bits (min ${MIN_ENTROPY_BITS} required)`;
+                hint.className = 'text-info small';
+            } else if (entropy < 128) {
+                entropyBadge.className = 'badge bg-success';
+                hint.textContent = 'Good entropy - secure for most uses';
+                hint.className = 'text-success small';
+            } else {
+                entropyBadge.className = 'badge bg-success';
+                hint.textContent = 'Excellent entropy - very secure';
+                hint.className = 'text-success small';
+            }
+            
+            const strengthPercent = Math.min(100, (entropy / 150) * 100);
+            strengthBar.style.width = strengthPercent + '%';
+            
+            if (entropy < 50) {
+                strengthBar.className = 'progress-bar bg-danger';
+            } else if (entropy < 75) {
+                strengthBar.className = 'progress-bar bg-warning';
+            } else if (entropy < MIN_ENTROPY_BITS) {
+                strengthBar.className = 'progress-bar bg-info';
+            } else {
+                strengthBar.className = 'progress-bar bg-success';
+            }
+            
+            updateSubmitButton();
+        }
+
+        function checkPasswordMatch() {
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('confirm_password').value;
+            const mismatch = document.getElementById('passwordMismatch');
+            
+            if (confirm && password !== confirm) {
+                mismatch.classList.remove('d-none');
+                return false;
+            } else {
+                mismatch.classList.add('d-none');
+                return true;
+            }
+        }
+
+        function updateSubmitButton() {
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('confirm_password').value;
+            const btn = document.querySelector('button[type="submit"]');
+            const entropy = calculateEntropy(password);
+            
+            const isValid = password.length >= MIN_PASSWORD_LENGTH && 
+                            entropy >= MIN_ENTROPY_BITS && 
+                            password === confirm && 
+                            confirm.length > 0;
+            
+            btn.disabled = !isValid;
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('password').addEventListener('input', checkPasswordStrength);
+            document.getElementById('confirm_password').addEventListener('input', function() {
+                checkPasswordMatch();
+                updateSubmitButton();
+            });
+            // Initially disable submit button
+            updateSubmitButton();
+        });
     </script>
 </body>
 </html>

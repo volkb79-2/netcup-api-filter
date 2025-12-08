@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import settings
+from ui_tests.config import settings
 from browser import browser_session
 import workflows
 
@@ -292,7 +292,7 @@ class TestButtonInteractions:
             await browser.verify_status(200)
             
             # Fill password
-            await browser.fill("#new_password", "TestPassword123!")
+            await browser.fill("#new_password", "TestPassword123+Secure24")
             
             # Get initial type
             initial_type = await browser.get_attribute("#new_password", "type")
@@ -517,19 +517,20 @@ class TestLinkNavigation:
             assert not broken_links, f"Broken navbar links:\n" + "\n".join(broken_links)
 
     async def test_dashboard_quick_action_links(self, active_profile):
-        """Test dashboard quick action buttons navigate correctly."""
+        """Test dashboard stat cards navigate correctly."""
         async with browser_session() as browser:
             await workflows.ensure_admin_dashboard(browser)
             
-            # Test Create Account link
-            create_link = await browser.query_selector('a[href="/admin/accounts/new"]')
-            assert create_link, "Create Account link should exist on dashboard"
+            # Dashboard has stat cards that link to list pages, not direct "Create Account" button
+            # Test Accounts stat card link
+            accounts_link = await browser.query_selector('a[href="/admin/accounts"]')
+            assert accounts_link, "Accounts link should exist on dashboard (stat card or nav)"
             
-            await create_link.click()
+            await accounts_link.click()
             await asyncio.sleep(0.5)
             
             h1 = await browser.text("main h1")
-            assert "Create" in h1 or "Account" in h1, f"Should navigate to create page, got h1: {h1}"
+            assert "Accounts" in h1, f"Should navigate to accounts page, got h1: {h1}"
 
     async def test_footer_links_if_present(self, active_profile):
         """Test footer links work if present."""
@@ -715,3 +716,93 @@ class TestAccountPortalInteraction:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+# =============================================================================
+# Layout and Centering Validation Tests
+# =============================================================================
+
+class TestLayoutValidation:
+    """Validate page layouts, centering, and responsive behavior."""
+
+    async def test_admin_login_page_centering(self, browser):
+        """Test admin login page is properly centered on viewport."""
+        await browser.goto(settings.url("/admin/login"))
+        await browser._page.wait_for_load_state("networkidle")
+        
+        # Check vertical and horizontal centering
+        layout = await browser.evaluate("""
+            () => {
+                const container = document.querySelector('.login-container');
+                const innerWrapper = container?.querySelector('div');
+                const card = document.querySelector('.login-card');
+                const viewport = { width: window.innerWidth, height: window.innerHeight };
+                
+                if (!innerWrapper || !card) return { error: 'Missing elements' };
+                
+                const wrapperRect = innerWrapper.getBoundingClientRect();
+                const cardRect = card.getBoundingClientRect();
+                
+                // Calculate expected center positions
+                const expectedHorizontalCenter = viewport.width / 2;
+                const actualHorizontalCenter = (wrapperRect.left + wrapperRect.right) / 2;
+                const horizontalOffset = Math.abs(expectedHorizontalCenter - actualHorizontalCenter);
+                
+                // Vertical: content should be roughly centered
+                const contentHeight = wrapperRect.height;
+                const availableHeight = viewport.height;
+                const topMargin = wrapperRect.top;
+                const bottomMargin = availableHeight - wrapperRect.bottom;
+                const verticalOffset = Math.abs(topMargin - bottomMargin);
+                
+                return {
+                    viewport,
+                    horizontalOffset,
+                    verticalOffset,
+                    topMargin,
+                    bottomMargin,
+                    contentHeight,
+                    isHorizontallyCentered: horizontalOffset < 10,
+                    isVerticallyCentered: verticalOffset < 50  // Allow some tolerance
+                };
+            }
+        """)
+        
+        assert 'error' not in layout, f"Layout check failed: {layout.get('error')}"
+        assert layout['isHorizontallyCentered'], \
+            f"Login page should be horizontally centered (offset: {layout['horizontalOffset']}px)"
+        assert layout['isVerticallyCentered'], \
+            f"Login page should be vertically centered (top: {layout['topMargin']}px, bottom: {layout['bottomMargin']}px)"
+
+    async def test_account_login_page_centering(self, browser):
+        """Test account login page is properly centered on viewport."""
+        await browser.goto(settings.url("/account/login"))
+        await browser._page.wait_for_load_state("networkidle")
+        
+        layout = await browser.evaluate("""
+            () => {
+                const container = document.querySelector('.login-container');
+                const card = document.querySelector('.card') || document.querySelector('.login-card');
+                const viewport = { width: window.innerWidth, height: window.innerHeight };
+                
+                if (!card) return { error: 'Missing card element' };
+                
+                const cardRect = card.getBoundingClientRect();
+                
+                // Check horizontal centering
+                const expectedCenter = viewport.width / 2;
+                const actualCenter = (cardRect.left + cardRect.right) / 2;
+                const horizontalOffset = Math.abs(expectedCenter - actualCenter);
+                
+                return {
+                    viewport,
+                    horizontalOffset,
+                    cardWidth: cardRect.width,
+                    isHorizontallyCentered: horizontalOffset < 10
+                };
+            }
+        """)
+        
+        assert 'error' not in layout, f"Layout check failed: {layout.get('error')}"
+        assert layout['isHorizontallyCentered'], \
+            f"Account login should be horizontally centered (offset: {layout['horizontalOffset']}px)"

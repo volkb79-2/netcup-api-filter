@@ -86,12 +86,12 @@
                     </td>
                     <td>
                         <a href="{{ url_for('admin.realm_detail', realm_id=item.realm.id) }}" class="text-decoration-none">
-                            <span class="font-monospace">{{ item.realm.realm_value or '@' }}</span>
-                            <small class="text-muted">.{{ item.realm.domain }}</small>
+                            <code class="text-primary">{{ item.realm|format_realm }}</code>
                         </a>
                     </td>
                     <td>
-                        <span class="badge bg-info bg-opacity-25 text-info">{{ item.realm.realm_type }}</span>
+                        {% set type_info = item.realm.realm_type|realm_type_badge %}
+                        <span class="badge {{ type_info[0] }}">{{ type_info[1] }}</span>
                     </td>
                     <td>
                         <a href="{{ url_for('admin.account_detail', account_id=item.realm.account.id) }}" 

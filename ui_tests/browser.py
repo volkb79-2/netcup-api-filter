@@ -146,15 +146,47 @@ class Browser:
         except Exception as exc:
             raise ToolError(name="evaluate", payload={"script": script}, message=str(exc))
 
-    async def screenshot(self, name: str) -> str:
-        """Take screenshot."""
+    async def screenshot(self, name: str, format: str = None, quality: int = None) -> str:
+        """Take screenshot in specified format (webp or png).
+        
+        Args:
+            name: Screenshot name (without extension)
+            format: 'webp' or 'png' (default: from env or 'webp')
+            quality: Quality for webp (0-100, default: 85)
+        """
         try:
             import os
             # Require SCREENSHOT_DIR (no defaults - fail-fast policy)
             screenshot_dir = os.environ['SCREENSHOT_DIR']
             os.makedirs(screenshot_dir, exist_ok=True)
-            path = os.path.join(screenshot_dir, f"{name}.png")
-            await self._page.screenshot(path=path, type='png', full_page=True)
+            
+            # Get format from env or default to webp
+            if format is None:
+                format = os.environ.get('SCREENSHOT_FORMAT', 'webp')
+            if quality is None:
+                quality = int(os.environ.get('SCREENSHOT_QUALITY', '85'))
+            
+            path = os.path.join(screenshot_dir, f"{name}.{format}")
+            
+            if format == 'webp':
+                await self._page.screenshot(path=path, type='jpeg', quality=quality, full_page=True)
+                # Playwright doesn't support webp directly, use jpeg then convert
+                # Actually, let's use png and convert via pillow if available
+                import shutil
+                try:
+                    from PIL import Image
+                    temp_path = path + '.temp.png'
+                    await self._page.screenshot(path=temp_path, type='png', full_page=True)
+                    img = Image.open(temp_path)
+                    img.save(path, 'WEBP', quality=quality)
+                    os.remove(temp_path)
+                except ImportError:
+                    # Pillow not available, fall back to png
+                    path = os.path.join(screenshot_dir, f"{name}.png")
+                    await self._page.screenshot(path=path, type='png', full_page=True)
+            else:
+                await self._page.screenshot(path=path, type='png', full_page=True)
+            
             return path
         except KeyError:
             raise ToolError(
@@ -234,6 +266,27 @@ class Browser:
             return await self._page.query_selector_all(selector)
         except Exception as exc:
             raise ToolError(name="query_selector_all", payload={"selector": selector}, message=str(exc))
+
+    async def wait_for_enabled(self, selector: str, timeout: float = 5.0) -> bool:
+        """Wait for an element to become enabled (not disabled).
+        
+        Useful for waiting for form validation to enable submit buttons.
+        Returns True if element becomes enabled, raises ToolError on timeout.
+        """
+        try:
+            await self._page.wait_for_function(
+                f"() => {{ const el = document.querySelector('{selector}'); return el && !el.disabled; }}",
+                timeout=timeout * 1000
+            )
+            return True
+        except PlaywrightTimeout:
+            raise ToolError(
+                name="wait_for_enabled",
+                payload={"selector": selector, "timeout": timeout},
+                message=f"Element '{selector}' did not become enabled within {timeout}s"
+            )
+        except Exception as exc:
+            raise ToolError(name="wait_for_enabled", payload={"selector": selector}, message=str(exc))
 
     async def set_viewport(self, width: int | None = None, height: int | None = None) -> None:
         """Set viewport size using environment config (NO HARDCODED VALUES)."""

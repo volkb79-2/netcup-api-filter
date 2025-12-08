@@ -65,12 +65,15 @@ class EmailNotifier:
             # Connect and send
             if self.use_ssl:
                 with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=30) as server:
-                    server.login(self.smtp_username, self.smtp_password)
+                    if self.smtp_username and self.smtp_password:
+                        server.login(self.smtp_username, self.smtp_password)
                     server.send_message(msg)
             else:
                 with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30) as server:
-                    server.starttls()
-                    server.login(self.smtp_username, self.smtp_password)
+                    # Only use STARTTLS and login if credentials are provided
+                    if self.smtp_username and self.smtp_password:
+                        server.starttls()
+                        server.login(self.smtp_username, self.smtp_password)
                     server.send_message(msg)
             
             logger.info(f"Email sent successfully to {to_email}")

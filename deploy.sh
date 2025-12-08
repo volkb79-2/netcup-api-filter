@@ -7,22 +7,30 @@ set -euo pipefail
 # Handles both local and webhosting deployments with proper phase handling:
 #
 # Usage:
-#   ./deploy.sh                    # Deploy to local (default)
-#   ./deploy.sh local              # Deploy to local
-#   ./deploy.sh webhosting         # Deploy to webhosting
+#   ./deploy.sh                    # Deploy to local with mocks (default)
+#   ./deploy.sh local              # Deploy to local with mocks
+#   ./deploy.sh local --mode live  # Deploy to local using live services
+#   ./deploy.sh webhosting         # Deploy to webhosting (live mode)
 #   ./deploy.sh local --skip-tests # Deploy without running tests
 #   ./deploy.sh local --tests-only # Skip build, just run tests
+#   ./deploy.sh local --https      # Use TLS proxy for HTTPS testing
+#
+# Modes:
+#   mock  - Use mocked services (Netcup API, SMTP, GeoIP) - default for local
+#   live  - Use real services (from config) - default for webhosting
 #
 # Phases:
-#   1. Build        - Create deploy.zip with fresh database
-#   2. Deploy       - Extract locally or upload to webhosting
-#   3. Start        - Start Flask (local) or restart Passenger (webhosting)
-#   4. Auth         - Run auth test to change default password
-#   5. Tests        - Run full test suite (mock tests only for local)
-#   6. Screenshots  - Capture UI screenshots for inspection
+#   0. Infrastructure - Start Playwright, TLS proxy, mock services
+#   1. Build          - Create deploy.zip with fresh database
+#   2. Deploy         - Extract locally or upload to webhosting
+#   3. Start          - Start Flask (local) or restart Passenger (webhosting)
+#   4. Auth           - Run auth test to change default password
+#   5. Tests          - Run full test suite via Playwright container
+#   6. Screenshots    - Capture ALL UI pages (admin + client portal)
 #
 # Configuration:
 #   DEPLOYMENT_TARGET env var or first argument: "local" or "webhosting"
+#   DEPLOYMENT_MODE env var or --mode flag: "mock" or "live"
 #   All credentials from deployment_state.json (no .env files)
 # ============================================================================
 
@@ -45,12 +53,72 @@ NC='\033[0m'
 
 # Parse arguments
 DEPLOYMENT_TARGET="${1:-${DEPLOYMENT_TARGET:-local}}"
+
+# Handle --help first (before shift)
+if [[ "$DEPLOYMENT_TARGET" == "--help" ]] || [[ "$DEPLOYMENT_TARGET" == "-h" ]]; then
+    cat << 'EOF'
+Unified Deployment Script for Netcup API Filter
+
+USAGE:
+    ./deploy.sh [TARGET] [OPTIONS]
+
+TARGETS:
+    local        Deploy to local environment (default)
+    webhosting   Deploy to remote webhosting server
+
+OPTIONS:
+    --mode MODE        Set service mode: "mock" or "live" (default: mock for local, live for webhosting)
+    --skip-tests       Deploy without running test suite
+    --skip-screenshots Skip screenshot capture phase
+    --skip-build       Skip build phase (use existing deploy.zip)
+    --skip-infra       Skip infrastructure setup (Playwright, mock services)
+    --tests-only       Skip build/deploy, run tests only (implies --skip-build)
+    --https            Use TLS proxy for HTTPS local testing
+    -h, --help         Show this help message
+
+EXAMPLES:
+    ./deploy.sh                          # Local deployment with mocks (default)
+    ./deploy.sh local                    # Same as above
+    ./deploy.sh local --mode live        # Local deployment using real services
+    ./deploy.sh local --skip-tests       # Deploy locally without tests
+    ./deploy.sh local --tests-only       # Run tests only (no rebuild)
+    ./deploy.sh local --https            # Local with HTTPS via TLS proxy
+    ./deploy.sh webhosting               # Deploy to production webhosting
+    ./deploy.sh webhosting --skip-tests  # Deploy to production without tests
+
+DEPLOYMENT PHASES:
+    0. Infrastructure  Start Playwright container, TLS proxy (if --https), mock services (if mock mode)
+    1. Build           Create deploy.zip with fresh database and vendored dependencies
+    2. Deploy          Extract locally or upload to webhosting
+    3. Start           Start Flask (local) or restart Passenger (webhosting)
+    4. Journey         Run journey tests (fresh deployment documentation + auth)
+    5. Tests           Run validation test suite
+    6. Screenshots     Capture all UI pages for documentation
+
+CONFIGURATION:
+    State files:       deployment_state_local.json, deployment_state_webhosting.json
+    Environment:       .env.defaults (defaults), .env.workspace (workspace config)
+    TLS Proxy:         tooling/local_proxy/proxy.env (for --https mode)
+
+MOCK SERVICES (local mock mode):
+    Mailpit            SMTP testing at http://localhost:8025
+    Mock Netcup API    Simulated DNS API responses
+    Mock GeoIP         IP geolocation testing
+
+For more details, see docs/DEPLOY_ARCHITECTURE.md
+EOF
+    exit 0
+fi
+
 shift || true
 
 SKIP_BUILD=false
 SKIP_TESTS=false
 SKIP_SCREENSHOTS=false
 TESTS_ONLY=false
+SKIP_INFRA=false
+USE_HTTPS=false
+DEPLOYMENT_MODE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -66,9 +134,21 @@ while [[ $# -gt 0 ]]; do
             SKIP_BUILD=true
             shift
             ;;
+        --skip-infra)
+            SKIP_INFRA=true
+            shift
+            ;;
         --tests-only)
             TESTS_ONLY=true
             SKIP_BUILD=true
+            shift
+            ;;
+        --mode)
+            DEPLOYMENT_MODE="$2"
+            shift 2
+            ;;
+        --https)
+            USE_HTTPS=true
             shift
             ;;
         *)
@@ -85,11 +165,58 @@ if [[ "$DEPLOYMENT_TARGET" != "local" && "$DEPLOYMENT_TARGET" != "webhosting" ]]
     exit 1
 fi
 
+# Set default mode based on target
+if [[ -z "$DEPLOYMENT_MODE" ]]; then
+    if [[ "$DEPLOYMENT_TARGET" == "local" ]]; then
+        DEPLOYMENT_MODE="mock"
+    else
+        DEPLOYMENT_MODE="live"
+    fi
+fi
+
+# Validate mode
+if [[ "$DEPLOYMENT_MODE" != "mock" && "$DEPLOYMENT_MODE" != "live" ]]; then
+    echo -e "${RED}ERROR: Invalid DEPLOYMENT_MODE: $DEPLOYMENT_MODE${NC}" >&2
+    echo "Must be 'mock' or 'live'" >&2
+    exit 1
+fi
+
 export DEPLOYMENT_TARGET
+export DEPLOYMENT_MODE
 
 # ============================================================================
-# Configuration per target
+# Load Configuration from .env.defaults (Single Source of Truth)
 # ============================================================================
+
+load_env_defaults() {
+    local env_file="${REPO_ROOT}/.env.defaults"
+    if [[ -f "$env_file" ]]; then
+        # Export all non-comment, non-empty lines
+        set -a
+        source <(grep -v '^#' "$env_file" | grep -v '^$' | grep '=')
+        set +a
+    fi
+}
+
+load_env_defaults
+
+# Load TLS proxy config if available
+load_proxy_config() {
+    local proxy_env="${REPO_ROOT}/tooling/local_proxy/proxy.env"
+    if [[ -f "$proxy_env" ]]; then
+        set -a
+        source <(grep -v '^#' "$proxy_env" | grep -v '^$' | grep '=')
+        set +a
+    fi
+}
+
+# ============================================================================
+# Configuration per target (Config-Driven - NO HARDCODED VALUES)
+# ============================================================================
+
+# Default ports from .env.defaults
+LOCAL_FLASK_PORT="${LOCAL_FLASK_PORT:-5100}"
+WEBHOSTING_URL="${WEBHOSTING_URL:-https://naf.vxxu.de}"
 
 case "$DEPLOYMENT_TARGET" in
     local)
@@ -98,7 +225,23 @@ case "$DEPLOYMENT_TARGET" in
         SCREENSHOT_DIR="${DEPLOY_DIR}/screenshots"
         LOG_DIR="${REPO_ROOT}/tmp"
         LOG_FILE="${LOG_DIR}/local_app.log"
-        UI_BASE_URL="http://localhost:5100"
+        
+        # Get devcontainer hostname for Playwright container to connect
+        DEVCONTAINER_HOSTNAME=$(hostname)
+        
+        # Determine URL based on --https flag or config
+        if [[ "$USE_HTTPS" == "true" ]] || [[ "${LOCAL_USE_HTTPS:-false}" == "true" ]]; then
+            load_proxy_config
+            LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:-localhost}"
+            LOCAL_TLS_BIND_HTTPS="${LOCAL_TLS_BIND_HTTPS:-443}"
+            UI_BASE_URL="https://${LOCAL_TLS_DOMAIN}:${LOCAL_TLS_BIND_HTTPS}"
+            # Force HTTPS mode
+            USE_HTTPS=true
+        else
+            # Use devcontainer hostname so Playwright container can connect
+            UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:${LOCAL_FLASK_PORT}"
+        fi
+        
         # Same deploy.zip for both targets - reduces drift
         BUILD_ARGS="--local --build-dir deploy --output deploy.zip"
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
@@ -108,15 +251,15 @@ case "$DEPLOYMENT_TARGET" in
         STATE_FILE="${REPO_ROOT}/deployment_state_webhosting.json"
         SCREENSHOT_DIR="${REPO_ROOT}/deploy-local/screenshots"
         LOG_DIR="${REPO_ROOT}/tmp"
-        UI_BASE_URL="https://naf.vxxu.de"
+        UI_BASE_URL="${WEBHOSTING_URL}"
         # Same deploy.zip for both targets - reduces drift
         BUILD_ARGS="--target webhosting --build-dir deploy --output deploy.zip"
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         
-        # Webhosting connection details
-        NETCUP_USER="hosting218629"
-        NETCUP_SERVER="hosting218629.ae98d.netcup.net"
-        REMOTE_DIR="/netcup-api-filter"
+        # Webhosting connection details (from environment or defaults)
+        NETCUP_USER="${NETCUP_SSH_USER:-hosting218629}"
+        NETCUP_SERVER="${NETCUP_SSH_HOST:-hosting218629.ae98d.netcup.net}"
+        REMOTE_DIR="${NETCUP_REMOTE_DIR:-/netcup-api-filter}"
         SSHFS_MOUNT="/home/vscode/sshfs-${NETCUP_USER}@${NETCUP_SERVER}"
         ;;
 esac
@@ -219,7 +362,15 @@ stop_flask() {
 start_flask_local() {
     stop_flask
     
-    log_step "Starting Flask (local mode with mock Netcup API)..."
+    local flask_env_desc="mock mode"
+    local mock_api="true"
+    
+    if [[ "$DEPLOYMENT_MODE" == "live" ]]; then
+        flask_env_desc="live mode (real services)"
+        mock_api="false"
+    fi
+    
+    log_step "Starting Flask (local deployment, ${flask_env_desc})..."
     cd "$DEPLOY_DIR"
     
     # Copy gunicorn config if available
@@ -232,7 +383,8 @@ start_flask_local() {
     TEMPLATES_AUTO_RELOAD=true \
     SEND_FILE_MAX_AGE_DEFAULT=0 \
     SECRET_KEY="local-test-secret-key-for-session-persistence" \
-    MOCK_NETCUP_API=true \
+    MOCK_NETCUP_API="${mock_api}" \
+    DEPLOYMENT_MODE="${DEPLOYMENT_MODE}" \
     SEED_DEMO_CLIENTS=true \
     GUNICORN_WORKERS=2 \
     GUNICORN_THREADS=4 \
@@ -248,8 +400,8 @@ start_flask_local() {
     # Wait for Flask
     log_step "Waiting for Flask to start..."
     for i in {1..30}; do
-        if curl -s http://localhost:5100/admin/login > /dev/null 2>&1; then
-            log_success "Flask ready on http://localhost:5100"
+        if curl -s "http://localhost:${LOCAL_FLASK_PORT}/admin/login" > /dev/null 2>&1; then
+            log_success "Flask ready on http://localhost:${LOCAL_FLASK_PORT}"
             return 0
         fi
         sleep 1
@@ -267,11 +419,17 @@ run_in_playwright() {
         local devcontainer_hostname
         devcontainer_hostname=$(get_devcontainer_hostname)
         
-        # Export environment for container
-        export UI_BASE_URL="http://${devcontainer_hostname}:5100"
-        [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="https://naf.vxxu.de"
+        # Export environment for container (config-driven URLs)
+        if [[ "$USE_HTTPS" == "true" ]]; then
+            export UI_BASE_URL="${UI_BASE_URL}"  # Already set to HTTPS URL
+        else
+            export UI_BASE_URL="http://${devcontainer_hostname}:${LOCAL_FLASK_PORT}"
+        fi
+        [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="${WEBHOSTING_URL}"
         export SCREENSHOT_DIR="$SCREENSHOT_DIR"
         export DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+        export DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
+        export DEPLOYMENT_STATE_FILE="$STATE_FILE"
         
         # Load credentials from state file
         if [[ -f "$STATE_FILE" ]]; then
@@ -295,14 +453,157 @@ print(primary.get('secret_key', ''))
     else
         log_warning "Playwright container not running - using local execution"
         
-        export UI_BASE_URL="http://localhost:5100"
-        [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="https://naf.vxxu.de"
+        export UI_BASE_URL="http://localhost:${LOCAL_FLASK_PORT}"
+        [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="${WEBHOSTING_URL}"
         export SCREENSHOT_DIR="$SCREENSHOT_DIR"
         export DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+        export DEPLOYMENT_STATE_FILE="$STATE_FILE"
         
         cd "$REPO_ROOT"
         $cmd
     fi
+}
+
+# ============================================================================
+# Phase 0: Infrastructure Setup
+# ============================================================================
+
+start_playwright_container() {
+    log_step "Starting Playwright container..."
+    if check_playwright_container; then
+        log_success "Playwright container already running"
+        return 0
+    fi
+    
+    if [[ -f "${REPO_ROOT}/tooling/playwright/start-playwright.sh" ]]; then
+        (cd "${REPO_ROOT}/tooling/playwright" && ./start-playwright.sh)
+        
+        # Wait for container to be ready
+        for i in {1..30}; do
+            if check_playwright_container; then
+                log_success "Playwright container ready"
+                return 0
+            fi
+            sleep 1
+        done
+        log_error "Playwright container failed to start"
+        return 1
+    else
+        log_error "Playwright start script not found"
+        return 1
+    fi
+}
+
+start_mock_services() {
+    log_step "Starting mock services (Mailpit, Mock Netcup API, Mock GeoIP)..."
+    if [[ -f "${REPO_ROOT}/tooling/mock-services/start.sh" ]]; then
+        "${REPO_ROOT}/tooling/mock-services/start.sh" --wait 2>/dev/null || {
+            log_warning "Mock services start failed (may already be running)"
+        }
+        log_success "Mock services started"
+    else
+        log_warning "Mock services start script not found - skipping"
+    fi
+}
+
+stop_mock_services() {
+    log_step "Stopping mock services..."
+    if [[ -f "${REPO_ROOT}/tooling/mock-services/stop.sh" ]]; then
+        "${REPO_ROOT}/tooling/mock-services/stop.sh" 2>/dev/null || true
+    fi
+}
+
+start_tls_proxy() {
+    log_step "Starting TLS proxy (nginx with Let's Encrypt certs)..."
+    
+    local proxy_dir="${REPO_ROOT}/tooling/local_proxy"
+    
+    if [[ ! -f "${proxy_dir}/proxy.env" ]]; then
+        log_error "TLS proxy not configured: ${proxy_dir}/proxy.env not found"
+        log_step "Run: cd ${proxy_dir} && ./auto-detect-fqdn.sh"
+        return 1
+    fi
+    
+    # Render nginx config from template
+    if [[ -f "${proxy_dir}/render-nginx-conf.sh" ]]; then
+        log_step "Rendering nginx configuration..."
+        (cd "${proxy_dir}" && ./render-nginx-conf.sh) || {
+            log_error "Failed to render nginx config"
+            return 1
+        }
+    fi
+    
+    # Stage config for Docker
+    if [[ -f "${proxy_dir}/stage-proxy-inputs.sh" ]]; then
+        log_step "Staging proxy inputs..."
+        (cd "${proxy_dir}" && ./stage-proxy-inputs.sh) || {
+            log_warning "Stage proxy inputs failed (may be OK if running on host)"
+        }
+    fi
+    
+    # Start proxy via docker-compose
+    if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
+        log_step "Starting TLS proxy container..."
+        (cd "${proxy_dir}" && docker compose --env-file proxy.env up -d) || {
+            log_error "Failed to start TLS proxy"
+            return 1
+        }
+        
+        # Wait for proxy to be ready
+        local proxy_url="${UI_BASE_URL}/admin/login"
+        log_step "Waiting for TLS proxy at ${proxy_url}..."
+        for i in {1..30}; do
+            if curl -sk "${proxy_url}" > /dev/null 2>&1; then
+                log_success "TLS proxy ready"
+                return 0
+            fi
+            sleep 1
+        done
+        log_warning "TLS proxy may still be starting..."
+    else
+        log_error "TLS proxy docker-compose.yml not found"
+        return 1
+    fi
+}
+
+stop_tls_proxy() {
+    log_step "Stopping TLS proxy..."
+    local proxy_dir="${REPO_ROOT}/tooling/local_proxy"
+    if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
+        (cd "${proxy_dir}" && docker compose --env-file proxy.env down 2>/dev/null) || true
+    fi
+}
+
+phase_infrastructure() {
+    log_phase "0" "Infrastructure Setup"
+    
+    if [[ "$SKIP_INFRA" == "true" ]]; then
+        log_warning "Skipping infrastructure setup (--skip-infra)"
+        return 0
+    fi
+    
+    # Always start Playwright for tests and screenshots
+    if [[ "$SKIP_TESTS" == "false" ]] || [[ "$SKIP_SCREENSHOTS" == "false" ]]; then
+        start_playwright_container || {
+            log_error "Failed to start Playwright - tests and screenshots will fail"
+            return 1
+        }
+    fi
+    
+    # Start TLS proxy for HTTPS mode (local only)
+    if [[ "$USE_HTTPS" == "true" && "$DEPLOYMENT_TARGET" == "local" ]]; then
+        start_tls_proxy || {
+            log_error "Failed to start TLS proxy - HTTPS testing will fail"
+            return 1
+        }
+    fi
+    
+    # Start mock services only in mock mode
+    if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
+        start_mock_services
+    fi
+    
+    log_success "Infrastructure ready"
 }
 
 # ============================================================================
@@ -414,7 +715,7 @@ phase_start() {
         local)
             if [[ "$TESTS_ONLY" == "true" ]]; then
                 # Check if Flask is already running
-                if curl -s http://localhost:5100/admin/login > /dev/null 2>&1; then
+                if curl -s "http://localhost:${LOCAL_FLASK_PORT}/admin/login" > /dev/null 2>&1; then
                     log_success "Flask already running"
                     return 0
                 fi
@@ -439,43 +740,60 @@ phase_start() {
 }
 
 # ============================================================================
-# Phase 4: Authentication Test
+# Phase 4: Journey Tests (Fresh Deployment Documentation)
 # ============================================================================
 
-phase_auth() {
-    log_phase "4" "Authentication Test"
+# Track journey test result for Phase 5 summary
+JOURNEY_TESTS_RESULT=""
+
+phase_journey() {
+    log_phase "4" "Journey Tests (Fresh Deployment)"
     
     if [[ "$SKIP_TESTS" == "true" ]]; then
-        log_warning "Skipping auth test (--skip-tests)"
+        log_warning "Skipping journey tests (--skip-tests)"
+        JOURNEY_TESTS_RESULT="SKIPPED"
         return 0
     fi
     
-    log_step "Running authentication flow test..."
+    # Journey Tests run FIRST on fresh database to:
+    # 1. Document the fresh deployment experience
+    # 2. Perform first login with default credentials
+    # 3. Complete the mandatory password change
+    # 4. Capture screenshots of initial state
+    # 5. Set up the admin authentication for subsequent tests
     
-    if run_in_playwright pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v --timeout=60; then
-        log_success "Authentication test passed"
+    log_step "Running journey tests on fresh deployment..."
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  JOURNEY TESTS: Fresh deployment documentation${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    
+    if run_in_playwright pytest ui_tests/tests/test_journey_master.py -v --timeout=300 2>&1 | tail -20; then
+        log_success "Journey tests passed - admin authenticated"
+        JOURNEY_TESTS_RESULT="PASSED"
         
-        # Refresh credentials from state file (test updates it)
+        # Refresh credentials from state file (journey tests update it)
         if [[ -f "$STATE_FILE" ]]; then
-            log_step "New admin password saved to $STATE_FILE"
+            log_step "Admin password saved to $STATE_FILE"
         fi
     else
         local exit_code=$?
+        JOURNEY_TESTS_RESULT="FAILED"
         if [[ $exit_code -eq 2 ]] || [[ $exit_code -eq 4 ]]; then
             log_error "FATAL: Test infrastructure broken (exit code $exit_code)"
             return 1
         else
-            log_warning "Auth test failed (exit code $exit_code) - continuing"
+            log_warning "Journey tests failed (exit code $exit_code) - continuing"
         fi
     fi
 }
 
 # ============================================================================
-# Phase 5: Full Test Suite
+# Phase 5: Validation Tests
 # ============================================================================
 
 phase_tests() {
-    log_phase "5" "Full Test Suite"
+    log_phase "5" "Validation Tests"
     
     if [[ "$SKIP_TESTS" == "true" ]]; then
         log_warning "Skipping tests (--skip-tests)"
@@ -485,37 +803,87 @@ phase_tests() {
     local test_results=()
     local failed_suites=()
     
+    # Include Journey Tests result from Phase 4
+    if [[ "$JOURNEY_TESTS_RESULT" == "PASSED" ]]; then
+        test_results+=("Journey Tests: PASSED")
+    elif [[ "$JOURNEY_TESTS_RESULT" == "FAILED" ]]; then
+        test_results+=("Journey Tests: FAILED")
+        failed_suites+=("Journey Tests")
+    elif [[ "$JOURNEY_TESTS_RESULT" == "SKIPPED" ]]; then
+        test_results+=("Journey Tests: SKIPPED")
+    fi
+    
+    # =========================================================================
+    # Validation Tests (run after Journey Tests have authenticated)
+    # These use the admin session established by Journey Tests
+    # =========================================================================
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  VALIDATION TESTS: System state verification${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    
     # Define test suites with their applicability
-    # Format: "suite_name|test_pattern|local_only" (using | as delimiter to allow :: in patterns)
-    # Note: Admin UI excludes auth_flow test since Phase 4 already handles it
+    # Format: "suite_name|test_pattern|mode" 
+    # mode: "all" (always run), "mock" (mock mode only), "live" (live mode only)
+    # Note: Admin UI excludes auth_flow test since Journey Tests handle authentication
     local test_suites=(
-        "Admin UI|ui_tests/tests/test_admin_ui.py --deselect=ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow|false"
-        "API Proxy|ui_tests/tests/test_api_proxy.py|false"
-        "Client UI|ui_tests/tests/test_client_ui.py|false"
-        "Audit Logs|ui_tests/tests/test_audit_logs.py|false"
-        "Config Pages|ui_tests/tests/test_config_pages.py|false"
-        "UI Comprehensive|ui_tests/tests/test_ui_comprehensive.py|false"
-        "UI Regression|ui_tests/tests/test_ui_regression.py|false"
-        "UI UX Validation|ui_tests/tests/test_ui_ux_validation.py|false"
-        "Console Errors|ui_tests/tests/test_console_errors.py|false"
-        "Create and Login|ui_tests/tests/test_create_and_login.py|false"
-        "Isolated Sessions|ui_tests/tests/test_isolated_sessions.py|false"
-        # Mock-only tests (local only)
-        "Mock API Standalone|ui_tests/tests/test_mock_api_standalone.py|true"
-        "E2E with Mock API|ui_tests/tests/test_e2e_with_mock_api.py|true"
-        "Client Scenarios Mock|ui_tests/tests/test_client_scenarios_mock.py|true"
-        "Mock SMTP|ui_tests/tests/test_mock_smtp.py|true"
+        # Core UI validation tests (always run)
+        "Admin UI|ui_tests/tests/test_admin_ui.py --deselect=ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow|all"
+        "API Proxy|ui_tests/tests/test_api_proxy.py|all"
+        "Audit Logs|ui_tests/tests/test_audit_logs.py|all"
+        "Audit Export|ui_tests/tests/test_audit_export.py|all"
+        "Config Pages|ui_tests/tests/test_config_pages.py|all"
+        "UI Comprehensive|ui_tests/tests/test_ui_comprehensive.py|all"
+        "UI Regression|ui_tests/tests/test_ui_regression.py|all"
+        "UI UX Validation|ui_tests/tests/test_ui_ux_validation.py|all"
+        "UI Interactive|ui_tests/tests/test_ui_interactive.py|all"
+        "UI Functional|ui_tests/tests/test_ui_functional.py|all"
+        "User Journeys|ui_tests/tests/test_user_journeys.py|all"
+        "Console Errors|ui_tests/tests/test_console_errors.py|all"
+        "Bulk Operations|ui_tests/tests/test_bulk_operations.py|all"
+        "Accessibility|ui_tests/tests/test_accessibility.py|all"
+        "Mobile Responsive|ui_tests/tests/test_mobile_responsive.py|all"
+        "Performance|ui_tests/tests/test_performance.py|all"
+        "Security|ui_tests/tests/test_security.py|all"
+        "Recovery Codes|ui_tests/tests/test_recovery_codes.py|all"
+        "Registration E2E|ui_tests/tests/test_registration_e2e.py|all"
+        
+        # Mock-only tests (require mock services)
+        "Mock API Standalone|ui_tests/tests/test_mock_api_standalone.py|mock"
+        "Mock SMTP|ui_tests/tests/test_mock_smtp.py|mock"
+        "Mock GeoIP|ui_tests/tests/test_mock_geoip.py|mock"
+        "DDNS Quick Update|ui_tests/tests/test_ddns_quick_update.py|mock"
+        
+        # Live API tests (require real Netcup API configured)
+        "UI Flow E2E|ui_tests/tests/test_ui_flow_e2e.py|live"
+        "API Security|ui_tests/tests/test_api_security.py|live"
+        "Live DNS Verification|ui_tests/tests/test_live_dns_verification.py|live"
+        "Live Email Verification|ui_tests/tests/test_live_email_verification.py|live"
     )
     
     for suite in "${test_suites[@]}"; do
-        IFS='|' read -r name pattern local_only <<< "$suite"
+        IFS='|' read -r name pattern mode <<< "$suite"
         
-        # Skip local-only tests for webhosting
-        if [[ "$DEPLOYMENT_TARGET" == "webhosting" && "$local_only" == "true" ]]; then
-            log_step "Skipping $name (local only)"
-            test_results+=("$name: SKIPPED (local only)")
-            continue
-        fi
+        # Check mode applicability
+        case "$mode" in
+            all)
+                # Always run
+                ;;
+            mock)
+                if [[ "$DEPLOYMENT_MODE" != "mock" ]]; then
+                    log_step "Skipping $name (mock mode only)"
+                    test_results+=("$name: SKIPPED (mock mode only)")
+                    continue
+                fi
+                ;;
+            live)
+                if [[ "$DEPLOYMENT_MODE" != "live" ]]; then
+                    log_step "Skipping $name (live mode only)"
+                    test_results+=("$name: SKIPPED (live mode only)")
+                    continue
+                fi
+                ;;
+        esac
         
         # Extract just the file path from pattern (first space-separated word)
         local test_file="${pattern%% *}"
@@ -572,20 +940,28 @@ phase_screenshots() {
         return 0
     fi
     
-    log_step "Capturing UI screenshots..."
+    # Note: Journey tests (Phase 4) already capture screenshots during execution
+    # This phase runs the comprehensive capture script for any additional coverage
+    
+    log_step "Capturing additional UI screenshots (supplementing journey captures)..."
     
     if run_in_playwright python3 ui_tests/capture_ui_screenshots.py; then
         log_success "Screenshots saved to $SCREENSHOT_DIR"
         
-        # List captured screenshots
+        # Count all screenshots (journey + comprehensive)
         local count
-        count=$(find "$SCREENSHOT_DIR" -name "*.png" -type f 2>/dev/null | wc -l)
-        log_step "Captured $count screenshots"
+        count=$(find "$SCREENSHOT_DIR" -name "*.png" -o -name "*.webp" -type f 2>/dev/null | wc -l)
+        log_step "Total screenshots: $count"
+        
+        # Show journey report if available
+        if [[ -f "$SCREENSHOT_DIR/journey_report.json" ]]; then
+            log_step "Journey report available: $SCREENSHOT_DIR/journey_report.json"
+        fi
         
         # Show latest screenshots
         echo ""
         echo -e "${CYAN}Recent screenshots:${NC}"
-        ls -lt "$SCREENSHOT_DIR"/*.png 2>/dev/null | head -10 | while read -r line; do
+        ls -lt "$SCREENSHOT_DIR"/*.png "$SCREENSHOT_DIR"/*.webp 2>/dev/null | head -10 | while read -r line; do
             echo "  $line"
         done
     else
@@ -600,10 +976,11 @@ phase_screenshots() {
 main() {
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║  Deployment: ${DEPLOYMENT_TARGET^^}${NC}"
+    echo -e "${BLUE}║  Deployment: ${DEPLOYMENT_TARGET^^} (${DEPLOYMENT_MODE} mode)${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "  Target:      ${CYAN}$DEPLOYMENT_TARGET${NC}"
+    echo -e "  Mode:        ${CYAN}$DEPLOYMENT_MODE${NC}"
     echo -e "  Deploy Dir:  ${CYAN}$DEPLOY_DIR${NC}"
     echo -e "  State File:  ${CYAN}$STATE_FILE${NC}"
     echo -e "  Screenshots: ${CYAN}$SCREENSHOT_DIR${NC}"
@@ -611,11 +988,12 @@ main() {
     
     local start_time=$SECONDS
     
-    # Run phases
+    # Run phases (Phase 0 first!)
+    phase_infrastructure || exit 1
     phase_build || exit 1
     phase_deploy || exit 1
     phase_start || exit 1
-    phase_auth || true  # Continue on auth failure
+    phase_journey || true  # Continue on journey test failure
     phase_tests || true  # Continue on test failure
     phase_screenshots || true  # Continue on screenshot failure
     
@@ -623,9 +1001,9 @@ main() {
     
     # Cleanup for local deployment - only stop Flask if tests ran
     # When --skip-tests is used, keep Flask running for manual testing
-    if [[ "$DEPLOYMENT_TARGET" == "local" && "$SKIP_TESTS" == "false" ]]; then
-        stop_flask
-    fi
+    # if [[ "$DEPLOYMENT_TARGET" == "local" && "$SKIP_TESTS" == "false" ]]; then
+    #     stop_flask
+    # fi
     
     # Final summary
     echo ""
@@ -637,6 +1015,7 @@ main() {
     echo -e "  📋 State:        $STATE_FILE"
     echo -e "  📸 Screenshots:  $SCREENSHOT_DIR"
     echo -e "  🌐 URL:          $UI_BASE_URL"
+    echo -e "  🔧 Mode:         $DEPLOYMENT_MODE"
     
     if [[ "$DEPLOYMENT_TARGET" == "webhosting" && -d "$SSHFS_MOUNT" ]]; then
         echo -e "  🗂️  Remote FS:    $SSHFS_MOUNT"
@@ -654,13 +1033,5 @@ main() {
     echo "  DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET python3 ui_tests/capture_ui_screenshots.py"
 }
 
-# Ensure Playwright container is started for tests
-if ! check_playwright_container && [[ "$SKIP_TESTS" == "false" ]]; then
-    log_warning "Playwright container not running"
-    log_step "Starting Playwright container..."
-    if [[ -f "${REPO_ROOT}/tooling/playwright/start-playwright.sh" ]]; then
-        (cd "${REPO_ROOT}/tooling/playwright" && ./start-playwright.sh)
-    fi
-fi
-
+# Run main (Phase 0 handles Playwright startup now)
 main "$@"

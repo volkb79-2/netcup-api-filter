@@ -109,9 +109,9 @@
                     Add Realm
                 </a>
                 <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
-                        onclick="resetPassword()">
+                        data-bs-toggle="modal" data-bs-target="#resetPasswordModal">
                     <i class="bi bi-key me-2 text-warning"></i>
-                    Reset Password
+                    Send Password Reset Link
                 </button>
                 {% if account.totp_enabled %}
                 <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
@@ -125,6 +125,30 @@
                     <i class="bi bi-journal-text me-2 text-info"></i>
                     View Audit Log
                 </a>
+            </div>
+        </div>
+
+        <!-- Security Actions Card -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="bi bi-shield-lock me-1"></i>Security Actions
+            </div>
+            <div class="list-group list-group-flush">
+                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
+                        data-bs-toggle="modal" data-bs-target="#changeEmailModal">
+                    <i class="bi bi-envelope me-2 text-primary"></i>
+                    Change Email Address
+                </button>
+                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center text-danger"
+                        data-bs-toggle="modal" data-bs-target="#regenerateAliasModal">
+                    <i class="bi bi-arrow-repeat me-2"></i>
+                    Rotate API Credentials
+                    <span class="badge bg-danger ms-auto">Destructive</span>
+                </button>
+            </div>
+            <div class="card-footer small text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                User alias: <code>{{ account.user_alias[:4] }}...{{ account.user_alias[-4:] }}</code>
             </div>
         </div>
     </div>
@@ -155,21 +179,24 @@
                         {% for realm in account.realms %}
                         <tr class="{% if realm.status == 'pending' %}table-warning{% endif %}">
                             <td>
-                                <span class="font-monospace">{{ realm.realm_value }}</span>
+                                <a href="{{ url_for('admin.realm_detail', realm_id=realm.id) }}" class="text-decoration-none">
+                                    <code class="text-primary">{{ realm|format_realm }}</code>
+                                </a>
                                 {% if realm.status == 'pending' %}
                                 <span class="badge bg-warning text-dark ms-1">Pending</span>
                                 {% endif %}
                             </td>
                             <td>
-                                <span class="badge bg-secondary">{{ realm.realm_type }}</span>
+                                {% set type_info = realm.realm_type|realm_type_badge %}
+                                <span class="badge {{ type_info[0] }}">{{ type_info[1] }}</span>
                             </td>
                             <td>
                                 <small class="text-muted">
-                                    {{ realm.allowed_record_types | join(', ') }}
+                                    {{ realm.get_allowed_record_types() | join(', ') }}
                                 </small>
                             </td>
                             <td>
-                                {% for op in realm.allowed_operations %}
+                                {% for op in realm.get_allowed_operations() %}
                                 <span class="badge {% if op == 'read' %}bg-info{% elif op == 'update' %}bg-warning{% else %}bg-danger{% endif %} me-1">
                                     {{ op }}
                                 </span>
@@ -203,31 +230,43 @@
                         <!-- Tokens for this realm (collapsible) -->
                         {% if realm.tokens %}
                         <tr class="realm-tokens" id="realm-tokens-{{ realm.id }}">
-                            <td colspan="6" class="bg-light">
+                            <td colspan="6" style="background: var(--color-bg-secondary);">
                                 <div class="ps-4">
-                                    <small class="text-muted d-block mb-2">Tokens for {{ realm.realm_value }}:</small>
+                                    <small class="text-muted d-block mb-2">Tokens for {{ realm|format_realm }}:</small>
                                     <div class="list-group list-group-flush">
                                         {% for token in realm.tokens %}
                                         <div class="list-group-item d-flex justify-content-between align-items-center py-2">
                                             <div>
-                                                <code class="text-primary">{{ token.token_prefix }}...</code>
+                                                <a href="{{ url_for('admin.token_detail', token_id=token.id) }}" class="text-decoration-none">
+                                                    <code class="text-primary">{{ token.token_prefix }}...</code>
+                                                </a>
                                                 {% if token.is_active %}
                                                 <span class="badge bg-success ms-1">Active</span>
                                                 {% else %}
                                                 <span class="badge bg-secondary ms-1">Inactive</span>
                                                 {% endif %}
+                                                {% if token.name %}
+                                                <small class="text-muted ms-2">{{ token.name }}</small>
+                                                {% endif %}
                                                 {% if token.last_used_at %}
                                                 <small class="text-muted ms-2">
-                                                    Last used: {{ token.last_used_at.strftime('%Y-%m-%d') }}
+                                                    Last: {{ token.last_used_at.strftime('%Y-%m-%d') }}
                                                 </small>
                                                 {% endif %}
                                             </div>
                                             <div class="btn-group btn-group-sm">
+                                                <a href="{{ url_for('admin.audit_logs') }}?token={{ token.token_prefix }}" 
+                                                   class="btn btn-outline-info btn-sm" title="View Logs">
+                                                    <i class="bi bi-journal-text"></i>
+                                                </a>
                                                 {% if token.is_active %}
-                                                <button class="btn btn-outline-warning btn-sm" title="Revoke"
-                                                        onclick="revokeToken({{ token.id }})">
-                                                    <i class="bi bi-x-circle"></i>
-                                                </button>
+                                                <form method="POST" action="{{ url_for('admin.token_revoke', token_id=token.id) }}" 
+                                                      class="d-inline" onsubmit="return confirm('Revoke this token?')">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <button class="btn btn-outline-warning btn-sm" title="Revoke">
+                                                        <i class="bi bi-x-circle"></i>
+                                                    </button>
+                                                </form>
                                                 {% endif %}
                                             </div>
                                         </div>
@@ -311,6 +350,131 @@
         </div>
     </div>
 </div>
+
+<!-- Password Reset Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-key me-2"></i>Send Password Reset Link</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('admin.account_reset_password', account_id=account.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <p>Send a password reset link to <strong>{{ account.email }}</strong>?</p>
+                    <p class="text-muted small">
+                        The user will receive an email with a link to set a new password.
+                        Any existing password reset links will be invalidated.
+                    </p>
+                    
+                    <div class="mb-3">
+                        <label for="expiry_hours" class="form-label">Link Expires In</label>
+                        <select class="form-select" id="expiry_hours" name="expiry_hours">
+                            <option value="">Use system default</option>
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4">4 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="24">24 hours</option>
+                            <option value="48">48 hours</option>
+                            <option value="72">72 hours (3 days)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-envelope me-1"></i>Send Reset Link
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Change Email Modal -->
+<div class="modal fade" id="changeEmailModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-envelope me-2"></i>Change Email Address</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('admin.account_change_email', account_id=account.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Current email: <strong>{{ account.email }}</strong>
+                        {% if account.email_verified %}
+                        <span class="badge bg-success ms-1">Verified</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark ms-1">Unverified</span>
+                        {% endif %}
+                    </p>
+                    
+                    <div class="mb-3">
+                        <label for="new_email" class="form-label">New Email Address</label>
+                        <input type="email" class="form-control" id="new_email" name="new_email" required
+                               placeholder="user@example.com">
+                        <div class="form-text">
+                            Email verification will be reset. User will need to verify the new address.
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Security notifications will be sent to both old and new email addresses.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-envelope me-1"></i>Change Email
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Regenerate Alias Modal -->
+<div class="modal fade" id="regenerateAliasModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Rotate API Credentials</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('admin.account_regenerate_alias', account_id=account.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This action will immediately invalidate ALL API tokens for this account.
+                    </div>
+                    
+                    <p>Rotating credentials for <strong>{{ account.username }}</strong> will:</p>
+                    <ul>
+                        <li>Generate a new user alias (used in tokens)</li>
+                        <li>Delete all existing API tokens ({{ account.realms | map(attribute='tokens') | map('length') | sum }} tokens)</li>
+                        <li>Notify the user via email</li>
+                    </ul>
+                    
+                    <p class="text-danger mb-0">
+                        <strong>All applications using this account's tokens will stop working immediately.</strong>
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-arrow-repeat me-1"></i>Rotate Credentials
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -333,13 +497,6 @@ function revokeToken(tokenId) {
     if (confirm('Are you sure you want to revoke this token?')) {
         // TODO: Implement token revoke API
         alert('Token revoke not yet implemented');
-    }
-}
-
-function resetPassword() {
-    if (confirm('Send password reset email to {{ account.email }}?')) {
-        // TODO: Implement password reset API
-        alert('Password reset not yet implemented');
     }
 }
 

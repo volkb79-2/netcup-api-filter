@@ -21,7 +21,7 @@ import sys
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import settings
+from ui_tests.config import settings
 
 
 pytestmark = [
@@ -73,8 +73,8 @@ class TestRegistrationFormValidation:
         # Try invalid username (too short)
         await browser._page.fill('input[name="username"]', "ab")
         await browser._page.fill('input[name="email"]', "test@example.com")
-        await browser._page.fill('input[name="password"]', "TestPassword123!")
-        await browser._page.fill('input[name="confirm_password"]', "TestPassword123!")
+        await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
+        await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024")
         await browser._page.check('input[name="terms"]')
         
         # Submit form
@@ -86,22 +86,38 @@ class TestRegistrationFormValidation:
         assert "/register" in current_url, "Should stay on registration page for short username"
     
     async def test_registration_validation_password_mismatch(self, browser):
-        """Test password mismatch validation."""
+        """Test password mismatch validation (client-side).
+        
+        The registration form now has client-side validation that:
+        1. Shows a mismatch warning when passwords don't match
+        2. Disables the submit button until passwords match
+        
+        This test verifies the client-side behavior.
+        """
         await browser.goto(settings.url("/account/register"))
         await browser._page.wait_for_load_state("networkidle")
         
         await browser._page.fill('input[name="username"]', "validuser")
         await browser._page.fill('input[name="email"]', "test@example.com")
-        await browser._page.fill('input[name="password"]', "TestPassword123!")
-        await browser._page.fill('input[name="confirm_password"]', "DifferentPassword!")
+        await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
+        # Use different password to trigger mismatch
+        await browser._page.fill('input[name="confirm_password"]', "DifferentPassword+2024")
         await browser._page.check('input[name="terms"]')
         
-        await browser._page.click('button[type="submit"]')
-        await browser._page.wait_for_timeout(1000)
+        # Wait for client-side validation to run
+        await browser._page.wait_for_timeout(500)
         
-        # Check for error message
-        content = await browser._page.content()
-        assert "match" in content.lower() or "/register" in browser.current_url
+        # Check for client-side mismatch warning (new validation feature)
+        mismatch_visible = await browser._page.is_visible("#passwordMismatch:not(.d-none)")
+        submit_disabled = await browser._page.is_disabled('button[type="submit"]')
+        
+        # Either the warning is visible or the button is disabled (or both)
+        assert mismatch_visible or submit_disabled, \
+            "Client-side validation should show mismatch warning or disable submit button"
+        
+        # Verify we're still on the registration page (no form submission)
+        current_url = browser.current_url
+        assert "/register" in current_url, "Should stay on registration page"
     
     async def test_registration_validation_invalid_email(self, browser):
         """Test email validation."""
@@ -110,8 +126,8 @@ class TestRegistrationFormValidation:
         
         await browser._page.fill('input[name="username"]', "validuser")
         await browser._page.fill('input[name="email"]', "not-an-email")
-        await browser._page.fill('input[name="password"]', "TestPassword123!")
-        await browser._page.fill('input[name="confirm_password"]', "TestPassword123!")
+        await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
+        await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024")
         
         # HTML5 validation should prevent submission
         current_url = browser.current_url
@@ -137,21 +153,21 @@ class TestRegistrationWithMailpit:
         
         await browser._page.fill('input[name="username"]', username)
         await browser._page.fill('input[name="email"]', email)
-        await browser._page.fill('input[name="password"]', "TestPassword123!")
-        await browser._page.fill('input[name="confirm_password"]', "TestPassword123!")
+        await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
+        await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024")
         await browser._page.check('input[name="terms"]')
         
         # Submit form
         await browser._page.click('button[type="submit"]')
-        await browser._page.wait_for_timeout(2000)
+        await browser._page.wait_for_load_state("networkidle")
         
         # Should redirect to verification page
-        current_url = browser.current_url
+        current_url = browser._page.url
         assert "verify" in current_url.lower(), f"Should redirect to verify page, got {current_url}"
         
         # Check for verification email
         msg = mailpit.wait_for_message(
-            predicate=lambda m: email.lower() in (m.to[0].lower() if m.to else ''),
+            predicate=lambda m: email.lower() in (m.to[0].address.lower() if m.to else ''),
             timeout=10.0
         )
         
@@ -173,8 +189,8 @@ class TestRegistrationWithMailpit:
         
         await browser._page.fill('input[name="username"]', username)
         await browser._page.fill('input[name="email"]', email)
-        await browser._page.fill('input[name="password"]', "TestPassword123!Strong")
-        await browser._page.fill('input[name="confirm_password"]', "TestPassword123!Strong")
+        await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024Strong")
+        await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024Strong")
         await browser._page.check('input[name="terms"]')
         
         await browser._page.click('button[type="submit"]')
@@ -182,7 +198,7 @@ class TestRegistrationWithMailpit:
         
         # Get verification code from email
         msg = mailpit.wait_for_message(
-            predicate=lambda m: email.lower() in (m.to[0].lower() if m.to else ''),
+            predicate=lambda m: email.lower() in (m.to[0].address.lower() if m.to else ''),
             timeout=10.0
         )
         
@@ -276,7 +292,7 @@ class TestFullRegistrationFlow:
         unique_id = int(time.time()) % 100000
         username = f"fullflow{unique_id}"
         email = f"fullflow{unique_id}@example.com"
-        password = "StrongPassword123!@#"
+        password = "StrongPassword123@#$+Secure"
         
         # Clear mailbox
         mailpit.clear()
@@ -296,7 +312,7 @@ class TestFullRegistrationFlow:
         
         # Step 2: Get verification code
         msg = mailpit.wait_for_message(
-            predicate=lambda m: email.lower() in (m.to[0].lower() if m.to else ''),
+            predicate=lambda m: email.lower() in (m.to[0].address.lower() if m.to else ''),
             timeout=15.0
         )
         

@@ -91,10 +91,12 @@ export FLASK_ENV="local_test"
 
 # Start gunicorn with passenger_wsgi (same as webhosting)
 # Set PYTHONPATH only for gunicorn subprocess to avoid interfering with pytest
+# ADMIN_2FA_SKIP=true disables 2FA for local testing (avoids email code verification)
 PYTHONPATH="${DEPLOY_LOCAL_DIR}/vendor" \
   SECRET_KEY="${SECRET_KEY}" \
   NETCUP_FILTER_DB_PATH="${NETCUP_FILTER_DB_PATH}" \
   FLASK_ENV="${FLASK_ENV}" \
+  ADMIN_2FA_SKIP=true \
   gunicorn -b 0.0.0.0:5100 \
   --workers=1 \
   --daemon \
@@ -120,29 +122,9 @@ done
 
 echo ""
 
-# 4. Run admin UX audit (quick sanity check)
-echo -e "${BLUE}Running admin UX audit...${NC}"
-cd "${WORKSPACE_DIR}"
-
-# Read current admin password from deployment state (may have been changed by previous test run)
-ADMIN_PASSWORD="admin"  # Default for fresh deployment
-if [ -f "${WORKSPACE_DIR}/deployment_state_local.json" ]; then
-    STORED_PASSWORD=$(python3 -c "import json; print(json.load(open('${WORKSPACE_DIR}/deployment_state_local.json'))['admin'].get('password', 'admin'))" 2>/dev/null || echo "admin")
-    if [ -n "$STORED_PASSWORD" ] && [ "$STORED_PASSWORD" != "null" ]; then
-        ADMIN_PASSWORD="$STORED_PASSWORD"
-    fi
-fi
-
-# Run the audit script - exit early if major issues found
-python ui_tests/admin_ux_audit.py --base-url http://127.0.0.1:5100 --admin-password "$ADMIN_PASSWORD" || {
-    AUDIT_EXIT=$?
-    if [ $AUDIT_EXIT -gt 5 ]; then
-        echo -e "${YELLOW}⚠ Admin audit found $AUDIT_EXIT issues - fix before running full test suite${NC}"
-        pkill -9 gunicorn || true
-        exit $AUDIT_EXIT
-    fi
-    echo -e "${YELLOW}⚠ Admin audit found $AUDIT_EXIT minor issues (continuing with tests)${NC}"
-}
+# 4. Note: httpx-based audit (admin_ux_audit.py) was deprecated in favor of Playwright
+# The httpx audit had CSRF and state management limitations that Playwright handles properly.
+# All page coverage is now done via Playwright tests in ui_tests/tests/.
 
 echo ""
 

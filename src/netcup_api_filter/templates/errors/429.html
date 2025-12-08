@@ -1,0 +1,144 @@
+{# 429 Rate Limited Error Page - Enhanced with animations and theme support #}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>429 - Too Many Requests | Netcup API Filter</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Custom Theme CSS -->
+    <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, var(--color-bg-primary, #070a14) 0%, var(--color-bg-secondary, #0c1020) 100%);
+            min-height: 100vh;
+        }
+        
+        .error-container {
+            animation: fadeInUp 0.6s ease-out;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .error-icon {
+            font-size: 8rem;
+            animation: speedometer 2s ease-in-out infinite;
+            opacity: 0.9;
+        }
+        
+        @keyframes speedometer {
+            0%, 100% { transform: rotate(-10deg); }
+            50% { transform: rotate(10deg); }
+        }
+        
+        .error-code {
+            font-size: 8rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--color-warning, #fbbf24) 0%, #f97316 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+        }
+        
+        .error-title {
+            color: var(--color-text-primary, #f8fafc);
+            font-weight: 600;
+        }
+        
+        .error-message {
+            color: var(--color-text-secondary, #94a3b8);
+            max-width: 450px;
+            margin: 0 auto;
+        }
+        
+        .countdown-card {
+            background: var(--color-bg-tertiary, rgba(255,255,255,0.03));
+            border: 1px solid var(--color-border, rgba(255,255,255,0.1));
+            border-radius: 12px;
+        }
+        
+        .countdown-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--color-warning, #fbbf24);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+        
+        .btn-primary {
+            background: var(--color-accent, #3b7cf5);
+            border-color: var(--color-accent, #3b7cf5);
+        }
+    </style>
+</head>
+<body class="d-flex align-items-center">
+    <div class="container">
+        <div class="error-container text-center py-5">
+            <div class="mb-4">
+                <i class="bi bi-speedometer2 error-icon text-warning"></i>
+            </div>
+            
+            <h1 class="error-code mb-2">429</h1>
+            <h2 class="error-title h3 mb-3">Too Many Requests</h2>
+            <p class="error-message lead mb-4">
+                You've exceeded the rate limit. Please wait a moment before trying again.
+            </p>
+            
+            <div class="countdown-card p-4 d-inline-block mb-4">
+                <div class="text-muted small mb-2">Try again in</div>
+                <div class="countdown-value" id="countdown">{{ retry_after | default(60) }}</div>
+                <div class="text-muted small">seconds</div>
+            </div>
+            
+            <div class="d-flex gap-3 justify-content-center mb-4">
+                <a href="/" class="btn btn-primary btn-lg px-4">
+                    <i class="bi bi-house-fill me-2"></i>Go Home
+                </a>
+                <button onclick="location.reload()" class="btn btn-outline-light btn-lg px-4" id="retryBtn" disabled>
+                    <i class="bi bi-arrow-clockwise me-2"></i>Retry
+                </button>
+            </div>
+            
+            <div class="text-muted small">
+                <i class="bi bi-info-circle me-1"></i>
+                Rate limiting protects our servers. API users: check your token's rate limit settings.
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Countdown timer
+        let seconds = parseInt(document.getElementById('countdown').textContent);
+        const countdownEl = document.getElementById('countdown');
+        const retryBtn = document.getElementById('retryBtn');
+        
+        const timer = setInterval(() => {
+            seconds--;
+            countdownEl.textContent = seconds;
+            
+            if (seconds <= 0) {
+                clearInterval(timer);
+                retryBtn.disabled = false;
+                countdownEl.textContent = '0';
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -21,6 +21,7 @@ from .models import (
     AccountRealm,
     ActivityLog,
     APIToken,
+    USER_ALIAS_LENGTH,
     db,
     generate_token,
     hash_token,
@@ -435,15 +436,15 @@ def create_token(
                     field='operations'
                 )
     
-    # Get account username for token generation
+    # Get account for token generation
     account = realm.account
     
-    # Generate full token
-    full_token = generate_token(account.username)
+    # Generate full token using user_alias (not username, for security)
+    full_token = generate_token(account.user_alias)
     
     # Extract prefix (first 8 chars of random part)
-    # Token format: naf_<username>_<random64>
-    random_part_start = len(f"naf_{account.username}_")
+    # Token format: naf_<user_alias>_<random64> where user_alias is 16 chars
+    random_part_start = 4 + USER_ALIAS_LENGTH + 1  # "naf_" + alias + "_"
     token_prefix = full_token[random_part_start:random_part_start + 8]
     
     # Hash full token for storage
@@ -489,6 +490,7 @@ def revoke_token(
     Revoke an API token.
     
     Token is not deleted, just marked as revoked for audit trail.
+    Sends notification to token owner.
     """
     api_token = APIToken.query.get(token_id)
     if not api_token:
@@ -509,6 +511,15 @@ def revoke_token(
     db.session.commit()
     
     logger.info(f"Token revoked: {api_token.token_name} by {revoked_by.username}")
+    
+    # Send notification to token owner
+    from .notification_service import notify_token_revoked
+    notify_token_revoked(
+        account=realm.account,
+        token=api_token,
+        revoked_by=revoked_by.username,
+        reason=reason
+    )
     
     return TokenResult(success=True, token_obj=api_token)
 

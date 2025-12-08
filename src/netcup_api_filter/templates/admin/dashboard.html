@@ -15,93 +15,101 @@
 <!-- Statistics Cards -->
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-xl-3">
-        <div class="card stat-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="stat-label text-muted mb-1">Total Accounts</p>
-                        <h2 class="stat-value mb-0">{{ total_accounts }}</h2>
+        <a href="{{ url_for('admin.accounts_list') }}" class="text-decoration-none">
+            <div class="card stat-card h-100 stat-card-clickable">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="stat-label text-muted mb-1">Total Accounts</p>
+                            <h2 class="stat-value mb-0">{{ total_accounts }}</h2>
+                        </div>
+                        <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                            <i class="bi bi-people"></i>
+                        </div>
                     </div>
-                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
-                        <i class="bi bi-people"></i>
+                    <div class="stat-footer mt-2">
+                        <small class="text-success">
+                            <i class="bi bi-check-circle me-1"></i>{{ active_accounts }} active
+                        </small>
                     </div>
-                </div>
-                <div class="stat-footer mt-2">
-                    <small class="text-success">
-                        <i class="bi bi-check-circle me-1"></i>{{ active_accounts }} active
-                    </small>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
     
     <div class="col-sm-6 col-xl-3">
-        <div class="card stat-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="stat-label text-muted mb-1">Pending Approvals</p>
-                        <h2 class="stat-value mb-0">{{ pending_accounts + pending_realms }}</h2>
+        <a href="{{ url_for('admin.accounts_pending') }}" class="text-decoration-none">
+            <div class="card stat-card h-100 stat-card-clickable">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="stat-label text-muted mb-1">Pending Approvals</p>
+                            <h2 class="stat-value mb-0">{{ pending_accounts + pending_realms }}</h2>
+                        </div>
+                        <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
                     </div>
-                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
-                        <i class="bi bi-clock-history"></i>
+                    <div class="stat-footer mt-2">
+                        <small class="text-muted">
+                            {{ pending_accounts }} accounts, {{ pending_realms }} realms
+                        </small>
                     </div>
-                </div>
-                <div class="stat-footer mt-2">
-                    <small class="text-muted">
-                        {{ pending_accounts }} accounts, {{ pending_realms }} realms
-                    </small>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
     
     <div class="col-sm-6 col-xl-3">
-        <div class="card stat-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="stat-label text-muted mb-1">API Calls (24h)</p>
-                        <h2 class="stat-value mb-0">{{ api_calls_24h }}</h2>
+        <a href="{{ url_for('admin.audit_logs') }}" class="text-decoration-none">
+            <div class="card stat-card h-100 stat-card-clickable">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="stat-label text-muted mb-1">API Calls (24h)</p>
+                            <h2 class="stat-value mb-0">{{ api_calls_24h }}</h2>
+                        </div>
+                        <div class="stat-icon bg-info bg-opacity-10 text-info">
+                            <i class="bi bi-graph-up"></i>
+                        </div>
                     </div>
-                    <div class="stat-icon bg-info bg-opacity-10 text-info">
-                        <i class="bi bi-graph-up"></i>
+                    <div class="stat-footer mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-clock me-1"></i>Last 24 hours
+                        </small>
                     </div>
-                </div>
-                <div class="stat-footer mt-2">
-                    <small class="text-muted">
-                        <i class="bi bi-clock me-1"></i>Last 24 hours
-                    </small>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
     
     <div class="col-sm-6 col-xl-3">
-        <div class="card stat-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="stat-label text-muted mb-1">Errors (24h)</p>
-                        <h2 class="stat-value mb-0">{{ errors_24h }}</h2>
+        <a href="{{ url_for('admin.audit_logs', status='error') }}" class="text-decoration-none">
+            <div class="card stat-card h-100 stat-card-clickable">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <p class="stat-label text-muted mb-1">Errors (24h)</p>
+                            <h2 class="stat-value mb-0">{{ errors_24h }}</h2>
+                        </div>
+                        <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
                     </div>
-                    <div class="stat-icon bg-danger bg-opacity-10 text-danger">
-                        <i class="bi bi-exclamation-triangle"></i>
+                    <div class="stat-footer mt-2">
+                        {% if errors_24h > 0 %}
+                        <small class="text-danger">
+                            <i class="bi bi-arrow-up me-1"></i>Needs attention
+                        </small>
+                        {% else %}
+                        <small class="text-success">
+                            <i class="bi bi-check me-1"></i>All clear
+                        </small>
+                        {% endif %}
                     </div>
-                </div>
-                <div class="stat-footer mt-2">
-                    {% if errors_24h > 0 %}
-                    <small class="text-danger">
-                        <i class="bi bi-arrow-up me-1"></i>Needs attention
-                    </small>
-                    {% else %}
-                    <small class="text-success">
-                        <i class="bi bi-check me-1"></i>All clear
-                    </small>
-                    {% endif %}
                 </div>
             </div>
-        </div>
+        </a>
     </div>
 </div>
 
@@ -133,81 +141,133 @@
 </div>
 {% endif %}
 
+<!-- Aggregated Metrics Row -->
 <div class="row g-4">
-    <!-- Quick Actions -->
+    <!-- Rate Limited IPs -->
     <div class="col-lg-4">
         <div class="card h-100">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-lightning-charge me-2"></i>Quick Actions
+                    <i class="bi bi-shield-exclamation me-2 text-warning"></i>Rate Limited IPs
                 </h5>
+                <span class="badge bg-{{ 'warning' if rate_limited_ips else 'secondary' }}">
+                    {{ rate_limited_ips|length if rate_limited_ips else 0 }}
+                </span>
             </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    <a href="{{ url_for('admin.account_create') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-person-plus me-2"></i>Create Account
-                    </a>
-                    <a href="{{ url_for('admin.realms_pending') }}" class="btn btn-outline-warning">
-                        <i class="bi bi-clock-history me-2"></i>Review Pending
-                        {% if pending_accounts + pending_realms > 0 %}
-                        <span class="badge bg-warning text-dark ms-1">{{ pending_accounts + pending_realms }}</span>
-                        {% endif %}
-                    </a>
-                    <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-outline-secondary">
-                        <i class="bi bi-journal-text me-2"></i>View Audit Log
-                    </a>
-                    <a href="{{ url_for('admin.config_netcup') }}" class="btn btn-outline-info">
-                        <i class="bi bi-cloud me-2"></i>Netcup API Config
+            <div class="card-body p-0">
+                {% if rate_limited_ips %}
+                <div class="list-group list-group-flush">
+                    {% for ip_info in rate_limited_ips[:5] %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <div>
+                            <span class="font-monospace small">{{ ip_info.ip }}</span>
+                            {% if ip_info.location %}
+                            <br><small class="text-muted">{{ ip_info.location }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-warning text-dark">{{ ip_info.count }} hits</span>
+                            <br><small class="text-muted">{{ ip_info.last_seen }}</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if rate_limited_ips|length > 5 %}
+                <div class="card-footer text-center">
+                    <a href="{{ url_for('admin.audit_logs', action='rate_limit') }}" class="btn btn-sm btn-outline-secondary">
+                        View all {{ rate_limited_ips|length }} IPs
                     </a>
                 </div>
+                {% endif %}
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-shield-check display-6 d-block mb-2 text-success"></i>
+                    No rate limiting events
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
     
-    <!-- Recent Activity -->
-    <div class="col-lg-8">
+    <!-- Most Active Clients/Realms -->
+    <div class="col-lg-4">
         <div class="card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-activity me-2"></i>Recent Activity
+                    <i class="bi bi-bar-chart-line me-2 text-primary"></i>Most Active Clients
                 </h5>
-                <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-sm btn-outline-secondary">
-                    View All
-                </a>
             </div>
             <div class="card-body p-0">
-                {% if recent_activity %}
+                {% if active_clients %}
                 <div class="list-group list-group-flush">
-                    {% for activity in recent_activity %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center py-3">
-                        <div class="d-flex align-items-center">
-                            {% if activity.status == 'success' %}
-                            <span class="badge bg-success me-3"><i class="bi bi-check"></i></span>
-                            {% elif activity.status == 'denied' %}
-                            <span class="badge bg-warning me-3"><i class="bi bi-slash-circle"></i></span>
-                            {% else %}
-                            <span class="badge bg-danger me-3"><i class="bi bi-x"></i></span>
-                            {% endif %}
-                            <div>
-                                <span class="fw-medium">{{ activity.action }}</span>
-                                {% if activity.domain %}
-                                <span class="text-muted">- {{ activity.domain }}</span>
-                                {% endif %}
-                                {% if activity.token_prefix %}
-                                <br><small class="text-muted font-monospace">Token: {{ activity.token_prefix }}...</small>
-                                {% endif %}
-                            </div>
+                    {% for client in active_clients[:5] %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <div>
+                            <a href="{{ url_for('admin.account_detail', account_id=client.account_id) }}" 
+                               class="text-decoration-none fw-medium">{{ client.username }}</a>
+                            <br><small class="text-muted font-monospace">{{ client.realm }}</small>
                         </div>
-                        <small class="text-muted">
-                            {{ activity.created_at.strftime('%H:%M') }}
-                        </small>
+                        <div class="text-end">
+                            <span class="badge bg-primary">{{ client.api_calls }} calls</span>
+                            <br><small class="text-muted">24h</small>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="text-center text-muted py-5">
+                <div class="text-center text-muted py-4">
                     <i class="bi bi-inbox display-6 d-block mb-2"></i>
-                    No recent activity
+                    No API activity
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Permission Errors / IP Denials -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-x-octagon me-2 text-danger"></i>Permission Issues
+                </h5>
+                <span class="badge bg-{{ 'danger' if permission_errors else 'secondary' }}">
+                    {{ permission_errors|length if permission_errors else 0 }}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                {% if permission_errors %}
+                <div class="list-group list-group-flush">
+                    {% for error in permission_errors[:5] %}
+                    <div class="list-group-item py-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="font-monospace small">{{ error.token_prefix }}...</span>
+                            <span class="badge bg-{{ 'warning' if error.type == 'ip_denied' else 'danger' }}">
+                                {{ error.type|replace('_', ' ')|title }}
+                            </span>
+                        </div>
+                        <small class="text-muted d-block">
+                            {% if error.type == 'ip_denied' %}
+                            IP: {{ error.ip }} not in whitelist
+                            {% else %}
+                            {{ error.details }}
+                            {% endif %}
+                        </small>
+                        <small class="text-muted">{{ error.time }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if permission_errors|length > 5 %}
+                <div class="card-footer text-center">
+                    <a href="{{ url_for('admin.audit_logs', action='denied') }}" class="btn btn-sm btn-outline-secondary">
+                        View all {{ permission_errors|length }} issues
+                    </a>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-check-circle display-6 d-block mb-2 text-success"></i>
+                    No permission errors
                 </div>
                 {% endif %}
             </div>
@@ -226,6 +286,14 @@
     transform: translateY(-2px);
 }
 
+.stat-card-clickable {
+    cursor: pointer;
+}
+
+.stat-card-clickable:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
 .stat-label {
     font-size: var(--density-font-sm);
     font-weight: 500;
@@ -237,6 +305,7 @@
     font-size: 2rem;
     font-weight: 600;
     line-height: 1.2;
+    color: var(--color-text-primary);
 }
 
 .stat-icon {

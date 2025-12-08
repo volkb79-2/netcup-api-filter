@@ -1,0 +1,164 @@
+{# Accept Account Invite Page #}
+{% extends "base.html" %}
+
+{% block title %}Activate Your Account{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center min-vh-75 align-items-center py-5">
+        <div class="col-md-6 col-lg-5 col-xl-4">
+            <div class="text-center mb-4">
+                <a href="/" class="text-decoration-none">
+                    <i class="bi bi-person-check display-4 text-success"></i>
+                    <h1 class="h4 mt-2">Netcup API Filter</h1>
+                </a>
+            </div>
+
+            <div class="card">
+                <div class="card-body p-4">
+                    <h2 class="card-title text-center mb-2">Welcome, {{ username }}!</h2>
+                    <p class="text-center text-muted mb-4">
+                        Your account has been created. Please set your password to activate it.
+                    </p>
+
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+
+                    <form action="{{ url_for('account.accept_invite', token=token) }}" method="post" id="invite-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        <div class="mb-3">
+                            <label class="form-label text-muted">Username</label>
+                            <div class="form-control bg-light">{{ username }}</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="new_password" class="form-label">Choose Your Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="bi bi-lock"></i>
+                                </span>
+                                <input type="password" class="form-control" id="new_password" name="new_password" 
+                                       minlength="12" required autocomplete="new-password">
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('new_password')">
+                                    <i class="bi bi-eye" id="new_password-icon"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">Minimum 12 characters</small>
+                            
+                            <!-- Password Strength Meter -->
+                            <div class="mt-2">
+                                <div class="progress" style="height: 4px;">
+                                    <div class="progress-bar" role="progressbar" id="strength-bar" 
+                                         style="width: 0%"></div>
+                                </div>
+                                <small class="text-muted" id="strength-text">Enter a password</small>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="confirm_password" class="form-label">Confirm Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="bi bi-lock-fill"></i>
+                                </span>
+                                <input type="password" class="form-control" id="confirm_password" 
+                                       name="confirm_password" required autocomplete="new-password">
+                                <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('confirm_password')">
+                                    <i class="bi bi-eye" id="confirm_password-icon"></i>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback" id="match-error">Passwords do not match</div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-success btn-lg" id="submit-btn">
+                                <i class="bi bi-check-circle me-1"></i>Activate Account
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="text-center mt-4">
+                <p class="text-muted">
+                    Already activated your account?
+                    <a href="{{ url_for('account.login') }}" class="text-decoration-none">Sign in</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function togglePassword(fieldId) {
+    const field = document.getElementById(fieldId);
+    const icon = document.getElementById(fieldId + '-icon');
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        field.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+
+// Password strength checker
+document.getElementById('new_password').addEventListener('input', function() {
+    const password = this.value;
+    const bar = document.getElementById('strength-bar');
+    const text = document.getElementById('strength-text');
+    
+    let strength = 0;
+    if (password.length >= 12) strength += 25;
+    if (password.match(/[a-z]/)) strength += 25;
+    if (password.match(/[A-Z]/)) strength += 25;
+    if (password.match(/[0-9]/) || password.match(/[^a-zA-Z0-9]/)) strength += 25;
+    
+    bar.style.width = strength + '%';
+    
+    if (strength <= 25) {
+        bar.className = 'progress-bar bg-danger';
+        text.textContent = 'Weak password';
+    } else if (strength <= 50) {
+        bar.className = 'progress-bar bg-warning';
+        text.textContent = 'Fair password';
+    } else if (strength <= 75) {
+        bar.className = 'progress-bar bg-info';
+        text.textContent = 'Good password';
+    } else {
+        bar.className = 'progress-bar bg-success';
+        text.textContent = 'Strong password';
+    }
+    
+    checkMatch();
+});
+
+// Password match checker
+document.getElementById('confirm_password').addEventListener('input', checkMatch);
+
+function checkMatch() {
+    const password = document.getElementById('new_password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    const error = document.getElementById('match-error');
+    const confirmField = document.getElementById('confirm_password');
+    const submitBtn = document.getElementById('submit-btn');
+    
+    if (confirm && password !== confirm) {
+        confirmField.classList.add('is-invalid');
+        submitBtn.disabled = true;
+    } else {
+        confirmField.classList.remove('is-invalid');
+        submitBtn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

@@ -15,6 +15,7 @@ from typing import Optional
 from pathlib import Path
 
 from mcp.server import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from playwright.async_api import async_playwright, Browser, Page
 
 # Configure logging
@@ -30,8 +31,36 @@ MCP_SERVER_NAME = os.getenv('MCP_SERVER_NAME', 'playwright')
 PLAYWRIGHT_HEADLESS = os.getenv('PLAYWRIGHT_HEADLESS', 'true').lower() == 'true'
 PLAYWRIGHT_BROWSER = os.getenv('PLAYWRIGHT_BROWSER', 'chromium')
 
-# Initialize MCP server using official SDK
-mcp = FastMCP(MCP_SERVER_NAME)
+# Configure transport security to allow container hostname access
+# This is required for VS Code MCP clients connecting via Docker network
+transport_security = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=[
+        "localhost",
+        f"localhost:{MCP_PORT}",
+        "playwright",
+        f"playwright:{MCP_PORT}",
+        "127.0.0.1",
+        f"127.0.0.1:{MCP_PORT}",
+        "0.0.0.0",
+        f"0.0.0.0:{MCP_PORT}",
+    ],
+    allowed_origins=[
+        "http://localhost",
+        f"http://localhost:{MCP_PORT}",
+        "http://playwright",
+        f"http://playwright:{MCP_PORT}",
+        "vscode-file://vscode-app",
+    ],
+)
+
+# Initialize MCP server using official SDK with transport security
+mcp = FastMCP(
+    MCP_SERVER_NAME,
+    host="0.0.0.0",
+    port=MCP_PORT,
+    transport_security=transport_security,
+)
 
 # Global browser state
 _browser: Optional[Browser] = None
@@ -269,6 +298,7 @@ if __name__ == "__main__":
     logger.info(f"Starting MCP server on 0.0.0.0:{MCP_PORT}")
     logger.info(f"Server name: {MCP_SERVER_NAME}")
     logger.info(f"Browser: {PLAYWRIGHT_BROWSER} (headless={PLAYWRIGHT_HEADLESS})")
+    logger.info(f"Allowed hosts: {transport_security.allowed_hosts}")
     
     # Get the Starlette app from FastMCP for streamable HTTP transport
     app = mcp.streamable_http_app()

@@ -51,10 +51,10 @@
                         <span class="badge bg-secondary">{{ realm.realm_type }}</span>
                     </td>
                     <td>
-                        <small>{{ realm.allowed_record_types | join(', ') }}</small>
+                        <small>{{ realm.get_allowed_record_types() | join(', ') }}</small>
                     </td>
                     <td>
-                        {% for op in realm.allowed_operations %}
+                        {% for op in realm.get_allowed_operations() %}
                         <span class="badge {% if op == 'read' %}bg-info{% elif op == 'update' %}bg-warning{% elif op == 'create' %}bg-success{% else %}bg-danger{% endif %} me-1">
                             {{ op }}
                         </span>

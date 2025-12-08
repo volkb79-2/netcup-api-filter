@@ -26,7 +26,7 @@ class TestSecurityHeaders:
     @pytest.mark.asyncio
     async def test_content_type_header(self, browser):
         """Verify Content-Type header is set correctly."""
-        from config import settings
+        from ui_tests.config import settings
         
         response = await browser._page.goto(settings.url("/admin/login"))
         
@@ -36,7 +36,7 @@ class TestSecurityHeaders:
     @pytest.mark.asyncio
     async def test_x_content_type_options(self, browser):
         """Verify X-Content-Type-Options header is set."""
-        from config import settings
+        from ui_tests.config import settings
         
         response = await browser._page.goto(settings.url("/admin/login"))
         
@@ -54,7 +54,7 @@ class TestAuthenticationSecurity:
     @pytest.mark.asyncio
     async def test_login_form_has_csrf_token(self, browser):
         """Verify login form includes CSRF protection."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -73,7 +73,7 @@ class TestAuthenticationSecurity:
     @pytest.mark.asyncio
     async def test_password_field_is_password_type(self, browser):
         """Verify password fields use type=password."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -90,7 +90,7 @@ class TestAuthenticationSecurity:
     @pytest.mark.asyncio
     async def test_password_autocomplete_attribute(self, browser):
         """Verify password fields have proper autocomplete."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -109,7 +109,7 @@ class TestAuthenticationSecurity:
     @pytest.mark.asyncio
     async def test_failed_login_no_user_enumeration(self, browser):
         """Verify login failures don't reveal if user exists."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -142,7 +142,10 @@ class TestBrokenAccessControl:
     @pytest.mark.asyncio
     async def test_admin_pages_require_auth(self, browser):
         """Verify admin pages redirect to login when unauthenticated."""
-        from config import settings
+        from ui_tests.config import settings
+        
+        # Clear any existing session cookies first
+        await browser._page.context.clear_cookies()
         
         protected_urls = [
             "/admin/",
@@ -164,7 +167,10 @@ class TestBrokenAccessControl:
     @pytest.mark.asyncio
     async def test_account_pages_require_auth(self, browser):
         """Verify account pages redirect to login when unauthenticated."""
-        from config import settings
+        from ui_tests.config import settings
+        
+        # Clear any existing session cookies first
+        await browser._page.context.clear_cookies()
         
         protected_urls = [
             "/account/dashboard",
@@ -187,7 +193,7 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_xss_in_username_field(self, browser):
         """Verify XSS is prevented in username field."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -206,7 +212,7 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_html_injection_prevention(self, browser):
         """Verify HTML injection is prevented in user inputs."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -229,7 +235,7 @@ class TestSessionSecurity:
     @pytest.mark.asyncio
     async def test_session_cookie_httponly(self, browser):
         """Verify session cookie has HttpOnly flag (when using HTTPS)."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -247,7 +253,7 @@ class TestSessionSecurity:
     @pytest.mark.asyncio
     async def test_session_cookie_samesite(self, browser):
         """Verify session cookie has SameSite attribute."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -269,7 +275,7 @@ class TestSecurityMisconfiguration:
     @pytest.mark.asyncio
     async def test_no_server_version_disclosure(self, browser):
         """Verify server doesn't disclose version in headers."""
-        from config import settings
+        from ui_tests.config import settings
         
         response = await browser._page.goto(settings.url("/admin/login"))
         
@@ -286,7 +292,7 @@ class TestSecurityMisconfiguration:
     @pytest.mark.asyncio
     async def test_error_pages_no_stack_trace(self, browser):
         """Verify error pages don't expose stack traces."""
-        from config import settings
+        from ui_tests.config import settings
         
         # Try to trigger an error (invalid URL)
         await browser._page.goto(settings.url("/admin/nonexistent_page_12345"))
@@ -302,7 +308,7 @@ class TestSecurityMisconfiguration:
     @pytest.mark.asyncio
     async def test_no_debug_mode_indicators(self, browser):
         """Verify no debug mode indicators in response."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         
@@ -319,7 +325,7 @@ class TestFormSecurity:
     @pytest.mark.asyncio
     async def test_forms_use_post_method(self, browser):
         """Verify sensitive forms use POST method."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -337,7 +343,7 @@ class TestFormSecurity:
     @pytest.mark.asyncio
     async def test_password_inputs_no_spellcheck(self, browser):
         """Verify password inputs disable spellcheck."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -359,7 +365,7 @@ class TestClickjackingProtection:
     @pytest.mark.asyncio
     async def test_x_frame_options_or_csp(self, browser):
         """Verify clickjacking protection headers."""
-        from config import settings
+        from ui_tests.config import settings
         
         response = await browser._page.goto(settings.url("/admin/login"))
         
@@ -379,7 +385,7 @@ class TestLogoutSecurity:
     @pytest.mark.asyncio
     async def test_logout_clears_session(self, admin_page):
         """Verify logout properly clears session."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         

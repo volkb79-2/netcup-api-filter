@@ -44,7 +44,8 @@ class UiTargetProfile:
     def client_token(self) -> str:
         """Full authentication token (Bearer token value).
         
-        New token format is: naf_<username>_<random64>
+        Token format is: naf_<user_alias>_<random64>
+        where user_alias is a 16-char random identifier (not the username).
         The secret_key field contains the full token.
         """
         return self.client_secret_key
@@ -68,7 +69,7 @@ class UiTestConfig:
         headless_str = os.getenv("PLAYWRIGHT_HEADLESS", "true")
         self.playwright_headless: bool = headless_str.lower() in {"true", "1"}
         
-        self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "ui-regression")
+        self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "test")
 
         allow_writes_str = os.getenv("UI_ALLOW_WRITES", "1")
         primary_allow_writes = allow_writes_str not in {"0", "false", "False"}
@@ -222,6 +223,7 @@ class UiTestConfig:
         credentials, especially after another test might have changed passwords.
         
         This reads fresh from the JSON file, bypassing any cached values.
+        Updates BOTH the active profile AND the original source profile.
         """
         try:
             state = load_state(self._deployment_target)
@@ -239,6 +241,13 @@ class UiTestConfig:
         
         if admin.username != self._active.admin_username:
             self._active.admin_username = admin.username
+        
+        # Also update the original profile so subsequent tests start with fresh password
+        for profile_name, profile in self._profiles.items():
+            if profile.admin_username == admin.username:
+                if profile.admin_password != admin.password:
+                    print(f"[CONFIG] Updated source profile '{profile_name}' with new password")
+                    profile.admin_password = admin.password
         
         # Update client credentials if changed
         if primary_client:

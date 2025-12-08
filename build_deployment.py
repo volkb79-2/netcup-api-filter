@@ -308,14 +308,21 @@ def create_initial_env_webhosting(deploy_dir):
     logger.info(f"Created {env_webhosting_path} with initial deployment state")
 
 
-def initialize_database(deploy_dir) -> Tuple[str, str, list]:
+def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = False) -> Tuple[str, str, list]:
     """Initialize SQLite database with default admin user and dynamically generated client credentials.
+    
+    Args:
+        deploy_dir: Path to the deployment directory
+        is_local: If True, seed email config for mock mode (Mailpit)
+        seed_demo: If True, seed comprehensive demo data for UI screenshots
     
     Returns:
         Tuple of (client_id, secret_key, all_demo_clients)
         where all_demo_clients is list of (client_id, secret_key, description) tuples
     """
     logger.info("Initializing database...")
+    if is_local:
+        logger.info("Local deployment - will seed mock email config")
     
     # Save current directory
     original_dir = os.getcwd()
@@ -339,7 +346,7 @@ def initialize_database(deploy_dir) -> Tuple[str, str, list]:
         # Import required modules (netcup_api_filter is under src/)
         from flask import Flask
         from netcup_api_filter import database
-        from netcup_api_filter.bootstrap import AdminSeedOptions, seed_default_entities
+        from netcup_api_filter.bootstrap import AdminSeedOptions, seed_default_entities, seed_comprehensive_demo_data
         
         # Create Flask app with template_folder in deploy directory
         app = Flask(__name__, template_folder=str(deploy_path / "src" / "netcup_api_filter" / "templates"))
@@ -361,8 +368,17 @@ def initialize_database(deploy_dir) -> Tuple[str, str, list]:
             # Seed with defaults - enable demo clients for comprehensive local testing
             # Demo clients provide multiple permission configurations for E2E tests
             generated_client_id, generated_secret_key, all_demo_clients = seed_default_entities(
-                seed_demo_clients_flag=True  # Enable demo clients with varied permissions
+                seed_demo_clients_flag=True,  # Enable demo clients with varied permissions
+                seed_mock_email=is_local,  # Seed Mailpit config for local builds
             )
+            # Seed comprehensive demo data if requested
+            if seed_demo:
+                from netcup_api_filter.models import Account
+                admin = Account.query.filter_by(is_admin=1).first()
+                if admin:
+                    seed_comprehensive_demo_data(admin)
+                    logger.info("Comprehensive demo data seeded for UI screenshots")
+            
             logger.info(
                 "Database seeded with default admin and %d demo clients (primary: %s)",
                 len(all_demo_clients),
@@ -622,6 +638,8 @@ def main():
     parser.add_argument("--local", action="store_true", help="Build for local testing (sets target=local)")
     parser.add_argument("--target", choices=["local", "webhosting"], default=None,
                         help="Deployment target (local or webhosting). --local sets this to 'local'")
+    parser.add_argument("--seed-demo", action="store_true", 
+                        help="Seed comprehensive demo data for UI screenshots")
     args = parser.parse_args()
     
     # Determine deployment target
@@ -666,7 +684,9 @@ def main():
         copy_application_files(deploy_dir)
         
         # Initialize database and get generated credentials
-        client_id, secret_key, all_demo_clients = initialize_database(deploy_dir)
+        # For local builds, seed mock email config (Mailpit)
+        is_local_build = deployment_target == "local"
+        client_id, secret_key, all_demo_clients = initialize_database(deploy_dir, is_local=is_local_build, seed_demo=args.seed_demo)
         
         # Create unified deployment state (primary state file)
         create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients, target=deployment_target)

@@ -39,6 +39,42 @@ async def browser(playwright_client):
     return browser
 
 
+# ============================================================================
+# Parallel Session Manager fixtures
+# ============================================================================
+
+@pytest_asyncio.fixture()
+async def session_manager(playwright_client):
+    """Create a parallel session manager for multi-user tests.
+    
+    Provides isolated browser contexts for concurrent session testing.
+    All sessions are automatically cleaned up after the test.
+    
+    Usage:
+        async def test_multi_user(session_manager):
+            admin = await session_manager.admin_session()
+            user = await session_manager.account_session('testuser')
+            # Both sessions operate independently
+    """
+    from ui_tests.parallel_session_manager import ParallelSessionManager
+    
+    async with ParallelSessionManager(
+        browser=playwright_client.browser,
+        base_url=settings.url(''),
+    ) as manager:
+        yield manager
+
+
+@pytest_asyncio.fixture()
+async def admin_session(session_manager):
+    """Get the admin session handle from parallel session manager.
+    
+    Returns a logged-in admin session. Handles forced password change
+    scenarios automatically.
+    """
+    return await session_manager.admin_session()
+
+
 def _profile_id(profile: UiTargetProfile) -> str:
     return profile.name
 

@@ -20,9 +20,9 @@
                         <i class="bi bi-hourglass-split text-info" style="font-size: 4rem;"></i>
                     </div>
                     
-                    <h2 class="card-title mb-2">Registration Pending</h2>
+                    <h2 class="card-title mb-2">Registration Complete!</h2>
                     <p class="text-muted mb-4">
-                        Your account registration is awaiting admin approval.
+                        Your account is awaiting admin approval.
                     </p>
 
                     <div class="alert alert-info text-start">
@@ -30,16 +30,27 @@
                             <i class="bi bi-info-circle me-1"></i>What happens next?
                         </h6>
                         <ul class="mb-0 small">
-                            <li>An administrator will review your registration</li>
-                            <li>You'll receive an email once your account is approved</li>
-                            <li>After approval, you can log in and create API tokens</li>
+                            <li>An administrator will review your account and any domain requests</li>
+                            <li>You'll receive an email once approved</li>
+                            <li>After approval, you can log in and start managing DNS records</li>
                         </ul>
                     </div>
+
+                    {% if realm_count and realm_count > 0 %}
+                    <div class="alert alert-secondary text-start mt-3">
+                        <h6 class="alert-heading mb-1">
+                            <i class="bi bi-globe me-1"></i>Domain Requests Submitted
+                        </h6>
+                        <p class="mb-0 small">
+                            {{ realm_count }} domain request(s) will be reviewed along with your account.
+                        </p>
+                    </div>
+                    {% endif %}
 
                     <div class="mt-4">
                         <p class="text-muted small">
                             <i class="bi bi-clock me-1"></i>
-                            Submitted {{ submitted_at | default('recently') }}
+                            Submitted just now
                         </p>
                     </div>
                 </div>

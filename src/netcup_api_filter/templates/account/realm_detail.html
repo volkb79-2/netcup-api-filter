@@ -18,16 +18,26 @@
                 <span class="font-monospace">{{ realm.realm_value }}</span>
                 {% if realm.status == 'approved' %}
                 <span class="badge bg-success">Active</span>
+                {% elif realm.status == 'pending' %}
+                <span class="badge bg-warning text-dark">Pending Approval</span>
                 {% else %}
-                <span class="badge bg-warning text-dark">{{ realm.status | title }}</span>
+                <span class="badge bg-danger">{{ realm.status | title }}</span>
                 {% endif %}
             </h1>
+            {% if realm.status == 'pending' %}
+            <p class="text-warning mb-0 small">
+                <i class="bi bi-info-circle me-1"></i>This realm is pending admin approval. Tokens can be created but won't work until approved.
+            </p>
+            {% endif %}
         </div>
-        {% if realm.status == 'approved' %}
-        <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" class="btn btn-primary">
+        <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" 
+           class="btn {% if realm.status == 'approved' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           title="{% if realm.status != 'approved' %}Token can be created but won't work until realm is approved{% endif %}">
             <i class="bi bi-plus-circle me-1"></i>New Token
+            {% if realm.status != 'approved' %}
+            <i class="bi bi-exclamation-triangle ms-1 text-warning"></i>
+            {% endif %}
         </a>
-        {% endif %}
     </div>
 </div>
 
@@ -158,11 +168,14 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-key me-1"></i>API Tokens ({{ tokens | length }})</span>
-                {% if realm.status == 'approved' %}
-                <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" class="btn btn-sm btn-primary">
+                <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" 
+                   class="btn btn-sm {% if realm.status == 'approved' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                   title="{% if realm.status != 'approved' %}Token can be created but won't work until realm is approved{% endif %}">
                     <i class="bi bi-plus me-1"></i>New Token
+                    {% if realm.status != 'approved' %}
+                    <i class="bi bi-exclamation-triangle ms-1 text-warning"></i>
+                    {% endif %}
                 </a>
-                {% endif %}
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
@@ -228,13 +241,13 @@
                                 <i class="bi bi-key display-6 d-block mb-2"></i>
                                 No tokens yet
                                 <br>
-                                {% if realm.status == 'approved' %}
-                                <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" class="btn btn-sm btn-primary mt-2">
+                                <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" 
+                                   class="btn btn-sm {% if realm.status == 'approved' %}btn-primary{% else %}btn-outline-secondary{% endif %} mt-2">
                                     Generate First Token
+                                    {% if realm.status != 'approved' %}
+                                    <small class="d-block text-warning">(won't work until realm approved)</small>
+                                    {% endif %}
                                 </a>
-                                {% else %}
-                                <small>Realm must be approved before generating tokens</small>
-                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

@@ -15,16 +15,45 @@
         <p class="text-muted mb-0">System activity and security events</p>
     </div>
     <div class="d-flex gap-2 align-items-center">
-        <div class="form-check form-switch">
-            <input type="checkbox" class="form-check-input" id="autoRefresh" onchange="toggleAutoRefresh()">
-            <label class="form-check-label" for="autoRefresh">Auto-refresh</label>
-        </div>
-        <button class="btn btn-outline-secondary" onclick="refreshLogs()">
-            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
-        </button>
         <button class="btn btn-outline-primary" onclick="exportLogs()">
             <i class="bi bi-download me-1"></i>Export
         </button>
+    </div>
+</div>
+
+<!-- Stats Summary - ABOVE the table -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="display-6 text-primary">{{ stats.total_today or 0 }}</div>
+                <small class="text-muted">Events Today</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="display-6 text-success">{{ stats.logins_today or 0 }}</div>
+                <small class="text-muted">Logins Today</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="display-6 text-danger">{{ stats.failed_logins or 0 }}</div>
+                <small class="text-muted">Failed Logins (24h)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="display-6 text-info">{{ stats.api_calls or 0 }}</div>
+                <small class="text-muted">API Calls (24h)</small>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -90,37 +119,52 @@
     </div>
 </div>
 
-<!-- Logs Table -->
+<!-- Logs Table with auto-refresh in header -->
 <div class="card" id="logsTable">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="text-muted small">Log Entries</span>
+        <div class="d-flex gap-2 align-items-center">
+            <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input" id="autoRefresh" onchange="toggleAutoRefresh()" checked>
+                <label class="form-check-label small" for="autoRefresh">Auto-refresh</label>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="refreshLogs()" title="Refresh now">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead>
                 <tr>
-                    <th width="160" class="sort" data-sort="timestamp">Timestamp</th>
-                    <th width="100" class="sort" data-sort="actor">Actor</th>
-                    <th width="120" class="sort" data-sort="action">Action</th>
-                    <th class="sort" data-sort="details">Details</th>
-                    <th width="140">IP Address</th>
+                    <th width="140" class="sort" data-sort="timestamp">Timestamp</th>
+                    <th width="90" class="sort" data-sort="actor">Actor</th>
+                    <th width="110" class="sort" data-sort="action">Action</th>
+                    <th width="70">Status</th>
+                    <th width="130">Target</th>
+                    <th width="100">Operation</th>
+                    <th>Details</th>
+                    <th width="110">IP Address</th>
                 </tr>
             </thead>
             <tbody class="list">
                 {% for log in logs %}
                 <tr>
                     <td class="timestamp">
-                        <small class="font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                        <small class="font-monospace">{{ log.created_at.strftime('%m-%d %H:%M:%S') }}</small>
                     </td>
                     <td class="actor">
-                        {% if log.actor == 'admin' %}
+                        {% if log.account and log.account.is_admin %}
                         <span class="badge bg-danger">Admin</span>
-                        {% elif log.actor == 'system' %}
-                        <span class="badge bg-secondary">System</span>
-                        {% elif log.account_id %}
+                        {% elif log.token %}
+                        <code class="small" title="Token: {{ log.token.token_prefix }}">{{ log.token.token_prefix }}...</code>
+                        {% elif log.account %}
                         <a href="{{ url_for('admin.account_detail', account_id=log.account_id) }}" 
-                           class="text-decoration-none font-monospace">
-                            {{ log.actor }}
+                           class="text-decoration-none font-monospace small">
+                            {{ log.account.username }}
                         </a>
                         {% else %}
-                        <span class="font-monospace">{{ log.actor }}</span>
+                        <span class="badge bg-secondary">System</span>
                         {% endif %}
                     </td>
                     <td class="action">
@@ -138,34 +182,71 @@
                             'token_created': 'primary',
                             'token_revoked': 'warning',
                             'config_updated': 'info',
-                            'api_call': 'secondary'
+                            'api_call': 'info',
+                            'api_read': 'info',
+                            'api_update': 'warning',
+                            'api_create': 'primary',
+                            'api_delete': 'danger',
+                            'api_denied': 'danger'
                         } %}
-                        <span class="badge bg-{{ action_class.get(log.action, 'secondary') }}">
+                        <span class="badge bg-{{ action_class.get(log.action, 'info') }}">
                             {{ log.action | replace('_', ' ') | title }}
                         </span>
                     </td>
-                    <td class="details">
-                        <span class="text-wrap">{{ log.details or '' }}</span>
-                        {% if log.target_type and log.target_id %}
-                        <small class="text-muted d-block">
-                            {{ log.target_type }}: {{ log.target_id }}
-                        </small>
+                    <td>
+                        {# Status column with clear color coding #}
+                        {% if log.status == 'success' %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>OK</span>
+                        {% elif log.status == 'denied' %}
+                        <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Denied</span>
+                        {% elif log.status == 'error' %}
+                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Error</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ log.status or '—' }}</span>
                         {% endif %}
                     </td>
                     <td>
-                        {% if log.ip_address %}
-                        <div>
-                            <small class="font-monospace">{{ log.ip_address }}</small>
-                        </div>
-                        <small class="text-muted">{{ geoip_location(log.ip_address) }}</small>
+                        {# Show realm/domain for API calls using format_realm filter if available #}
+                        {% if log.token and log.token.realm %}
+                        <code class="small">{{ log.token.realm|format_realm }}</code>
+                        {% elif log.realm_value %}
+                        <span class="font-monospace small">{{ log.realm_value }}</span>
                         {% else %}
-                        <small class="font-monospace text-muted">N/A</small>
+                        <small class="text-muted">—</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {# Show operation type for API calls #}
+                        {% if log.operation %}
+                        <span class="badge {% if log.operation == 'read' %}bg-info{% elif log.operation == 'update' %}bg-warning text-dark{% elif log.operation == 'create' %}bg-primary{% else %}bg-danger{% endif %}">
+                            {{ log.operation }}
+                        </span>
+                        {% else %}
+                        <small class="text-muted">—</small>
+                        {% endif %}
+                    </td>
+                    <td class="details">
+                        {% if log.status_reason %}
+                        <span class="text-wrap small text-danger">{{ log.status_reason }}</span>
+                        {% elif log.record_type and log.record_name %}
+                        <span class="text-wrap small">{{ log.record_type }}: {{ log.record_name }}</span>
+                        {% elif log.record_type %}
+                        <span class="text-wrap small">{{ log.record_type }}</span>
+                        {% else %}
+                        <small class="text-muted">—</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.source_ip %}
+                        <small class="font-monospace">{{ log.source_ip }}</small>
+                        {% else %}
+                        <small class="text-muted">—</small>
                         {% endif %}
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="text-center py-5 text-muted">
+                    <td colspan="8" class="text-center py-5 text-muted">
                         <i class="bi bi-journal display-6 d-block mb-2"></i>
                         No logs found
                         {% if search or action_filter != 'all' or actor_filter != 'all' %}
@@ -217,42 +298,6 @@
     </div>
     {% endif %}
 </div>
-
-<!-- Stats Summary -->
-<div class="row g-4 mt-3">
-    <div class="col-md-3">
-        <div class="card text-center">
-            <div class="card-body">
-                <div class="display-6 text-primary">{{ stats.total_today or 0 }}</div>
-                <small class="text-muted">Events Today</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-center">
-            <div class="card-body">
-                <div class="display-6 text-success">{{ stats.logins_today or 0 }}</div>
-                <small class="text-muted">Logins Today</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-center">
-            <div class="card-body">
-                <div class="display-6 text-danger">{{ stats.failed_logins or 0 }}</div>
-                <small class="text-muted">Failed Logins (24h)</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-center">
-            <div class="card-body">
-                <div class="display-6 text-info">{{ stats.api_calls or 0 }}</div>
-                <small class="text-muted">API Calls (24h)</small>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -281,11 +326,14 @@ function exportLogs() {
     window.location.href = '{{ url_for("admin.audit_export") }}?' + params.toString();
 }
 
-// Initialize List.js for client-side sorting
+// Initialize List.js for client-side sorting and auto-refresh enabled by default
 document.addEventListener('DOMContentLoaded', function() {
     new List('logsTable', {
         valueNames: ['timestamp', 'actor', 'action', 'details']
     });
+    
+    // Start auto-refresh by default (checkbox is checked)
+    refreshInterval = setInterval(refreshLogs, 5000);
 });
 </script>
 {% endblock %}

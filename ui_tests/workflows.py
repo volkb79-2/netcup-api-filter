@@ -146,50 +146,200 @@ async def trigger_token_generation(browser: Browser) -> str:
     return token
 
 
+async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
+    """Handle 2FA page if redirected there. Returns True if 2FA was handled.
+    
+    This uses Mailpit to intercept the 2FA email and extract the code.
+    Requires:
+    - ADMIN_2FA_SKIP=false or not set
+    - Mailpit running and accessible
+    - Admin has a valid email configured
+    
+    If ADMIN_2FA_SKIP=true is set, the server bypasses 2FA entirely.
+    """
+    import anyio
+    import os
+    import re
+    
+    # Use live URL from page (not cached)
+    current_url = browser._page.url
+    if "/login/2fa" not in current_url and "/2fa" not in current_url:
+        return False
+    
+    print("[DEBUG] On 2FA page, attempting to handle...")
+    
+    # Try to get code from Mailpit
+    try:
+        from ui_tests.mailpit_client import MailpitClient
+        
+        mailpit = MailpitClient()
+        
+        # Wait for 2FA email (it may take a moment)
+        msg = mailpit.wait_for_message(
+            predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
+            timeout=10.0
+        )
+        
+        if msg:
+            # Extract 6-digit code from email body
+            full_msg = mailpit.get_message(msg.id)
+            code_match = re.search(r'\b(\d{6})\b', full_msg.text)
+            
+            if code_match:
+                code = code_match.group(1)
+                print(f"[DEBUG] Extracted 2FA code from email: {code}")
+                
+                # Remember current URL to detect navigation (use live URL)
+                url_before = browser._page.url
+                
+                # Fill the code field and submit the form directly via JavaScript
+                await browser.evaluate(f"""
+                    (function() {{
+                        const input = document.getElementById('code');
+                        const form = document.getElementById('twoFaForm');
+                        if (input && form) {{
+                            input.value = '{code}';
+                            form.submit();
+                        }}
+                    }})();
+                """)
+                
+                # Wait for navigation to complete
+                for _ in range(20):  # Up to 10 seconds
+                    await anyio.sleep(0.5)
+                    # Get live URL directly from page
+                    new_url = browser._page.url
+                    if new_url != url_before and "/2fa" not in new_url:
+                        print(f"[DEBUG] 2FA navigation complete: {new_url}")
+                        break
+                else:
+                    print(f"[WARN] 2FA navigation did not complete, still at: {browser._page.url}")
+                
+                # Clear the used email
+                mailpit.delete_message(msg.id)
+                mailpit.close()
+                return True
+            else:
+                print(f"[WARN] Could not extract code from email: {full_msg.text[:200]}")
+        else:
+            print("[WARN] No 2FA email found in Mailpit")
+        
+        mailpit.close()
+    except Exception as e:
+        print(f"[WARN] Could not handle 2FA via Mailpit: {e}")
+        print("[HINT] Ensure ADMIN_2FA_SKIP=true is set for test mode, or Mailpit is running")
+    
+    return False
+
+
 async def ensure_admin_dashboard(browser: Browser) -> Browser:
     """Log into the admin UI and land on the dashboard, handling the full authentication flow.
     
     This function adapts to the current database state:
+    - If already logged in (on an admin page), skips login
     - If password is 'admin' (initial state), logs in and changes to a generated secure password
-    - If password is already changed, uses the saved password from .env.webhosting
-    - Updates .env.webhosting so subsequent tests use the correct password
+    - If password is already changed, uses the saved password from deployment state
+    - Handles email setup for 2FA on first login
+    - Handles 2FA via Mailpit if ADMIN_2FA_SKIP is not set
+    - Updates deployment state so subsequent tests use the correct password
     """
     import anyio
     from netcup_api_filter.utils import generate_token
     
+    # CRITICAL: Refresh credentials from deployment state file before login
+    # This ensures we have the latest password if another test changed it
+    settings.refresh_credentials()
+    
+    # Check if we're already logged in (on an admin page that isn't login)
+    # Use live URL (not cached)
+    current_url = browser._page.url
+    if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+        # Already logged in - just navigate to dashboard
+        print("[DEBUG] Already logged in, navigating to dashboard")
+        await browser.goto(settings.url("/admin/"))
+        await anyio.sleep(0.3)
+        return browser
+    
     # Try to login with current password first
     await browser.goto(settings.url("/admin/login"))
+    await anyio.sleep(0.5)
+    
+    # Check if we were redirected (already logged in via session)
+    current_url = browser._page.url
+    if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+        print("[DEBUG] Already logged in (redirected from login), on dashboard")
+        return browser
+    
+    # Check if login form exists
+    username_field = await browser.query_selector("#username")
+    if not username_field:
+        # No login form - check if we're on admin page
+        if "/admin" in current_url and "/login" not in current_url and "/2fa" not in current_url:
+            print("[DEBUG] Already on admin page (no login form)")
+            return browser
+    
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", settings.admin_password)
     
     # Submit the login form
     print("[DEBUG] Submitting login form...")
-    print(f"[DEBUG] Current URL: {browser.current_url}")
+    print(f"[DEBUG] Current URL: {browser._page.url}")
     print(f"[DEBUG] Credentials: {settings.admin_username}/{'*' * len(settings.admin_password)}")
     
     await browser.click("button[type='submit']")
     await anyio.sleep(1.0)  # Give time for navigation/redirect
-    print(f"[DEBUG] URL after form submit: {browser.current_url}")
+    print(f"[DEBUG] URL after form submit: {browser._page.url}")
     
     # Check for error messages
     body_text = await browser.text("body")
-    if "Invalid username or password" in body_text or "lockout" in body_text.lower():
-        print(f"[ERROR] Login failed. Page shows: {body_text[:500]}")
-        raise AssertionError(f"Login failed: {body_text[:200]}")
+    has_invalid = "Invalid username or password" in body_text or "Invalid credentials" in body_text
+    print(f"[DEBUG] Body text check: has_invalid={has_invalid}, len={len(body_text)}")
+    if has_invalid:
+        # Only fail if we're still on login page (use live URL)
+        if "/login" in browser._page.url:
+            print(f"[ERROR] Login failed. Page shows: {body_text[:500]}")
+            raise AssertionError(f"Login failed: {body_text[:200]}")
+        else:
+            # Flash message from previous attempt but we're logged in
+            print(f"[DEBUG] Ignoring stale 'Invalid' flash message - already on dashboard")
+    
+    if "lockout" in body_text.lower() or "locked" in body_text.lower():
+        print(f"[ERROR] Account locked out. Page shows: {body_text[:500]}")
+        raise AssertionError(f"Account locked: {body_text[:200]}")
+    
+    # Handle 2FA if we're redirected there
+    await handle_2fa_if_present(browser)
+    
+    # Re-check current page after potential 2FA (use live URL)
+    current_url = browser._page.url
+    print(f"[DEBUG] URL after 2FA check: {current_url}")
     
     # Check if we're on change password page or dashboard
     current_h1 = await browser.text("main h1")
     print(f"[DEBUG] Final h1 after login: '{current_h1}'")
-    if "Change Password" in current_h1:
-        print("[DEBUG] On password change page, generating new secure password...")
+    
+    if "Change Password" in current_h1 or "Initial Setup" in current_h1:
+        print("[DEBUG] On password change/setup page, generating new secure password...")
         # Generate a cryptographically secure random password
         original_password = settings.admin_password
         # generate_token only uses alphanumeric, but password form requires special char
         base_token = generate_token()  # Generates 63-65 char alphanumeric token
-        new_password = base_token[:60] + "!@#$"  # Add special chars to meet requirements
+        new_password = base_token[:60] + "@#$%"  # Add special chars to meet requirements (no ! for shell safety)
         print(f"[DEBUG] Generated new password (length: {len(new_password)})")
         
-        await browser.fill("#current_password", original_password)
+        # Check if email field is present (first-time setup)
+        email_field = await browser.query_selector("#email")
+        if email_field:
+            # Set a test email for 2FA
+            test_email = f"admin-test-{secrets.token_hex(4)}@example.test"
+            print(f"[DEBUG] Setting up email for 2FA: {test_email}")
+            await browser.fill("#email", test_email)
+        
+        # Fill password fields - current_password may not be present for forced change
+        current_password_field = await browser.query_selector("#current_password")
+        if current_password_field:
+            await browser.fill("#current_password", original_password)
+        
         await browser.fill("#new_password", new_password)
         await browser.fill("#confirm_password", new_password)
         
@@ -232,7 +382,7 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         
         # CRITICAL: Persist password change for subsequent test runs
         _update_deployment_state(admin_password=new_password)
-        print(f"[DEBUG] Persisted new password to .env.webhosting")
+        print(f"[DEBUG] Persisted new password to deployment state")
         
         # Update in-memory settings for this test session
         settings._active.admin_password = new_password
@@ -839,7 +989,11 @@ async def admin_save_netcup_config(browser: Browser) -> None:
 
 
 async def admin_email_save_expect_error(browser: Browser) -> None:
-    """Test email config page loads and shows form fields."""
+    """Test email config page loads and shows form fields.
+    
+    NOTE: After testing with fake values, restores Mailpit config
+    so that other tests (like Registration E2E) can send real emails.
+    """
     await open_admin_email_settings(browser)
     
     # Verify key form elements exist by getting their HTML
@@ -856,10 +1010,22 @@ async def admin_email_save_expect_error(browser: Browser) -> None:
     # Submit form and check for success
     await browser.click('button[type="submit"]')
     await browser.wait_for_text("body", "saved", timeout=10.0)
+    
+    # Restore Mailpit config so other tests can send real emails
+    # This is important for Registration E2E tests that rely on Mailpit
+    await open_admin_email_settings(browser)
+    await browser.fill("#smtp_host", "mailpit")
+    await browser.fill("#smtp_port", "1025")
+    await browser.fill("#from_email", "naf@example.com")
+    await browser.click('button[type="submit"]')
+    await browser.wait_for_text("body", "saved", timeout=10.0)
 
 
 async def admin_email_trigger_test_without_address(browser: Browser) -> None:
-    """Test the Send Test Email button triggers async request."""
+    """Test the Send Test Email button triggers async request.
+    
+    NOTE: After testing, restores Mailpit config so other tests work.
+    """
     await open_admin_email_settings(browser)
     
     # Fill required fields first
@@ -876,6 +1042,14 @@ async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     status_html = await browser.html("#emailStatus")
     # After clicking, either spinner or result should appear
     assert "spinner" in status_html.lower() or "badge" in status_html.lower() or "sending" in status_html.lower() or "check" in status_html.lower()
+    
+    # Restore Mailpit config so other tests can send real emails
+    await open_admin_email_settings(browser)
+    await browser.fill("#smtp_host", "mailpit")
+    await browser.fill("#smtp_port", "1025")
+    await browser.fill("#from_email", "naf@example.com")
+    await browser.click('button[type="submit"]')
+    await browser.wait_for_text("body", "saved", timeout=10.0)
 
 
 async def client_portal_manage_all_domains(browser: Browser) -> List[str]:

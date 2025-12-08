@@ -1,7 +1,7 @@
 {# Admin Realm Detail View #}
 {% extends "admin/base.html" %}
 
-{% block title %}Realm: {{ realm.realm_value or '@' }}.{{ realm.domain }} - Admin{% endblock %}
+{% block title %}Realm: {{ realm|format_realm }} - Admin{% endblock %}
 
 {% block content %}
 <!-- Breadcrumb Navigation -->
@@ -9,7 +9,7 @@
     <ol class="breadcrumb">
         <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">Dashboard</a></li>
         <li class="breadcrumb-item"><a href="{{ url_for('admin.realms_list') }}">Realms</a></li>
-        <li class="breadcrumb-item active">{{ realm.realm_value or '@' }}.{{ realm.domain }}</li>
+        <li class="breadcrumb-item active">{{ realm|format_realm }}</li>
     </ol>
 </nav>
 
@@ -17,8 +17,7 @@
 <div class="d-flex justify-content-between align-items-start mb-4">
     <div>
         <h1 class="h3 mb-1">
-            <span class="font-monospace">{{ realm.realm_value or '@' }}</span>
-            <small class="text-muted">.{{ realm.domain }}</small>
+            <code class="text-primary">{{ realm|format_realm }}</code>
         </h1>
         <div class="d-flex gap-2 align-items-center">
             {% if realm.status == 'approved' %}
@@ -28,7 +27,8 @@
             {% elif realm.status == 'rejected' %}
             <span class="badge bg-danger">Rejected</span>
             {% endif %}
-            <span class="badge bg-info">{{ realm.realm_type }}</span>
+            {% set type_info = realm.realm_type|realm_type_badge %}
+            <span class="badge {{ type_info[0] }}">{{ type_info[1] }}</span>
             <span class="text-muted">•</span>
             <span class="text-muted">Created {{ realm.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
         </div>
@@ -83,21 +83,23 @@
                             <td><code>{{ realm.domain }}</code></td>
                         </tr>
                         <tr>
-                            <th class="text-muted">Realm Value</th>
-                            <td><code>{{ realm.realm_value or '@ (root)' }}</code></td>
+                            <th class="text-muted">Scope</th>
+                            <td><code>{{ realm|format_realm }}</code></td>
                         </tr>
                         <tr>
                             <th class="text-muted">Realm Type</th>
                             <td>
-                                {% if realm.realm_type == 'single_hostname' %}
-                                <i class="bi bi-bullseye me-1"></i>Single Hostname
-                                {% elif realm.realm_type == 'full_subdomain' %}
-                                <i class="bi bi-diagram-3 me-1"></i>Full Subdomain
-                                {% elif realm.realm_type == 'root_only' %}
-                                <i class="bi bi-at me-1"></i>Root Only
-                                {% else %}
-                                {{ realm.realm_type }}
-                                {% endif %}
+                                {% set type_info = realm.realm_type|realm_type_badge %}
+                                <span class="badge {{ type_info[0] }}">{{ type_info[1] }}</span>
+                                <small class="text-muted ms-2">
+                                    {% if realm.realm_type == 'host' %}
+                                    Exact match only
+                                    {% elif realm.realm_type == 'subdomain' %}
+                                    Apex + all children
+                                    {% elif realm.realm_type == 'subdomain_only' %}
+                                    Children only, not apex
+                                    {% endif %}
+                                </small>
                             </td>
                         </tr>
                         <tr>

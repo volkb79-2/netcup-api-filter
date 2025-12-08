@@ -14,6 +14,44 @@
     <div class="col-lg-8">
         <form method="POST" action="{{ url_for('admin.config_email') }}" id="emailConfigForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <!-- Sender Settings FIRST -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-envelope-paper me-1"></i>Sender Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="from_email">Sender Email Address <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="email" class="form-control" id="from_email" name="from_email"
+                                   value="{{ config.from_email or '' }}" required
+                                   placeholder="noreply@example.com">
+                            <button type="button" class="btn btn-outline-info" onclick="autoConfigEmail()" title="Try to auto-detect SMTP settings from email domain">
+                                <i class="bi bi-magic me-1"></i>Auto-Config
+                            </button>
+                        </div>
+                        <div class="form-text">Enter your sender email, then click Auto-Config to try detecting SMTP settings</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label" for="from_name">From Name</label>
+                        <input type="text" class="form-control" id="from_name" name="from_name"
+                               value="{{ config.from_name or 'Netcup API Filter' }}"
+                               placeholder="Netcup API Filter">
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label" for="reply_to">Reply-To Email</label>
+                        <input type="email" class="form-control" id="reply_to" name="reply_to"
+                               value="{{ config.reply_to or '' }}"
+                               placeholder="support@example.com">
+                        <div class="form-text">Optional: Where replies should be sent</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- SMTP Server Settings -->
             <div class="card mb-4">
                 <div class="card-header">
                     <i class="bi bi-server me-1"></i>SMTP Server Settings
@@ -29,7 +67,7 @@
                         <div class="col-md-4">
                             <label class="form-label" for="smtp_port">Port <span class="text-danger">*</span></label>
                             <input type="number" class="form-control" id="smtp_port" name="smtp_port"
-                                   value="{{ config.smtp_port or 587 }}" required min="1" max="65535">
+                                   value="{{ config.smtp_port or 465 }}" required min="1" max="65535">
                         </div>
                     </div>
 
@@ -37,18 +75,18 @@
                         <label class="form-label">Security</label>
                         <div class="d-flex gap-4">
                             <div class="form-check">
-                                <input type="radio" class="form-check-input" name="smtp_security" id="sec_tls" 
-                                       value="tls" {% if config.smtp_security == 'tls' or not config.smtp_security %}checked{% endif %}>
-                                <label class="form-check-label" for="sec_tls">STARTTLS (587)</label>
-                            </div>
-                            <div class="form-check">
                                 <input type="radio" class="form-check-input" name="smtp_security" id="sec_ssl" 
-                                       value="ssl" {% if config.smtp_security == 'ssl' %}checked{% endif %}>
+                                       value="ssl" {% if config.smtp_security == 'ssl' or not config.smtp_security %}checked{% endif %} onchange="updatePort()">
                                 <label class="form-check-label" for="sec_ssl">SSL/TLS (465)</label>
                             </div>
                             <div class="form-check">
+                                <input type="radio" class="form-check-input" name="smtp_security" id="sec_tls" 
+                                       value="tls" {% if config.smtp_security == 'tls' %}checked{% endif %} onchange="updatePort()">
+                                <label class="form-check-label" for="sec_tls">STARTTLS (587)</label>
+                            </div>
+                            <div class="form-check">
                                 <input type="radio" class="form-check-input" name="smtp_security" id="sec_none" 
-                                       value="none" {% if config.smtp_security == 'none' %}checked{% endif %}>
+                                       value="none" {% if config.smtp_security == 'none' %}checked{% endif %} onchange="updatePort()">
                                 <label class="form-check-label" for="sec_none">None (25)</label>
                             </div>
                         </div>
@@ -65,48 +103,19 @@
                         <label class="form-label" for="smtp_username">Username</label>
                         <input type="text" class="form-control" id="smtp_username" name="smtp_username"
                                value="{{ config.smtp_username or '' }}"
-                               placeholder="e.g., noreply@example.com">
+                               placeholder="Usually your email address">
                     </div>
                     
-                    <div class="mb-3">
+                    <div class="mb-0">
                         <label class="form-label" for="smtp_password">Password</label>
                         <div class="input-group">
                             <input type="password" class="form-control" id="smtp_password" name="smtp_password"
                                    value="{{ config.smtp_password or '' }}"
-                                   placeholder="SMTP password">
+                                   placeholder="SMTP password or app password">
                             <button type="button" class="btn btn-outline-secondary" onclick="togglePassword('smtp_password')">
                                 <i class="bi bi-eye"></i>
                             </button>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-envelope-paper me-1"></i>Sender Settings
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="form-label" for="from_email">From Email <span class="text-danger">*</span></label>
-                        <input type="email" class="form-control" id="from_email" name="from_email"
-                               value="{{ config.from_email or '' }}" required
-                               placeholder="noreply@example.com">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label" for="from_name">From Name</label>
-                        <input type="text" class="form-control" id="from_name" name="from_name"
-                               value="{{ config.from_name or 'Netcup API Filter' }}"
-                               placeholder="Netcup API Filter">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="reply_to">Reply-To Email</label>
-                        <input type="email" class="form-control" id="reply_to" name="reply_to"
-                               value="{{ config.reply_to or '' }}"
-                               placeholder="support@example.com">
-                        <div class="form-text">Optional: Where replies should be sent</div>
                     </div>
                 </div>
             </div>
@@ -150,10 +159,7 @@
                         <div class="form-text">Where to send admin notifications</div>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between">
-                    <button type="button" class="btn btn-outline-info" onclick="sendTestEmail()">
-                        <i class="bi bi-send me-1"></i>Send Test Email
-                    </button>
+                <div class="card-footer d-flex justify-content-end">
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-save me-1"></i>Save Configuration
                     </button>
@@ -163,7 +169,7 @@
     </div>
 
     <div class="col-lg-4">
-        <!-- Status Card -->
+        <!-- Status Card with Test Button -->
         <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-activity me-1"></i>Email Status
@@ -196,26 +202,10 @@
                     {% endif %}
                 </div>
             </div>
-        </div>
-
-        <!-- Stats Card -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="bi bi-bar-chart me-1"></i>Email Statistics
-            </div>
-            <div class="card-body">
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">Sent Today</span>
-                    <span class="fw-bold">{{ stats.sent_today or 0 }}</span>
-                </div>
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">Sent This Week</span>
-                    <span class="fw-bold">{{ stats.sent_week or 0 }}</span>
-                </div>
-                <div class="d-flex justify-content-between">
-                    <span class="text-muted">Failed (24h)</span>
-                    <span class="fw-bold text-danger">{{ stats.failed or 0 }}</span>
-                </div>
+            <div class="card-footer">
+                <button type="button" class="btn btn-primary w-100" onclick="sendTestEmail()">
+                    <i class="bi bi-send me-1"></i>Send Test Email
+                </button>
             </div>
         </div>
 
@@ -228,22 +218,22 @@
                 <button type="button" class="list-group-item list-group-item-action" 
                         onclick="applyProvider('gmail')">
                     <strong>Gmail / Google Workspace</strong>
-                    <small class="d-block text-muted">smtp.gmail.com:587 (TLS)</small>
+                    <small class="d-block text-muted">smtp.gmail.com:465 (SSL)</small>
                 </button>
                 <button type="button" class="list-group-item list-group-item-action" 
                         onclick="applyProvider('outlook')">
                     <strong>Outlook / Microsoft 365</strong>
-                    <small class="d-block text-muted">smtp.office365.com:587 (TLS)</small>
+                    <small class="d-block text-muted">smtp.office365.com:587 (STARTTLS)</small>
                 </button>
                 <button type="button" class="list-group-item list-group-item-action" 
                         onclick="applyProvider('netcup')">
                     <strong>Netcup Webhosting</strong>
-                    <small class="d-block text-muted">mail.your-domain.com:587 (TLS)</small>
+                    <small class="d-block text-muted">mail.your-domain.com:465 (SSL)</small>
                 </button>
                 <button type="button" class="list-group-item list-group-item-action" 
                         onclick="applyProvider('sendgrid')">
                     <strong>SendGrid</strong>
-                    <small class="d-block text-muted">smtp.sendgrid.net:587 (TLS)</small>
+                    <small class="d-block text-muted">smtp.sendgrid.net:465 (SSL)</small>
                 </button>
             </div>
         </div>
@@ -265,12 +255,22 @@ function togglePassword(inputId) {
     }
 }
 
+function updatePort() {
+    const ssl = document.getElementById('sec_ssl').checked;
+    const tls = document.getElementById('sec_tls').checked;
+    const portInput = document.getElementById('smtp_port');
+    
+    if (ssl) portInput.value = 465;
+    else if (tls) portInput.value = 587;
+    else portInput.value = 25;
+}
+
 function applyProvider(provider) {
     const providers = {
-        gmail: { host: 'smtp.gmail.com', port: 587, security: 'tls' },
+        gmail: { host: 'smtp.gmail.com', port: 465, security: 'ssl' },
         outlook: { host: 'smtp.office365.com', port: 587, security: 'tls' },
-        netcup: { host: 'mail.your-domain.com', port: 587, security: 'tls' },
-        sendgrid: { host: 'smtp.sendgrid.net', port: 587, security: 'tls' }
+        netcup: { host: 'mail.your-domain.com', port: 465, security: 'ssl' },
+        sendgrid: { host: 'smtp.sendgrid.net', port: 465, security: 'ssl' }
     };
     
     const p = providers[provider];
@@ -279,6 +279,71 @@ function applyProvider(provider) {
     document.getElementById('smtp_host').value = p.host;
     document.getElementById('smtp_port').value = p.port;
     document.getElementById('sec_' + p.security).checked = true;
+}
+
+function autoConfigEmail() {
+    const email = document.getElementById('from_email').value;
+    if (!email || !email.includes('@')) {
+        alert('Please enter a valid email address first');
+        return;
+    }
+    
+    const domain = email.split('@')[1];
+    const statusDiv = document.getElementById('emailStatus');
+    
+    statusDiv.innerHTML = `
+        <div class="text-center py-3">
+            <div class="spinner-border spinner-border-sm text-primary mb-2" role="status">
+                <span class="visually-hidden">Detecting...</span>
+            </div>
+            <div class="small">Looking up ${domain}...</div>
+        </div>
+    `;
+    
+    // Common domain mappings
+    const knownProviders = {
+        'gmail.com': { host: 'smtp.gmail.com', port: 465, security: 'ssl' },
+        'googlemail.com': { host: 'smtp.gmail.com', port: 465, security: 'ssl' },
+        'outlook.com': { host: 'smtp.office365.com', port: 587, security: 'tls' },
+        'hotmail.com': { host: 'smtp.office365.com', port: 587, security: 'tls' },
+        'live.com': { host: 'smtp.office365.com', port: 587, security: 'tls' },
+        'yahoo.com': { host: 'smtp.mail.yahoo.com', port: 465, security: 'ssl' },
+        'icloud.com': { host: 'smtp.mail.me.com', port: 587, security: 'tls' }
+    };
+    
+    // Check known providers first
+    if (knownProviders[domain]) {
+        const p = knownProviders[domain];
+        document.getElementById('smtp_host').value = p.host;
+        document.getElementById('smtp_port').value = p.port;
+        document.getElementById('sec_' + p.security).checked = true;
+        document.getElementById('smtp_username').value = email;
+        
+        statusDiv.innerHTML = `
+            <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-info me-2"><i class="bi bi-info-circle"></i></span>
+                <span>Auto-detected</span>
+            </div>
+            <small class="text-muted">Known provider: ${domain}</small>
+        `;
+        return;
+    }
+    
+    // Default fallback - try common patterns
+    setTimeout(() => {
+        document.getElementById('smtp_host').value = 'mail.' + domain;
+        document.getElementById('smtp_port').value = 465;
+        document.getElementById('sec_ssl').checked = true;
+        document.getElementById('smtp_username').value = email;
+        
+        statusDiv.innerHTML = `
+            <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-warning text-dark me-2"><i class="bi bi-question-circle"></i></span>
+                <span>Guessed Settings</span>
+            </div>
+            <small class="text-muted">Using mail.${domain} - please verify</small>
+        `;
+    }, 500);
 }
 
 function sendTestEmail() {

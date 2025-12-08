@@ -247,9 +247,14 @@ The `playwright-exec.sh` script automatically passes all relevant environment va
 ```bash
 export UI_BASE_URL="https://naf.vxxu.de"
 export UI_ADMIN_USERNAME="admin"
-export UI_ADMIN_PASSWORD="TestAdmin123!"
+# Password is read from deployment_state_{target}.json automatically
+# Only override if explicitly needed:
+# export UI_ADMIN_PASSWORD="override-password-here"
 ./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 ```
+
+**CRITICAL**: Never hardcode passwords in commands. The test framework reads credentials
+from `deployment_state_{target}.json` automatically via `settings.refresh_credentials()`.
 
 ## Automatic Rebuild Detection
 

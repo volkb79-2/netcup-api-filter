@@ -6,12 +6,13 @@ This module defines the three-tier permission hierarchy:
 - AccountRealm: What domains/subdomains an account can access
 - APIToken: Machine credentials scoped to a realm
 
-Token Format: naf_<username>_<random64>
-  - username: 8-32 chars, lowercase alphanumeric + hyphen
+Token Format: naf_<user_alias>_<random64>
+  - user_alias: 16-char random identifier (NOT username for security)
   - random: 64 chars, [a-zA-Z0-9]
-  - Total: 77-101 characters
+  - Total: 85 characters
   - Entropy: ~381 bits
 
+Security: user_alias protects username from exposure in API tokens.
 Authentication: Bearer token only for API, bcrypt hashed storage
 """
 import json
@@ -32,17 +33,26 @@ db = SQLAlchemy()
 
 # Token format constants
 TOKEN_PREFIX = "naf_"
-USERNAME_MIN_LENGTH = 8
-USERNAME_MAX_LENGTH = 32
+USER_ALIAS_LENGTH = 16  # Random user identifier in tokens
 RANDOM_PART_LENGTH = 64
 TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-# Username validation pattern
-USERNAME_PATTERN = re.compile(r'^[a-z][a-z0-9-]{6,30}[a-z0-9]$')
+# Username validation (for UI login, NOT for tokens)
+# Pattern: ^[a-zA-Z][a-zA-Z0-9-._]{7,31}$
+# - 8-32 characters total
+# - Must start with a letter (upper or lower)
+# - Can contain letters, numbers, hyphens, dots, underscores
+# - Case-insensitive for uniqueness checks
+USERNAME_MIN_LENGTH = 8
+USERNAME_MAX_LENGTH = 32
+USERNAME_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9\-._]{7,31}$')
 
-# Token parsing pattern
+# User alias pattern (for tokens)
+USER_ALIAS_PATTERN = re.compile(rf'^[a-zA-Z0-9]{{{USER_ALIAS_LENGTH}}}$')
+
+# Token parsing pattern: naf_<user_alias>_<random64>
 TOKEN_PATTERN = re.compile(
-    rf'^{TOKEN_PREFIX}([a-z][a-z0-9-]{{6,30}}[a-z0-9])_([a-zA-Z0-9]{{{RANDOM_PART_LENGTH}}})$'
+    rf'^{TOKEN_PREFIX}([a-zA-Z0-9]{{{USER_ALIAS_LENGTH}}})_([a-zA-Z0-9]{{{RANDOM_PART_LENGTH}}})$'
 )
 
 # Reserved usernames (cannot be registered)
@@ -58,10 +68,12 @@ def validate_username(username: str) -> tuple[bool, str | None]:
     
     Rules:
     - 8-32 characters
-    - Lowercase letters, numbers, hyphens
-    - Must start with letter
-    - Cannot end with hyphen
+    - Must start with a letter (upper or lower)
+    - Can contain letters, numbers, hyphens, dots, underscores
+    - Case-insensitive for uniqueness (stored as-entered, compared lowercase)
     - Cannot be reserved
+    
+    Pattern: ^[a-zA-Z][a-zA-Z0-9-._]{7,31}$
     
     Returns:
         (is_valid, error_message)
@@ -79,29 +91,133 @@ def validate_username(username: str) -> tuple[bool, str | None]:
         return False, "This username is reserved"
     
     if not USERNAME_PATTERN.match(username):
-        return False, "Username must start with a letter, contain only lowercase letters, numbers, and hyphens, and not end with a hyphen"
+        return False, "Username must start with a letter and contain only letters, numbers, hyphens, dots, or underscores"
     
     return True, None
 
 
-def generate_token(username: str) -> str:
+# Password validation
+# Pattern: printable ASCII (32-126), min 20 chars, min 100 bits entropy
+PASSWORD_MIN_LENGTH = 20
+PASSWORD_MIN_ENTROPY = 100  # bits
+
+# Safe printable ASCII: excludes characters that cause shell escaping issues
+# Excludes: ! (shell history), ` (command substitution), ' " (quoting), \ (escape)
+PASSWORD_ALLOWED_CHARS = set(
+    'abcdefghijklmnopqrstuvwxyz'
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    '0123456789'
+    '-=_+;:,.|/?@#$%^&*()'  # Safe special chars
+    ' '  # Space allowed
+    '[]{}~'  # More safe chars
+    '<>'  # Comparison chars
+)
+
+
+def calculate_entropy(password: str) -> float:
     """
-    Generate a new API token for the given username.
+    Calculate password entropy in bits.
     
-    Format: naf_<username>_<random64>
+    Uses actual character class analysis:
+    - lowercase (26), uppercase (26), digits (10), special (~30)
+    - Entropy = log2(charset_size^length)
+    
+    Returns:
+        Estimated entropy in bits
+    """
+    import math
+    
+    if not password:
+        return 0.0
+    
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(c in '-=_+;:,.|/?@#$%^&*()[]{}~<> ' for c in password)
+    
+    charset_size = 0
+    if has_lower:
+        charset_size += 26
+    if has_upper:
+        charset_size += 26
+    if has_digit:
+        charset_size += 10
+    if has_special:
+        charset_size += 30  # Approximate for allowed specials
+    
+    if charset_size == 0:
+        return 0.0
+    
+    return len(password) * math.log2(charset_size)
+
+
+def validate_password(password: str) -> tuple[bool, str | None]:
+    """
+    Validate password format and entropy.
+    
+    Rules:
+    - Minimum 20 characters
+    - Minimum 100 bits of entropy
+    - Only safe printable ASCII (no !, `, ', ", \\)
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    if not password:
+        return False, "Password is required"
+    
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return False, f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
+    
+    # Check for disallowed characters
+    disallowed = set(password) - PASSWORD_ALLOWED_CHARS
+    if disallowed:
+        disallowed_str = ''.join(sorted(disallowed))
+        return False, f"Password contains disallowed characters: {disallowed_str}"
+    
+    # Check entropy
+    entropy = calculate_entropy(password)
+    if entropy < PASSWORD_MIN_ENTROPY:
+        return False, f"Password entropy too low ({entropy:.0f} bits). Need at least {PASSWORD_MIN_ENTROPY} bits. Use a longer password with mixed character types."
+    
+    return True, None
+
+
+def generate_user_alias() -> str:
+    """
+    Generate a random user alias for token attribution.
+    
+    Format: 16 random alphanumeric characters
+    Used in tokens instead of username for security.
+    
+    Returns:
+        Random 16-char string like "Ab3xYz9KmNpQrStU"
+    """
+    return ''.join(secrets.choice(TOKEN_ALPHABET) for _ in range(USER_ALIAS_LENGTH))
+
+
+def generate_token(user_alias: str) -> str:
+    """
+    Generate a new API token for the given user alias.
+    
+    Format: naf_<user_alias>_<random64>
+    
+    Args:
+        user_alias: 16-char user identifier (NOT username)
     
     Returns:
         Full token string (store hash, show once to user)
     """
     random_part = ''.join(secrets.choice(TOKEN_ALPHABET) for _ in range(RANDOM_PART_LENGTH))
-    return f"{TOKEN_PREFIX}{username}_{random_part}"
+    return f"{TOKEN_PREFIX}{user_alias}_{random_part}"
 
 
 def parse_token(token: str) -> tuple[str, str] | None:
     """
-    Parse token into (username, random_part) or None if invalid format.
+    Parse token into (user_alias, random_part) or None if invalid format.
     
     This allows routing/logging before database lookup.
+    Note: Returns user_alias, NOT username (for security).
     """
     if not token:
         return None
@@ -142,11 +258,15 @@ class Account(db.Model):
     
     Each account can have multiple realms and tokens.
     Accounts require email verification and admin approval.
+    
+    Security: user_alias is used in tokens instead of username to avoid
+    exposing login credentials in API tokens.
     """
     __tablename__ = 'accounts'
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    user_alias = db.Column(db.String(16), unique=True, nullable=False, index=True)  # For tokens, NOT username
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     email_verified = db.Column(db.Integer, default=0)
     password_hash = db.Column(db.String(255), nullable=False)
@@ -177,6 +297,10 @@ class Account(db.Model):
     approved_by_id = db.Column(db.Integer, db.ForeignKey('accounts.id'))
     approved_at = db.Column(db.DateTime)
     
+    # Password reset (temporary storage for reset flow)
+    password_reset_code = db.Column(db.String(6))  # 6-digit reset code
+    password_reset_expires = db.Column(db.DateTime)  # Code expiration time
+    
     # Timestamps
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -204,6 +328,44 @@ class Account(db.Model):
             return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
         except (ValueError, TypeError):
             return False
+    
+    def regenerate_user_alias(self) -> tuple[str, int]:
+        """
+        Regenerate user_alias, invalidating ALL tokens.
+        
+        This is a security operation that should:
+        1. Generate a new unique alias
+        2. Delete all tokens (they become invalid anyway)
+        3. Log the action
+        
+        Returns:
+            (new_alias, tokens_deleted_count)
+        """
+        old_alias = self.user_alias
+        tokens_deleted = 0
+        
+        # Delete all tokens for this account (cascade through realms)
+        for realm in self.realms:
+            tokens_deleted += len(realm.tokens)
+            for token in realm.tokens:
+                db.session.delete(token)
+        
+        # Generate new unique alias
+        for _ in range(10):  # Max 10 attempts
+            new_alias = generate_user_alias()
+            existing = Account.query.filter_by(user_alias=new_alias).first()
+            if not existing:
+                self.user_alias = new_alias
+                break
+        else:
+            raise RuntimeError("Failed to generate unique user_alias after 10 attempts")
+        
+        logger.info(
+            f"User alias regenerated for {self.username}: "
+            f"{old_alias[:4]}... → {new_alias[:4]}..., {tokens_deleted} tokens invalidated"
+        )
+        
+        return new_alias, tokens_deleted
     
     def __repr__(self):
         return f'<Account {self.username}>'
@@ -477,7 +639,12 @@ class ActivityLog(db.Model):
     user_agent = db.Column(db.Text)
     
     status = db.Column(db.String(20), nullable=False, index=True)  # 'success', 'denied', 'error'
-    status_reason = db.Column(db.Text)  # "IP not whitelisted", "Token expired"
+    error_code = db.Column(db.String(30), index=True)  # Structured error code for analytics
+    status_reason = db.Column(db.Text)  # Human-readable description
+    
+    # Security classification
+    severity = db.Column(db.String(10))  # 'low', 'medium', 'high', 'critical'
+    is_attack = db.Column(db.Integer, default=0)  # 1 if detected as attack pattern
     
     request_data = db.Column(db.Text)  # JSON: sanitized request details
     response_summary = db.Column(db.Text)  # JSON: result summary
@@ -530,6 +697,7 @@ class RegistrationRequest(db.Model):
     Pending registration (before email verification).
     
     Records are deleted after successful verification (account is created).
+    Includes realm_requests for unified registration + realm request workflow.
     """
     __tablename__ = 'registration_requests'
     
@@ -541,6 +709,12 @@ class RegistrationRequest(db.Model):
     verification_code = db.Column(db.String(6), nullable=False)
     verification_expires_at = db.Column(db.DateTime, nullable=False)
     verification_attempts = db.Column(db.Integer, default=0)
+    
+    # Realm requests submitted during registration (JSON array)
+    # Format: [{"realm_type": "host", "realm_value": "vpn", "domain": "example.com",
+    #           "record_types": ["A", "AAAA"], "operations": ["read", "update"],
+    #           "purpose": "Home router DDNS"}, ...]
+    realm_requests = db.Column(db.Text)  # JSON array of realm requests
     
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
@@ -559,6 +733,32 @@ class RegistrationRequest(db.Model):
     def is_locked(self) -> bool:
         """Check if too many verification attempts."""
         return self.verification_attempts >= 5
+    
+    def get_realm_requests(self) -> list[dict[str, Any]]:
+        """Parse realm_requests from JSON."""
+        try:
+            return json.loads(self.realm_requests) if self.realm_requests else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_realm_requests(self, requests: list[dict[str, Any]]):
+        """Set realm_requests as JSON."""
+        self.realm_requests = json.dumps(requests) if requests else None
+    
+    def add_realm_request(self, realm_type: str, domain: str, realm_value: str,
+                          record_types: list[str], operations: list[str],
+                          purpose: str = ''):
+        """Add a realm request to the list."""
+        requests = self.get_realm_requests()
+        requests.append({
+            'realm_type': realm_type,
+            'domain': domain,
+            'realm_value': realm_value,
+            'record_types': record_types,
+            'operations': operations,
+            'purpose': purpose
+        })
+        self.set_realm_requests(requests)
     
     def __repr__(self):
         return f'<RegistrationRequest {self.username}>'
@@ -625,3 +825,60 @@ class Settings(db.Model):
 
 # Compatibility aliases for migration
 SystemConfig = Settings
+
+
+class ResetToken(db.Model):
+    """
+    Database-backed storage for password reset, invite, and verification tokens.
+    
+    Replaces in-memory _reset_tokens dict to support multi-worker deployments.
+    Tokens are hashed (SHA256) for security - only the hash is stored.
+    
+    Token Types:
+    - 'reset': Password reset tokens
+    - 'invite': Account invite tokens (admin-created accounts)
+    - 'verify': Email verification tokens for registration
+    """
+    __tablename__ = 'reset_tokens'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)  # SHA256 hash
+    target_id = db.Column(db.Integer, nullable=False, index=True)  # Account.id or RegistrationRequest.id
+    target_type = db.Column(db.String(20), nullable=False)  # 'account' or 'registration'
+    token_type = db.Column(db.String(20), nullable=False)  # 'reset', 'invite', 'verify'
+    
+    expires_at = db.Column(db.DateTime, nullable=False)
+    source_ip = db.Column(db.String(45))  # IP that requested the token (for binding)
+    
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    used_at = db.Column(db.DateTime)  # Set when token is consumed
+    
+    __table_args__ = (
+        CheckConstraint("token_type IN ('reset', 'invite', 'verify')", name='check_reset_token_type'),
+        CheckConstraint("target_type IN ('account', 'registration')", name='check_reset_target_type'),
+    )
+    
+    def is_expired(self) -> bool:
+        """Check if token has expired."""
+        return datetime.utcnow() > self.expires_at
+    
+    def is_used(self) -> bool:
+        """Check if token has been used."""
+        return self.used_at is not None
+    
+    def mark_used(self):
+        """Mark token as used."""
+        self.used_at = datetime.utcnow()
+    
+    @classmethod
+    def cleanup_expired(cls):
+        """Delete expired tokens (housekeeping)."""
+        expired = cls.query.filter(cls.expires_at < datetime.utcnow()).all()
+        for token in expired:
+            db.session.delete(token)
+        if expired:
+            db.session.commit()
+            logger.info(f"Cleaned up {len(expired)} expired reset tokens")
+    
+    def __repr__(self):
+        return f'<ResetToken {self.token_type} target={self.target_type}:{self.target_id}>'

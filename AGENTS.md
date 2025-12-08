@@ -215,10 +215,15 @@ On first login after deployment, you must change the admin password. Tests handl
 
 See `ENV_DEFAULTS.md` for complete documentation on the environment defaults system.
 
-**Testing workflow**: After deployment, tests must go through the initial password change
-flow (default credentials from `.env.defaults` → TestAdmin123!). The password change is persisted to `.env.webhosting`
-(stored in Playwright's writable `/screenshots/` mount) so subsequent test runs automatically
-use the new password. Database resets are only needed when you want to start fresh.
+**Testing workflow**: After deployment, tests go through the initial password change
+flow. The test framework generates a cryptographically random password (using `netcup_api_filter.utils.generate_token()`)
+and persists it to `deployment_state_{target}.json`. No hardcoded passwords are used.
+
+**CRITICAL**: Never hardcode passwords like `TestAdmin123!` in code, tests, or documentation.
+All passwords MUST come from:
+1. `deployment_state_{target}.json` (after initial password change)
+2. Environment variable `UI_ADMIN_PASSWORD` (for explicit overrides)
+3. Fresh deployment default: `admin` (from `.env.defaults`)
 
 ## Deployment State Files (CRITICAL)
 
@@ -263,36 +268,15 @@ This is a proactive approach to finding issues - test based on user workflows, n
 
 ### Testing Layers
 
-| Layer | Tool | What It Tests | Limitations |
-|-------|------|---------------|-------------|
-| **Static Audit** | `admin_ux_audit.py` (httpx) | Element presence, form fields, 500 errors | No JS execution |
-| **Interactive Tests** | `test_ui_interactive.py` (Playwright) | JS behavior, theme switching, CSS validation | Slower, needs browser |
-| **User Journeys** | `test_user_journeys.py` (Playwright) | End-to-end workflows, navigation, error handling | Slower, needs browser |
+| Layer | Tool | What It Tests | Notes |
+|-------|------|---------------|-------|
+| **Playwright Tests** | `ui_tests/tests/*.py` | Complete coverage: JS, forms, CSS, navigation, workflows | Primary testing method |
+| **Journey Tests** | `test_journey_master.py` | End-to-end multi-step workflows | Contract-driven |
 | **Visual Regression** | Screenshot comparison | Layout changes, CSS drift | Requires baselines |
 
-### Layer 1: Quick Static Audit (httpx)
+**Note:** The httpx-based `admin_ux_audit.py` has been **deprecated**. It had limitations with CSRF token handling, JavaScript execution, and state management that caused test failures. All page validation is now done via Playwright tests which properly handle browser sessions, CSRF, and interactive elements.
 
-```bash
-# Run after starting local deployment
-python ui_tests/admin_ux_audit.py --base-url http://localhost:5100
-```
-
-The audit script (`ui_tests/admin_ux_audit.py`) systematically:
-- Tests all admin pages against `docs/UI_REQUIREMENTS.md`
-- Verifies forms, inputs, buttons, and navigation links
-- Checks for 500 errors, missing elements, and broken workflows
-- Reports pass/fail with actionable details
-
-**Limitations:** Uses httpx (no JavaScript execution). Cannot verify:
-- Theme/density switcher behavior
-- Password strength calculation
-- Dropdown menus opening
-- Modal dialogs
-- Any client-side validation
-
-**Exit codes:** 0 = all checks passed, N = number of issues found.
-
-### Layer 2: Playwright Functional Tests
+### Running Playwright Tests
 
 ```bash
 # Start Playwright container
@@ -408,13 +392,12 @@ Verifies complete user workflows end-to-end:
 7. Before marking a UI-related task as complete
 
 **Standard Workflow:**
-1. Deploy locally: `./deploy.sh local --skip-tests`
-2. Run static audit: `python ui_tests/admin_ux_audit.py`
-3. Run interactive tests: `docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" playwright pytest ui_tests/tests/test_ui_interactive.py -v --timeout=180`
-4. Run user journey tests: `docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" playwright pytest ui_tests/tests/test_user_journeys.py -v --timeout=180`
-5. Fix any issues found
-6. Re-run until all pass
-7. Run full test suite: `./run-local-tests.sh`
+1. Deploy locally: `./run-local-tests.sh --skip-build` (if deployment exists)
+2. Run interactive tests: `docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" playwright pytest ui_tests/tests/test_ui_interactive.py -v --timeout=180`
+3. Run user journey tests: `docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" playwright pytest ui_tests/tests/test_user_journeys.py -v --timeout=180`
+4. Fix any issues found
+5. Re-run until all pass
+6. Run full test suite: `./run-local-tests.sh`
 
 ### Interactive Testing (for complex issues)
 

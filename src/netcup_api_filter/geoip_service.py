@@ -361,6 +361,45 @@ def get_cache_stats() -> Dict[str, Any]:
     }
 
 
+def get_geoip_status() -> Dict[str, Any]:
+    """Get GeoIP service status for system info display.
+    
+    Returns dict with:
+        - available: bool - whether GeoIP lookups will work
+        - account_id: str - configured account ID (masked)
+        - api_url: str - API endpoint being used
+        - cache_stats: dict - cache statistics
+        - has_geoip2: bool - whether geoip2 library is available
+        - error: str - error message if not available
+    """
+    account_id = os.environ.get("MAXMIND_ACCOUNT_ID", "")
+    license_key = os.environ.get("MAXMIND_LICENSE_KEY", "")
+    api_url = os.environ.get("MAXMIND_API_URL", "https://geoip.maxmind.com")
+    
+    # Check if geoip2 library is available
+    has_geoip2 = False
+    try:
+        import geoip2.webservice  # noqa: F401
+        has_geoip2 = True
+    except ImportError:
+        pass
+    
+    status = {
+        "available": bool(account_id and license_key),
+        "account_id": account_id[:4] + "..." if len(account_id) > 4 else ("(not set)" if not account_id else account_id),
+        "api_url": api_url,
+        "cache_stats": get_cache_stats(),
+        "has_geoip2": has_geoip2,
+    }
+    
+    if not account_id:
+        status["error"] = "MAXMIND_ACCOUNT_ID not configured"
+    elif not license_key:
+        status["error"] = "MAXMIND_LICENSE_KEY not configured"
+    
+    return status
+
+
 # Convenience function for templates
 def geoip_location(ip: str) -> str:
     """Get location string for an IP (for use in templates).

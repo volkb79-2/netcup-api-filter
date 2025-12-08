@@ -30,6 +30,8 @@ from .models import (
     ActivityLog,
     RegistrationRequest,
     db,
+    generate_user_alias,
+    validate_password,
     validate_username,
 )
 
@@ -82,9 +84,34 @@ def generate_code(length: int = 6) -> str:
     return ''.join(random.choices(string.digits, k=length))
 
 
+def _generate_unique_user_alias() -> str:
+    """
+    Generate a unique user_alias for a new account.
+    
+    The user_alias is used in tokens instead of username for security.
+    Retries up to 10 times to find a unique value.
+    
+    Returns:
+        A unique 16-char alphanumeric string
+        
+    Raises:
+        RuntimeError: If unable to generate unique alias after 10 attempts
+    """
+    for _ in range(10):
+        alias = generate_user_alias()
+        if not Account.query.filter_by(user_alias=alias).first():
+            return alias
+    raise RuntimeError("Failed to generate unique user_alias after 10 attempts")
+
+
 def generate_secure_password(length: int = 16) -> str:
-    """Generate a secure random password."""
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    """Generate a secure random password.
+    
+    Uses safe printable ASCII characters that don't cause shell escaping issues.
+    Excludes: ! (shell history), ` (command substitution), ' " (quoting)
+    """
+    # Safe special chars: -=_+;:,.|/?@#$%^&*
+    alphabet = string.ascii_letters + string.digits + "-=_+;:,.|/?@#$%^&*"
     return ''.join(random.choices(alphabet, k=length))
 
 
@@ -149,11 +176,12 @@ def register_account(
             field='email'
         )
     
-    # Validate password (minimum requirements)
-    if len(password) < 12:
+    # Validate password (format and entropy)
+    is_valid, error_msg = validate_password(password)
+    if not is_valid:
         return RegistrationResult(
             success=False,
-            error="Password must be at least 12 characters",
+            error=error_msg,
             field='password'
         )
     
@@ -187,7 +215,9 @@ def verify_registration(request_id: int, code: str) -> RegistrationResult:
     """
     Verify email with verification code.
     
-    On success, creates the Account (still pending admin approval).
+    Marks registration as verified but does NOT create account yet.
+    Account creation happens in finalize_registration_with_realms()
+    after user optionally adds realm requests.
     """
     reg_request = RegistrationRequest.query.get(request_id)
     if not reg_request:
@@ -213,9 +243,35 @@ def verify_registration(request_id: int, code: str) -> RegistrationResult:
             error=f"Invalid verification code. {attempts_left} attempts remaining."
         )
     
+    # Email verified - extend expiry for realm request step
+    reg_request.verification_expires_at = datetime.utcnow() + timedelta(hours=24)
+    db.session.commit()
+    
+    logger.info(f"Email verified for registration: {reg_request.username}")
+    
+    return RegistrationResult(success=True, request_id=request_id)
+
+
+def finalize_registration_with_realms(request_id: int) -> RegistrationResult:
+    """
+    Create account and pending realm requests from registration.
+    
+    Called after email verification and optional realm request step.
+    Creates account (pending approval) and any realm requests as pending.
+    """
+    from .models import AccountRealm
+    
+    reg_request = RegistrationRequest.query.get(request_id)
+    if not reg_request:
+        return RegistrationResult(success=False, error="Registration not found")
+    
+    # Generate unique user_alias for token attribution
+    user_alias = _generate_unique_user_alias()
+    
     # Create account (pending approval)
     account = Account(
         username=reg_request.username,
+        user_alias=user_alias,
         email=reg_request.email,
         password_hash=reg_request.password_hash,
         email_verified=1,
@@ -224,12 +280,32 @@ def verify_registration(request_id: int, code: str) -> RegistrationResult:
     )
     
     db.session.add(account)
+    db.session.flush()  # Get account.id before creating realms
+    
+    # Create pending realm requests
+    realm_requests = reg_request.get_realm_requests()
+    for realm_data in realm_requests:
+        realm = AccountRealm(
+            account_id=account.id,
+            domain=realm_data.get('domain', ''),
+            realm_type=realm_data.get('realm_type', 'host'),
+            realm_value=realm_data.get('realm_value', ''),
+            status='pending',
+            requested_at=datetime.utcnow()
+        )
+        realm.set_allowed_record_types(realm_data.get('record_types', ['A', 'AAAA']))
+        realm.set_allowed_operations(realm_data.get('operations', ['read', 'update']))
+        db.session.add(realm)
+    
+    # Delete registration request
     db.session.delete(reg_request)
     db.session.commit()
     
-    logger.info(f"Account created (pending approval): {account.username}")
+    logger.info(f"Account created (pending approval): {account.username} with {len(realm_requests)} realm requests")
     
-    # TODO: Notify admin of pending approval
+    # Notify admin of pending approval (include realm count)
+    from .notification_service import notify_admin_pending_account
+    notify_admin_pending_account(account.username, account.email, len(realm_requests))
     
     return RegistrationResult(success=True)
 
@@ -364,10 +440,14 @@ def send_2fa_code(account_id: int, method: str, source_ip: str) -> tuple[bool, s
     session[SESSION_KEY_2FA_METHOD] = method
     
     if method == 'email':
-        # TODO: Send email with code
-        # send_2fa_email(account.email, code)
-        logger.info(f"2FA code sent via email to {account.username}")
-        return True, None
+        # Send 2FA code via email
+        from .notification_service import send_2fa_email
+        if send_2fa_email(account.email, account.username, code):
+            logger.info(f"2FA code sent via email to {account.username}")
+            return True, None
+        else:
+            logger.error(f"Failed to send 2FA email to {account.username}")
+            return False, "Failed to send verification email"
     
     elif method == 'totp':
         # TOTP doesn't need code sent - user generates from authenticator
@@ -552,9 +632,20 @@ def require_account_auth(f):
 # Password Management
 # ============================================================================
 
-def change_password(account: Account, current_password: str, new_password: str) -> tuple[bool, str | None]:
+def change_password(
+    account: Account,
+    current_password: str,
+    new_password: str,
+    source_ip: str | None = None
+) -> tuple[bool, str | None]:
     """
     Change account password.
+    
+    Args:
+        account: Account to change password for
+        current_password: Current password for verification
+        new_password: New password to set
+        source_ip: IP address where change was made (for notification)
     
     Returns:
         (success, error_message)
@@ -563,9 +654,10 @@ def change_password(account: Account, current_password: str, new_password: str) 
     if not account.verify_password(current_password):
         return False, "Current password is incorrect"
     
-    # Validate new password
-    if len(new_password) < 12:
-        return False, "Password must be at least 12 characters"
+    # Validate new password (format and entropy)
+    is_valid, error_msg = validate_password(new_password)
+    if not is_valid:
+        return False, error_msg
     
     if new_password == current_password:
         return False, "New password must be different"
@@ -576,6 +668,10 @@ def change_password(account: Account, current_password: str, new_password: str) 
     db.session.commit()
     
     logger.info(f"Password changed for {account.username}")
+    
+    # Send notification email
+    from .notification_service import notify_password_changed
+    notify_password_changed(account, source_ip)
     
     return True, None
 
@@ -590,8 +686,18 @@ def request_password_reset(email: str) -> tuple[bool, str | None]:
     account = Account.query.filter_by(email=email).first()
     
     if account and account.is_active:
-        # Generate reset code and store in session or temp storage
-        # TODO: Implement password reset flow
+        # Generate reset code
+        code = generate_code(6)
+        expires_at = datetime.utcnow() + timedelta(minutes=30)
+        
+        # Store reset info on account (temporary)
+        account.password_reset_code = code
+        account.password_reset_expires = expires_at
+        db.session.commit()
+        
+        # Send reset email
+        from .notification_service import send_password_reset_email
+        send_password_reset_email(account.email, account.username, code, expires_minutes=30)
         logger.info(f"Password reset requested for {email}")
     
     # Always return success to prevent enumeration
@@ -631,15 +737,35 @@ def log_login_attempt(
 def create_account_by_admin(
     username: str,
     email: str,
-    password: str,
-    approved_by: Account
+    password: str | None,
+    approved_by: Account,
+    send_invite: bool = True
 ) -> tuple[Account | None, str | None]:
     """
-    Create account by admin (bypasses email verification and approval).
+    Create account by admin.
+    
+    Two modes of operation:
+    1. send_invite=True (default): Account is created in "invite pending" state.
+       An invite email is sent to the user to set their own password.
+       The provided password is used as a temporary fallback if email fails.
+    
+    2. send_invite=False: Account is immediately active with the given password.
+       Useful for service accounts or when the admin will communicate the
+       password through other secure means.
+    
+    Args:
+        username: Account username
+        email: Account email
+        password: Temporary password (generated if None)
+        approved_by: Admin performing the creation
+        send_invite: If True, send invite email for user to set password
     
     Returns:
         (account, error_message)
     """
+    from .password_reset import send_account_invite_email
+    from .utils import generate_token
+    
     # Validate username
     is_valid, error_msg = validate_username(username)
     if not is_valid:
@@ -653,17 +779,28 @@ def create_account_by_admin(
     if Account.query.filter_by(email=email).first():
         return None, "Email already registered"
     
-    # Validate password
+    # Generate password if not provided
+    if not password:
+        password = generate_token(24)
+    
+    # Validate password (even temp passwords should be strong)
     if len(password) < 12:
         return None, "Password must be at least 12 characters"
     
-    # Create account (active, verified)
+    # Generate unique user_alias for token attribution
+    user_alias = _generate_unique_user_alias()
+    
+    # Create account
+    # When sending invite: account is active but password must be changed
+    # Without invite: account is immediately usable
     account = Account(
         username=username,
+        user_alias=user_alias,
         email=email,
-        email_verified=1,
+        email_verified=1,  # Admin-created accounts skip email verification
         email_2fa_enabled=1,
-        is_active=1,  # Already approved
+        is_active=1,  # Account is approved
+        must_change_password=send_invite,  # Must set own password if invite mode
         approved_by_id=approved_by.id,
         approved_at=datetime.utcnow()
     )
@@ -672,13 +809,39 @@ def create_account_by_admin(
     db.session.add(account)
     db.session.commit()
     
-    logger.info(f"Account created by admin: {username}")
+    logger.info(f"Account created by admin: {username} (invite_mode={send_invite})")
+    
+    # Send invite email if requested
+    if send_invite:
+        email_sent = send_account_invite_email(
+            account,
+            admin_username=approved_by.username
+        )
+        if not email_sent:
+            logger.warning(
+                f"Failed to send invite email to {email}. "
+                f"Fallback: admin should share temporary password manually."
+            )
+            # Return success but with warning message
+            return account, f"WARNING: Invite email failed. Temporary password: {password}"
     
     return account, None
 
 
-def approve_account(account_id: int, approved_by: Account) -> tuple[bool, str | None]:
-    """Approve a pending account."""
+def approve_account(account_id: int, approved_by: Account, approve_realms: bool = True) -> tuple[bool, str | None]:
+    """
+    Approve a pending account and optionally all pending realm requests.
+    
+    Args:
+        account_id: ID of the account to approve
+        approved_by: Admin account performing the approval
+        approve_realms: If True, also approve all pending realm requests
+        
+    Returns:
+        (success, error_message)
+    """
+    from .models import AccountRealm
+    
     account = Account.query.get(account_id)
     if not account:
         return False, "Account not found"
@@ -686,17 +849,72 @@ def approve_account(account_id: int, approved_by: Account) -> tuple[bool, str | 
     if account.is_active:
         return False, "Account already active"
     
+    # Approve account
     account.is_active = 1
     account.approved_by_id = approved_by.id
     account.approved_at = datetime.utcnow()
     
+    # Approve all pending realm requests if requested
+    approved_realm_count = 0
+    if approve_realms:
+        pending_realms = AccountRealm.query.filter_by(
+            account_id=account_id,
+            status='pending'
+        ).all()
+        
+        for realm in pending_realms:
+            realm.status = 'approved'
+            realm.approved_by_id = approved_by.id
+            realm.approved_at = datetime.utcnow()
+            approved_realm_count += 1
+    
     db.session.commit()
     
-    logger.info(f"Account approved: {account.username} by {approved_by.username}")
+    logger.info(f"Account approved: {account.username} by {approved_by.username} with {approved_realm_count} realms")
     
-    # Notify user of approval
+    # Notify user of approval (include realm count)
     from .notification_service import notify_account_approved
-    notify_account_approved(account)
+    notify_account_approved(account, approved_realm_count)
+    
+    return True, None
+
+
+def reject_account(account_id: int, rejected_by: Account, reason: str = None) -> tuple[bool, str | None]:
+    """
+    Reject and delete a pending account and all its realm requests.
+    
+    Args:
+        account_id: ID of the account to reject
+        rejected_by: Admin account performing the rejection
+        reason: Optional reason for rejection
+        
+    Returns:
+        (success, error_message)
+    """
+    from .models import AccountRealm
+    
+    account = Account.query.get(account_id)
+    if not account:
+        return False, "Account not found"
+    
+    if account.is_active:
+        return False, "Cannot reject an active account"
+    
+    username = account.username
+    email = account.email
+    
+    # Delete all realm requests for this account
+    AccountRealm.query.filter_by(account_id=account_id).delete()
+    
+    # Delete the account
+    db.session.delete(account)
+    db.session.commit()
+    
+    logger.info(f"Account rejected and deleted: {username} by {rejected_by.username}, reason: {reason or 'No reason given'}")
+    
+    # Notify user of rejection
+    from .notification_service import notify_account_rejected
+    notify_account_rejected(email, username, reason)
     
     return True, None
 

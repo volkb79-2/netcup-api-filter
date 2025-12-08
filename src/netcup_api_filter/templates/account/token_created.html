@@ -24,13 +24,13 @@
             <div class="card-body">
                 <div class="input-group mb-3">
                     <input type="text" class="form-control font-monospace" id="tokenValue" 
-                           value="{{ token }}" readonly>
+                           value="{{ token_plain }}" readonly>
                     <button type="button" class="btn btn-primary" onclick="copyToken()">
                         <i class="bi bi-clipboard me-1"></i>Copy
                     </button>
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-muted">Length: {{ token | length }} characters</small>
+                    <small class="text-muted">Length: {{ token_plain | length }} characters</small>
                     <span class="badge bg-success" id="copyBadge" style="display: none;">
                         <i class="bi bi-check me-1"></i>Copied!
                     </span>
@@ -55,15 +55,15 @@
                     </tr>
                     <tr>
                         <th class="text-muted">Record Types</th>
-                        <td>{{ realm.allowed_record_types | join(', ') }}</td>
+                        <td>{{ realm.get_allowed_record_types() | join(', ') }}</td>
                     </tr>
                     <tr>
                         <th class="text-muted">Operations</th>
-                        <td>{{ realm.allowed_operations | join(', ') }}</td>
+                        <td>{{ realm.get_allowed_operations() | join(', ') }}</td>
                     </tr>
                     <tr>
                         <th class="text-muted">Prefix</th>
-                        <td><code>{{ token[:20] }}...</code></td>
+                        <td><code>{{ token_plain[:20] }}...</code></td>
                     </tr>
                 </table>
             </div>
@@ -77,18 +77,18 @@
             <div class="card-body">
                 <h6>cURL - List Records</h6>
                 <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X GET "{{ request.url_root }}api/dns/records?domain={{ realm.realm_value }}" \
-  -H "Authorization: Bearer {{ token }}"</code></pre>
+  -H "Authorization: Bearer {{ token_plain }}"</code></pre>
                 
                 <h6>cURL - Update A Record</h6>
                 <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X PUT "{{ request.url_root }}api/dns/records" \
-  -H "Authorization: Bearer {{ token }}" \
+  -H "Authorization: Bearer {{ token_plain }}" \
   -H "Content-Type: application/json" \
   -d '{"hostname": "{{ realm.realm_value }}", "type": "A", "value": "1.2.3.4"}'</code></pre>
                 
                 <h6>Python</h6>
                 <pre class="bg-dark text-light p-3 rounded small mb-0"><code>import requests
 
-headers = {"Authorization": "Bearer {{ token }}"}
+headers = {"Authorization": "Bearer {{ token_plain }}"}
 response = requests.get(
     "{{ request.url_root }}api/dns/records",
     params={"domain": "{{ realm.realm_value }}"},
@@ -100,7 +100,7 @@ print(response.json())</code></pre>
 
         <!-- Action Buttons -->
         <div class="d-flex justify-content-between">
-            <a href="{{ url_for('account.token_create') }}" class="btn btn-outline-primary">
+            <a href="{{ url_for('account.token_create', realm_id=realm.id) }}" class="btn btn-outline-primary">
                 <i class="bi bi-plus-circle me-1"></i>Generate Another Token
             </a>
             <a href="{{ url_for('account.tokens') }}" class="btn btn-primary">

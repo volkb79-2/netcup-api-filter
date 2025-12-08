@@ -3,9 +3,6 @@ UI Regression Tests - Catch fundamental UI flaws.
 
 These tests verify that UI pages don't have broken layouts, missing content,
 error messages, or other fundamental issues that should never make it to production.
-
-NOTE: Many tests are deprecated and skipped due to architecture change from
-Client model to Account → Realm → Token model. See TEMPLATE_CONTRACT.md.
 """
 import pytest
 import asyncio
@@ -22,7 +19,7 @@ async def test_ui_no_error_messages_on_pages(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         
-        # Admin pages should not show errors (updated routes for new architecture)
+        # Admin pages should not show errors
         admin_pages = [
             "/admin/",
             "/admin/accounts",
@@ -49,18 +46,6 @@ async def test_ui_no_error_messages_on_pages(active_profile):
             assert await browser.query_selector("h1"), f"Page {path} has no h1 heading"
 
 
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_portal_no_errors(active_profile):
-    """DEPRECATED: Test expected old /client/login with client_id:secret_key."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_terminology_consistency(active_profile):
-    """DEPRECATED: Test expected old client login with separate client_id/secret_key fields."""
-    pass
-
-
 async def test_audit_logs_not_empty_on_fresh_install(active_profile):
     """Audit logs page should show demo data on fresh install."""
     async with browser_session() as browser:
@@ -78,24 +63,6 @@ async def test_audit_logs_not_empty_on_fresh_install(active_profile):
         
         assert has_logs or has_empty_message or has_table, \
             "Audit logs page shows neither data nor helpful empty state"
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_no_template_code_in_rendered_pages(active_profile):
-    """DEPRECATED: Test expected old /client/activity route."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_forms_have_consistent_styling(active_profile):
-    """DEPRECATED: Test expected old /admin/client/new/ route."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_admin_list_toolbar_clear(active_profile):
-    """DEPRECATED: Test expected old /admin/client/ route."""
-    pass
 
 
 async def test_viewport_shows_full_content(active_profile):
@@ -135,12 +102,6 @@ async def test_system_info_filesystem_tests_present(active_profile):
             "System info page has no system content"
 
 
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_no_internal_errors_in_rendered_pages(active_profile):
-    """DEPRECATED: Test expected old /client/login and /client/activity routes."""
-    pass
-
-
 async def test_audit_logs_page_accessible(active_profile):
     """Audit logs page should load without 'not found' error."""
     async with browser_session() as browser:
@@ -155,27 +116,3 @@ async def test_audit_logs_page_accessible(active_profile):
         assert "not found" not in page_text.lower() or "No audit logs" in page_text, \
             "Audit logs page shows 'not found' error"
         assert "404" not in page_text, "Audit logs page shows 404"
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_domain_detail_no_errors(active_profile):
-    """DEPRECATED: Test expected old /client/domains/ routes."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_client_list_visual_indicators(active_profile):
-    """DEPRECATED: Test expected old /admin/client/ route."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_toolbar_has_labels(active_profile):
-    """DEPRECATED: Test expected old /admin/client/ route."""
-    pass
-
-
-@pytest.mark.skip(reason="Test uses deprecated Client model. Needs rewrite for Account UI")
-async def test_form_has_safe_defaults(active_profile):
-    """DEPRECATED: Test expected old /admin/client/new/ route."""
-    pass

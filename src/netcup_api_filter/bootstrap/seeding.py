@@ -17,8 +17,10 @@ from ..models import (
     AccountRealm,
     ActivityLog,
     APIToken,
+    USER_ALIAS_LENGTH,
     db,
     generate_token,
+    generate_user_alias,
     hash_token,
     validate_username,
 )
@@ -92,8 +94,11 @@ def ensure_admin_account(options: AdminSeedOptions) -> Account:
     """
     account = Account.query.filter_by(username=options.username).first()
     if not account:
+        # Generate unique user_alias for token attribution
+        user_alias = generate_user_alias()
         account = Account(
             username=options.username,
+            user_alias=user_alias,
             email=options.email,
             email_verified=1,
             email_2fa_enabled=1,
@@ -104,8 +109,12 @@ def ensure_admin_account(options: AdminSeedOptions) -> Account:
         account.set_password(options.password)
         account.must_change_password = 1 if options.must_change_password else 0
         db.session.add(account)
-        logger.info(f"Created admin account: {options.username}")
+        logger.info(f"Created admin account: {options.username} (alias: {user_alias[:4]}...)")
     else:
+        # Ensure existing account has user_alias
+        if not account.user_alias:
+            account.user_alias = generate_user_alias()
+            logger.info(f"Added user_alias to existing admin: {options.username}")
         logger.info(f"Admin account {options.username} already exists, keeping existing settings")
     return account
 
@@ -122,8 +131,11 @@ def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None)
     """
     account = Account.query.filter_by(username=options.username).first()
     if not account:
+        # Generate unique user_alias for token attribution
+        user_alias = generate_user_alias()
         account = Account(
             username=options.username,
+            user_alias=user_alias,
             email=options.email,
             email_verified=1,
             email_2fa_enabled=1,
@@ -134,8 +146,12 @@ def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None)
         )
         account.set_password(options.password)
         db.session.add(account)
-        logger.info(f"Created account: {options.username}")
+        logger.info(f"Created account: {options.username} (alias: {user_alias[:4]}...)")
     else:
+        # Ensure existing account has user_alias
+        if not account.user_alias:
+            account.user_alias = generate_user_alias()
+            logger.info(f"Added user_alias to existing account: {options.username}")
         logger.info(f"Account {options.username} already exists")
     return account
 
@@ -191,12 +207,13 @@ def ensure_token(realm: AccountRealm, options: TokenSeedOptions) -> Tuple[APITok
         logger.info(f"Token {options.token_name} already exists, skipping")
         return existing, None  # Can't return plain token for existing
     
-    # Generate token
+    # Generate token using user_alias (not username for security)
     account = realm.account
-    full_token = generate_token(account.username)
+    full_token = generate_token(account.user_alias)
     
     # Extract prefix (first 8 chars of random part)
-    random_part_start = len(f"naf_{account.username}_")
+    # Token format: naf_<user_alias>_<random64> where user_alias is 16 chars
+    random_part_start = 4 + USER_ALIAS_LENGTH + 1  # "naf_" + alias + "_"
     token_prefix = full_token[random_part_start:random_part_start + 8]
     
     token = APIToken(
@@ -294,10 +311,58 @@ def seed_demo_audit_logs(account: Account = None) -> None:
     logger.info(f"Seeded {len(demo_logs)} demo activity logs")
 
 
+def seed_mock_email_config() -> None:
+    """Seed email config for mock/test mode (uses Mailpit).
+    
+    This configures the app to send emails to a local Mailpit instance
+    which is used during local testing.
+    
+    Fields are stored with both internal names (smtp_server, sender_email)
+    and HTML form names (smtp_host, from_email) for template compatibility.
+    """
+    from ..models import Settings
+    import json
+    
+    smtp_host = os.environ.get("MOCK_SMTP_HOST", "mailpit")
+    smtp_port = int(os.environ.get("MOCK_SMTP_PORT", "1025"))
+    from_email = os.environ.get("MOCK_SMTP_FROM", "naf@example.com")
+    
+    email_config = {
+        # Internal field names (used by email_notifier)
+        "smtp_server": smtp_host,
+        "sender_email": from_email,
+        "sender_name": "Netcup API Filter",
+        # HTML form field names (used by templates)
+        "smtp_host": smtp_host,
+        "from_email": from_email,
+        "from_name": "Netcup API Filter",
+        # Common fields
+        "smtp_port": smtp_port,
+        "smtp_security": "none",  # Mailpit doesn't use TLS
+        "smtp_username": "",  # Mailpit doesn't require auth
+        "smtp_password": "",
+        "use_ssl": False,
+        "reply_to": "",
+        "admin_email": os.environ.get("MOCK_ADMIN_EMAIL", "admin@example.com"),
+        "notify_new_account": True,
+        "notify_realm_request": True,
+        "notify_security": True,
+    }
+    
+    setting = Settings.query.filter_by(key="email_config").first()
+    if not setting:
+        setting = Settings(key="email_config")
+        db.session.add(setting)
+    setting.value = json.dumps(email_config)
+    db.session.commit()
+    logger.info(f"Seeded email config for mock mode: {smtp_host}:{smtp_port} from {from_email}")
+
+
 def seed_default_entities(
     admin_options: AdminSeedOptions | None = None,
     client_options = None,  # Ignored for backwards compat
     seed_demo_clients_flag: bool = False,
+    seed_mock_email: bool = False,
 ) -> Tuple[str | None, str | None, list]:
     """Seed default admin and optionally demo accounts.
     
@@ -305,6 +370,7 @@ def seed_default_entities(
         admin_options: Optional admin account configuration
         client_options: Ignored (backwards compatibility)
         seed_demo_clients_flag: Whether to seed demo accounts
+        seed_mock_email: Whether to seed email config for mock mode (Mailpit)
     
     Returns:
         Tuple of (primary_client_id, primary_secret_key, all_demo_clients)
@@ -312,6 +378,10 @@ def seed_default_entities(
     # Ensure admin account exists
     admin = ensure_admin_account(admin_options or AdminSeedOptions())
     db.session.commit()
+    
+    # Seed mock email config if requested (for local testing)
+    if seed_mock_email:
+        seed_mock_email_config()
     
     all_demo_clients: list[Tuple[str, str, str]] = []
     primary_client_id = None
@@ -422,3 +492,323 @@ def seed_from_config(config: dict) -> None:
     tokens = config.get("tokens", [])
     if tokens:
         logger.warning("Token import from config not supported in new schema - use admin UI")
+
+
+def seed_comprehensive_demo_data(admin: Account) -> None:
+    """Seed comprehensive demo data for UI screenshots and testing.
+    
+    This creates:
+    - 6 accounts in different states (active, pending, disabled)
+    - Multiple realms per account in different states (approved, pending, rejected)
+    - Multiple tokens in different states (active, expired, revoked)
+    - Comprehensive activity logs covering all event types
+    
+    Call this from build_deployment.py with --seed-demo flag.
+    """
+    import json
+    from datetime import timedelta
+    from ..models import AccountRealm, APIToken, ActivityLog
+    
+    logger.info("=== Seeding Comprehensive Demo Data ===")
+    
+    # Skip if demo data already exists (check for demo-active account)
+    if Account.query.filter_by(username="demo-active").first():
+        logger.info("Demo data already exists, skipping")
+        return
+    
+    # =========================================================================
+    # 1. Create Demo Accounts with Various States
+    # =========================================================================
+    
+    demo_accounts = [
+        {"username": "demo-active", "email": "active@demo.example.com", 
+         "is_active": True, "email_verified": True, "approved": True},
+        {"username": "demo-pending-approval", "email": "pending@demo.example.com",
+         "is_active": False, "email_verified": True, "approved": False},
+        {"username": "demo-pending-email", "email": "unverified@demo.example.com",
+         "is_active": False, "email_verified": False, "approved": False},
+        {"username": "demo-disabled", "email": "disabled@demo.example.com",
+         "is_active": False, "email_verified": True, "approved": True},
+        {"username": "demo-power-user", "email": "power@demo.example.com",
+         "is_active": True, "email_verified": True, "approved": True},
+        {"username": "demo-readonly", "email": "readonly@demo.example.com",
+         "is_active": True, "email_verified": True, "approved": True},
+    ]
+    
+    created_accounts = {}
+    for acc_data in demo_accounts:
+        # Generate unique user_alias for token attribution
+        user_alias = generate_user_alias()
+        account = Account(
+            username=acc_data["username"],
+            user_alias=user_alias,
+            email=acc_data["email"],
+            email_verified=1 if acc_data["email_verified"] else 0,
+            is_active=1 if acc_data["is_active"] else 0,
+            is_admin=0,
+            approved_by_id=admin.id if acc_data["approved"] else None,
+            approved_at=datetime.utcnow() if acc_data["approved"] else None,
+            created_at=datetime.utcnow() - timedelta(days=30)
+        )
+        account.set_password("DemoPassword123!")
+        db.session.add(account)
+        created_accounts[acc_data["username"]] = account
+        logger.info(f"Created account: {acc_data['username']} (alias: {user_alias[:4]}...)")
+    
+    db.session.flush()
+    
+    # =========================================================================
+    # 2. Create Realms with Various States
+    # =========================================================================
+    
+    demo_realms = [
+        # demo-active: 2 approved realms
+        {"account": "demo-active", "domain": "example.com", "realm_type": "host",
+         "realm_value": "home", "status": "approved",
+         "record_types": ["A", "AAAA"], "operations": ["read", "update"]},
+        {"account": "demo-active", "domain": "example.com", "realm_type": "subdomain",
+         "realm_value": "iot", "status": "approved",
+         "record_types": ["A", "AAAA", "TXT", "CNAME"], "operations": ["read", "create", "update", "delete"]},
+        
+        # demo-power-user: 5 realms (various states)
+        {"account": "demo-power-user", "domain": "vxxu.de", "realm_type": "subdomain_only",
+         "realm_value": "client1", "status": "approved",
+         "record_types": ["A", "AAAA", "TXT"], "operations": ["read", "create", "update", "delete"]},
+        {"account": "demo-power-user", "domain": "example.com", "realm_type": "host",
+         "realm_value": "vpn", "status": "approved",
+         "record_types": ["A", "AAAA"], "operations": ["read", "update"]},
+        {"account": "demo-power-user", "domain": "example.com", "realm_type": "subdomain",
+         "realm_value": "acme", "status": "pending",
+         "record_types": ["TXT"], "operations": ["create", "delete"]},
+        {"account": "demo-power-user", "domain": "example.com", "realm_type": "host",
+         "realm_value": "rejected", "status": "rejected",
+         "record_types": ["A"], "operations": ["read"]},
+        {"account": "demo-power-user", "domain": "example.com", "realm_type": "host",
+         "realm_value": "revoked", "status": "rejected",
+         "record_types": ["A"], "operations": ["read"]},
+        
+        # demo-disabled: 1 revoked realm
+        {"account": "demo-disabled", "domain": "example.com", "realm_type": "host",
+         "realm_value": "old", "status": "rejected",
+         "record_types": ["A"], "operations": ["read"]},
+        
+        # demo-readonly: 1 read-only realm
+        {"account": "demo-readonly", "domain": "example.com", "realm_type": "host",
+         "realm_value": "monitor", "status": "approved",
+         "record_types": ["A", "AAAA", "TXT", "MX"], "operations": ["read"]},
+    ]
+    
+    created_realms = {}
+    for realm_data in demo_realms:
+        account = created_accounts[realm_data["account"]]
+        realm_key = f"{realm_data['realm_type']}:{realm_data['realm_value']}@{realm_data['domain']}"
+        
+        realm = AccountRealm(
+            account_id=account.id,
+            domain=realm_data["domain"],
+            realm_type=realm_data["realm_type"],
+            realm_value=realm_data["realm_value"],
+            status=realm_data["status"],
+            requested_at=datetime.utcnow() - timedelta(days=25),
+            approved_by_id=admin.id if realm_data["status"] == "approved" else None,
+            approved_at=datetime.utcnow() - timedelta(days=20) if realm_data["status"] == "approved" else None
+        )
+        realm.set_allowed_record_types(realm_data["record_types"])
+        realm.set_allowed_operations(realm_data["operations"])
+        db.session.add(realm)
+        created_realms[realm_key] = realm
+        logger.info(f"Created realm: {realm_key} ({realm_data['status']})")
+    
+    db.session.flush()
+    
+    # =========================================================================
+    # 3. Create Tokens with Various States
+    # =========================================================================
+    
+    demo_tokens = [
+        # demo-active tokens
+        {"realm_key": "host:home@example.com", "token_name": "home-router",
+         "description": "Home router DDNS", "is_active": True, "expires": None,
+         "ip_ranges": ["192.168.1.0/24"]},
+        {"realm_key": "host:home@example.com", "token_name": "backup-updater",
+         "description": "Backup updater with expiry", "is_active": True, 
+         "expires": datetime.utcnow() + timedelta(days=365),
+         "ip_ranges": None},
+        {"realm_key": "subdomain:iot@example.com", "token_name": "fleet-manager",
+         "description": "IoT fleet manager full access", "is_active": True,
+         "expires": None, "ip_ranges": None},
+        {"realm_key": "subdomain:iot@example.com", "token_name": "monitoring",
+         "description": "Monitoring read-only", "is_active": True,
+         "expires": None, "ip_ranges": None,
+         "record_types_override": ["A", "AAAA"], "operations_override": ["read"]},
+        
+        # demo-power-user tokens
+        {"realm_key": "subdomain_only:client1@vxxu.de", "token_name": "certbot-prod",
+         "description": "Certbot production DNS-01", "is_active": True,
+         "expires": None, "ip_ranges": None},
+        {"realm_key": "subdomain_only:client1@vxxu.de", "token_name": "certbot-staging",
+         "description": "Certbot staging (EXPIRED)", "is_active": False,
+         "expires": datetime.utcnow() - timedelta(days=30), "ip_ranges": None},
+        {"realm_key": "subdomain_only:client1@vxxu.de", "token_name": "old-system",
+         "description": "Old system (REVOKED)", "is_active": False,
+         "expires": None, "ip_ranges": None},
+        {"realm_key": "host:vpn@example.com", "token_name": "vpn-gateway",
+         "description": "VPN gateway updater", "is_active": True,
+         "expires": None, "ip_ranges": ["10.0.0.0/8"]},
+        {"realm_key": "host:vpn@example.com", "token_name": "vpn-backup",
+         "description": "VPN backup (never used)", "is_active": True,
+         "expires": None, "ip_ranges": None},
+        
+        # demo-readonly token
+        {"realm_key": "host:monitor@example.com", "token_name": "grafana",
+         "description": "Grafana dashboard read-only", "is_active": True,
+         "expires": None, "ip_ranges": ["10.0.0.0/8"]},
+    ]
+    
+    created_tokens = {}
+    for token_data in demo_tokens:
+        realm_key = token_data["realm_key"]
+        if realm_key not in created_realms:
+            logger.warning(f"Skipping token {token_data['token_name']} - realm {realm_key} not found")
+            continue
+        
+        realm = created_realms[realm_key]
+        account = realm.account
+        
+        # Generate token using user_alias (not username for security)
+        full_token = generate_token(account.user_alias)
+        # Token format: naf_<user_alias>_<random64> where user_alias is 16 chars
+        random_part_start = 4 + USER_ALIAS_LENGTH + 1  # "naf_" + alias + "_"
+        token_prefix = full_token[random_part_start:random_part_start + 8]
+        
+        token = APIToken(
+            realm_id=realm.id,
+            token_name=token_data["token_name"],
+            token_description=token_data["description"],
+            token_prefix=token_prefix,
+            token_hash=hash_token(full_token),
+            is_active=1 if token_data["is_active"] else 0,
+            expires_at=token_data.get("expires"),
+            created_at=datetime.utcnow() - timedelta(days=15)
+        )
+        
+        # Optional overrides
+        if token_data.get("record_types_override"):
+            token.set_allowed_record_types(token_data["record_types_override"])
+        if token_data.get("operations_override"):
+            token.set_allowed_operations(token_data["operations_override"])
+        if token_data.get("ip_ranges"):
+            token.set_allowed_ip_ranges(token_data["ip_ranges"])
+        
+        db.session.add(token)
+        created_tokens[token_data["token_name"]] = token
+        logger.info(f"Created token: {token_data['token_name']} ({realm_key})")
+    
+    db.session.flush()
+    
+    # =========================================================================
+    # 4. Create Activity Logs covering all event types
+    # =========================================================================
+    
+    base_time = datetime.utcnow() - timedelta(hours=48)
+    
+    activity_logs = [
+        # Admin login events
+        {"action": "admin_login", "ip": "192.168.1.100", "hours_ago": 48,
+         "success": True, "details": {"username": "admin"}},
+        {"action": "admin_login", "ip": "203.0.113.42", "hours_ago": 47,
+         "success": False, "details": {"username": "admin", "reason": "invalid_password"}},
+        
+        # Account registration
+        {"action": "account_register", "ip": "198.51.100.10", "hours_ago": 46,
+         "success": True, "account": "demo-active", "details": {"email": "active@demo.example.com"}},
+        {"action": "account_verify_email", "ip": "198.51.100.10", "hours_ago": 45,
+         "success": True, "account": "demo-active", "details": {}},
+        {"action": "account_approved", "ip": "192.168.1.100", "hours_ago": 44,
+         "success": True, "account": "demo-active", "details": {"approved_by": "admin"}},
+        
+        # Realm requests
+        {"action": "realm_request", "ip": "198.51.100.10", "hours_ago": 43,
+         "success": True, "account": "demo-active", "details": {"realm": "host:home@example.com"}},
+        {"action": "realm_approved", "ip": "192.168.1.100", "hours_ago": 42,
+         "success": True, "account": "demo-active", "details": {"realm": "host:home@example.com"}},
+        {"action": "realm_request", "ip": "198.51.100.20", "hours_ago": 30,
+         "success": True, "account": "demo-power-user", "details": {"realm": "subdomain:acme@example.com"}},
+        {"action": "realm_rejected", "ip": "192.168.1.100", "hours_ago": 29,
+         "success": True, "account": "demo-power-user", 
+         "details": {"realm": "host:rejected@example.com", "reason": "Domain not verified"}},
+        
+        # Token operations
+        {"action": "token_create", "ip": "198.51.100.10", "hours_ago": 41,
+         "success": True, "account": "demo-active", 
+         "details": {"token_name": "home-router", "realm": "host:home@example.com"}},
+        {"action": "token_revoke", "ip": "198.51.100.20", "hours_ago": 20,
+         "success": True, "account": "demo-power-user",
+         "details": {"token_name": "old-system", "reason": "Security rotation"}},
+        
+        # API calls - successful
+        {"action": "api_call", "ip": "192.168.1.1", "hours_ago": 36,
+         "success": True, "account": "demo-active", "token": "home-router",
+         "details": {"operation": "read", "domain": "example.com", "record": "home.example.com", "type": "A"}},
+        {"action": "api_call", "ip": "192.168.1.1", "hours_ago": 24,
+         "success": True, "account": "demo-active", "token": "home-router",
+         "details": {"operation": "update", "domain": "example.com", "record": "home.example.com", "type": "A", "value": "1.2.3.4"}},
+        {"action": "api_call", "ip": "10.0.0.50", "hours_ago": 12,
+         "success": True, "account": "demo-active", "token": "fleet-manager",
+         "details": {"operation": "create", "domain": "example.com", "record": "sensor1.iot.example.com", "type": "A"}},
+        {"action": "api_call", "ip": "52.94.76.8", "hours_ago": 6,
+         "success": True, "account": "demo-power-user", "token": "certbot-prod",
+         "details": {"operation": "create", "domain": "vxxu.de", "record": "_acme-challenge.client1.vxxu.de", "type": "TXT"}},
+        {"action": "api_call", "ip": "52.94.76.8", "hours_ago": 5,
+         "success": True, "account": "demo-power-user", "token": "certbot-prod",
+         "details": {"operation": "delete", "domain": "vxxu.de", "record": "_acme-challenge.client1.vxxu.de", "type": "TXT"}},
+        
+        # API calls - denied
+        {"action": "api_call", "ip": "203.0.113.50", "hours_ago": 18,
+         "success": False, "account": "demo-readonly", "token": "grafana",
+         "details": {"operation": "update", "reason": "read-only token", "domain": "example.com"}},
+        {"action": "api_call", "ip": "123.45.67.89", "hours_ago": 15,
+         "success": False, "account": "demo-active", "token": "home-router",
+         "details": {"operation": "update", "reason": "IP not in whitelist", "source_ip": "123.45.67.89"}},
+        
+        # API auth failures
+        {"action": "api_auth_failure", "ip": "185.220.101.42", "hours_ago": 10,
+         "success": False, "details": {"reason": "invalid_token"}},
+        {"action": "api_auth_failure", "ip": "195.54.160.12", "hours_ago": 8,
+         "success": False, "details": {"reason": "expired_token", "token_prefix": "abc12345"}},
+        
+        # Password changes
+        {"action": "password_change", "ip": "198.51.100.10", "hours_ago": 2,
+         "success": True, "account": "demo-active", "details": {}},
+        
+        # Account disabled
+        {"action": "account_disabled", "ip": "192.168.1.100", "hours_ago": 1,
+         "success": True, "account": "demo-disabled", "details": {"reason": "Inactive for 90 days"}},
+    ]
+    
+    for log_data in activity_logs:
+        timestamp = base_time + timedelta(hours=(48 - log_data["hours_ago"]))
+        
+        account = created_accounts.get(log_data.get("account"))
+        token = created_tokens.get(log_data.get("token"))
+        
+        log = ActivityLog(
+            account_id=account.id if account else None,
+            token_id=token.id if token else None,
+            action=log_data["action"],
+            source_ip=log_data["ip"],
+            status="success" if log_data["success"] else "error",
+            user_agent="Mozilla/5.0 Demo User Agent",
+            request_data=json.dumps(log_data["details"]),
+            created_at=timestamp
+        )
+        db.session.add(log)
+    
+    db.session.commit()
+    logger.info(f"Created {len(activity_logs)} activity log entries")
+    
+    logger.info("=== Comprehensive Demo Data Seeding Complete ===")
+    logger.info(f"  Accounts: {len(demo_accounts)}")
+    logger.info(f"  Realms: {len(demo_realms)}")
+    logger.info(f"  Tokens: {len(demo_tokens)}")
+    logger.info(f"  Activity logs: {len(activity_logs)}")

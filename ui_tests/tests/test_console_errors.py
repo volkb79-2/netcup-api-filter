@@ -5,7 +5,6 @@ from ui_tests.browser import browser_session
 from ui_tests.config import settings
 from ui_tests import workflows
 
-
 # Admin pages to check for console errors
 ADMIN_PATHS = [
     "/admin/",
@@ -24,14 +23,11 @@ KNOWN_ERROR_PATTERNS = [
     r"404 \(NOT FOUND\)",
 ]
 
-
 def is_known_error(error_text: str) -> bool:
     """Check if an error matches a known pattern to ignore."""
     return any(re.search(pattern, error_text) for pattern in KNOWN_ERROR_PATTERNS)
 
-
 pytestmark = pytest.mark.asyncio
-
 
 @pytest.mark.parametrize("path", ADMIN_PATHS)
 async def test_admin_pages_for_console_errors(active_profile, path: str):
@@ -48,9 +44,4 @@ async def test_admin_pages_for_console_errors(active_profile, path: str):
         # Page should have some content
         assert len(page_text.strip()) > 50, f"Page {path} appears empty"
 
-
 # Client page tests are skipped until client portal is updated for new auth model
-@pytest.mark.skip(reason="Client portal needs rewrite for Account-based auth")
-async def test_client_pages_for_console_errors():
-    """Placeholder for client page console error tests."""
-    pass

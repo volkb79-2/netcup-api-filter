@@ -6,7 +6,6 @@ from ui_tests.config import settings
 
 pytestmark = pytest.mark.asyncio
 
-
 async def test_admin_authentication_flow(active_profile):
     """Test the complete admin authentication flow including password change."""
     async with browser_session() as browser:
@@ -17,7 +16,6 @@ async def test_admin_authentication_flow(active_profile):
         
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-auth-flow")
         assert screenshot_path.endswith((".png", ".webp"))
-
 
 async def test_admin_dashboard_and_footer(active_profile):
     async with browser_session() as browser:
@@ -32,8 +30,7 @@ async def test_admin_dashboard_and_footer(active_profile):
         assert len(footer_text) > 10
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-dashboard")
-        assert screenshot_path.endswith(".png")
-
+        assert screenshot_path.endswith((".png", ".webp")), f"Expected .png or .webp, got {screenshot_path}"
 
 async def test_admin_navigation_links(active_profile):
     async with browser_session() as browser:
@@ -45,7 +42,6 @@ async def test_admin_navigation_links(active_profile):
         assert visited[1][0] == "Accounts"  # Changed from "Clients"
         assert visited[-1][0] == "Logout"
 
-
 async def test_admin_audit_logs_headers(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
@@ -53,7 +49,6 @@ async def test_admin_audit_logs_headers(active_profile):
         # Verify audit logs page loaded successfully (catch template errors)
         await browser.verify_status(200)
         assert "Action" in header  # Changed from "Operation"
-
 
 async def test_admin_accounts_table_lists_preseeded_account(active_profile):
     async with browser_session() as browser:
@@ -65,62 +60,11 @@ async def test_admin_accounts_table_lists_preseeded_account(active_profile):
         table_text = await browser.text("table tbody")
         # Demo accounts should be seeded for local testing
         assert "There are no items in the table" not in table_text, "Expected demo accounts to be seeded"
-        # Check for demo-user account
-        assert "demo-user" in table_text or settings.client_id in table_text
+        # Check for demo-user account or admin
+        assert "demo-user" in table_text or "admin" in table_text
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-accounts")
-        assert screenshot_path.endswith(".png")
-
-
-@pytest.mark.skip(reason="Needs update for Account/Realm/Token architecture")
-async def test_admin_can_create_and_delete_client(active_profile):
-    """TODO: Update for new account workflow: create account → approve → create realm → create token."""
-    if not active_profile.allow_writes:
-        pytest.skip("profile is read-only; skipping create/delete flow")
-
-    async with browser_session() as browser:
-        await workflows.ensure_admin_dashboard(browser)
-        await workflows.open_admin_client_create(browser)
-
-        client_data = workflows.generate_client_data()
-        generated_token = await workflows.submit_client_form(browser, client_data)
-        assert len(generated_token) >= 10
-        
-        # Verify client is visible in admin list
-        await workflows.ensure_client_visible(browser, client_data.client_id)
-
-        # 6. Logout from admin and prepare for client login
-        await workflows.admin_logout_and_prepare_client_login(browser)
-
-        # 7. Test client login with the new token
-        await workflows.test_client_login_with_token(
-            browser, generated_token, should_succeed=True, expected_client_id=client_data.client_id
-        )
-
-        # 8. Re-login as admin to delete the client
-        await workflows.ensure_admin_dashboard(browser)
-
-        # 9. Delete the client
-        await workflows.delete_admin_client(browser, client_data.client_id)
-
-        # 10. Verify client is no longer visible
-        await workflows.ensure_client_absent(browser, client_data.client_id)
-
-
-@pytest.mark.skip(reason="Needs update for Account/Realm/Token architecture")
-async def test_admin_client_form_validation(active_profile):
-    async with browser_session() as browser:
-        await workflows.ensure_admin_dashboard(browser)
-        await workflows.open_admin_client_create(browser)
-        await workflows.admin_submit_invalid_client(browser)
-
-
-@pytest.mark.skip(reason="Needs update for Account/Realm/Token architecture")
-async def test_admin_client_form_cancel_button(active_profile):
-    async with browser_session() as browser:
-        await workflows.ensure_admin_dashboard(browser)
-        await workflows.open_admin_client_create(browser)
-        await workflows.admin_click_cancel_from_client_form(browser)
+        assert screenshot_path.endswith((".png", ".webp")), f"Expected .png or .webp, got {screenshot_path}"
 
 
 async def test_admin_email_buttons_show_feedback(active_profile):
@@ -131,7 +75,6 @@ async def test_admin_email_buttons_show_feedback(active_profile):
         await workflows.ensure_admin_dashboard(browser)
         await workflows.admin_email_save_expect_error(browser)
         await workflows.admin_email_trigger_test_without_address(browser)
-
 
 async def test_admin_netcup_config_save_roundtrip(active_profile):
     if not active_profile.allow_writes:

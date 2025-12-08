@@ -1,8 +1,7 @@
-# requiremnts for the **webhosting deployment** with passenger based environment
+# requirements for the **webhosting deployment** with passenger based environment
 
 flask>=2.3.0,<4.0.0
 flask-limiter>=3.0.0
-flask-admin>=2.0.0
 flask-sqlalchemy>=3.0.0
 flask-login>=0.6.0
 flask-wtf>=1.2.0
@@ -14,5 +13,6 @@ bcrypt>=4.0.0
 email-validator>=2.0.0
 wtforms>=3.0.0
 geoip2>=4.8.0
-
-
+pyotp>=2.9.0
+qrcode>=7.4.0
+pillow>=10.0.0

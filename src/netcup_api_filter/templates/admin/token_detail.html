@@ -12,7 +12,7 @@
         {% if realm %}
         <li class="breadcrumb-item">
             <a href="{{ url_for('admin.realm_detail', realm_id=realm.id) }}">
-                {{ realm.realm_value or '@' }}.{{ realm.domain }}
+                {{ realm|format_realm }}
             </a>
         </li>
         {% endif %}
@@ -94,7 +94,7 @@
                             <td>
                                 {% if realm %}
                                 <a href="{{ url_for('admin.realm_detail', realm_id=realm.id) }}">
-                                    <code>{{ realm.realm_value or '@' }}.{{ realm.domain }}</code>
+                                    <code>{{ realm|format_realm }}</code>
                                 </a>
                                 {% else %}
                                 <span class="text-muted">No realm</span>

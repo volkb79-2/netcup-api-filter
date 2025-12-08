@@ -28,10 +28,11 @@ from .models import (
     ActivityLog,
     APIToken,
     db,
+    generate_token,
+    generate_user_alias,
+    hash_token,
     RegistrationRequest,
     Settings,
-    generate_token,
-    hash_token,
     validate_username,
 )
 
@@ -102,9 +103,13 @@ def seed_admin_account():
         logger.debug(f"Admin account '{admin_username}' already exists")
         return
     
+    # Generate unique user_alias for token attribution
+    admin_alias = generate_user_alias()
+    
     # Create admin account
     admin = Account(
         username=admin_username,
+        user_alias=admin_alias,
         email=admin_email,
         email_verified=1,
         email_2fa_enabled=1,  # Email 2FA mandatory
@@ -117,7 +122,7 @@ def seed_admin_account():
     db.session.add(admin)
     db.session.commit()
     
-    logger.info(f"Admin account created: {admin_username}")
+    logger.info(f"Admin account created: {admin_username} (alias: {admin_alias[:4]}...)")
 
 
 def seed_demo_accounts():
@@ -149,8 +154,10 @@ def seed_demo_accounts():
         return
     
     # Create demo user
+    demo_alias = generate_user_alias()
     demo_user = Account(
         username=demo_username,
+        user_alias=demo_alias,
         email=f'{demo_username}@example.com',
         email_verified=1,
         email_2fa_enabled=1,
@@ -202,12 +209,13 @@ def seed_demo_accounts():
     db.session.add(demo_realm)
     db.session.flush()
     
-    # Create demo token
+    # Create demo token using user_alias (NOT username)
     token_name = 'demo-token'
-    full_token = generate_token(demo_user.username)
+    full_token = generate_token(demo_user.user_alias)
     
-    # Extract prefix from token
-    random_part_start = len(f"naf_{demo_user.username}_")
+    # Extract prefix from token (after naf_<user_alias>_)
+    from .models import USER_ALIAS_LENGTH, TOKEN_PREFIX
+    random_part_start = len(TOKEN_PREFIX) + USER_ALIAS_LENGTH + 1  # +1 for underscore
     token_prefix = full_token[random_part_start:random_part_start + 8]
     
     demo_token = APIToken(
@@ -222,7 +230,7 @@ def seed_demo_accounts():
     db.session.add(demo_token)
     db.session.commit()
     
-    logger.info(f"Demo account created: {demo_username}")
+    logger.info(f"Demo account created: {demo_username} (alias: {demo_alias[:4]}...)")
     logger.info(f"Demo token: {full_token}")  # Log for testing purposes
 
 

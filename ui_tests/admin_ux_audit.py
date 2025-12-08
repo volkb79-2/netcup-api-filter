@@ -1,6 +1,23 @@
 #!/usr/bin/env python3
 """
-Admin UX Audit Script
+Admin UX Audit Script (DEPRECATED)
+
+**DEPRECATION NOTICE**: This script has been superseded by Playwright tests.
+The httpx-based approach has fundamental limitations:
+- Cannot execute JavaScript (no client-side validation testing)
+- CSRF token handling is fragile and causes authentication failures  
+- Partial auth flow completion corrupts deployment_state_local.json
+- Cannot test interactive elements (modals, dropdowns, themes)
+
+Use Playwright tests instead:
+    pytest ui_tests/tests/test_ui_interactive.py -v
+    pytest ui_tests/tests/test_user_journeys.py -v
+
+This file is kept for reference but is no longer part of the test pipeline.
+See docs/JOURNEY_CONTRACTS.md for the canonical testing approach.
+
+---
+Original description:
 
 Systematically tests all admin pages against UI_REQUIREMENTS.md.
 Runs via httpx (no browser session issues).
@@ -11,11 +28,6 @@ Usage:
 Exit codes:
     0 = All checks passed
     N = Number of issues found
-
-This script is designed for:
-1. Quick sanity checks after major UI changes
-2. CI/CD pipeline validation
-3. Pre-deployment verification
 """
 # ruff: noqa: E501
 # type: ignore  # BeautifulSoup type stubs are incomplete
@@ -30,6 +42,27 @@ from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
+
+
+def _get_admin_password_from_state() -> str:
+    """Get admin password from deployment state file."""
+    import json
+    from pathlib import Path
+    
+    # Check environment first
+    if env_pass := os.environ.get('UI_ADMIN_PASSWORD'):
+        return env_pass
+    
+    # Try deployment state file
+    target = os.environ.get('DEPLOYMENT_TARGET', 'local')
+    state_file = Path(f'/workspaces/netcup-api-filter/deployment_state_{target}.json')
+    if state_file.exists():
+        state = json.loads(state_file.read_text())
+        if 'admin' in state and 'password' in state['admin']:
+            return state['admin']['password']
+    
+    # Fallback to default (fresh deployment)
+    return 'admin'
 
 
 @dataclass
@@ -63,9 +96,10 @@ class AuditResult:
 class AdminUXAudit:
     """Audits admin UI pages against UI_REQUIREMENTS.md."""
     
-    def __init__(self, base_url: str, admin_password: str = "TestAdmin123!"):
+    def __init__(self, base_url: str, admin_password: str | None = None):
         self.base_url = base_url.rstrip('/')
-        self.admin_password = admin_password
+        # Use provided password, or get from state file/environment
+        self.admin_password = admin_password or _get_admin_password_from_state()
         self.default_password = "admin"
     
     def audit_login_page(self, client: httpx.Client) -> AuditResult:
@@ -142,10 +176,26 @@ class AdminUXAudit:
         """Test actual login with default credentials."""
         result = AuditResult(page="Login Flow")
         
+        # First, get the login page to extract CSRF token
+        login_page = client.get(f"{self.base_url}/admin/login")
+        soup = BeautifulSoup(login_page.text, 'html.parser')
+        csrf_token = None
+        csrf_input = soup.find('input', {'name': 'csrf_token'})
+        if csrf_input:
+            csrf_token = csrf_input.get('value', '')
+        
+        if not csrf_token:
+            result.check(
+                "CSRF token found on login page",
+                False,
+                "Cannot login without CSRF token"
+            )
+            return result
+        
         # Try with changed password first (password may already be changed)
         login_resp = client.post(
             f"{self.base_url}/admin/login",
-            data={"username": "admin", "password": self.admin_password},
+            data={"username": "admin", "password": self.admin_password, "csrf_token": csrf_token},
             follow_redirects=True
         )
         
@@ -163,10 +213,15 @@ class AdminUXAudit:
             )
             return result
         
-        # Try with default password
+        # Try with default password - need fresh CSRF token
+        login_page2 = client.get(f"{self.base_url}/admin/login")
+        soup2 = BeautifulSoup(login_page2.text, 'html.parser')
+        csrf_input2 = soup2.find('input', {'name': 'csrf_token'})
+        csrf_token2 = csrf_input2.get('value', '') if csrf_input2 else ''
+        
         login_resp = client.post(
             f"{self.base_url}/admin/login",
-            data={"username": "admin", "password": self.default_password},
+            data={"username": "admin", "password": self.default_password, "csrf_token": csrf_token2},
             follow_redirects=True
         )
         
@@ -265,44 +320,121 @@ class AdminUXAudit:
 
     def _ensure_authenticated(self, client: httpx.Client) -> bool:
         """Ensure client is authenticated, changing password if needed."""
+        # Get login page to extract CSRF token
+        login_page = client.get(f"{self.base_url}/admin/login")
+        soup = BeautifulSoup(login_page.text, 'html.parser')
+        csrf_input = soup.find('input', {'name': 'csrf_token'})
+        csrf_token = csrf_input.get('value', '') if csrf_input else ''
+        
         # Try with changed password first
         client.post(
             f"{self.base_url}/admin/login",
-            data={"username": "admin", "password": self.admin_password}
+            data={"username": "admin", "password": self.admin_password, "csrf_token": csrf_token}
         )
         
-        # Check if we're on dashboard
-        check_resp = client.get(f"{self.base_url}/admin/", follow_redirects=False)
+        # Check if we're on dashboard (not change-password page)
+        check_resp = client.get(f"{self.base_url}/admin/", follow_redirects=True)
         if check_resp.status_code == 200:
-            return True
+            # Verify we're actually on dashboard, not stuck on change-password
+            check_soup = BeautifulSoup(check_resp.text, 'html.parser')
+            h1 = check_soup.find('h1')
+            page_title = h1.text if h1 else ""
+            
+            # If we're on change-password page, we need to handle it
+            if "Change Password" in page_title or "Initial Setup" in page_title:
+                return self._handle_password_change(client)
+            
+            # If we see Dashboard or similar, we're authenticated
+            if "Dashboard" in page_title or check_soup.find('nav'):
+                return True
         
         # If redirected to change-password, need to change it
         if check_resp.status_code == 302 and "change-password" in check_resp.headers.get("location", ""):
-            # Login with default password
-            client.post(
-                f"{self.base_url}/admin/login",
-                data={"username": "admin", "password": self.default_password}
-            )
-            
-            # Change password
-            client.post(
-                f"{self.base_url}/admin/change-password",
-                data={
-                    "current_password": self.default_password,
-                    "new_password": self.admin_password,
-                    "confirm_password": self.admin_password
-                },
-                follow_redirects=True
-            )
-            
-            # Re-login with new password
-            client.post(
-                f"{self.base_url}/admin/login",
-                data={"username": "admin", "password": self.admin_password}
-            )
-            return True
+            return self._handle_password_change(client)
         
         return False
+    
+    def _handle_password_change(self, client: httpx.Client) -> bool:
+        """Handle forced password change on fresh deployment."""
+        import secrets
+        import string
+        
+        # Generate a new secure password if current one is the default
+        if self.admin_password == self.default_password:
+            alphabet = string.ascii_letters + string.digits + "@#$%"
+            self.admin_password = ''.join(secrets.choice(alphabet) for _ in range(64))
+        
+        # Get fresh login page for new CSRF token
+        login_page2 = client.get(f"{self.base_url}/admin/login")
+        soup2 = BeautifulSoup(login_page2.text, 'html.parser')
+        csrf_input2 = soup2.find('input', {'name': 'csrf_token'})
+        csrf_token2 = csrf_input2.get('value', '') if csrf_input2 else ''
+        
+        # Login with default password
+        client.post(
+            f"{self.base_url}/admin/login",
+            data={"username": "admin", "password": self.default_password, "csrf_token": csrf_token2}
+        )
+        
+        # Get change-password page for CSRF token
+        change_page = client.get(f"{self.base_url}/admin/change-password")
+        soup3 = BeautifulSoup(change_page.text, 'html.parser')
+        csrf_input3 = soup3.find('input', {'name': 'csrf_token'})
+        csrf_token3 = csrf_input3.get('value', '') if csrf_input3 else ''
+        
+        # Change password
+        change_resp = client.post(
+            f"{self.base_url}/admin/change-password",
+            data={
+                "current_password": self.default_password,
+                "new_password": self.admin_password,
+                "confirm_password": self.admin_password,
+                "csrf_token": csrf_token3
+            },
+            follow_redirects=True
+        )
+        
+        # Verify password was changed (should be on dashboard now)
+        check_soup = BeautifulSoup(change_resp.text, 'html.parser')
+        h1 = check_soup.find('h1')
+        page_title = h1.text if h1 else ""
+        
+        if "Dashboard" in page_title:
+            # Update the deployment state file with new password
+            self._update_deployment_state()
+            return True
+        
+        # If still on change password, try re-login
+        login_page3 = client.get(f"{self.base_url}/admin/login")
+        soup4 = BeautifulSoup(login_page3.text, 'html.parser')
+        csrf_input4 = soup4.find('input', {'name': 'csrf_token'})
+        csrf_token4 = csrf_input4.get('value', '') if csrf_input4 else ''
+        
+        # Re-login with new password
+        client.post(
+            f"{self.base_url}/admin/login",
+            data={"username": "admin", "password": self.admin_password, "csrf_token": csrf_token4}
+        )
+        
+        self._update_deployment_state()
+        return True
+    
+    def _update_deployment_state(self):
+        """Update deployment state file with new password."""
+        import json
+        from pathlib import Path
+        from datetime import datetime, timezone
+        
+        target = os.environ.get('DEPLOYMENT_TARGET', 'local')
+        state_file = Path(f'/workspaces/netcup-api-filter/deployment_state_{target}.json')
+        
+        if state_file.exists():
+            state = json.loads(state_file.read_text())
+            state['admin']['password'] = self.admin_password
+            state['admin']['password_changed_at'] = datetime.now(timezone.utc).isoformat()
+            state['last_updated_at'] = datetime.now(timezone.utc).isoformat()
+            state['updated_by'] = 'admin_ux_audit'
+            state_file.write_text(json.dumps(state, indent=2))
 
     def audit_dashboard_page(self, client: httpx.Client) -> AuditResult:
         """Audit /admin/ dashboard per UI_REQUIREMENTS.md section 3.3"""

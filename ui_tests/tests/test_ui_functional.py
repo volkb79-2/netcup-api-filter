@@ -158,7 +158,7 @@ class TestJavaScriptBehavior:
             await browser.verify_status(200)
             
             # Fill password field
-            await browser.fill("#new_password", "TestPassword123!")
+            await browser.fill("#new_password", "TestPassword123+Secure24")
             
             # Get initial input type
             initial_type = await browser.get_attribute("#new_password", "type")

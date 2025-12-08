@@ -11,7 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-pytestmark = pytest.mark.asyncio
+# Note: These tests are synchronous (using Flask test client)
+# No asyncio marker needed
 
 
 @pytest.fixture

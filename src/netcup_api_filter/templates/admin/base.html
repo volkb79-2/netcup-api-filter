@@ -32,6 +32,12 @@
             Audit
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {% if 'security' in (request.endpoint or '') %}active{% endif %}" 
+           href="{{ url_for('admin.security_dashboard') }}">
+            Security
+        </a>
+    </li>
     <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle {% if 'config' in (request.endpoint or '') or 'system' in (request.endpoint or '') %}active{% endif %}" 
            href="#" data-bs-toggle="dropdown">

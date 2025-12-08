@@ -49,6 +49,33 @@
     --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.55), 0 0 50px rgba(59, 124, 245, 0.12);
     
     /* =============================================
+       BOOTSTRAP 5 CSS VARIABLE OVERRIDES
+       Override Bootstrap's default light colors with our dark theme
+       ============================================= */
+    --bs-body-bg: var(--color-bg-primary);
+    --bs-body-bg-rgb: 7, 10, 20;
+    --bs-body-color: var(--color-text-primary);
+    --bs-body-color-rgb: 248, 250, 252;
+    --bs-secondary-bg: var(--color-bg-secondary);
+    --bs-tertiary-bg: var(--color-bg-elevated);
+    --bs-emphasis-color: var(--color-text-primary);
+    --bs-emphasis-color-rgb: 248, 250, 252;
+    --bs-border-color: var(--color-border);
+    --bs-border-color-translucent: var(--color-border);
+    
+    /* Override Bootstrap primary color with theme accent */
+    --bs-primary: var(--color-accent);
+    --bs-primary-rgb: var(--color-accent-rgb);
+    --bs-link-color: var(--color-accent);
+    --bs-link-color-rgb: var(--color-accent-rgb);
+    --bs-link-hover-color: var(--color-accent-hover);
+    
+    /* Modal specific overrides */
+    --bs-modal-bg: var(--color-bg-secondary);
+    --bs-modal-color: var(--color-text-primary);
+    --bs-modal-border-color: var(--color-border-card);
+    
+    /* =============================================
        UI DENSITY - Comfortable (Default)
        ============================================= */
     --density-space-xs: 0.5rem;
@@ -926,6 +953,50 @@ code {
 }
 
 /* ===================================================================
+   MODALS (Bootstrap 5 override for dark theme)
+   =================================================================== */
+
+.modal {
+    --bs-modal-bg: var(--color-bg-secondary);
+    --bs-modal-color: var(--color-text-primary);
+    --bs-modal-border-color: var(--color-border-card);
+    --bs-modal-header-border-color: var(--color-border);
+    --bs-modal-footer-border-color: var(--color-border);
+}
+
+.modal-content {
+    background-color: var(--color-bg-secondary) !important;
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-card);
+    box-shadow: var(--card-shadow), 0 0 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+    background-color: var(--color-bg-elevated);
+    border-bottom-color: var(--color-border);
+    color: var(--color-text-primary);
+}
+
+.modal-title {
+    color: var(--color-text-primary);
+}
+
+.modal-body {
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+}
+
+.modal-footer {
+    background-color: var(--color-bg-elevated);
+    border-top-color: var(--color-border);
+}
+
+/* Modal close button */
+.modal-header .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* ===================================================================
    CARDS
    =================================================================== */
 
@@ -1029,13 +1100,22 @@ code {
     cursor: not-allowed;
 }
 
+/* Override Bootstrap 5's btn-primary with theme accent color */
 .btn-primary {
-    background: var(--gradient-accent);
-    color: white;
+    --bs-btn-bg: var(--color-accent);
+    --bs-btn-border-color: var(--color-accent);
+    --bs-btn-hover-bg: var(--color-accent-hover);
+    --bs-btn-hover-border-color: var(--color-accent-hover);
+    --bs-btn-active-bg: var(--color-accent-hover);
+    --bs-btn-active-border-color: var(--color-accent-hover);
+    background: var(--gradient-accent) !important;
+    border-color: var(--color-accent) !important;
+    color: white !important;
     box-shadow: 0 4px 6px -1px rgba(var(--color-accent-rgb), 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
+    background: var(--color-accent-hover) !important;
     transform: translateY(-1px);
     box-shadow: 0 6px 8px -1px rgba(var(--color-accent-rgb), 0.4);
 }

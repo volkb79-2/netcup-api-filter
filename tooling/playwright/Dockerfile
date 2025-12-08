@@ -41,7 +41,7 @@ RUN apt-get update && \
 # Copy requirements and install Python packages
 COPY requirements.root.txt ./
 
-# Install Python dependencies
+# Install Python dependencies in root context 
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.root.txt && \
     python -m playwright install --with-deps chromium

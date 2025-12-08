@@ -12,3 +12,6 @@ pytest-asyncio>=1.3
 gunicorn>=21.0.0
 
 websockets>=15.0  # Ensure WebSocket support to access playwright standalone service
+
+# Live testing dependencies
+dnspython>=2.4.0  # DNS verification tests

@@ -21,6 +21,7 @@ from flask import (
 from ..account_auth import (
     change_password,
     create_session,
+    finalize_registration_with_realms,
     get_current_account,
     is_authenticated,
     login_step1,
@@ -145,12 +146,17 @@ def forgot_password():
         if not email:
             flash('Please enter your email address', 'error')
         else:
+            # Get client IP for IP-bound token
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            
             # Always show success to prevent email enumeration
             account = Account.query.filter_by(email=email).first()
             if account:
-                # Generate reset token and send email
+                # Generate reset token and send email with IP binding
                 from ..password_reset import send_password_reset_email
-                send_password_reset_email(account)
+                send_password_reset_email(account, source_ip=client_ip)
             
             flash('If an account exists with that email, a password reset link has been sent.', 'success')
             return redirect(url_for('account.login'))
@@ -166,9 +172,14 @@ def reset_password(token):
     
     from ..password_reset import verify_reset_token, complete_password_reset
     
-    account = verify_reset_token(token)
+    # Get client IP for security validation
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip and ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    
+    account, error = verify_reset_token(token, current_ip=client_ip, expected_type='reset')
     if not account:
-        flash('Invalid or expired password reset link', 'error')
+        flash(error or 'Invalid or expired password reset link', 'error')
         return redirect(url_for('account.forgot_password'))
     
     if request.method == 'POST':
@@ -188,6 +199,44 @@ def reset_password(token):
                 flash(error, 'error')
     
     return render_template('account/reset_password.html', token=token)
+
+
+@account_bp.route('/invite/<token>', methods=['GET', 'POST'])
+def accept_invite(token):
+    """Accept account invite and set password.
+    
+    This is used when an admin creates an account and sends an invite email.
+    The user clicks the invite link and sets their own password.
+    """
+    if is_authenticated():
+        flash('You are already logged in.', 'info')
+        return redirect(url_for('account.dashboard'))
+    
+    from ..password_reset import verify_reset_token, complete_password_reset
+    
+    # Invites don't use IP binding (user may open on different device)
+    account, error = verify_reset_token(token, expected_type='invite')
+    if not account:
+        flash(error or 'Invalid or expired invite link', 'error')
+        return redirect(url_for('account.login'))
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        if new_password != confirm_password:
+            flash('Passwords do not match', 'error')
+        elif len(new_password) < 12:
+            flash('Password must be at least 12 characters', 'error')
+        else:
+            success, error = complete_password_reset(account, new_password, token)
+            if success:
+                flash('Your account is now active. Please log in with your new password.', 'success')
+                return redirect(url_for('account.login'))
+            else:
+                flash(error, 'error')
+    
+    return render_template('account/accept_invite.html', token=token, username=account.username)
 
 
 # ============================================================================
@@ -240,15 +289,190 @@ def verify_email():
         result = verify_registration(request_id, code)
         
         if result.success:
-            session.pop('registration_id', None)
-            flash('Email verified! Your account is pending admin approval.', 'success')
-            return redirect(url_for('account.pending'))
+            # Don't clear session yet - redirect to realm request step
+            session['email_verified'] = True
+            flash('Email verified! Now you can request access to domains.', 'success')
+            return redirect(url_for('account.register_realms'))
         else:
             flash(result.error, 'error')
     
     return render_template('account/verify_email.html', 
                           email=reg_request.email,
                           expires_minutes=30)
+
+
+@account_bp.route('/register/verify/<token>')
+def verify_email_link(token):
+    """Verify email via secure link (IP-bound).
+    
+    Alternative to code-based verification. Uses IP binding for security -
+    the link must be opened from the same IP that initiated registration.
+    """
+    from ..password_reset import verify_reset_token
+    
+    # Get client IP for security validation
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip and ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    
+    # Verify the token with IP binding
+    reg_request, error = verify_reset_token(token, current_ip=client_ip, expected_type='verify')
+    if not reg_request:
+        flash(error or 'Invalid or expired verification link', 'error')
+        return redirect(url_for('account.register'))
+    
+    # Check if this is a RegistrationRequest (token stores the request_id)
+    # Note: verify_reset_token was designed for Account, but we use it for RegistrationRequest
+    # by storing request.id in the token's account_id field
+    reg = RegistrationRequest.query.get(reg_request.id if hasattr(reg_request, 'id') else reg_request)
+    if not reg:
+        flash('Registration request not found', 'error')
+        return redirect(url_for('account.register'))
+    
+    # Store in session and mark as verified
+    session['registration_id'] = reg.id
+    session['email_verified'] = True
+    
+    flash('Email verified! Now you can request access to domains.', 'success')
+    return redirect(url_for('account.register_realms'))
+
+
+@account_bp.route('/register/realms', methods=['GET', 'POST'])
+def register_realms():
+    """
+    Step 3: Request realms during registration.
+    
+    User can add multiple realm requests, or skip and submit account only.
+    """
+    request_id = session.get('registration_id')
+    email_verified = session.get('email_verified')
+    
+    if not request_id or not email_verified:
+        return redirect(url_for('account.register'))
+    
+    reg_request = RegistrationRequest.query.get(request_id)
+    if not reg_request:
+        session.pop('registration_id', None)
+        session.pop('email_verified', None)
+        return redirect(url_for('account.register'))
+    
+    # Handle form submissions
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        
+        if action == 'add_realm':
+            # Add a realm request
+            full_domain = request.form.get('full_domain', '').strip().lower()
+            realm_type = request.form.get('realm_type', 'host')
+            record_types = request.form.getlist('record_types')
+            operations = request.form.getlist('operations')
+            purpose = request.form.get('purpose', '').strip()
+            
+            if full_domain:
+                # Parse domain into base domain and realm_value (subdomain prefix)
+                parts = full_domain.split('.')
+                if len(parts) >= 2:
+                    domain = '.'.join(parts[-2:])  # e.g., "example.com"
+                    realm_value = '.'.join(parts[:-2]) if len(parts) > 2 else ''  # e.g., "home"
+                    
+                    # Default record types and operations if not specified
+                    if not record_types:
+                        record_types = ['A', 'AAAA']
+                    if not operations:
+                        operations = ['read', 'update']
+                    
+                    reg_request.add_realm_request(
+                        realm_type=realm_type,
+                        domain=domain,
+                        realm_value=realm_value,
+                        record_types=record_types,
+                        operations=operations,
+                        purpose=purpose
+                    )
+                    db.session.commit()
+                    flash(f'Realm request for {full_domain} added', 'success')
+                else:
+                    flash('Invalid domain format (need at least domain.tld)', 'error')
+            else:
+                flash('Domain is required', 'error')
+        
+        elif action == 'remove_realm':
+            # Remove a realm request by index
+            try:
+                index = int(request.form.get('realm_index', -1))
+                requests = reg_request.get_realm_requests()
+                if 0 <= index < len(requests):
+                    removed = requests.pop(index)
+                    reg_request.set_realm_requests(requests)
+                    db.session.commit()
+                    fqdn = f"{removed.get('realm_value', '')}.{removed.get('domain', '')}" if removed.get('realm_value') else removed.get('domain', '')
+                    flash(f'Removed realm request for {fqdn}', 'info')
+            except (ValueError, TypeError):
+                pass
+        
+        elif action == 'submit':
+            # Finalize registration - create account with pending realms
+            result = finalize_registration_with_realms(request_id)
+            
+            if result.success:
+                session.pop('registration_id', None)
+                session.pop('email_verified', None)
+                realm_count = len(reg_request.get_realm_requests())
+                if realm_count > 0:
+                    flash(f'Registration complete! Your account and {realm_count} realm request(s) are pending admin approval.', 'success')
+                else:
+                    flash('Registration complete! Your account is pending admin approval.', 'success')
+                return redirect(url_for('account.pending'))
+            else:
+                flash(result.error, 'error')
+    
+    # Render template with current realm requests
+    realm_requests = reg_request.get_realm_requests()
+    
+    # Available templates for quick selection
+    templates = [
+        {
+            'id': 'ddns_single_host',
+            'name': 'DDNS Single Host',
+            'icon': '🏠',
+            'realm_type': 'host',
+            'record_types': ['A', 'AAAA'],
+            'operations': ['read', 'update'],
+            'description': 'Update IP address for a single hostname (home router, VPN endpoint)'
+        },
+        {
+            'id': 'ddns_subdomain_zone',
+            'name': 'DDNS Subdomain Zone',
+            'icon': '🌐',
+            'realm_type': 'subdomain',
+            'record_types': ['A', 'AAAA', 'CNAME'],
+            'operations': ['read', 'update', 'create', 'delete'],
+            'description': 'Manage a subdomain and all hosts under it (IoT fleet, K8s)'
+        },
+        {
+            'id': 'letsencrypt_dns01',
+            'name': 'LetsEncrypt DNS-01',
+            'icon': '🔒',
+            'realm_type': 'subdomain',
+            'record_types': ['TXT'],
+            'operations': ['read', 'create', 'delete'],
+            'description': 'ACME DNS-01 challenge for certificate automation'
+        },
+        {
+            'id': 'monitoring_readonly',
+            'name': 'Read-Only Monitoring',
+            'icon': '👁️',
+            'realm_type': 'host',
+            'record_types': ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'],
+            'operations': ['read'],
+            'description': 'View-only access for monitoring and dashboards'
+        }
+    ]
+    
+    return render_template('account/register_realms.html',
+                          reg_request=reg_request,
+                          realm_requests=realm_requests,
+                          templates=templates)
 
 
 @account_bp.route('/register/resend', methods=['POST'])
@@ -271,7 +495,15 @@ def resend_code():
 @account_bp.route('/register/pending')
 def pending():
     """Pending approval page."""
-    return render_template('account/pending.html')
+    # Try to get info about the just-registered account for display
+    account = None
+    realm_count = 0
+    
+    # Check if there's a recently created pending account
+    # (We can't rely on session since it's cleared after submit)
+    return render_template('account/pending.html',
+                          account=account,
+                          realm_count=realm_count)
 
 
 # ============================================================================
@@ -484,7 +716,8 @@ def settings():
             if new_password != confirm_password:
                 flash('Passwords do not match', 'error')
             else:
-                success, error = change_password(account, current_password, new_password)
+                source_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+                success, error = change_password(account, current_password, new_password, source_ip)
                 if success:
                     flash('Password changed successfully', 'success')
                 else:
@@ -1363,7 +1596,8 @@ def change_password_page():
         if new_password != confirm_password:
             flash('New passwords do not match', 'error')
         else:
-            success, error = change_password(account, current_password, new_password)
+            source_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            success, error = change_password(account, current_password, new_password, source_ip)
             if success:
                 flash('Password changed successfully', 'success')
                 return redirect(url_for('account.settings'))
@@ -1482,6 +1716,145 @@ def api_docs():
 
 
 # ============================================================================
+# Security & Activity Routes
+# ============================================================================
+
+@account_bp.route('/security')
+@require_account_auth
+def security():
+    """Account security settings page."""
+    account = g.account
+    
+    # Get active sessions for this account
+    sessions = []  # TODO: Implement session tracking
+    
+    # Get recent security events (logins, password changes, etc.)
+    security_events = ActivityLog.query.filter_by(
+        account_id=account.id
+    ).filter(
+        ActivityLog.action.in_(['login', 'login_failed', 'password_changed', '2fa_enabled', '2fa_disabled'])
+    ).order_by(ActivityLog.created_at.desc()).limit(10).all()
+    
+    return render_template(
+        'account/security.html',
+        account=account,
+        current_user=account,
+        sessions=sessions,
+        security_events=security_events
+    )
+
+
+@account_bp.route('/activity')
+@require_account_auth
+def activity():
+    """Account activity log page."""
+    account = g.account
+    page = request.args.get('page', 1, type=int)
+    type_filter = request.args.get('type', 'all')
+    
+    query = ActivityLog.query.filter_by(account_id=account.id)
+    
+    if type_filter != 'all':
+        query = query.filter(ActivityLog.action.ilike(f'%{type_filter}%'))
+    
+    pagination = query.order_by(ActivityLog.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    
+    return render_template(
+        'account/activity.html',
+        account=account,
+        activity=pagination.items,
+        pagination=pagination,
+        type_filter=type_filter
+    )
+
+
+@account_bp.route('/security/session/<int:session_id>/revoke', methods=['POST'])
+@require_account_auth
+def revoke_session(session_id):
+    """Revoke a specific session."""
+    account = g.account
+    
+    # TODO: Implement session revocation when session tracking is added
+    # For now, flash a message that this feature is not yet implemented
+    flash('Session management is not yet implemented.', 'warning')
+    
+    return redirect(url_for('account.security'))
+
+
+@account_bp.route('/security/sessions/revoke-all', methods=['POST'])
+@require_account_auth
+def revoke_all_sessions():
+    """Revoke all sessions except current."""
+    account = g.account
+    
+    # TODO: Implement when session tracking is added
+    flash('Session management is not yet implemented.', 'warning')
+    
+    return redirect(url_for('account.security'))
+
+
+@account_bp.route('/security/2fa/disable', methods=['POST'])
+@require_account_auth
+def disable_2fa():
+    """Disable two-factor authentication."""
+    account = g.account
+    password = request.form.get('password', '')
+    
+    # Verify password before disabling 2FA
+    from ..account_auth import verify_password
+    if not verify_password(account.password_hash, password):
+        flash('Incorrect password.', 'error')
+        return redirect(url_for('account.security'))
+    
+    # Disable TOTP
+    account.totp_enabled = False
+    account.totp_secret = None
+    
+    # Log the action
+    ActivityLog.log_action(
+        action='2fa_disabled',
+        account_id=account.id,
+        details='TOTP 2FA disabled',
+        ip_address=request.remote_addr
+    )
+    
+    db.session.commit()
+    
+    flash('Two-factor authentication has been disabled.', 'success')
+    return redirect(url_for('account.security'))
+
+
+@account_bp.route('/telegram/unlink', methods=['POST'])
+@require_account_auth
+def unlink_telegram():
+    """Unlink Telegram from account."""
+    account = g.account
+    
+    if not account.telegram_id:
+        flash('No Telegram account linked.', 'warning')
+        return redirect(url_for('account.link_telegram'))
+    
+    old_telegram_id = account.telegram_id
+    account.telegram_id = None
+    account.telegram_enabled = False
+    
+    # Log the action
+    ActivityLog.log_action(
+        action='telegram_unlinked',
+        account_id=account.id,
+        details=f'Telegram account unlinked (was: {old_telegram_id})',
+        ip_address=request.remote_addr
+    )
+    
+    db.session.commit()
+    
+    flash('Telegram has been unlinked from your account.', 'success')
+    return redirect(url_for('account.link_telegram'))
+
+
+# ============================================================================
 # Aliases for template compatibility
 # ============================================================================
 
@@ -1504,6 +1877,14 @@ def token_create(realm_id):
 
 # Make url_for('account.create_token') work for templates
 create_token_view = create_token_select
+
+
+# Alias for 2FA setup - templates use url_for('account.setup_2fa')
+@account_bp.route('/2fa/setup', methods=['GET', 'POST'])
+@require_account_auth
+def setup_2fa():
+    """Alias for setup_totp."""
+    return setup_totp()
 
 
 # ============================================================================

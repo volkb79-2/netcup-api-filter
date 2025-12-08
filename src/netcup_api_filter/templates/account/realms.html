@@ -96,15 +96,17 @@
             </div>
             <div class="card-footer bg-transparent">
                 <div class="d-flex gap-2">
-                    {% if realm.status == 'approved' %}
-                    <a href="{{ url_for('account.create_new_token', realm_id=realm.id) }}" class="btn btn-outline-success flex-grow-1">
-                        <i class="bi bi-key me-1"></i>Create Token
+                    <a href="{{ url_for('account.realm_detail', realm_id=realm.id) }}" class="btn btn-outline-primary flex-grow-1">
+                        <i class="bi bi-eye me-1"></i>View Details
                     </a>
-                    {% else %}
-                    <span class="btn btn-outline-secondary flex-grow-1 disabled">
-                        <i class="bi bi-clock me-1"></i>Awaiting Approval
-                    </span>
-                    {% endif %}
+                    <a href="{{ url_for('account.create_new_token', realm_id=realm.id) }}" 
+                       class="btn {% if realm.status == 'approved' %}btn-outline-success{% else %}btn-outline-secondary{% endif %} flex-grow-1"
+                       title="{% if realm.status != 'approved' %}Token can be created but won't work until realm is approved{% endif %}">
+                        <i class="bi bi-key me-1"></i>Create Token
+                        {% if realm.status != 'approved' %}
+                        <i class="bi bi-exclamation-triangle ms-1 text-warning" title="Pending approval"></i>
+                        {% endif %}
+                    </a>
                 </div>
             </div>
         </div>

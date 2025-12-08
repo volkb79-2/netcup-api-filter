@@ -31,7 +31,7 @@ class TestAccessibilityBasics:
     @pytest.mark.asyncio
     async def test_html_lang_attribute(self, browser):
         """Verify <html> element has lang attribute (WCAG 3.1.1)."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -43,7 +43,7 @@ class TestAccessibilityBasics:
     @pytest.mark.asyncio
     async def test_page_has_title(self, browser):
         """Verify all pages have a title (WCAG 2.4.2)."""
-        from config import settings
+        from ui_tests.config import settings
         
         pages = [
             "/admin/login",
@@ -61,7 +61,7 @@ class TestAccessibilityBasics:
     @pytest.mark.asyncio
     async def test_viewport_meta_tag(self, browser):
         """Verify viewport meta tag for mobile accessibility (WCAG 1.4.10)."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -79,7 +79,7 @@ class TestAccessibilityBasics:
     @pytest.mark.asyncio
     async def test_skip_link_exists(self, admin_page):
         """Verify skip link for keyboard navigation (WCAG 2.4.1)."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -100,7 +100,7 @@ class TestHeadingHierarchy:
     @pytest.mark.asyncio
     async def test_has_h1_heading(self, browser):
         """Verify pages have exactly one H1 heading."""
-        from config import settings
+        from ui_tests.config import settings
         
         pages = [
             "/admin/login",
@@ -125,7 +125,7 @@ class TestHeadingHierarchy:
         - .dropdown-header: Dropdown menu labels (often h6)
         - nav h*: Headings inside navigation elements
         """
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -166,7 +166,7 @@ class TestFormAccessibility:
     @pytest.mark.asyncio
     async def test_form_inputs_have_labels(self, browser):
         """Verify all form inputs have associated labels."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -196,7 +196,7 @@ class TestFormAccessibility:
     @pytest.mark.asyncio
     async def test_required_fields_marked(self, browser):
         """Verify required fields are properly indicated."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -218,7 +218,7 @@ class TestFormAccessibility:
     @pytest.mark.asyncio  
     async def test_buttons_have_accessible_text(self, browser):
         """Verify buttons have accessible text."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -246,7 +246,7 @@ class TestKeyboardAccessibility:
     @pytest.mark.asyncio
     async def test_interactive_elements_focusable(self, browser):
         """Verify all interactive elements can receive focus."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -265,7 +265,7 @@ class TestKeyboardAccessibility:
     @pytest.mark.asyncio
     async def test_focus_visible(self, browser):
         """Verify focus indicators are visible (WCAG 2.4.7)."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -293,7 +293,7 @@ class TestKeyboardAccessibility:
     @pytest.mark.asyncio
     async def test_no_keyboard_traps(self, browser):
         """Verify no keyboard traps exist (WCAG 2.1.2)."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -319,7 +319,7 @@ class TestColorAndContrast:
     @pytest.mark.asyncio
     async def test_link_distinguishable(self, admin_page):
         """Verify links are distinguishable from text."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -355,7 +355,7 @@ class TestImagesAndMedia:
     @pytest.mark.asyncio
     async def test_images_have_alt_text(self, admin_page):
         """Verify all images have alt text."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -380,7 +380,7 @@ class TestImagesAndMedia:
     @pytest.mark.asyncio
     async def test_icons_have_aria_labels(self, admin_page):
         """Verify icon-only buttons/links have aria-labels."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -414,7 +414,7 @@ class TestARIAUsage:
     @pytest.mark.asyncio
     async def test_no_duplicate_ids(self, browser):
         """Verify no duplicate IDs exist (WCAG 4.1.1)."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -442,7 +442,7 @@ class TestARIAUsage:
     @pytest.mark.asyncio
     async def test_aria_roles_valid(self, admin_page):
         """Verify ARIA roles are used correctly."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -487,7 +487,7 @@ class TestTableAccessibility:
     @pytest.mark.asyncio
     async def test_tables_have_headers(self, admin_page):
         """Verify data tables have proper headers."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/accounts"))
@@ -513,7 +513,7 @@ class TestTableAccessibility:
     @pytest.mark.asyncio
     async def test_table_headers_have_scope(self, admin_page):
         """Verify table headers have scope attribute."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/accounts"))
@@ -554,7 +554,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_form_errors_identified(self, browser):
         """Verify form errors are clearly identified."""
-        from config import settings
+        from ui_tests.config import settings
         
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
@@ -585,7 +585,7 @@ class TestLandmarks:
     @pytest.mark.asyncio
     async def test_main_landmark_exists(self, admin_page):
         """Verify main landmark exists."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))
@@ -602,7 +602,7 @@ class TestLandmarks:
     @pytest.mark.asyncio
     async def test_navigation_landmark_exists(self, admin_page):
         """Verify navigation landmark exists."""
-        from config import settings
+        from ui_tests.config import settings
         
         page = admin_page
         await page.goto(settings.url("/admin/"))

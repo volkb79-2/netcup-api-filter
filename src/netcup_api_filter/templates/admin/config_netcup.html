@@ -70,10 +70,7 @@
                         <div class="form-text">How long to wait for API responses</div>
                     </div>
                 </div>
-                <div class="card-footer d-flex justify-content-between">
-                    <button type="button" class="btn btn-outline-info" onclick="testConnection()">
-                        <i class="bi bi-plug me-1"></i>Test Connection
-                    </button>
+                <div class="card-footer d-flex justify-content-end">
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-save me-1"></i>Save Configuration
                     </button>
@@ -83,7 +80,7 @@
     </div>
 
     <div class="col-lg-4">
-        <!-- Status Card -->
+        <!-- Status Card with Test Button -->
         <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-activity me-1"></i>Connection Status
@@ -115,6 +112,11 @@
                     </div>
                     {% endif %}
                 </div>
+            </div>
+            <div class="card-footer">
+                <button type="button" class="btn btn-primary w-100" onclick="testConnection()">
+                    <i class="bi bi-plug me-1"></i>Test Connection
+                </button>
             </div>
         </div>
 

@@ -26,8 +26,8 @@ async def capture():
             await page.screenshot(path=str(OUTPUT_DIR / "00b-admin-password-change.png"))
             
             await page.fill("#current_password", "admin")
-            await page.fill("#new_password", "TestPassword123!")
-            await page.fill("#confirm_password", "TestPassword123!")
+            await page.fill("#new_password", "TestPassword123+Secure24")
+            await page.fill("#confirm_password", "TestPassword123+Secure24")
             await page.click("button[type='submit']")
             await asyncio.sleep(2)
         

@@ -37,7 +37,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('account.create_token', realm_id=realm.id) if realm else url_for('account.create_token_general') }}" method="post">
+                    <form action="{{ url_for('account.create_new_token', realm_id=realm.id) if realm else url_for('account.create_token_select') }}" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                         <!-- Realm Selection (if not pre-selected) -->
@@ -65,8 +65,8 @@
 
                         <!-- Token Name -->
                         <div class="mb-4">
-                            <label for="name" class="form-label">Token Name</label>
-                            <input type="text" class="form-control" id="name" name="name"
+                            <label for="token_name" class="form-label">Token Name</label>
+                            <input type="text" class="form-control" id="token_name" name="token_name"
                                    placeholder="e.g., home-router-ddns, certbot-wildcard" required>
                             <div class="form-text">
                                 A descriptive name to identify this token's purpose

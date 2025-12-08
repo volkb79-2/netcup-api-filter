@@ -1,0 +1,447 @@
+{# Security Dashboard - Security events, attack patterns, and metrics #}
+{% extends "admin/base.html" %}
+
+{% block title %}Security Dashboard - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Security Dashboard</h1>
+        <p class="text-muted mb-0">Monitor security events and attack patterns</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-secondary" id="refreshBtn" onclick="refreshData()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+</div>
+
+<!-- Security Stats Cards -->
+<div class="row g-3 mb-4">
+    <!-- Last Hour Stats -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="stat-label text-muted mb-1">Alerts (1h)</p>
+                        <h2 class="stat-value mb-0" id="stat-1h-total">{{ stats_1h.total_events }}</h2>
+                    </div>
+                    <div class="stat-icon bg-info bg-opacity-10 text-info">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                </div>
+                <div class="stat-footer mt-2">
+                    <small class="text-muted">
+                        <span class="text-danger">{{ stats_1h.by_severity.critical or 0 }} critical</span>,
+                        <span class="text-warning">{{ stats_1h.by_severity.high or 0 }} high</span>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 24h Stats -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="stat-label text-muted mb-1">Alerts (24h)</p>
+                        <h2 class="stat-value mb-0" id="stat-24h-total">{{ stats_24h.total_events }}</h2>
+                    </div>
+                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                        <i class="bi bi-graph-up-arrow"></i>
+                    </div>
+                </div>
+                <div class="stat-footer mt-2">
+                    <small class="text-muted">
+                        <span class="text-danger">{{ stats_24h.by_severity.critical or 0 }} critical</span>,
+                        <span class="text-warning">{{ stats_24h.by_severity.high or 0 }} high</span>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Attacks Detected -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="stat-label text-muted mb-1">Attacks Detected</p>
+                        <h2 class="stat-value mb-0 text-danger" id="stat-attacks">{{ attack_ips|length }}</h2>
+                    </div>
+                    <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                        <i class="bi bi-shield-exclamation"></i>
+                    </div>
+                </div>
+                <div class="stat-footer mt-2">
+                    <small class="text-muted">
+                        Unique IPs with suspicious activity
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Token Auth Failures -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="stat-label text-muted mb-1">Auth Failures (24h)</p>
+                        <h2 class="stat-value mb-0" id="stat-auth-failures">
+                            {{ (stats_24h.by_error_code.token_hash_mismatch or 0) + (stats_24h.by_error_code.alias_not_found or 0) + (stats_24h.by_error_code.token_prefix_not_found or 0) }}
+                        </h2>
+                    </div>
+                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                        <i class="bi bi-key"></i>
+                    </div>
+                </div>
+                <div class="stat-footer mt-2">
+                    <small class="text-muted">
+                        Invalid token attempts
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Timeline Chart -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Security Events Timeline (24h)</h5>
+        <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary active" data-hours="24">24h</button>
+            <button type="button" class="btn btn-outline-secondary" data-hours="12">12h</button>
+            <button type="button" class="btn btn-outline-secondary" data-hours="6">6h</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <canvas id="securityTimelineChart" height="100"></canvas>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Attack IPs -->
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">Suspicious IPs (24h)</h5>
+            </div>
+            <div class="card-body">
+                {% if attack_ips %}
+                <ul class="list-group list-group-flush">
+                    {% for ip, count in attack_ips %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <code>{{ ip }}</code>
+                        <span class="badge bg-danger rounded-pill">{{ count }} events</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">No suspicious IPs detected in the last 24 hours.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Error Code Breakdown -->
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">Error Types (24h)</h5>
+            </div>
+            <div class="card-body">
+                {% if stats_24h.by_error_code %}
+                <ul class="list-group list-group-flush">
+                    {% for code, count in stats_24h.by_error_code.items() %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>
+                            {% if code in ['token_hash_mismatch', 'ip_denied'] %}
+                            <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>
+                            {% elif code in ['token_prefix_not_found', 'token_revoked', 'domain_denied'] %}
+                            <i class="bi bi-exclamation-circle text-warning me-1"></i>
+                            {% else %}
+                            <i class="bi bi-info-circle text-info me-1"></i>
+                            {% endif %}
+                            {{ code | replace('_', ' ') | title }}
+                        </span>
+                        <span class="badge bg-secondary rounded-pill">{{ count }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">No security events in the last 24 hours.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Severity Breakdown -->
+    <div class="col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0">By Severity (24h)</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="severityPieChart" height="150"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent High/Critical Events -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Critical & High Severity Events</h5>
+        <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-sm btn-outline-primary">
+            View All Logs
+        </a>
+    </div>
+    <div class="card-body p-0">
+        {% if recent_events %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Severity</th>
+                        <th>Error</th>
+                        <th>Source IP</th>
+                        <th>Account</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in recent_events %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+                        </td>
+                        <td>
+                            {% if event.severity == 'critical' %}
+                            <span class="badge bg-danger">Critical</span>
+                            {% elif event.severity == 'high' %}
+                            <span class="badge bg-warning text-dark">High</span>
+                            {% elif event.severity == 'medium' %}
+                            <span class="badge bg-info">Medium</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Low</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <code>{{ event.error_code }}</code>
+                        </td>
+                        <td>
+                            <code>{{ event.source_ip }}</code>
+                            {% if event.is_attack %}
+                            <i class="bi bi-exclamation-triangle-fill text-danger ms-1" title="Attack pattern detected"></i>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if event.account_id %}
+                            <a href="{{ url_for('admin.account_detail', account_id=event.account_id) }}">
+                                Account #{{ event.account_id }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ event.status_reason or '-' }}</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+            <i class="bi bi-shield-check display-4"></i>
+            <p class="mb-0 mt-2">No high-severity events in the last 24 hours</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- All Events (Filterable) -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0">All Security Events (24h)</h5>
+        <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" id="severityFilter" style="width: auto;">
+                <option value="">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <select class="form-select form-select-sm" id="errorCodeFilter" style="width: auto;">
+                <option value="">All Error Types</option>
+                <option value="invalid_format">Invalid Format</option>
+                <option value="alias_not_found">Alias Not Found</option>
+                <option value="token_prefix_not_found">Token Prefix Not Found</option>
+                <option value="token_hash_mismatch">Hash Mismatch</option>
+                <option value="account_disabled">Account Disabled</option>
+                <option value="token_revoked">Token Revoked</option>
+                <option value="token_expired">Token Expired</option>
+                <option value="ip_denied">IP Denied</option>
+                <option value="domain_denied">Domain Denied</option>
+                <option value="operation_denied">Operation Denied</option>
+                <option value="record_type_denied">Record Type Denied</option>
+            </select>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0" id="allEventsTable">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Severity</th>
+                        <th>Error Code</th>
+                        <th>Source IP</th>
+                        <th>User Agent</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in all_events %}
+                    <tr data-severity="{{ event.severity }}" data-error-code="{{ event.error_code }}">
+                        <td><small>{{ event.created_at.strftime('%H:%M:%S') }}</small></td>
+                        <td>
+                            {% if event.severity == 'critical' %}
+                            <span class="badge bg-danger">Critical</span>
+                            {% elif event.severity == 'high' %}
+                            <span class="badge bg-warning text-dark">High</span>
+                            {% elif event.severity == 'medium' %}
+                            <span class="badge bg-info">Medium</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Low</span>
+                            {% endif %}
+                        </td>
+                        <td><code class="small">{{ event.error_code }}</code></td>
+                        <td><code class="small">{{ event.source_ip }}</code></td>
+                        <td><small class="text-muted text-truncate d-inline-block" style="max-width: 200px;" title="{{ event.user_agent }}">{{ event.user_agent or '-' }}</small></td>
+                        <td><small class="text-muted">{{ event.status_reason or '-' }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if not all_events %}
+        <div class="p-4 text-center text-muted">
+            <p class="mb-0">No security events recorded in the last 24 hours</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+// Timeline data from server
+const timelineData = {{ timeline | tojson }};
+
+// Initialize timeline chart
+const ctx = document.getElementById('securityTimelineChart').getContext('2d');
+const timelineChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: timelineData.map(d => d.hour),
+        datasets: [
+            {
+                label: 'Critical',
+                data: timelineData.map(d => d.critical || 0),
+                backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                stack: 'stack0'
+            },
+            {
+                label: 'High',
+                data: timelineData.map(d => d.high || 0),
+                backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                stack: 'stack0'
+            },
+            {
+                label: 'Medium',
+                data: timelineData.map(d => d.medium || 0),
+                backgroundColor: 'rgba(13, 202, 240, 0.8)',
+                stack: 'stack0'
+            },
+            {
+                label: 'Low',
+                data: timelineData.map(d => d.low || 0),
+                backgroundColor: 'rgba(108, 117, 125, 0.8)',
+                stack: 'stack0'
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: { stacked: true },
+            y: { stacked: true, beginAtZero: true }
+        },
+        plugins: {
+            legend: { position: 'top' }
+        }
+    }
+});
+
+// Severity pie chart
+const severityData = {{ stats_24h.by_severity | tojson }};
+const pieCtx = document.getElementById('severityPieChart').getContext('2d');
+new Chart(pieCtx, {
+    type: 'doughnut',
+    data: {
+        labels: Object.keys(severityData).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+        datasets: [{
+            data: Object.values(severityData),
+            backgroundColor: [
+                'rgba(220, 53, 69, 0.8)',  // critical
+                'rgba(255, 193, 7, 0.8)',  // high  
+                'rgba(13, 202, 240, 0.8)', // medium
+                'rgba(108, 117, 125, 0.8)' // low
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom' }
+        }
+    }
+});
+
+// Table filtering
+document.getElementById('severityFilter').addEventListener('change', filterTable);
+document.getElementById('errorCodeFilter').addEventListener('change', filterTable);
+
+function filterTable() {
+    const severity = document.getElementById('severityFilter').value;
+    const errorCode = document.getElementById('errorCodeFilter').value;
+    
+    const rows = document.querySelectorAll('#allEventsTable tbody tr');
+    rows.forEach(row => {
+        const matchSeverity = !severity || row.dataset.severity === severity;
+        const matchError = !errorCode || row.dataset.errorCode === errorCode;
+        row.style.display = (matchSeverity && matchError) ? '' : 'none';
+    });
+}
+
+// Refresh data
+function refreshData() {
+    location.reload();
+}
+</script>
+{% endblock %}

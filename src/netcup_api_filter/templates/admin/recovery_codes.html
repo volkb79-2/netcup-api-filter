@@ -1,0 +1,231 @@
+{# Admin Recovery Codes Page #}
+{% extends "admin/base.html" %}
+
+{% block title %}Recovery Codes - Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title mb-0">
+                    <i class="bi bi-key me-2"></i>Recovery Codes
+                </h2>
+            </div>
+            <div class="card-body">
+                
+                {% if codes %}
+                <!-- Display newly generated codes -->
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Save these codes now!</strong> They will only be shown once. Each code can only be used once.
+                </div>
+                
+                <div class="recovery-codes-box bg-dark text-light p-4 rounded mb-4">
+                    <div class="row row-cols-2 g-2">
+                        {% for code in codes %}
+                        <div class="col">
+                            <code class="fs-5">{{ code }}</code>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2 mb-4">
+                    <button class="btn btn-outline-secondary flex-grow-1" onclick="copyCodes()">
+                        <i class="bi bi-clipboard me-1"></i>Copy All
+                    </button>
+                    <button class="btn btn-outline-secondary flex-grow-1" onclick="downloadCodes()">
+                        <i class="bi bi-download me-1"></i>Download
+                    </button>
+                    <button class="btn btn-outline-secondary flex-grow-1" onclick="printCodes()">
+                        <i class="bi bi-printer me-1"></i>Print
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="confirm">
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="confirm_saved" required>
+                        <label class="form-check-label" for="confirm_saved">
+                            I have saved these recovery codes in a secure location
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-check2 me-1"></i>I've Saved My Codes
+                    </button>
+                </form>
+                
+                {% else %}
+                <!-- No codes to display - show status and regenerate option -->
+                
+                {% if has_recovery_codes %}
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i class="bi bi-check-circle-fill text-success display-4"></i>
+                    </div>
+                    <h4 class="text-success">Recovery Codes Active</h4>
+                    <p class="text-muted">
+                        You have recovery codes stored securely.
+                        {% if codes_generated_at %}
+                        <br><small>Generated: {{ codes_generated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        {% endif %}
+                    </p>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Recovery codes cannot be viewed again after initial generation. If you've lost your codes, generate new ones below.
+                </div>
+                {% else %}
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i class="bi bi-exclamation-triangle-fill text-warning display-4"></i>
+                    </div>
+                    <h4 class="text-warning">No Recovery Codes</h4>
+                    <p class="text-muted">
+                        Recovery codes provide a backup way to access your account if you lose access to your 2FA method.
+                    </p>
+                </div>
+                {% endif %}
+                
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="generate">
+                    
+                    {% if has_recovery_codes %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Generating new codes will <strong>invalidate</strong> all existing recovery codes.
+                    </div>
+                    {% endif %}
+                    
+                    <button type="submit" class="btn btn-{% if has_recovery_codes %}warning{% else %}primary{% endif %} w-100">
+                        <i class="bi bi-key me-1"></i>
+                        {% if has_recovery_codes %}Regenerate Recovery Codes{% else %}Generate Recovery Codes{% endif %}
+                    </button>
+                </form>
+                
+                <div class="mt-3">
+                    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Info Card -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h6><i class="bi bi-shield-check me-2"></i>About Recovery Codes</h6>
+                <ul class="mb-0 small text-muted">
+                    <li>Each code can only be used <strong>once</strong></li>
+                    <li>Store them in a secure location (password manager, safe)</li>
+                    <li>10 codes are generated each time</li>
+                    <li>Use these if you lose access to your authenticator app</li>
+                    <li>Regenerating codes invalidates all previous codes</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Get all codes as array
+function getAllCodes() {
+    const codeElements = document.querySelectorAll('.recovery-codes-box code');
+    return Array.from(codeElements).map(el => el.textContent);
+}
+
+function copyCodes() {
+    const codes = getAllCodes().join('\n');
+    navigator.clipboard.writeText(codes).then(() => {
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check me-1"></i>Copied!';
+        setTimeout(() => btn.innerHTML = originalHTML, 2000);
+    });
+}
+
+function downloadCodes() {
+    const codes = getAllCodes().join('\n');
+    const header = 'Netcup API Filter - Recovery Codes\n' +
+                   'Generated: ' + new Date().toISOString() + '\n' +
+                   '=' .repeat(40) + '\n\n';
+    const footer = '\n\n' + '=' .repeat(40) + '\n' +
+                   'Keep these codes safe!\n' +
+                   'Each code can only be used once.\n';
+    
+    const content = header + codes + footer;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'netcup-api-filter-recovery-codes.txt';
+    a.click();
+    
+    URL.revokeObjectURL(url);
+}
+
+function printCodes() {
+    const codes = getAllCodes();
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Recovery Codes - Netcup API Filter</title>
+            <style>
+                body { font-family: monospace; padding: 40px; }
+                h1 { font-size: 18px; }
+                .codes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 300px; }
+                .code { font-size: 16px; padding: 5px; background: #f5f5f5; }
+                .warning { color: #856404; background: #fff3cd; padding: 10px; margin-top: 20px; }
+            </style>
+        </head>
+        <body>
+            <h1>Netcup API Filter - Recovery Codes</h1>
+            <p>Generated: ${new Date().toLocaleDateString()}</p>
+            <div class="codes">
+                ${codes.map(c => `<div class="code">${c}</div>`).join('')}
+            </div>
+            <div class="warning">
+                ⚠️ Keep these codes safe! Each code can only be used once.
+            </div>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+</script>
+
+<style>
+.recovery-codes-box {
+    font-family: 'Courier New', monospace;
+}
+.recovery-codes-box code {
+    background: transparent;
+    color: #0f0;
+}
+
+@media print {
+    .card-header, .btn, .form-check, .alert {
+        display: none !important;
+    }
+    .recovery-codes-box {
+        background: white !important;
+        color: black !important;
+    }
+    .recovery-codes-box code {
+        color: black !important;
+    }
+}
+</style>
+{% endblock %}

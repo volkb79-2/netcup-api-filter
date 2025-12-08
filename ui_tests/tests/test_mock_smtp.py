@@ -2,6 +2,7 @@
 import pytest
 import asyncio
 import smtplib
+from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -257,7 +258,7 @@ async def test_mock_smtp_timestamp_recorded(mock_smtp_server):
     msg['From'] = "sender@example.com"
     msg['To'] = "recipient@example.com"
     
-    before = datetime.utcnow()
+    before = datetime.now(timezone.utc)
     
     smtp = smtplib.SMTP('127.0.0.1', 1025)
     smtp.send_message(msg)
@@ -265,7 +266,7 @@ async def test_mock_smtp_timestamp_recorded(mock_smtp_server):
     
     await asyncio.sleep(0.2)
     
-    after = datetime.utcnow()
+    after = datetime.now(timezone.utc)
     
     email = mock_smtp_server.captured_emails[0]
     

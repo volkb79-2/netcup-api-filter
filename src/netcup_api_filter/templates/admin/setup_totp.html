@@ -1,0 +1,175 @@
+{# Admin TOTP Setup Page #}
+{% extends "admin/base.html" %}
+
+{% block title %}Authenticator App Setup - Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title mb-0">
+                    <i class="bi bi-phone me-2"></i>Authenticator App
+                </h2>
+            </div>
+            <div class="card-body">
+                
+                {% if totp_enabled %}
+                <!-- TOTP is currently enabled -->
+                <div class="text-center mb-4">
+                    <div class="mb-3">
+                        <i class="bi bi-check-circle-fill text-success display-4"></i>
+                    </div>
+                    <h4 class="text-success">Authenticator App Enabled</h4>
+                    <p class="text-muted">
+                        Your account is protected with an authenticator app.
+                    </p>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Disable with caution!</strong> You will need email 2FA or recovery codes to log in if you disable your authenticator app.
+                </div>
+                
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="disable">
+                    
+                    <div class="mb-3">
+                        <label for="code" class="form-label">Current Authenticator Code</label>
+                        <input type="text" 
+                               class="form-control font-monospace text-center" 
+                               id="code" 
+                               name="code" 
+                               placeholder="000000"
+                               inputmode="numeric"
+                               pattern="[0-9]{6}"
+                               maxlength="6"
+                               required>
+                        <div class="form-text">Enter a code from your app to confirm disable</div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-x-circle me-1"></i>Disable Authenticator
+                        </button>
+                    </div>
+                </form>
+                
+                {% else %}
+                <!-- Setup new TOTP -->
+                <div class="text-center mb-4">
+                    <h5>Step 1: Scan QR Code</h5>
+                    <p class="text-muted">
+                        Use your authenticator app (Google Authenticator, Authy, 1Password, etc.) to scan this QR code:
+                    </p>
+                    
+                    {% if qr_code_data %}
+                    <div class="bg-white p-3 d-inline-block rounded mb-3">
+                        <img src="data:image/png;base64,{{ qr_code_data }}" 
+                             alt="TOTP QR Code" 
+                             class="img-fluid"
+                             style="max-width: 200px;">
+                    </div>
+                    {% else %}
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Unable to generate QR code. Please install qrcode and pillow packages.
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if totp_secret %}
+                <div class="mb-4">
+                    <h6 class="text-center">Can't scan? Enter manually:</h6>
+                    <div class="input-group">
+                        <input type="text" 
+                               class="form-control font-monospace text-center" 
+                               value="{{ totp_secret }}" 
+                               readonly
+                               id="secretKey">
+                        <button class="btn btn-outline-secondary" type="button" onclick="copySecret()">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="mb-4">
+                    <h5 class="text-center">Step 2: Verify Setup</h5>
+                    <p class="text-muted text-center">
+                        Enter the 6-digit code from your app to confirm setup:
+                    </p>
+                </div>
+                
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="enable">
+                    
+                    <div class="mb-3">
+                        <label for="code" class="form-label">Verification Code</label>
+                        <input type="text" 
+                               class="form-control form-control-lg font-monospace text-center" 
+                               id="code" 
+                               name="code" 
+                               placeholder="000000"
+                               inputmode="numeric"
+                               pattern="[0-9]{6}"
+                               maxlength="6"
+                               autofocus
+                               required>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-check2-circle me-1"></i>Enable Authenticator
+                        </button>
+                        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+                {% endif %}
+                
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Info Card -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle me-2"></i>Why use an authenticator app?</h6>
+                <ul class="mb-0 small text-muted">
+                    <li>Works offline - no email or phone signal needed</li>
+                    <li>Codes change every 30 seconds for extra security</li>
+                    <li>Faster than waiting for email codes</li>
+                    <li>Resistant to email account compromise</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copySecret() {
+    const secretInput = document.getElementById('secretKey');
+    secretInput.select();
+    document.execCommand('copy');
+    
+    // Show feedback
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i>';
+    setTimeout(() => btn.innerHTML = originalHTML, 1500);
+}
+
+// Auto-format code input
+document.getElementById('code')?.addEventListener('input', function(e) {
+    this.value = this.value.replace(/\D/g, '');
+});
+</script>
+{% endblock %}

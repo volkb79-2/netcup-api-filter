@@ -65,22 +65,26 @@
                 
                 {% if account.realms %}
                 <hr class="my-3">
-                <label class="form-label small text-muted">Requested Realms</label>
+                <label class="form-label small text-muted">
+                    Requested Domains 
+                    <span class="badge bg-info">{{ account.realms | length }}</span>
+                </label>
                 <div class="list-group list-group-flush">
                     {% for realm in account.realms %}
                     <div class="list-group-item d-flex justify-content-between align-items-center px-0">
                         <div>
                             <span class="font-monospace">{{ realm.realm_value }}</span>
                             <span class="badge bg-secondary ms-2">{{ realm.realm_type }}</span>
-                            {% if realm.status == 'pending' %}
-                            <span class="badge bg-warning text-dark ms-1">Pending</span>
-                            {% endif %}
                         </div>
                         <div class="text-muted small">
-                            {{ realm.allowed_record_types | join(', ') }}
+                            {{ realm.get_allowed_record_types() | join(', ') }}
                         </div>
                     </div>
                     {% endfor %}
+                </div>
+                <div class="alert alert-info mt-2 mb-0 small py-2">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Approving this account will also approve all {{ account.realms | length }} domain request(s).
                 </div>
                 {% endif %}
             </div>
@@ -89,7 +93,7 @@
                     <form method="POST" action="{{ url_for('admin.account_approve', account_id=account.id) }}" class="flex-grow-1">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-success w-100">
-                            <i class="bi bi-check-lg me-1"></i>Approve
+                            <i class="bi bi-check-lg me-1"></i>Approve{% if account.realms %} (+ {{ account.realms | length }} domains){% endif %}
                         </button>
                     </form>
                     <a href="{{ url_for('admin.account_detail', account_id=account.id) }}" class="btn btn-outline-primary">

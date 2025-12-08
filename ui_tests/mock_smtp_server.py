@@ -15,7 +15,12 @@ import email
 from email.message import EmailMessage
 from typing import List, Dict, Any
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utc_now() -> datetime:
+    """Return current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -29,7 +34,7 @@ class CapturedEmail:
     body_html: str | None
     headers: Dict[str, str]
     raw_message: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=_utc_now)
     
     @classmethod
     def from_message(cls, sender: str, recipients: List[str], message_data: bytes) -> 'CapturedEmail':

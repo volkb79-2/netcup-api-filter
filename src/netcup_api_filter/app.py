@@ -167,6 +167,53 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     app.register_blueprint(dns_api_bp)
     
     # =========================================================================
+    # Template Filters
+    # =========================================================================
+    
+    @app.template_filter('format_realm')
+    def format_realm_filter(realm):
+        """Format realm for display with intuitive type indicators.
+        
+        Returns a formatted string showing the realm scope:
+        - host type: exact hostname (vpn.example.com)
+        - subdomain type: * prefix indicating wildcard (*.iot.example.com)
+        - subdomain_only type: *. prefix indicating children only (*.client.example.com, not client.example.com)
+        - empty realm_value: just the domain (apex)
+        """
+        if not realm:
+            return '—'
+        
+        domain = realm.domain
+        realm_value = realm.realm_value or ''
+        realm_type = realm.realm_type
+        
+        if realm_value:
+            fqdn = f'{realm_value}.{domain}'
+        else:
+            fqdn = domain
+        
+        if realm_type == 'host':
+            # Exact match - just show the hostname
+            return fqdn
+        elif realm_type == 'subdomain':
+            # Apex + all children - use * prefix
+            return f'*.{fqdn}' if realm_value else f'*.{domain}'
+        elif realm_type == 'subdomain_only':
+            # Children only, not apex - use *. prefix (dot emphasized)
+            return f'*/{fqdn}'  # Using */ to indicate "children of" not including self
+        else:
+            return fqdn
+    
+    @app.template_filter('realm_type_badge')
+    def realm_type_badge_filter(realm_type):
+        """Return appropriate badge class and label for realm type."""
+        badges = {
+            'host': ('bg-primary', 'Exact'),
+            'subdomain': ('bg-success', 'Wildcard'),
+            'subdomain_only': ('bg-info', 'Children Only'),
+        }
+        return badges.get(realm_type, ('bg-secondary', realm_type))
+    
     # Context Processors
     # =========================================================================
     
@@ -199,20 +246,53 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     # Error Handlers
     # =========================================================================
     
+    @app.errorhandler(400)
+    def bad_request(e):
+        from flask import jsonify, request, render_template
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'bad_request', 'message': str(e.description) if hasattr(e, 'description') else 'Bad request'}), 400
+        return render_template('errors/400.html'), 400
+    
+    @app.errorhandler(401)
+    def unauthorized(e):
+        from flask import jsonify, request, render_template
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'unauthorized', 'message': 'Authentication required'}), 401
+        return render_template('errors/401.html'), 401
+    
+    @app.errorhandler(403)
+    def forbidden(e):
+        from flask import jsonify, request, render_template
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'forbidden', 'message': 'Access forbidden'}), 403
+        return render_template('errors/403.html'), 403
+    
     @app.errorhandler(404)
     def not_found(e):
-        from flask import jsonify, request
+        from flask import jsonify, request, render_template
         if request.path.startswith('/api/'):
             return jsonify({'error': 'not_found', 'message': 'Endpoint not found'}), 404
-        return "Not Found", 404
+        return render_template('errors/404.html'), 404
+    
+    @app.errorhandler(429)
+    def rate_limited(e):
+        from flask import jsonify, request, render_template
+        retry_after = getattr(e, 'retry_after', 60)
+        if request.path.startswith('/api/'):
+            response = jsonify({'error': 'rate_limited', 'message': 'Too many requests', 'retry_after': retry_after})
+            response.headers['Retry-After'] = str(retry_after)
+            return response, 429
+        return render_template('errors/429.html', retry_after=retry_after), 429
     
     @app.errorhandler(500)
     def internal_error(e):
-        from flask import jsonify, request
-        logger.exception("Internal server error")
+        from flask import jsonify, request, render_template
+        import uuid
+        error_id = str(uuid.uuid4())[:8]
+        logger.exception(f"Internal server error [{error_id}]")
         if request.path.startswith('/api/'):
-            return jsonify({'error': 'internal', 'message': 'Internal server error'}), 500
-        return "Internal Server Error", 500
+            return jsonify({'error': 'internal', 'message': 'Internal server error', 'error_id': error_id}), 500
+        return render_template('errors/500.html', error_id=error_id), 500
     
     # =========================================================================
     # Health Check

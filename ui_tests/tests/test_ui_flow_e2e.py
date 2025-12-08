@@ -18,7 +18,7 @@ import sys
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import settings
+from ui_tests.config import settings
 
 
 pytestmark = [
@@ -236,10 +236,16 @@ class TestAutoRefresh:
             # Toggle should be present
             assert auto_refresh is not None
             
-            # Click to enable
+            # The checkbox is checked by default, verify it's togglable by:
+            # 1. Check initial state (should be checked)
+            initial_state = await auto_refresh.is_checked()
+            
+            # 2. Click to toggle (will uncheck it since it starts checked)
             await auto_refresh.click()
-            is_checked = await auto_refresh.is_checked()
-            assert is_checked, "Auto-refresh should be toggleable"
+            toggled_state = await auto_refresh.is_checked()
+            
+            # 3. Verify state changed (proves toggle works)
+            assert initial_state != toggled_state, "Auto-refresh should be toggleable"
 
 
 class TestExportFunctionality:

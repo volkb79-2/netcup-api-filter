@@ -27,9 +27,12 @@ from ..account_auth import (
     create_account_by_admin,
     disable_account,
     generate_secure_password,
+    reject_account,
 )
+from ..geoip_service import geoip_location
 from ..models import (
-    Account, AccountRealm, ActivityLog, APIToken, db, Settings
+    Account, AccountRealm, ActivityLog, APIToken, db, Settings,
+    validate_password,
 )
 from ..realm_token_service import (
     approve_realm,
@@ -38,6 +41,12 @@ from ..realm_token_service import (
     reject_realm,
 )
 from ..database import get_setting, set_setting
+from ..config_defaults import get_default
+
+import ipaddress
+import os
+import random
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +55,176 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 # Admin session keys
 SESSION_KEY_ADMIN_ID = 'admin_id'
 SESSION_KEY_ADMIN_USERNAME = 'admin_username'
+SESSION_KEY_ADMIN_2FA_PENDING = 'admin_2fa_pending'
+SESSION_KEY_ADMIN_2FA_CODE = 'admin_2fa_code'
+SESSION_KEY_ADMIN_2FA_EXPIRES = 'admin_2fa_expires'
+SESSION_KEY_ADMIN_SESSION_IP = 'admin_session_ip'
+SESSION_KEY_ADMIN_2FA_METHOD = 'admin_2fa_method'  # 'email' or 'totp'
+
+# Timing attack protection: random delay range (milliseconds)
+LOGIN_DELAY_MIN_MS = 100
+LOGIN_DELAY_MAX_MS = 300
+
+# Brute force protection thresholds
+FAILED_LOGIN_LOCKOUT_THRESHOLD = 5  # Failed attempts before lockout
+FAILED_LOGIN_LOCKOUT_MINUTES = 15  # Lockout duration
+FAILED_LOGIN_ALERT_THRESHOLD = 3  # Failed attempts before alerting user
+
+
+def _add_timing_jitter():
+    """Add random delay to prevent timing-based username enumeration."""
+    delay_ms = random.randint(LOGIN_DELAY_MIN_MS, LOGIN_DELAY_MAX_MS)
+    time.sleep(delay_ms / 1000.0)
+
+
+def _get_client_ip() -> str:
+    """Get real client IP, handling proxy headers."""
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip and ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    return client_ip or 'unknown'
+
+
+def _track_failed_login(username: str, client_ip: str) -> tuple[bool, int]:
+    """
+    Track failed login attempt per username globally.
+    
+    Returns:
+        (is_locked_out, failed_count) - Whether account is locked and current failure count
+    """
+    from ..database import get_system_config, set_system_config
+    
+    # Track per-username (global, not per-IP)
+    key = f'failed_login_user_{username}'
+    data = get_system_config(key) or {'count': 0, 'first_failure': None, 'ips': []}
+    
+    now = datetime.utcnow()
+    
+    # Reset if lockout period has passed
+    if data.get('lockout_until'):
+        lockout_until = datetime.fromisoformat(data['lockout_until'])
+        if now > lockout_until:
+            data = {'count': 0, 'first_failure': None, 'ips': []}
+    
+    # Increment count
+    data['count'] = data.get('count', 0) + 1
+    if not data.get('first_failure'):
+        data['first_failure'] = now.isoformat()
+    
+    # Track unique IPs (for distributed attack detection)
+    if client_ip not in data.get('ips', []):
+        data['ips'] = data.get('ips', [])[:9] + [client_ip]  # Keep last 10 IPs
+    
+    # Check if we should lock out
+    is_locked = False
+    if data['count'] >= FAILED_LOGIN_LOCKOUT_THRESHOLD:
+        data['lockout_until'] = (now + timedelta(minutes=FAILED_LOGIN_LOCKOUT_MINUTES)).isoformat()
+        is_locked = True
+        logger.warning(f"Account '{username}' locked out after {data['count']} failed attempts")
+    
+    set_system_config(key, data)
+    
+    return is_locked, data['count']
+
+
+def _check_account_lockout(username: str) -> tuple[bool, int | None]:
+    """
+    Check if account is currently locked out.
+    
+    Returns:
+        (is_locked, minutes_remaining) - Whether locked and minutes until unlock
+    """
+    from ..database import get_system_config
+    
+    key = f'failed_login_user_{username}'
+    data = get_system_config(key)
+    
+    if not data or not data.get('lockout_until'):
+        return False, None
+    
+    lockout_until = datetime.fromisoformat(data['lockout_until'])
+    now = datetime.utcnow()
+    
+    if now < lockout_until:
+        remaining = int((lockout_until - now).total_seconds() / 60) + 1
+        return True, remaining
+    
+    return False, None
+
+
+def _clear_failed_logins(username: str):
+    """Clear failed login tracking after successful login."""
+    from ..database import set_system_config
+    set_system_config(f'failed_login_user_{username}', None)
+
+
+def _notify_failed_login_attempt(admin: Account, failed_count: int, client_ip: str):
+    """Send notification to admin about failed login attempts on their account."""
+    if failed_count < FAILED_LOGIN_ALERT_THRESHOLD:
+        return
+    
+    try:
+        from ..notification_service import send_security_alert_email
+        send_security_alert_email(
+            email=admin.email,
+            username=admin.username,
+            event_type='failed_login',
+            details=f"{failed_count} failed login attempts detected from IP {client_ip}",
+            source_ip=client_ip
+        )
+        logger.info(f"Security alert sent to {admin.username} after {failed_count} failed attempts")
+    except Exception as e:
+        logger.error(f"Failed to send security alert: {e}")
+
+
+def _check_ip_in_whitelist(client_ip: str, whitelist: list[str]) -> bool:
+    """Check if client IP is in the whitelist (supports CIDR notation)."""
+    if not whitelist:
+        return True  # No whitelist = allow all
+    
+    try:
+        ip_obj = ipaddress.ip_address(client_ip)
+    except ValueError:
+        logger.warning(f"Invalid client IP format: {client_ip}")
+        return False
+    
+    for allowed in whitelist:
+        try:
+            if '/' in allowed:
+                # CIDR notation
+                network = ipaddress.ip_network(allowed, strict=False)
+                if ip_obj in network:
+                    return True
+            else:
+                # Single IP
+                if ip_obj == ipaddress.ip_address(allowed):
+                    return True
+        except ValueError:
+            logger.warning(f"Invalid IP in admin whitelist: {allowed}")
+            continue
+    
+    return False
+
+
+@admin_bp.before_request
+def check_admin_ip_whitelist():
+    """Check IP against admin whitelist before any admin route."""
+    # Get whitelist from environment (config-driven)
+    whitelist_raw = os.environ.get('ADMIN_IP_WHITELIST', get_default('ADMIN_IP_WHITELIST', '')).strip()
+    if not whitelist_raw:
+        return None  # No whitelist configured, allow all
+    
+    client_ip = _get_client_ip()
+    whitelist = [ip.strip() for ip in whitelist_raw.split(',') if ip.strip()]
+    
+    if not _check_ip_in_whitelist(client_ip, whitelist):
+        logger.warning(f"Admin access blocked: IP {client_ip} not in whitelist")
+        from flask import abort
+        abort(403)
 
 
 def require_admin(f):
-    """Decorator requiring admin authentication."""
+    """Decorator requiring admin authentication with optional session IP binding."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         admin_id = session.get(SESSION_KEY_ADMIN_ID)
@@ -61,6 +236,17 @@ def require_admin(f):
             session.pop(SESSION_KEY_ADMIN_ID, None)
             session.pop(SESSION_KEY_ADMIN_USERNAME, None)
             return redirect(url_for('admin.login'))
+        
+        # Check session IP binding if enabled
+        bind_ip = os.environ.get('ADMIN_SESSION_BIND_IP', get_default('ADMIN_SESSION_BIND_IP', 'false'))
+        if bind_ip.lower() in ('true', '1', 'yes'):
+            session_ip = session.get(SESSION_KEY_ADMIN_SESSION_IP)
+            current_ip = _get_client_ip()
+            if session_ip and session_ip != current_ip:
+                logger.warning(f"Admin session IP mismatch: session={session_ip}, current={current_ip}")
+                session.clear()
+                flash('Session invalidated due to IP change. Please log in again.', 'warning')
+                return redirect(url_for('admin.login'))
         
         # Force password change if required (but allow access to change_password route)
         if admin.must_change_password and request.endpoint != 'admin.change_password':
@@ -78,7 +264,7 @@ def require_admin(f):
 
 @admin_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """Admin login page."""
+    """Admin login page - Step 1: Username + Password."""
     if session.get(SESSION_KEY_ADMIN_ID):
         # Check if password change is required
         admin = Account.query.get(session.get(SESSION_KEY_ADMIN_ID))
@@ -89,38 +275,284 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        client_ip = _get_client_ip()
+        
+        # Add timing jitter to prevent username enumeration
+        _add_timing_jitter()
+        
+        # Check if account is locked out (per-username tracking)
+        is_locked, minutes_remaining = _check_account_lockout(username)
+        if is_locked:
+            flash(f'Account temporarily locked. Try again in {minutes_remaining} minutes.', 'error')
+            logger.warning(f"Login attempt on locked account: {username} from {client_ip}")
+            return render_template('admin/login.html')
         
         admin = Account.query.filter_by(username=username, is_admin=1).first()
         
         if admin and admin.verify_password(password):
+            # Clear failed login tracking on success
+            _clear_failed_logins(username)
+            
             if not admin.is_active:
                 flash('Account is disabled', 'error')
             else:
-                session[SESSION_KEY_ADMIN_ID] = admin.id
-                session[SESSION_KEY_ADMIN_USERNAME] = admin.username
-                admin.last_login_at = datetime.utcnow()
-                db.session.commit()
+                # Check for test mode bypass (only in local_test environment)
+                skip_2fa = (
+                    os.environ.get('FLASK_ENV') == 'local_test' and
+                    os.environ.get('ADMIN_2FA_SKIP', '').lower() in ('true', '1', 'yes')
+                )
                 
-                logger.info(f"Admin login: {username}")
+                if skip_2fa:
+                    logger.warning(f"2FA BYPASSED for {username} (test mode)")
+                    return _complete_admin_login(admin, client_ip, 'test_bypass')
                 
-                # Redirect to password change if required
-                if admin.must_change_password:
+                # Check if admin has valid email for 2FA
+                if not admin.email or admin.email == 'admin@localhost':
+                    # Admin needs to set email first - proceed to password change which handles this
+                    session[SESSION_KEY_ADMIN_ID] = admin.id
+                    session[SESSION_KEY_ADMIN_USERNAME] = admin.username
+                    session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
+                    admin.must_change_password = 1  # Force password change to also set email
+                    db.session.commit()
+                    logger.info(f"Admin login (no valid email, forcing setup): {username}")
                     return redirect(url_for('admin.change_password'))
                 
-                return redirect(url_for('admin.dashboard'))
+                # Proceed to 2FA - determine available methods
+                session[SESSION_KEY_ADMIN_2FA_PENDING] = admin.id
+                
+                # Check if TOTP is enabled for this admin
+                if admin.totp_enabled and admin.totp_secret:
+                    # Admin has TOTP configured - let them choose
+                    session[SESSION_KEY_ADMIN_2FA_METHOD] = 'choose'
+                    return redirect(url_for('admin.login_2fa'))
+                else:
+                    # Email-only 2FA
+                    session[SESSION_KEY_ADMIN_2FA_METHOD] = 'email'
+                    
+                    # Generate and send 2FA code via email
+                    from ..account_auth import generate_code, TFA_CODE_LENGTH, TFA_CODE_EXPIRY_MINUTES
+                    code = generate_code(TFA_CODE_LENGTH)
+                    expires_at = datetime.utcnow() + timedelta(minutes=TFA_CODE_EXPIRY_MINUTES)
+                    
+                    session[SESSION_KEY_ADMIN_2FA_CODE] = code
+                    session[SESSION_KEY_ADMIN_2FA_EXPIRES] = expires_at.isoformat()
+                    
+                    # Send 2FA email
+                    from ..notification_service import send_2fa_email
+                    if send_2fa_email(admin.email, admin.username, code):
+                        logger.info(f"Admin 2FA code sent to {admin.username}")
+                        return redirect(url_for('admin.login_2fa'))
+                    else:
+                        logger.error(f"Failed to send admin 2FA email to {admin.username}")
+                        flash('Failed to send verification code. Please try again.', 'error')
         else:
-            flash('Invalid credentials', 'error')
-            logger.warning(f"Failed admin login attempt: {username}")
+            # Track failed login attempt per-username
+            is_locked, failed_count = _track_failed_login(username, client_ip)
+            
+            # Notify admin if threshold reached
+            if admin:
+                _notify_failed_login_attempt(admin, failed_count, client_ip)
+            
+            if is_locked:
+                flash(f'Too many failed attempts. Account locked for {FAILED_LOGIN_LOCKOUT_MINUTES} minutes.', 'error')
+            else:
+                flash('Invalid credentials', 'error')
+            
+            logger.warning(f"Failed admin login attempt: {username} from {client_ip} (attempt #{failed_count})")
     
     return render_template('admin/login.html')
+
+
+@admin_bp.route('/login/2fa', methods=['GET', 'POST'])
+def login_2fa():
+    """Admin login page - Step 2: 2FA verification (Email, TOTP, or Recovery Code)."""
+    # Check for pending 2FA
+    admin_id = session.get(SESSION_KEY_ADMIN_2FA_PENDING)
+    if not admin_id:
+        return redirect(url_for('admin.login'))
+    
+    admin = Account.query.get(admin_id)
+    if not admin:
+        session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+        return redirect(url_for('admin.login'))
+    
+    # Determine available 2FA methods
+    has_totp = admin.totp_enabled and admin.totp_secret
+    has_email = admin.email and admin.email != 'admin@localhost'
+    current_method = session.get(SESSION_KEY_ADMIN_2FA_METHOD, 'email')
+    
+    # Handle method selection
+    selected_method = request.args.get('method') or request.form.get('method')
+    if selected_method in ('email', 'totp'):
+        current_method = selected_method
+        session[SESSION_KEY_ADMIN_2FA_METHOD] = current_method
+        
+        # If switching to email, send code
+        if current_method == 'email' and not session.get(SESSION_KEY_ADMIN_2FA_CODE):
+            from ..account_auth import generate_code, TFA_CODE_LENGTH, TFA_CODE_EXPIRY_MINUTES
+            code = generate_code(TFA_CODE_LENGTH)
+            expires_at = datetime.utcnow() + timedelta(minutes=TFA_CODE_EXPIRY_MINUTES)
+            session[SESSION_KEY_ADMIN_2FA_CODE] = code
+            session[SESSION_KEY_ADMIN_2FA_EXPIRES] = expires_at.isoformat()
+            
+            from ..notification_service import send_2fa_email
+            if send_2fa_email(admin.email, admin.username, code):
+                flash('Verification code sent to your email', 'info')
+            else:
+                flash('Failed to send verification code', 'error')
+    
+    # Mask email for display
+    def mask_email(email: str) -> str:
+        if not email or '@' not in email:
+            return '***@***'
+        local, domain = email.rsplit('@', 1)
+        if len(local) <= 2:
+            masked_local = '*' * len(local)
+        else:
+            masked_local = local[0] + '*' * (len(local) - 2) + local[-1]
+        return f"{masked_local}@{domain}"
+    
+    if request.method == 'POST':
+        code = request.form.get('code', '').strip()
+        client_ip = _get_client_ip()
+        
+        # Add timing jitter
+        _add_timing_jitter()
+        
+        # Check if this looks like a recovery code (format: XXXX-XXXX)
+        if len(code) == 9 and '-' in code:
+            from ..recovery_codes import verify_recovery_code
+            if verify_recovery_code(admin, code):
+                # Recovery code verified - complete login
+                flash('Login successful (recovery code used)', 'success')
+                flash('You used a recovery code. Consider regenerating your recovery codes.', 'warning')
+                return _complete_admin_login(admin, client_ip, via='recovery_code')
+            else:
+                flash('Invalid recovery code', 'error')
+                return render_template('admin/login_2fa.html',
+                                      masked_email=mask_email(admin.email),
+                                      username=admin.username,
+                                      has_totp=has_totp,
+                                      has_email=has_email,
+                                      method=current_method)
+        
+        # Verify based on current method
+        if current_method == 'totp' and has_totp:
+            # Verify TOTP code
+            try:
+                import pyotp
+                totp = pyotp.TOTP(admin.totp_secret)
+                if totp.verify(code, valid_window=1):
+                    flash('Login successful', 'success')
+                    return _complete_admin_login(admin, client_ip, via='totp')
+                else:
+                    flash('Invalid authenticator code', 'error')
+            except ImportError:
+                logger.error("pyotp not installed for TOTP verification")
+                flash('TOTP verification unavailable', 'error')
+        else:
+            # Verify email code
+            expected_code = session.get(SESSION_KEY_ADMIN_2FA_CODE)
+            expires_at_str = session.get(SESSION_KEY_ADMIN_2FA_EXPIRES)
+            
+            if not expected_code or not expires_at_str:
+                flash('Verification session expired. Please log in again.', 'error')
+                session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+                return redirect(url_for('admin.login'))
+            
+            expires_at = datetime.fromisoformat(expires_at_str)
+            if datetime.utcnow() > expires_at:
+                flash('Verification code expired. Please log in again.', 'error')
+                _clear_2fa_session()
+                return redirect(url_for('admin.login'))
+            
+            if code == expected_code:
+                flash('Login successful', 'success')
+                return _complete_admin_login(admin, client_ip, via='email')
+            else:
+                logger.warning(f"Invalid admin 2FA code attempt for {admin.username} from {client_ip}")
+                flash('Invalid verification code', 'error')
+    
+    return render_template('admin/login_2fa.html', 
+                          masked_email=mask_email(admin.email),
+                          username=admin.username,
+                          has_totp=has_totp,
+                          has_email=has_email,
+                          method=current_method)
+
+
+def _complete_admin_login(admin: Account, client_ip: str, via: str = 'email'):
+    """Complete admin login after successful 2FA.
+    
+    Returns:
+        Response: Redirect to dashboard or password change page
+    """
+    _clear_2fa_session()
+    
+    session[SESSION_KEY_ADMIN_ID] = admin.id
+    session[SESSION_KEY_ADMIN_USERNAME] = admin.username
+    session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
+    
+    admin.last_login_at = datetime.utcnow()
+    db.session.commit()
+    
+    logger.info(f"Admin login complete: {admin.username} from {client_ip} via {via}")
+    
+    # Check if password change is required
+    if admin.must_change_password:
+        return redirect(url_for('admin.change_password'))
+    
+    return redirect(url_for('admin.dashboard'))
+
+
+def _clear_2fa_session():
+    """Clear all 2FA-related session keys."""
+    session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_CODE, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_EXPIRES, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_METHOD, None)
+
+
+@admin_bp.route('/login/2fa/resend', methods=['POST'])
+def resend_2fa():
+    """Resend admin 2FA code."""
+    admin_id = session.get(SESSION_KEY_ADMIN_2FA_PENDING)
+    if not admin_id:
+        return redirect(url_for('admin.login'))
+    
+    admin = Account.query.get(admin_id)
+    if not admin:
+        return redirect(url_for('admin.login'))
+    
+    # Generate new code
+    from ..account_auth import generate_code, TFA_CODE_LENGTH, TFA_CODE_EXPIRY_MINUTES
+    code = generate_code(TFA_CODE_LENGTH)
+    expires_at = datetime.utcnow() + timedelta(minutes=TFA_CODE_EXPIRY_MINUTES)
+    
+    session[SESSION_KEY_ADMIN_2FA_CODE] = code
+    session[SESSION_KEY_ADMIN_2FA_EXPIRES] = expires_at.isoformat()
+    
+    # Send new code
+    from ..notification_service import send_2fa_email
+    if send_2fa_email(admin.email, admin.username, code):
+        flash('New verification code sent', 'success')
+    else:
+        flash('Failed to send verification code', 'error')
+    
+    return redirect(url_for('admin.login_2fa'))
 
 
 @admin_bp.route('/logout')
 def logout():
     """Admin logout."""
     username = session.get(SESSION_KEY_ADMIN_USERNAME)
+    # Clear all admin session keys
     session.pop(SESSION_KEY_ADMIN_ID, None)
     session.pop(SESSION_KEY_ADMIN_USERNAME, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_CODE, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_EXPIRES, None)
+    session.pop(SESSION_KEY_ADMIN_SESSION_IP, None)
     if username:
         logger.info(f"Admin logout: {username}")
     flash('You have been logged out', 'info')
@@ -134,7 +566,7 @@ def logout():
 @admin_bp.route('/')
 @require_admin
 def dashboard():
-    """Admin dashboard with stats and pending items."""
+    """Admin dashboard with stats and aggregated metrics."""
     # Get stats
     total_accounts = Account.query.filter_by(is_admin=0).count()
     active_accounts = Account.query.filter_by(is_admin=0, is_active=1).count()
@@ -152,13 +584,89 @@ def dashboard():
         ActivityLog.status == 'error'
     ).count()
     
-    # Recent activity
-    recent_activity = (
+    # Rate limited IPs (24h) - group by IP and count
+    from sqlalchemy import func
+    rate_limit_logs = (
+        db.session.query(
+            ActivityLog.source_ip,
+            func.count(ActivityLog.id).label('count'),
+            func.max(ActivityLog.created_at).label('last_seen')
+        )
+        .filter(
+            ActivityLog.created_at >= since,
+            ActivityLog.action == 'rate_limit'
+        )
+        .group_by(ActivityLog.source_ip)
+        .order_by(func.count(ActivityLog.id).desc())
+        .limit(10)
+        .all()
+    )
+    rate_limited_ips = [
+        {
+            'ip': row.source_ip,
+            'count': row.count,
+            'last_seen': row.last_seen.strftime('%H:%M'),
+            'location': geoip_location(row.source_ip) if row.source_ip else None
+        }
+        for row in rate_limit_logs
+    ]
+    
+    # Most active clients (24h) - group by account_id and realm_value
+    active_client_logs = (
+        db.session.query(
+            ActivityLog.account_id,
+            ActivityLog.realm_value,
+            func.count(ActivityLog.id).label('api_calls')
+        )
+        .filter(
+            ActivityLog.created_at >= since,
+            ActivityLog.action == 'api_call',
+            ActivityLog.account_id.isnot(None)
+        )
+        .group_by(ActivityLog.account_id, ActivityLog.realm_value)
+        .order_by(func.count(ActivityLog.id).desc())
+        .limit(5)
+        .all()
+    )
+    active_clients = []
+    for row in active_client_logs:
+        account = Account.query.get(row.account_id)
+        if account:
+            active_clients.append({
+                'account_id': row.account_id,
+                'username': account.username,
+                'realm': row.realm_value or 'N/A',
+                'api_calls': row.api_calls
+            })
+    
+    # Permission errors (24h) - denied requests
+    permission_logs = (
         ActivityLog.query
+        .filter(
+            ActivityLog.created_at >= since,
+            ActivityLog.status == 'denied'
+        )
         .order_by(ActivityLog.created_at.desc())
         .limit(10)
         .all()
     )
+    permission_errors = []
+    for log in permission_logs:
+        token_prefix = 'N/A'
+        if log.token:
+            token_prefix = log.token.token_prefix
+        
+        error_type = 'permission_denied'
+        if log.status_reason and 'ip' in log.status_reason.lower():
+            error_type = 'ip_denied'
+        
+        permission_errors.append({
+            'token_prefix': token_prefix,
+            'type': error_type,
+            'ip': log.source_ip,
+            'details': log.status_reason or 'Access denied',
+            'time': log.created_at.strftime('%H:%M')
+        })
     
     return render_template('admin/dashboard.html',
                           total_accounts=total_accounts,
@@ -167,7 +675,9 @@ def dashboard():
                           pending_realms=pending_realms,
                           api_calls_24h=api_calls_24h,
                           errors_24h=errors_24h,
-                          recent_activity=recent_activity)
+                          rate_limited_ips=rate_limited_ips,
+                          active_clients=active_clients,
+                          permission_errors=permission_errors)
 
 
 # ============================================================================
@@ -243,27 +753,79 @@ def account_detail(account_id):
 @admin_bp.route('/accounts/new', methods=['GET', 'POST'])
 @require_admin
 def account_create():
-    """Create new account (admin action)."""
+    """Create new account (admin action).
+    
+    Two modes:
+    1. send_invite=True (default): Sends invite email, user sets own password
+    2. send_invite=False: Admin provides password directly (shown in flash)
+    
+    Realm configuration is optional. If include_realm is checked, creates
+    a pre-approved realm. Otherwise, user must request realms after activation.
+    """
+    from ..models import AccountRealm
+    from datetime import datetime
+    
     if request.method == 'POST':
         username = request.form.get('username', '').strip().lower()
         email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '').strip()
+        password = request.form.get('password', '').strip() or None
+        send_invite = request.form.get('send_invite', 'true').lower() == 'true'
+        include_realm = request.form.get('include_realm') == 'on'
         
-        if not password:
-            password = generate_secure_password()
+        # Get optional realm configuration
+        realm_type = request.form.get('realm_type', '').strip()
+        realm_value = request.form.get('realm_value', '').strip().lower()
+        record_types = request.form.getlist('record_types')
+        operations = request.form.getlist('operations')
         
-        account, error = create_account_by_admin(
+        account, error_or_warning = create_account_by_admin(
             username=username,
             email=email,
             password=password,
-            approved_by=g.admin
+            approved_by=g.admin,
+            send_invite=send_invite
         )
         
         if account:
-            flash(f'Account "{username}" created. Temporary password: {password}', 'success')
+            # Create pre-approved realm if requested
+            realm_created = False
+            if include_realm and realm_type and realm_value:
+                # Parse domain from realm_value (e.g., "home.example.com" -> domain="example.com", value="home")
+                parts = realm_value.split('.')
+                if len(parts) >= 2:
+                    domain = '.'.join(parts[-2:])  # e.g., "example.com"
+                    realm_prefix = '.'.join(parts[:-2]) if len(parts) > 2 else ''  # e.g., "home"
+                    
+                    realm = AccountRealm(
+                        account_id=account.id,
+                        domain=domain,
+                        realm_type=realm_type,
+                        realm_value=realm_prefix,
+                        status='approved',  # Pre-approved
+                        approved_by_id=g.admin.id,
+                        approved_at=datetime.utcnow(),
+                        requested_at=datetime.utcnow()
+                    )
+                    realm.set_allowed_record_types(record_types if record_types else ['A', 'AAAA'])
+                    realm.set_allowed_operations(operations if operations else ['read', 'update'])
+                    db.session.add(realm)
+                    db.session.commit()
+                    realm_created = True
+            
+            # Flash appropriate message
+            if error_or_warning and error_or_warning.startswith('WARNING:'):
+                # Email failed, show temp password
+                flash(error_or_warning, 'warning')
+            elif send_invite:
+                realm_msg = f" with pre-approved realm" if realm_created else " (no realm configured)"
+                flash(f'Account "{username}" created{realm_msg}. Invite email sent to {email}.', 'success')
+            else:
+                # Direct password mode - show the password
+                temp_password = password or 'generated'
+                flash(f'Account "{username}" created. Temporary password: {temp_password}', 'success')
             return redirect(url_for('admin.account_detail', account_id=account.id))
         else:
-            flash(error, 'error')
+            flash(error_or_warning, 'error')
     
     return render_template('admin/account_create.html')
 
@@ -271,11 +833,26 @@ def account_create():
 @admin_bp.route('/accounts/<int:account_id>/approve', methods=['POST'])
 @require_admin
 def account_approve(account_id):
-    """Approve a pending account."""
+    """Approve a pending account and all its pending realms."""
     success, error = approve_account(account_id, g.admin)
     
     if success:
-        flash('Account approved', 'success')
+        flash('Account and realm requests approved', 'success')
+    else:
+        flash(error, 'error')
+    
+    return redirect(request.referrer or url_for('admin.accounts_pending'))
+
+
+@admin_bp.route('/accounts/<int:account_id>/reject', methods=['POST'])
+@require_admin
+def account_reject(account_id):
+    """Reject a pending account and delete it along with realm requests."""
+    reason = request.form.get('reason', '').strip()
+    success, error = reject_account(account_id, g.admin, reason if reason else None)
+    
+    if success:
+        flash('Account rejected and deleted', 'success')
     else:
         flash(error, 'error')
     
@@ -324,6 +901,196 @@ def account_delete(account_id):
     logger.info(f"Account {username} deleted by admin {g.admin.username}")
     
     return redirect(url_for('admin.accounts_list'))
+
+
+@admin_bp.route('/accounts/<int:account_id>/reset-password', methods=['POST'])
+@require_admin
+def account_reset_password(account_id):
+    """Send password reset link to account - admin initiated."""
+    account = Account.query.get_or_404(account_id)
+    
+    if not account.email:
+        flash('Account has no email address configured', 'error')
+        return redirect(url_for('admin.account_detail', account_id=account_id))
+    
+    # Get expiry hours from form or use system default
+    from ..password_reset import send_password_reset_email, get_token_expiry_hours
+    
+    expiry_hours = request.form.get('expiry_hours')
+    if expiry_hours:
+        try:
+            expiry_hours = int(expiry_hours)
+        except ValueError:
+            expiry_hours = None
+    
+    if send_password_reset_email(account, expiry_hours=expiry_hours, admin_initiated=True):
+        flash(f'Password reset link sent to {account.email}', 'success')
+        logger.info(f"Admin {g.admin.username} sent password reset to {account.username}")
+    else:
+        flash('Failed to send password reset email. Check email configuration.', 'error')
+    
+    return redirect(url_for('admin.account_detail', account_id=account_id))
+
+
+@admin_bp.route('/accounts/<int:account_id>/regenerate-alias', methods=['POST'])
+@require_admin
+def account_regenerate_alias(account_id):
+    """
+    Regenerate user_alias for an account, invalidating ALL tokens.
+    
+    This is a security operation used when:
+    - Token compromise is suspected
+    - User requests credential rotation
+    - Admin needs to invalidate all API access
+    
+    Warning: This immediately invalidates ALL tokens for this account.
+    """
+    account = Account.query.get_or_404(account_id)
+    
+    try:
+        old_alias_prefix = account.user_alias[:4] if account.user_alias else 'none'
+        new_alias, tokens_deleted = account.regenerate_user_alias()
+        db.session.commit()
+        
+        # Log the security action
+        from ..models import ActivityLog
+        log = ActivityLog(
+            account_id=account.id,
+            action='alias_regenerated',
+            status='success',
+            severity='high',
+            source_ip=request.headers.get('X-Forwarded-For', request.remote_addr),
+            user_agent=request.headers.get('User-Agent'),
+            status_reason=f'Admin {g.admin.username} regenerated alias, {tokens_deleted} tokens invalidated'
+        )
+        db.session.add(log)
+        db.session.commit()
+        
+        flash(
+            f'User alias regenerated ({old_alias_prefix}... → {new_alias[:4]}...). '
+            f'{tokens_deleted} tokens invalidated.',
+            'warning'
+        )
+        logger.info(
+            f"Admin {g.admin.username} regenerated alias for {account.username}: "
+            f"{tokens_deleted} tokens invalidated"
+        )
+        
+        # Notify user about credential rotation
+        from ..notification_service import send_notification
+        send_notification(
+            account=account,
+            subject='Security Alert: API Credentials Rotated',
+            template='credential_rotation',
+            context={
+                'admin_username': g.admin.username,
+                'tokens_invalidated': tokens_deleted,
+                'reason': 'Admin initiated credential rotation',
+            }
+        )
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to regenerate alias: {e}', 'error')
+        logger.error(f"Alias regeneration failed for {account.username}: {e}")
+    
+    return redirect(url_for('admin.account_detail', account_id=account_id))
+
+
+@admin_bp.route('/accounts/<int:account_id>/change-email', methods=['POST'])
+@require_admin
+def account_change_email(account_id):
+    """
+    Change email address for an account (admin action).
+    
+    Admin can change email without verification flow.
+    User will be notified at both old and new addresses.
+    """
+    account = Account.query.get_or_404(account_id)
+    
+    new_email = request.form.get('new_email', '').strip().lower()
+    
+    if not new_email:
+        flash('New email address is required', 'error')
+        return redirect(url_for('admin.account_detail', account_id=account_id))
+    
+    # Basic email validation
+    import re
+    if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', new_email):
+        flash('Invalid email format', 'error')
+        return redirect(url_for('admin.account_detail', account_id=account_id))
+    
+    # Check for duplicate
+    existing = Account.query.filter(
+        Account.email == new_email,
+        Account.id != account_id
+    ).first()
+    if existing:
+        flash('Email address already in use by another account', 'error')
+        return redirect(url_for('admin.account_detail', account_id=account_id))
+    
+    old_email = account.email
+    
+    try:
+        account.email = new_email
+        account.email_verified = 0  # Require re-verification
+        db.session.commit()
+        
+        # Log the change
+        from ..models import ActivityLog
+        log = ActivityLog(
+            account_id=account.id,
+            action='email_changed',
+            status='success',
+            severity='medium',
+            source_ip=request.headers.get('X-Forwarded-For', request.remote_addr),
+            user_agent=request.headers.get('User-Agent'),
+            status_reason=f'Admin {g.admin.username} changed email from {old_email} to {new_email}'
+        )
+        db.session.add(log)
+        db.session.commit()
+        
+        flash(f'Email changed from {old_email} to {new_email}', 'success')
+        logger.info(f"Admin {g.admin.username} changed email for {account.username}: {old_email} → {new_email}")
+        
+        # Notify at old address (security alert)
+        from ..notification_service import send_notification
+        try:
+            send_notification(
+                account=account,
+                subject='Security Alert: Email Address Changed',
+                template='email_changed_old',
+                context={
+                    'old_email': old_email,
+                    'new_email': new_email,
+                    'admin_username': g.admin.username,
+                },
+                override_email=old_email  # Send to OLD email
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify old email {old_email}: {e}")
+        
+        # Notify at new address (welcome)
+        try:
+            send_notification(
+                account=account,
+                subject='Your Email Address Has Been Updated',
+                template='email_changed_new',
+                context={
+                    'old_email': old_email,
+                    'new_email': new_email,
+                    'admin_username': g.admin.username,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify new email {new_email}: {e}")
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to change email: {e}', 'error')
+        logger.error(f"Email change failed for {account.username}: {e}")
+    
+    return redirect(url_for('admin.account_detail', account_id=account_id))
 
 
 @admin_bp.route('/accounts/<int:account_id>/realms/new', methods=['GET', 'POST'])
@@ -437,14 +1204,18 @@ def realm_detail(realm_id):
     realm = AccountRealm.query.get_or_404(realm_id)
     tokens = APIToken.query.filter_by(realm_id=realm_id).order_by(APIToken.created_at.desc()).all()
     
-    # Recent activity for this realm
-    recent_activity = (
-        ActivityLog.query
-        .filter(ActivityLog.realm_id == realm_id)
-        .order_by(ActivityLog.created_at.desc())
-        .limit(20)
-        .all()
-    )
+    # Recent activity for this realm - join through tokens since ActivityLog has token_id not realm_id
+    token_ids = [t.id for t in tokens]
+    if token_ids:
+        recent_activity = (
+            ActivityLog.query
+            .filter(ActivityLog.token_id.in_(token_ids))
+            .order_by(ActivityLog.created_at.desc())
+            .limit(20)
+            .all()
+        )
+    else:
+        recent_activity = []
     
     return render_template('admin/realm_detail.html',
                           realm=realm,
@@ -537,9 +1308,9 @@ def token_detail(token_id):
     """Token detail view."""
     token = APIToken.query.get_or_404(token_id)
     
-    # Get related activity logs
+    # Get related activity logs for this token
     activity_logs = ActivityLog.query.filter(
-        ActivityLog.details.contains(token.token_prefix)
+        ActivityLog.token_id == token_id
     ).order_by(ActivityLog.created_at.desc()).limit(20).all()
     
     return render_template('admin/token_detail.html',
@@ -556,17 +1327,24 @@ def token_revoke(token_id):
     """Revoke a token."""
     token = APIToken.query.get_or_404(token_id)
     
-    if token.revoked:
+    if token.revoked_at is not None:
         flash('Token is already revoked', 'warning')
         return redirect(url_for('admin.token_detail', token_id=token_id))
     
+    # Get the account that owns this token
+    account = token.realm.account
+    revoke_reason = request.form.get('reason', 'Revoked by admin')
+    
     # Revoke the token
-    token.revoked = True
+    token.is_active = 0
     token.revoked_at = datetime.utcnow()
-    token.revoked_by = g.admin.username
-    token.revoked_reason = request.form.get('reason', 'Revoked by admin')
+    token.revoked_reason = revoke_reason
     
     db.session.commit()
+    
+    # Send notification to token owner
+    from ..notification_service import notify_token_revoked
+    notify_token_revoked(account, token, g.admin.username, revoke_reason)
     
     # Log the action
     log_activity('token_revoked', 'success', 
@@ -766,7 +1544,7 @@ def create_audit_ods_export(logs, title):
             log.action or '',
             log.status or '',
             log.source_ip or '',
-            log.details or ''
+            log.status_reason or ''  # Use status_reason, not details
         ]
         cells_xml = ''.join([f'<table:table-cell office:value-type="string"><text:p>{escape_xml(c)}</text:p></table:table-cell>' for c in cells])
         rows_xml.append(f'<table:table-row>{cells_xml}</table:table-row>')
@@ -833,15 +1611,27 @@ def config_netcup():
 def config_email():
     """Email/SMTP configuration."""
     if request.method == 'POST':
+        # Map HTML form field names to internal config keys
+        # HTML form uses: smtp_host, from_email, from_name
+        # Internal config uses: smtp_server, sender_email, sender_name
+        smtp_security = request.form.get('smtp_security', 'tls')
         config = {
-            'sender_email': request.form.get('sender_email', '').strip(),
-            'sender_name': request.form.get('sender_name', '').strip() or 'Netcup API Filter',
-            'smtp_server': request.form.get('smtp_server', '').strip(),
-            'smtp_port': int(request.form.get('smtp_port', 465)),
+            'smtp_server': request.form.get('smtp_host', '').strip(),  # Map from smtp_host
+            'smtp_host': request.form.get('smtp_host', '').strip(),  # Keep for template
+            'smtp_port': int(request.form.get('smtp_port', 587)),
+            'smtp_security': smtp_security,
             'smtp_username': request.form.get('smtp_username', '').strip(),
             'smtp_password': request.form.get('smtp_password', '').strip(),
-            'use_ssl': bool(request.form.get('use_ssl')),
+            'use_ssl': smtp_security == 'ssl',
+            'sender_email': request.form.get('from_email', '').strip(),  # Map from from_email
+            'from_email': request.form.get('from_email', '').strip(),  # Keep for template
+            'sender_name': request.form.get('from_name', '').strip() or 'Netcup API Filter',
+            'from_name': request.form.get('from_name', '').strip() or 'Netcup API Filter',  # Keep for template
+            'reply_to': request.form.get('reply_to', '').strip(),
             'admin_email': request.form.get('admin_email', '').strip(),
+            'notify_new_account': bool(request.form.get('notify_new_account')),
+            'notify_realm_request': bool(request.form.get('notify_realm_request')),
+            'notify_security': bool(request.form.get('notify_security')),
         }
         
         set_setting('email_config', config)
@@ -936,8 +1726,8 @@ def system_info():
     # App info for template
     app_info = {
         'version': build_info.get('version', 'dev'),
-        'build_hash': build_info.get('commit_short', 'N/A'),
-        'build_date': build_info.get('build_timestamp', 'N/A'),
+        'build_hash': build_info.get('git_short', build_info.get('commit_short', 'N/A')),
+        'build_date': build_info.get('built_at', 'N/A'),
         'env': os.environ.get('FLASK_ENV', 'development'),
         'uptime': 'Unknown',  # Could implement actual uptime tracking
     }
@@ -947,10 +1737,33 @@ def system_info():
     
     # Services status
     email_config = get_setting('email_config') or {}
+    
+    # Check GeoIP status
+    geoip_status = False
+    geoip_info = {}
+    try:
+        from ..geoip_service import get_geoip_status
+        geoip_info = get_geoip_status()
+        geoip_status = geoip_info.get('available', False)
+    except ImportError:
+        geoip_info = {'error': 'GeoIP module not available'}
+    except Exception as e:
+        geoip_info = {'error': str(e)}
+    
     services = {
         'netcup': bool(get_setting('netcup_api_key') and get_setting('netcup_api_password') and get_setting('netcup_customer_id')),
         'email': bool(email_config.get('smtp_server')),
+        'geoip': geoip_status,
     }
+    
+    # Security settings
+    security_settings = {
+        'password_reset_expiry_hours': get_setting('password_reset_expiry_hours') or 1,
+        'invite_expiry_hours': get_setting('invite_expiry_hours') or 48,
+    }
+    
+    # Recent logs (placeholder - would need log file reading implementation)
+    recent_logs = []
     
     return render_template('admin/system_info.html',
                           build_info=build_info,
@@ -960,7 +1773,154 @@ def system_info():
                           app=app_info,
                           db=db_info,
                           server=server_info,
-                          services=services)
+                          services=services,
+                          geoip_info=geoip_info,
+                          security_settings=security_settings,
+                          recent_logs=recent_logs)
+
+@admin_bp.route('/system/security', methods=['POST'])
+@require_admin
+def update_security_settings():
+    """Update security settings."""
+    try:
+        password_reset_expiry = request.form.get('password_reset_expiry_hours')
+        if password_reset_expiry:
+            set_setting('password_reset_expiry_hours', int(password_reset_expiry))
+        
+        invite_expiry = request.form.get('invite_expiry_hours')
+        if invite_expiry:
+            set_setting('invite_expiry_hours', int(invite_expiry))
+        
+        flash('Security settings updated', 'success')
+        logger.info(f"Security settings updated by {g.admin.username}")
+    except ValueError as e:
+        flash(f'Invalid value: {e}', 'error')
+    except Exception as e:
+        flash(f'Error saving settings: {e}', 'error')
+        logger.error(f"Failed to update security settings: {e}")
+    
+    return redirect(url_for('admin.system_info'))
+
+
+# ============================================================================
+# Security Dashboard
+# ============================================================================
+
+@admin_bp.route('/security')
+@require_admin
+def security_dashboard():
+    """
+    Security dashboard showing security events, attack patterns, and metrics.
+    
+    Features:
+    - Security stats (last hour, 24h)
+    - Recent security events (filtered by severity)
+    - Attack pattern detection
+    - Timeline chart data
+    """
+    from ..token_auth import get_security_stats, get_security_timeline
+    
+    # Get stats for different time windows
+    stats_1h = get_security_stats(hours=1)
+    stats_24h = get_security_stats(hours=24)
+    
+    # Get timeline data for chart
+    timeline = get_security_timeline(hours=24)
+    
+    # Get recent security events (high/critical severity only for main view)
+    recent_events = ActivityLog.query.filter(
+        ActivityLog.severity.in_(['high', 'critical']),
+        ActivityLog.created_at >= datetime.utcnow() - timedelta(hours=24)
+    ).order_by(ActivityLog.created_at.desc()).limit(50).all()
+    
+    # Get all security events for filterable list
+    all_events = ActivityLog.query.filter(
+        ActivityLog.error_code.isnot(None),
+        ActivityLog.created_at >= datetime.utcnow() - timedelta(hours=24)
+    ).order_by(ActivityLog.created_at.desc()).limit(200).all()
+    
+    # Attack detection: IPs with multiple failures
+    attack_ips = db.session.query(
+        ActivityLog.source_ip,
+        db.func.count(ActivityLog.id).label('count')
+    ).filter(
+        ActivityLog.is_attack == 1,
+        ActivityLog.created_at >= datetime.utcnow() - timedelta(hours=24)
+    ).group_by(ActivityLog.source_ip).having(
+        db.func.count(ActivityLog.id) >= 3
+    ).order_by(db.desc('count')).limit(10).all()
+    
+    return render_template('admin/security_dashboard.html',
+                          stats_1h=stats_1h,
+                          stats_24h=stats_24h,
+                          timeline=timeline,
+                          recent_events=recent_events,
+                          all_events=all_events,
+                          attack_ips=attack_ips)
+
+
+@admin_bp.route('/api/security/stats')
+@require_admin
+def api_security_stats():
+    """Get security stats as JSON for dashboard widgets."""
+    from ..token_auth import get_security_stats
+    
+    hours = int(request.args.get('hours', 24))
+    hours = min(hours, 168)  # Max 7 days
+    
+    return jsonify(get_security_stats(hours=hours))
+
+
+@admin_bp.route('/api/security/timeline')
+@require_admin
+def api_security_timeline():
+    """Get security timeline data for charts."""
+    from ..token_auth import get_security_timeline
+    
+    hours = int(request.args.get('hours', 24))
+    hours = min(hours, 168)  # Max 7 days
+    
+    return jsonify(get_security_timeline(hours=hours))
+
+
+@admin_bp.route('/api/security/events')
+@require_admin
+def api_security_events():
+    """Get security events as JSON with filtering."""
+    hours = int(request.args.get('hours', 24))
+    severity = request.args.get('severity')  # 'low', 'medium', 'high', 'critical'
+    error_code = request.args.get('error_code')
+    source_ip = request.args.get('source_ip')
+    limit = min(int(request.args.get('limit', 100)), 500)
+    
+    since = datetime.utcnow() - timedelta(hours=hours)
+    
+    query = ActivityLog.query.filter(
+        ActivityLog.error_code.isnot(None),
+        ActivityLog.created_at >= since
+    )
+    
+    if severity:
+        query = query.filter(ActivityLog.severity == severity)
+    if error_code:
+        query = query.filter(ActivityLog.error_code == error_code)
+    if source_ip:
+        query = query.filter(ActivityLog.source_ip == source_ip)
+    
+    events = query.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    
+    return jsonify([{
+        'id': e.id,
+        'created_at': e.created_at.isoformat(),
+        'error_code': e.error_code,
+        'severity': e.severity,
+        'source_ip': e.source_ip,
+        'user_agent': e.user_agent,
+        'account_id': e.account_id,
+        'token_id': e.token_id,
+        'status_reason': e.status_reason,
+        'is_attack': bool(e.is_attack),
+    } for e in events])
 
 
 # ============================================================================
@@ -1183,32 +2143,220 @@ def api_realms_bulk():
 
 
 # ============================================================================
-# Password Change
+# Password Change (with email setup for 2FA)
 # ============================================================================
 
 @admin_bp.route('/change-password', methods=['GET', 'POST'])
 @require_admin
 def change_password():
-    """Admin password change page."""
+    """Admin password change page with email setup for 2FA."""
+    admin = g.admin
+    
+    # Check if this is initial setup (needs email for 2FA)
+    needs_email_setup = not admin.email or admin.email == 'admin@localhost'
+    force_change = admin.must_change_password == 1
+    
     if request.method == 'POST':
         current_password = request.form.get('current_password', '')
         new_password = request.form.get('new_password', '')
         confirm_password = request.form.get('confirm_password', '')
+        new_email = request.form.get('email', '').strip().lower() if needs_email_setup else None
         
-        admin = g.admin
+        errors = []
         
-        if not admin.verify_password(current_password):
-            flash('Current password is incorrect', 'error')
-        elif new_password != confirm_password:
-            flash('New passwords do not match', 'error')
-        elif len(new_password) < 8:
-            flash('Password must be at least 8 characters', 'error')
+        # Validate current password (skip for initial forced change with default password)
+        if not force_change and not admin.verify_password(current_password):
+            errors.append('Current password is incorrect')
+        
+        # Validate new password
+        if new_password != confirm_password:
+            errors.append('New passwords do not match')
+        else:
+            is_valid, error_msg = validate_password(new_password)
+            if not is_valid:
+                errors.append(error_msg)
+        
+        # Validate email if required
+        if needs_email_setup:
+            if not new_email:
+                errors.append('Email address is required for 2FA')
+            elif '@' not in new_email or '.' not in new_email:
+                errors.append('Please enter a valid email address')
+            elif Account.query.filter(Account.id != admin.id, Account.email == new_email).first():
+                errors.append('This email address is already in use')
+        
+        if errors:
+            for error in errors:
+                flash(error, 'error')
         else:
             admin.set_password(new_password)
             admin.must_change_password = 0  # Clear password change requirement
+            
+            if needs_email_setup and new_email:
+                admin.email = new_email
+                admin.email_verified = 1  # Admin-set email is trusted
+                admin.email_2fa_enabled = 1  # Ensure 2FA is enabled
+                logger.info(f"Admin email configured: {admin.username} -> {new_email}")
+            
             db.session.commit()
             logger.info(f"Admin password changed: {admin.username}")
+            
+            # Send password changed notification (if email is configured)
+            if admin.email and admin.email != 'admin@localhost':
+                from ..notification_service import notify_password_changed
+                source_ip = _get_client_ip()
+                notify_password_changed(admin, source_ip)
+            
             flash('Password changed successfully', 'success')
             return redirect(url_for('admin.dashboard'))
     
-    return render_template('admin/change_password.html')
+    return render_template('admin/change_password.html',
+                          force_change=force_change,
+                          needs_email_setup=needs_email_setup,
+                          current_email=admin.email if admin.email != 'admin@localhost' else '')
+
+# ============================================================================
+# TOTP Setup and Recovery Codes
+# ============================================================================
+
+@admin_bp.route('/security/totp', methods=['GET', 'POST'])
+@require_admin
+def setup_totp():
+    """Setup TOTP authenticator app for admin 2FA."""
+    admin = g.admin
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'enable':
+            # Verify the TOTP code before enabling
+            code = request.form.get('code', '').strip()
+            secret = session.get('pending_totp_secret')
+            
+            if not secret:
+                flash('Session expired. Please start again.', 'error')
+                return redirect(url_for('admin.setup_totp'))
+            
+            try:
+                import pyotp
+                totp = pyotp.TOTP(secret)
+                if totp.verify(code, valid_window=1):
+                    # Save the secret
+                    admin.totp_secret = secret
+                    admin.totp_enabled = 1
+                    db.session.commit()
+                    
+                    session.pop('pending_totp_secret', None)
+                    
+                    logger.info(f"TOTP enabled for admin: {admin.username}")
+                    flash('Authenticator app enabled successfully!', 'success')
+                    
+                    # Redirect to recovery codes generation
+                    return redirect(url_for('admin.generate_recovery_codes'))
+                else:
+                    flash('Invalid code. Please try again.', 'error')
+            except ImportError:
+                flash('TOTP not available (pyotp not installed)', 'error')
+        
+        elif action == 'disable':
+            # Verify current code before disabling
+            code = request.form.get('code', '').strip()
+            
+            if admin.totp_secret:
+                try:
+                    import pyotp
+                    totp = pyotp.TOTP(admin.totp_secret)
+                    if totp.verify(code, valid_window=1):
+                        admin.totp_secret = None
+                        admin.totp_enabled = 0
+                        db.session.commit()
+                        
+                        logger.info(f"TOTP disabled for admin: {admin.username}")
+                        flash('Authenticator app disabled.', 'success')
+                    else:
+                        flash('Invalid code. TOTP not disabled.', 'error')
+                except ImportError:
+                    flash('TOTP not available', 'error')
+        
+        return redirect(url_for('admin.setup_totp'))
+    
+    # GET request - show setup page
+    qr_code_data = None
+    totp_secret = None
+    
+    if not admin.totp_enabled:
+        # Generate new secret for setup
+        try:
+            import pyotp
+            secret = pyotp.random_base32()
+            session['pending_totp_secret'] = secret
+            totp_secret = secret
+            
+            # Generate provisioning URI
+            provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
+                name=admin.email or admin.username,
+                issuer_name="Netcup API Filter"
+            )
+            
+            # Generate QR code
+            try:
+                import qrcode
+                import io
+                import base64
+                
+                qr = qrcode.QRCode(version=1, box_size=10, border=4)
+                qr.add_data(provisioning_uri)
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                
+                buffer = io.BytesIO()
+                img.save(buffer, format='PNG')
+                qr_code_data = base64.b64encode(buffer.getvalue()).decode()
+            except ImportError:
+                logger.warning("qrcode or pillow not installed")
+        except ImportError:
+            flash('TOTP not available (pyotp not installed)', 'error')
+    
+    return render_template('admin/setup_totp.html',
+                          totp_enabled=admin.totp_enabled,
+                          qr_code_data=qr_code_data,
+                          totp_secret=totp_secret)
+
+
+@admin_bp.route('/security/recovery-codes', methods=['GET', 'POST'])
+@require_admin
+def generate_recovery_codes():
+    """Generate new recovery codes for admin account."""
+    admin = g.admin
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'generate':
+            from ..recovery_codes import generate_recovery_codes, store_recovery_codes
+            
+            codes = generate_recovery_codes()
+            if store_recovery_codes(admin, codes):
+                # Store codes in session for one-time display
+                session['recovery_codes_display'] = codes
+                flash('New recovery codes generated. Save them now - they won\'t be shown again!', 'warning')
+            else:
+                flash('Failed to generate recovery codes', 'error')
+        
+        elif action == 'confirm':
+            # User confirmed they saved codes - clear from session
+            session.pop('recovery_codes_display', None)
+            flash('Recovery codes confirmed and secured.', 'success')
+            return redirect(url_for('admin.dashboard'))
+    
+    # Check if we have codes to display
+    codes_to_display = session.get('recovery_codes_display')
+    
+    # Get info about existing codes
+    has_recovery_codes = bool(admin.recovery_codes)
+    codes_generated_at = admin.recovery_codes_generated_at
+    
+    return render_template('admin/recovery_codes.html',
+                          codes=codes_to_display,
+                          has_recovery_codes=has_recovery_codes,
+                          codes_generated_at=codes_generated_at)
