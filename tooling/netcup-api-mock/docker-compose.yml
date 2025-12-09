@@ -1,6 +1,9 @@
+name: naf-dev
+
 services:
   naf-dev-mock-netcup-api:
     image: python:3.11-slim
+    container_name: naf-dev-mock-netcup-api
     restart: unless-stopped
     working_dir: /app
     command: >

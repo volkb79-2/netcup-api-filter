@@ -26,10 +26,13 @@
 #   # Full production-like setup
 #   SSL_ENABLED=true WS_AUTH_TOKEN=$(openssl rand -hex 32) docker compose -f docker-compose.standalone.yml up -d
 
+name: naf-dev
+
 services:
   # Certificate generator - creates self-signed certs on startup
   naf-dev-playwright-cert-gen:
     image: alpine:latest
+    container_name: naf-dev-playwright-cert-gen
     volumes:
       - playwright-certs:/certs
     entrypoint: /bin/sh
@@ -82,6 +85,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: naf-dev-playwright
     # Run as same user as devcontainer (vscode) to avoid permission issues
     # The uid/gid are passed from .env.workspace or default to 1000
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"

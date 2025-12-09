@@ -3,6 +3,7 @@
 #   ${LOCAL_TLS_DOMAIN} - Public FQDN (e.g., gstammtisch.dchive.de)
 #   ${LOCAL_APP_HOST}   - Backend hostname (e.g., netcup-api-filter-devcontainer)
 #   ${LOCAL_APP_PORT}   - Backend port (e.g., 5100)
+#   ${HOSTNAME_MAILPIT} - Mailpit service hostname (from .env.services)
 
 server {
     listen 443 ssl;
@@ -29,7 +30,7 @@ server {
     # Mailpit handles webroot internally via MP_WEBROOT environment variable
     location /mailpit/ {
         # Proxy to Mailpit WITHOUT stripping prefix (Mailpit expects /mailpit/)
-        proxy_pass http://naf-dev-mailpit:8025;
+        proxy_pass http://${HOSTNAME_MAILPIT}:8025;
         proxy_http_version 1.1;
         
         # WebSocket support (for real-time UI updates)

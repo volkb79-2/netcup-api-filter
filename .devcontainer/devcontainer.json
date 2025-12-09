@@ -1,7 +1,8 @@
 // this is JSONC format, so you can add comments
 {
   // Display name in VS Code UI (includes username for uniqueness)
-  "name": "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
+  //"name": "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
+  "name": "naf-devcontainer-${localEnv:USER}",
   "build": {
     "dockerfile": "Dockerfile"
   },

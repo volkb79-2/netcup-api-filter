@@ -1,6 +1,9 @@
+name: naf-dev
+
 services:
   naf-dev-reverse-proxy:
     image: nginx:stable-alpine
+    container_name: naf-dev-reverse-proxy
     restart: unless-stopped
     # ====================================================================
     # CRITICAL: Certificate Access Pattern (devcontainer scenario)

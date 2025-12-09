@@ -195,7 +195,8 @@ class MailpitClient:
         )
     """
     
-    DEFAULT_BASE_URL = "http://naf-dev-mailpit:8025/mailpit"
+    # Default base URL (fallback if environment not set)
+    _DEFAULT_BASE_URL_FALLBACK = "http://naf-dev-mailpit:8025/mailpit"
     
     def __init__(
         self,
@@ -204,10 +205,11 @@ class MailpitClient:
         username: str | None = None,
         password: str | None = None,
     ):
+        # Read from environment (.env.services) or fall back to static value
+        default_url = os.environ.get("MAILPIT_INTERNAL_URL", self._DEFAULT_BASE_URL_FALLBACK)
         self.base_url = (
             base_url
-            or os.environ.get("MAILPIT_API_URL")
-            or self.DEFAULT_BASE_URL
+            or default_url
         ).rstrip("/")
         self.api_url = f"{self.base_url}/api/v1"
         self.timeout = timeout

@@ -1,6 +1,9 @@
+name: naf-dev
+
 services:
   naf-dev-mock-geoip:
     image: python:3.11-slim
+    container_name: naf-dev-mock-geoip
     restart: unless-stopped
     working_dir: /app
     command: >

@@ -27,6 +27,8 @@ proxy_render_nginx_conf() {
     local env_file="${1:?env_file parameter required}"
     local template="${PROXY_TOOLING_DIR}/nginx.conf.template"
     local output="${PROXY_TOOLING_DIR}/conf.d/default.conf"
+    local repo_root
+    repo_root="$(cd "${PROXY_TOOLING_DIR}/../.." && pwd)"
 
     if [[ ! -f "${template}" ]]; then
         echo "Missing nginx template: ${template}" >&2
@@ -38,6 +40,12 @@ proxy_render_nginx_conf() {
     local preset_port="${LOCAL_APP_PORT:-}"
 
     proxy__source_env "${env_file}"
+    
+    # Source service names from central config
+    if [[ -f "${repo_root}/.env.services" ]]; then
+        # shellcheck disable=SC1091
+        source "${repo_root}/.env.services"
+    fi
 
     if [[ -n "${preset_tls}" ]]; then
         LOCAL_TLS_DOMAIN="${preset_tls}"
@@ -50,7 +58,7 @@ proxy_render_nginx_conf() {
     fi
 
     mkdir -p "$(dirname "${output}")"
-    local vars='${LOCAL_TLS_DOMAIN} ${LOCAL_APP_HOST} ${LOCAL_APP_PORT}'
+    local vars='${LOCAL_TLS_DOMAIN} ${LOCAL_APP_HOST} ${LOCAL_APP_PORT} ${HOSTNAME_MAILPIT}'
     envsubst "${vars}" < "${template}" > "${output}"
 
     echo "Rendered ${output} for ${LOCAL_TLS_DOMAIN} -> ${LOCAL_APP_HOST}:${LOCAL_APP_PORT}"
