@@ -625,14 +625,28 @@ start_tls_proxy() {
         # Wait for proxy to be ready
         local proxy_url="${UI_BASE_URL}/admin/login"
         log_step "Waiting for TLS proxy at ${proxy_url}..."
-        for i in {1..30}; do
+        
+        # Give nginx a moment to start (bind ports, load config)
+        sleep 2
+        
+        for i in {1..60}; do
             if curl -sk "${proxy_url}" > /dev/null 2>&1; then
                 log_success "TLS proxy ready at ${proxy_url}"
+                # Extra 2 seconds for stability (ensure backend is fully responsive)
+                sleep 2
                 return 0
             fi
             sleep 1
         done
-        log_warning "TLS proxy may still be starting..."
+        
+        # After 60 seconds, check if proxy is running but backend unreachable
+        if docker ps | grep -q naf-reverse-proxy; then
+            log_error "TLS proxy running but not responsive at ${proxy_url}"
+            log_error "Check: docker logs naf-reverse-proxy"
+        else
+            log_error "TLS proxy container not running"
+        fi
+        return 1
     else
         log_error "TLS proxy docker-compose.yml not found"
         return 1
@@ -663,18 +677,19 @@ phase_infrastructure() {
         }
     fi
     
+    # Start mock services BEFORE TLS proxy (nginx config references naf-mailpit)
+    if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
+        start_mock_services
+    fi
+    
     # Start TLS proxy for HTTPS mode (default for local, use --http to disable)
+    # MUST come after mock services so nginx can resolve upstream hostnames
     if [[ "$USE_HTTPS" == "true" && "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_tls_proxy || {
             log_error "Failed to start TLS proxy - HTTPS testing will fail"
             log_step "Use --http flag to skip TLS proxy if certificates not available"
             return 1
         }
-    fi
-    
-    # Start mock services only in mock mode
-    if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
-        start_mock_services
     fi
     
     log_success "Infrastructure ready"
