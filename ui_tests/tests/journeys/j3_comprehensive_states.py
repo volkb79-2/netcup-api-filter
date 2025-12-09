@@ -35,7 +35,7 @@ import re
 import secrets
 import string
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from ui_tests.browser import Browser
@@ -709,9 +709,9 @@ class TokenCreator:
         
         if spec.expires_in_hours:
             if spec.expires_in_hours > 0:
-                token_data["expires_at"] = datetime.utcnow() + timedelta(hours=spec.expires_in_hours)
+                token_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=spec.expires_in_hours)
             else:
-                token_data["expires_at"] = datetime.utcnow() + timedelta(hours=spec.expires_in_hours)
+                token_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=spec.expires_in_hours)
         
         if token_value:
             print(f"✓ Created token: {token_name} for {realm['fqdn']} (value captured)")

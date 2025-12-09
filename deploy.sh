@@ -469,6 +469,10 @@ run_in_playwright() {
             set -a  # Export all variables
             source "${REPO_ROOT}/tooling/mailpit/.env"
             set +a
+            # Explicitly export Mailpit variables for docker exec
+            export MAILPIT_USERNAME
+            export MAILPIT_PASSWORD
+            export MAILPIT_API_URL="http://naf-mailpit:8025/mailpit"
         fi
         
         # Load credentials from state file

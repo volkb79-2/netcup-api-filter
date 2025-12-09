@@ -29,7 +29,9 @@ services:
       # Webroot for reverse proxy (must match nginx location)
       MP_WEBROOT: "${MAILPIT_WEBROOT:-}"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/api/v1/info"]
+      # Web UI returns 401 (Unauthorized) when auth is enabled, which means server is running
+      # Exit code 0 if HTTP status is 200 or 401, exit code 1 otherwise
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null -S http://localhost:8025/mailpit/ 2>&1 | grep -qE 'HTTP/1.1 (200|401)'"]
       interval: 30s
       timeout: 10s
       retries: 3
