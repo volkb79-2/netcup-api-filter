@@ -51,6 +51,9 @@ cd netcup-api-filter
 # 3. Detect public FQDN (if PUBLIC_FQDN not set)
 ./detect-fqdn.sh --update-workspace  # Populates .env.workspace
 
+# safe clean restart / deploy 
+./deploy.sh --stop && ./deploy.sh local | tee deploy.log
+
 # 4. run deployment script
 deploy.sh (master orchestrator)
 ├── local (default)
