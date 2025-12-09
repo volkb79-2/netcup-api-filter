@@ -43,14 +43,31 @@ class Browser:
         await self._update_state()
         return {"url": self.current_url, "title": self.current_title}
 
-    async def goto(self, url: str) -> Dict[str, Any]:
-        """Navigate to URL and return response with status."""
+    async def goto(self, url: str, wait_until: str = "networkidle", timeout: int = 30000) -> Dict[str, Any]:
+        """Navigate to URL and return response with status.
+        
+        Args:
+            url: URL to navigate to
+            wait_until: Wait strategy - "networkidle", "domcontentloaded", or "load"
+            timeout: Timeout in milliseconds (default 30s)
+            
+        Note: "networkidle" can timeout with long-polling/WebSocket connections.
+              Use "domcontentloaded" for pages with background connections.
+        """
         try:
-            response = await self._page.goto(url, wait_until="networkidle", timeout=30000)
+            response = await self._page.goto(url, wait_until=wait_until, timeout=timeout)
             await self._update_state()
             return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
         except PlaywrightTimeout as exc:
-            raise ToolError(name="goto", payload={"url": url}, message=str(exc))
+            # If networkidle times out, try with domcontentloaded as fallback
+            if wait_until == "networkidle":
+                try:
+                    response = await self._page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+                    await self._update_state()
+                    return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
+                except PlaywrightTimeout:
+                    pass  # Fall through to original error
+            raise ToolError(name="goto", payload={"url": url, "wait_until": wait_until}, message=str(exc))
 
     async def fill(self, selector: str, value: str) -> Dict[str, Any]:
         """Fill input field."""

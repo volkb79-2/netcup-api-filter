@@ -48,7 +48,7 @@ echo ""
 # 0. Start mock services if requested
 if [ "$WITH_MOCKS" -eq 1 ]; then
     echo -e "${BLUE}Starting mock services (Mailpit, GeoIP, Netcup API)...${NC}"
-    "${WORKSPACE_DIR}/tooling/mock-services/start.sh" --wait
+    "${WORKSPACE_DIR}/tooling/mailpit/docker compose up -d && tooling/geoip-mock/docker compose up -d && tooling/netcup-api-mock/docker compose up -d" --wait
     echo ""
 fi
 

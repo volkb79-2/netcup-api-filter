@@ -7,7 +7,7 @@ set -euo pipefail
 
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROXY_DIR="${ROOT_DIR}/tooling/local_proxy"
+PROXY_DIR="${ROOT_DIR}/tooling/reverse-proxy"
 PROXY_LIB="${PROXY_DIR}/_proxy_lib.sh"
 PLAYWRIGHT_DIR="${ROOT_DIR}/tooling/playwright"
 UI_TEST_DIR="${ROOT_DIR}/ui_tests"

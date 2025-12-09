@@ -19,7 +19,7 @@ fi
 : "${DOCKER_UID:?DOCKER_UID must be set (source .env.workspace)}"
 : "${DOCKER_GID:?DOCKER_GID must be set (source .env.workspace)}"
 
-CONTAINER_NAME="playwright"
+CONTAINER_NAME="naf-playwright"
 
 # Check if container is running
 if ! docker ps --filter "name=${CONTAINER_NAME}" --filter "status=running" | grep -q "${CONTAINER_NAME}"; then
@@ -48,6 +48,11 @@ DOCKER_EXEC_ENV=(
     -e NETCUP_API_KEY
     -e NETCUP_API_PASSWORD
     -e NETCUP_CUSTOMER_NUMBER
+    -e MAILPIT_USERNAME
+    -e MAILPIT_PASSWORD
+    -e MAILPIT_API_URL
+    -e MAILPIT_WEB_PORT
+    -e MAILPIT_SMTP_PORT
 )
 
 # Execute the command in the container

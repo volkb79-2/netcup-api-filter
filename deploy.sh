@@ -54,7 +54,7 @@ NC='\033[0m'
 # Parse arguments
 DEPLOYMENT_TARGET="${1:-${DEPLOYMENT_TARGET:-local}}"
 
-# Handle --help first (before shift)
+# Handle --help and --stop first (before shift)
 if [[ "$DEPLOYMENT_TARGET" == "--help" ]] || [[ "$DEPLOYMENT_TARGET" == "-h" ]]; then
     cat << 'EOF'
 Unified Deployment Script for Netcup API Filter
@@ -73,21 +73,23 @@ OPTIONS:
     --skip-build       Skip build phase (use existing deploy.zip)
     --skip-infra       Skip infrastructure setup (Playwright, mock services)
     --tests-only       Skip build/deploy, run tests only (implies --skip-build)
-    --https            Use TLS proxy for HTTPS local testing
+    --http             Disable TLS proxy, use plain HTTP (default: HTTPS via TLS proxy)
+    --stop             Stop all deployment services and clean up containers
     -h, --help         Show this help message
 
 EXAMPLES:
-    ./deploy.sh                          # Local deployment with mocks (default)
+    ./deploy.sh                          # Local deployment with mocks + HTTPS (default)
     ./deploy.sh local                    # Same as above
     ./deploy.sh local --mode live        # Local deployment using real services
     ./deploy.sh local --skip-tests       # Deploy locally without tests
     ./deploy.sh local --tests-only       # Run tests only (no rebuild)
-    ./deploy.sh local --https            # Local with HTTPS via TLS proxy
+    ./deploy.sh local --http             # Local with plain HTTP (no TLS proxy)
+    ./deploy.sh --stop                   # Stop all services and clean up
     ./deploy.sh webhosting               # Deploy to production webhosting
     ./deploy.sh webhosting --skip-tests  # Deploy to production without tests
 
 DEPLOYMENT PHASES:
-    0. Infrastructure  Start Playwright container, TLS proxy (if --https), mock services (if mock mode)
+    0. Infrastructure  Start Playwright container, TLS proxy (default), mock services (if mock mode)
     1. Build           Create deploy.zip with fresh database and vendored dependencies
     2. Deploy          Extract locally or upload to webhosting
     3. Start           Start Flask (local) or restart Passenger (webhosting)
@@ -98,7 +100,7 @@ DEPLOYMENT PHASES:
 CONFIGURATION:
     State files:       deployment_state_local.json, deployment_state_webhosting.json
     Environment:       .env.defaults (defaults), .env.workspace (workspace config)
-    TLS Proxy:         tooling/local_proxy/proxy.env (for --https mode)
+    TLS Proxy:         tooling/reverse-proxy/.env (for --https mode, sourced from .env.workspace)
 
 MOCK SERVICES (local mock mode):
     Mailpit            SMTP testing at http://localhost:8025
@@ -110,6 +112,13 @@ EOF
     exit 0
 fi
 
+# Store --stop flag to handle after functions are loaded
+STOP_SERVICES_ONLY=false
+if [[ "$DEPLOYMENT_TARGET" == "--stop" ]]; then
+    STOP_SERVICES_ONLY=true
+    # Don't exit yet - need to load functions first
+fi
+
 shift || true
 
 SKIP_BUILD=false
@@ -117,7 +126,7 @@ SKIP_TESTS=false
 SKIP_SCREENSHOTS=false
 TESTS_ONLY=false
 SKIP_INFRA=false
-USE_HTTPS=false
+USE_HTTPS=true  # HTTPS is default for local deployments
 DEPLOYMENT_MODE=""
 
 while [[ $# -gt 0 ]]; do
@@ -147,8 +156,8 @@ while [[ $# -gt 0 ]]; do
             DEPLOYMENT_MODE="$2"
             shift 2
             ;;
-        --https)
-            USE_HTTPS=true
+        --http)
+            USE_HTTPS=false
             shift
             ;;
         *)
@@ -158,11 +167,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate target
-if [[ "$DEPLOYMENT_TARGET" != "local" && "$DEPLOYMENT_TARGET" != "webhosting" ]]; then
-    echo -e "${RED}ERROR: Invalid DEPLOYMENT_TARGET: $DEPLOYMENT_TARGET${NC}" >&2
-    echo "Must be 'local' or 'webhosting'" >&2
-    exit 1
+# Validate target (skip if --stop mode)
+if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
+    if [[ "$DEPLOYMENT_TARGET" != "local" && "$DEPLOYMENT_TARGET" != "webhosting" ]]; then
+        echo -e "${RED}ERROR: Invalid DEPLOYMENT_TARGET: $DEPLOYMENT_TARGET${NC}" >&2
+        echo "Must be 'local' or 'webhosting'" >&2
+        exit 1
+    fi
 fi
 
 # Set default mode based on target
@@ -191,28 +202,49 @@ export DEPLOYMENT_MODE
 load_env_defaults() {
     local env_file="${REPO_ROOT}/.env.defaults"
     if [[ -f "$env_file" ]]; then
-        # Export all non-comment, non-empty lines
-        set -a
-        source <(grep -v '^#' "$env_file" | grep -v '^$' | grep '=')
-        set +a
+        # Export only variable assignments, skip functions and control structures
+        # Use a temp file to avoid process substitution EOF issues
+        local temp_env=$(mktemp)
+        grep -v '^#' "$env_file" | \
+            grep -v '^$' | \
+            grep '=' | \
+            grep -vE '^\s*(if|then|else|fi|function|{|}|\()' > "$temp_env" || true
+        if [[ -s "$temp_env" ]]; then
+            set -a
+            source "$temp_env"
+            set +a
+        fi
+        rm -f "$temp_env"
     fi
 }
 
-load_env_defaults
+# Only load env if not in --stop mode
+if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
+    load_env_defaults
+fi
 
 # Load TLS proxy config if available
 load_proxy_config() {
-    local proxy_env="${REPO_ROOT}/tooling/local_proxy/proxy.env"
+    local proxy_env="${REPO_ROOT}/tooling/reverse-proxy/.env"
     if [[ -f "$proxy_env" ]]; then
-        set -a
-        source <(grep -v '^#' "$proxy_env" | grep -v '^$' | grep '=')
-        set +a
+        # Use a temp file to avoid process substitution EOF issues
+        local temp_env=$(mktemp)
+        grep -v '^#' "$proxy_env" | grep -v '^$' | grep '=' > "$temp_env" || true
+        if [[ -s "$temp_env" ]]; then
+            set -a
+            source "$temp_env"
+            set +a
+        fi
+        rm -f "$temp_env"
     fi
 }
 
 # ============================================================================
 # Configuration per target (Config-Driven - NO HARDCODED VALUES)
 # ============================================================================
+
+# Skip all configuration for --stop mode
+if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
 
 # Default ports from .env.defaults
 LOCAL_FLASK_PORT="${LOCAL_FLASK_PORT:-5100}"
@@ -229,14 +261,13 @@ case "$DEPLOYMENT_TARGET" in
         # Get devcontainer hostname for Playwright container to connect
         DEVCONTAINER_HOSTNAME=$(hostname)
         
-        # Determine URL based on --https flag or config
-        if [[ "$USE_HTTPS" == "true" ]] || [[ "${LOCAL_USE_HTTPS:-false}" == "true" ]]; then
+        # Determine URL based on --https flag (explicit only)
+        # Note: LOCAL_USE_HTTPS from .env.defaults is IGNORED unless --https flag used
+        if [[ "$USE_HTTPS" == "true" ]]; then
             load_proxy_config
             LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:-localhost}"
             LOCAL_TLS_BIND_HTTPS="${LOCAL_TLS_BIND_HTTPS:-443}"
             UI_BASE_URL="https://${LOCAL_TLS_DOMAIN}:${LOCAL_TLS_BIND_HTTPS}"
-            # Force HTTPS mode
-            USE_HTTPS=true
         else
             # Use devcontainer hostname so Playwright container can connect
             UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:${LOCAL_FLASK_PORT}"
@@ -265,6 +296,8 @@ case "$DEPLOYMENT_TARGET" in
 esac
 
 mkdir -p "$LOG_DIR" "$SCREENSHOT_DIR"
+
+fi  # End of STOP_SERVICES_ONLY check
 
 # ============================================================================
 # Utility functions
@@ -431,6 +464,13 @@ run_in_playwright() {
         export DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
         export DEPLOYMENT_STATE_FILE="$STATE_FILE"
         
+        # Source Mailpit credentials from container config (NO HARDCODED DEFAULTS)
+        if [[ -f "${REPO_ROOT}/tooling/mailpit/.env" ]]; then
+            set -a  # Export all variables
+            source "${REPO_ROOT}/tooling/mailpit/.env"
+            set +a
+        fi
+        
         # Load credentials from state file
         if [[ -f "$STATE_FILE" ]]; then
             export DEPLOYED_ADMIN_USERNAME=$(read_state_value "admin.username")
@@ -496,33 +536,49 @@ start_playwright_container() {
 
 start_mock_services() {
     log_step "Starting mock services (Mailpit, Mock Netcup API, Mock GeoIP)..."
-    if [[ -f "${REPO_ROOT}/tooling/mock-services/start.sh" ]]; then
-        "${REPO_ROOT}/tooling/mock-services/start.sh" --wait 2>/dev/null || {
-            log_warning "Mock services start failed (may already be running)"
-        }
-        log_success "Mock services started"
-    else
-        log_warning "Mock services start script not found - skipping"
+    
+    # Start Mailpit
+    if [[ -d "${REPO_ROOT}/tooling/mailpit" ]]; then
+        (cd "${REPO_ROOT}/tooling/mailpit" && docker compose up -d 2>/dev/null) || log_warning "Mailpit start failed (may already be running)"
     fi
+    
+    # Start Mock Netcup API
+    if [[ -d "${REPO_ROOT}/tooling/netcup-api-mock" ]]; then
+        (cd "${REPO_ROOT}/tooling/netcup-api-mock" && docker compose up -d 2>/dev/null) || log_warning "Mock Netcup API start failed (may already be running)"
+    fi
+    
+    # Start Mock GeoIP
+    if [[ -d "${REPO_ROOT}/tooling/geoip-mock" ]]; then
+        (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose up -d 2>/dev/null) || log_warning "Mock GeoIP start failed (may already be running)"
+    fi
+    
+    log_success "Mock services started"
 }
 
 stop_mock_services() {
     log_step "Stopping mock services..."
-    if [[ -f "${REPO_ROOT}/tooling/mock-services/stop.sh" ]]; then
-        "${REPO_ROOT}/tooling/mock-services/stop.sh" 2>/dev/null || true
-    fi
+    (cd "${REPO_ROOT}/tooling/mailpit" && docker compose down 2>/dev/null) || true
+    (cd "${REPO_ROOT}/tooling/netcup-api-mock" && docker compose down 2>/dev/null) || true
+    (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose down 2>/dev/null) || true
 }
 
 start_tls_proxy() {
     log_step "Starting TLS proxy (nginx with Let's Encrypt certs)..."
     
-    local proxy_dir="${REPO_ROOT}/tooling/local_proxy"
+    local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
     
-    if [[ ! -f "${proxy_dir}/proxy.env" ]]; then
-        log_error "TLS proxy not configured: ${proxy_dir}/proxy.env not found"
-        log_step "Run: cd ${proxy_dir} && ./auto-detect-fqdn.sh"
+    if [[ ! -f "${proxy_dir}/.env" ]]; then
+        log_error "TLS proxy not configured: ${proxy_dir}/.env not found"
+        log_step "Run: ./detect-fqdn.sh --update-workspace"
         return 1
     fi
+    
+    # Ensure workspace environment is loaded
+    if [[ ! -f "${REPO_ROOT}/.env.workspace" ]]; then
+        log_error ".env.workspace not found - run: ./detect-fqdn.sh --update-workspace"
+        return 1
+    fi
+    source "${REPO_ROOT}/.env.workspace"
     
     # Render nginx config from template
     if [[ -f "${proxy_dir}/render-nginx-conf.sh" ]]; then
@@ -533,28 +589,45 @@ start_tls_proxy() {
         }
     fi
     
-    # Stage config for Docker
-    if [[ -f "${proxy_dir}/stage-proxy-inputs.sh" ]]; then
-        log_step "Staging proxy inputs..."
-        (cd "${proxy_dir}" && ./stage-proxy-inputs.sh) || {
-            log_warning "Stage proxy inputs failed (may be OK if running on host)"
-        }
-    fi
+    # Export required variables for docker-compose (from .env.workspace)
+    export PHYSICAL_REPO_ROOT="${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}"
+    export DOCKER_GID="${DOCKER_GID:?DOCKER_GID must be set}"
+    export PUBLIC_FQDN="${PUBLIC_FQDN:?PUBLIC_FQDN must be set}"
+    
+    # CRITICAL: Certificate accessibility check
+    # Devcontainer CANNOT access /etc/letsencrypt (host filesystem isolation)
+    # nginx container CAN access via docker group mount (user: 0:${DOCKER_GID})
+    # We verify by attempting to start nginx and checking if it can read certs
+    
+    log_step "Verifying TLS certificates accessible to nginx container..."
+    log_step "(Certificates on host at /etc/letsencrypt/live/${PUBLIC_FQDN}/)"
+    log_step "(nginx runs with docker group: 0:${DOCKER_GID} to access host certs)"
+    
+    # We'll verify by starting nginx - if certs are missing/unreadable, nginx will fail
+    # with clear error. No need for devcontainer to check what it cannot access.
     
     # Start proxy via docker-compose
     if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
         log_step "Starting TLS proxy container..."
-        (cd "${proxy_dir}" && docker compose --env-file proxy.env up -d) || {
-            log_error "Failed to start TLS proxy"
-            return 1
-        }
+        if docker ps | grep -q naf-reverse-proxy; then
+            log_step "TLS proxy already running - restarting..."
+            (cd "${proxy_dir}" && docker compose --env-file .env restart) || {
+                log_error "Failed to restart TLS proxy"
+                return 1
+            }
+        else
+            (cd "${proxy_dir}" && docker compose --env-file .env up -d) || {
+                log_error "Failed to start TLS proxy"
+                return 1
+            }
+        fi
         
         # Wait for proxy to be ready
         local proxy_url="${UI_BASE_URL}/admin/login"
         log_step "Waiting for TLS proxy at ${proxy_url}..."
         for i in {1..30}; do
             if curl -sk "${proxy_url}" > /dev/null 2>&1; then
-                log_success "TLS proxy ready"
+                log_success "TLS proxy ready at ${proxy_url}"
                 return 0
             fi
             sleep 1
@@ -568,9 +641,9 @@ start_tls_proxy() {
 
 stop_tls_proxy() {
     log_step "Stopping TLS proxy..."
-    local proxy_dir="${REPO_ROOT}/tooling/local_proxy"
+    local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
     if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
-        (cd "${proxy_dir}" && docker compose --env-file proxy.env down 2>/dev/null) || true
+        (cd "${proxy_dir}" && docker compose --env-file .env down 2>/dev/null) || true
     fi
 }
 
@@ -590,10 +663,11 @@ phase_infrastructure() {
         }
     fi
     
-    # Start TLS proxy for HTTPS mode (local only)
+    # Start TLS proxy for HTTPS mode (default for local, use --http to disable)
     if [[ "$USE_HTTPS" == "true" && "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_tls_proxy || {
             log_error "Failed to start TLS proxy - HTTPS testing will fail"
+            log_step "Use --http flag to skip TLS proxy if certificates not available"
             return 1
         }
     fi
@@ -970,6 +1044,72 @@ phase_screenshots() {
 }
 
 # ============================================================================
+# Cleanup / Stop All Services
+# ============================================================================
+
+stop_all_services() {
+    echo ""
+    echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║  Stopping All Deployment Services${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    # Source workspace environment if available
+    if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
+        source "${REPO_ROOT}/.env.workspace"
+    fi
+    
+    # 1. Stop Flask backend
+    log_step "Stopping Flask backend..."
+    pkill -f "gunicorn.*passenger_wsgi:application" 2>/dev/null && log_success "Flask stopped" || log_step "Flask not running"
+    
+    # 2. Stop TLS reverse proxy
+    log_step "Stopping TLS reverse proxy..."
+    local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
+    if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
+        (cd "${proxy_dir}" && docker compose --env-file .env down 2>/dev/null) && log_success "TLS proxy stopped" || log_step "TLS proxy not running"
+    fi
+    
+    # 3. Stop Mailpit
+    log_step "Stopping Mailpit..."
+    (cd "${REPO_ROOT}/tooling/mailpit" && docker compose down 2>/dev/null) && log_success "Mailpit stopped" || log_step "Mailpit not running"
+    
+    # 4. Stop Mock Netcup API
+    log_step "Stopping Mock Netcup API..."
+    (cd "${REPO_ROOT}/tooling/netcup-api-mock" && docker compose down 2>/dev/null) && log_success "Mock Netcup API stopped" || log_step "Mock Netcup API not running"
+    
+    # 5. Stop Mock GeoIP
+    log_step "Stopping Mock GeoIP..."
+    (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose down 2>/dev/null) && log_success "Mock GeoIP stopped" || log_step "Mock GeoIP not running"
+    
+    # 6. Stop Playwright container
+    log_step "Stopping Playwright container..."
+    docker stop naf-playwright 2>/dev/null && log_success "Playwright stopped" || log_step "Playwright not running"
+    
+    # Show remaining naf- containers (if any)
+    echo ""
+    local remaining
+    remaining=$(docker ps --filter "name=naf-" --format "{{.Names}}" 2>/dev/null)
+    if [[ -n "$remaining" ]]; then
+        log_warning "Some naf- containers still running:"
+        docker ps --filter "name=naf-" --format "table {{.Names}}\t{{.Status}}"
+    else
+        log_success "All naf- containers stopped"
+    fi
+    
+    echo ""
+    log_success "========================================="
+    log_success "All services stopped"
+    log_success "========================================="
+    echo ""
+    log_step "To restart:"
+    echo "  ./deploy.sh local              # Fresh deployment with tests"
+    echo "  ./deploy.sh local --skip-tests # Deployment without tests"
+    echo "  ./deploy.sh local --tests-only # Tests only (reuse existing deployment)"
+    echo ""
+}
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -1026,12 +1166,21 @@ main() {
     echo "  # Re-run tests only:"
     echo "  ./deploy.sh $DEPLOYMENT_TARGET --tests-only"
     echo ""
+    echo "  # Stop all services:"
+    echo "  ./deploy.sh --stop"
+    echo ""
     echo "  # Run specific test:"
     echo "  DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET pytest ui_tests/tests/test_admin_ui.py -v"
     echo ""
     echo "  # Recapture screenshots:"
     echo "  DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET python3 ui_tests/capture_ui_screenshots.py"
 }
+
+# Handle --stop flag (after all functions loaded)
+if [[ "$STOP_SERVICES_ONLY" == "true" ]]; then
+    stop_all_services
+    exit 0
+fi
 
 # Run main (Phase 0 handles Playwright startup now)
 main "$@"

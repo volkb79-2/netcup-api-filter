@@ -22,7 +22,7 @@ Account-Based Testing:
 - No cross-account email leakage
 
 Prerequisites:
-- Mailpit container running: cd tooling/mock-services && docker compose up -d mailpit
+- Mailpit container running: cd tooling/mailpit && docker compose up -d
 - App configured to use mailpit:1025 as SMTP
 """
 import asyncio

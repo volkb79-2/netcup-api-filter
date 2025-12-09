@@ -24,7 +24,7 @@ Scripts intentionally abort unless every variable they rely on is exported. Comm
 
 - `DEPLOYMENT_ENV_FILE` – Points to the env file that mirrors the target deployment (`.env.local`, `.env.webhosting`, etc.). Required by `build-and-deploy*.sh`, `run-local-tests.sh`, UI tests, and screenshot capture.
 - `UI_*` variables – Used by `tooling/run-ui-validation.sh` and `ui_tests/tests`. Export `UI_BASE_URL`, `UI_ADMIN_USERNAME`, `UI_ADMIN_PASSWORD`, `UI_CLIENT_ID`, `UI_CLIENT_TOKEN`, `UI_CLIENT_DOMAIN`, `UI_SCREENSHOT_PREFIX`, `PLAYWRIGHT_HEADLESS`, and `KEEP_UI_STACK` before running the validation script.
-- `LOCAL_PROXY_*` variables – Provide host/port/domain bindings for the local TLS proxy as described in `tooling/local_proxy/proxy.env`.
+- `LOCAL_PROXY_*` variables – Provide host/port/domain bindings for the local TLS proxy as described in `tooling/reverse-proxy/proxy.env`.
 
 When unsure, run the script once—its fail-fast message will identify the missing variable and usually suggest the exact file to source.
 

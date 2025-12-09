@@ -15,7 +15,7 @@ This document tracks the production readiness status of the Netcup API Filter pr
 - [x] GeoIP/MaxMind settings (`.env.defaults`)
 - [x] Screenshot viewport dimensions (`.env.defaults`)
 - [x] Deployment URLs (`WEBHOSTING_URL`, `LOCAL_FLASK_PORT`)
-- [x] TLS proxy settings (`tooling/local_proxy/proxy.env`)
+- [x] TLS proxy settings (`tooling/reverse-proxy/proxy.env`)
 - [x] IMAP settings for live email verification (`.env.defaults`)
 - [x] DNS test settings for live DNS verification (`.env.defaults`)
 

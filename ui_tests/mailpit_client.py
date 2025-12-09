@@ -6,14 +6,27 @@ with a web UI and comprehensive REST API.
 
 Configuration:
     Start Mailpit via Docker:
-        cd tooling/mock-services && docker compose up -d mailpit
+        cd tooling/mailpit && docker compose up -d
     
     Access via container hostname on shared network:
-        - API: http://mailpit:8025/api/v1
+        - Container name: naf-mailpit (for docker ps identification)
+        - Hostname: mailpit or naf-mailpit (both resolve to same container)
+        - API: http://naf-mailpit:8025/mailpit/api/v1
         - SMTP: mailpit:1025
+    
+    Authentication:
+        Mailpit requires basic auth for API access. Credentials are read from:
+        1. Constructor arguments: MailpitClient(username="...", password="...")
+        2. Environment variables: MAILPIT_USERNAME, MAILPIT_PASSWORD
+        3. Defaults: admin / MailpitDev123! (from tooling/mailpit/.env)
 
 Usage:
+    # Uses environment variables or defaults
     client = MailpitClient()
+    client.clear()
+    
+    # Or pass credentials explicitly
+    client = MailpitClient(username="admin", password="secret")
     client.clear()
     
     # ... trigger email sending to mailpit:1025 ...
@@ -153,7 +166,7 @@ class MailpitClient:
     """Synchronous client for Mailpit REST API.
     
     Args:
-        base_url: Mailpit API base URL (default: from env or http://mailpit:8025)
+        base_url: Mailpit API base URL (default: from env or http://naf-mailpit:8025/mailpit)
         timeout: Request timeout in seconds
     
     Usage:
@@ -182,12 +195,14 @@ class MailpitClient:
         )
     """
     
-    DEFAULT_BASE_URL = "http://mailpit:8025"
+    DEFAULT_BASE_URL = "http://naf-mailpit:8025/mailpit"
     
     def __init__(
         self,
         base_url: str | None = None,
         timeout: float = 10.0,
+        username: str | None = None,
+        password: str | None = None,
     ):
         self.base_url = (
             base_url
@@ -196,7 +211,23 @@ class MailpitClient:
         ).rstrip("/")
         self.api_url = f"{self.base_url}/api/v1"
         self.timeout = timeout
-        self._client = httpx.Client(timeout=timeout)
+        
+        # Authentication credentials (from args or environment ONLY)
+        # NO DEFAULTS - must be set in environment from tooling/mailpit/.env
+        username = username or os.environ.get("MAILPIT_USERNAME")
+        password = password or os.environ.get("MAILPIT_PASSWORD")
+        
+        if not username or not password:
+            raise ValueError(
+                "Mailpit authentication required: set MAILPIT_USERNAME and MAILPIT_PASSWORD "
+                "environment variables (source tooling/mailpit/.env)"
+            )
+        
+        # Create httpx client with basic auth
+        self._client = httpx.Client(
+            timeout=timeout,
+            auth=(username, password),
+        )
     
     def _request(
         self,
@@ -424,7 +455,7 @@ def test_mailpit_client() -> None:
     """Test the Mailpit client.
     
     Requires Mailpit to be running:
-        cd tooling/mock-services && docker compose up -d mailpit
+        cd tooling/mailpit && docker compose up -d
     """
     import smtplib
     from email.mime.multipart import MIMEMultipart

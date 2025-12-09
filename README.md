@@ -22,19 +22,57 @@ Netcup issues a single credential set with full control over every DNS record, d
 
 ## Quick Start
 
-1. **Clone & enter**
-   ```bash
-   git clone https://github.com/volkb79-2/netcup-api-filter.git
-   cd netcup-api-filter
-   ```
-2. **Prepare environment** – copy `.env.defaults` to `.env.workspace`, fill in secrets, and `source .env.workspace`.
-3. **Run local package build + smoke tests**
-   ```bash
-   ./build-and-deploy-local.sh
-   ./run-local-tests.sh
-   ```
-4. **Need browser coverage?** Export the required `UI_*` variables and run `bash tooling/run-ui-validation.sh` for the HTTPS + Playwright flow.
-5. **Deploy** with `./build-and-deploy.sh` once the local suite passes (see `OPERATIONS_GUIDE.md`).
+```
+
+deploy.sh (master orchestrator)
+├── local (default)
+│   ├── --mock (default): Start mocks, build, deploy, test via HTTPS
+│   └── --live: Build, deploy, test via HTTPS (use real services)
+├── webhosting
+│   └── Build, upload, restart Passenger, test via HTTPS
+└── Common flow:
+    1. Start infrastructure (mocks if --mock, TLS proxy always)
+    2. Build deployment
+    3. Deploy (local extract or remote upload)
+    4. Start backend (gunicorn or Passenger restart)
+    5. Run tests via HTTPS
+
+
+# 1. Clone repository
+git clone git@github.com:user/netcup-api-filter.git
+cd netcup-api-filter
+
+# 2. Open in devcontainer (automatic setup)
+# VS Code will:
+# - Build devcontainer from Dockerfile
+# - Run postCreateCommand (installs packages)
+# - Source .env.workspace (PUBLIC_FQDN, PHYSICAL_REPO_ROOT, DOCKER_GID)
+
+# 3. Detect public FQDN (if PUBLIC_FQDN not set)
+./detect-fqdn.sh --update-workspace  # Populates .env.workspace
+
+# 4. run deployment script
+deploy.sh (master orchestrator)
+├── local (default)
+│   ├── --mock (default): Start mocks, build, deploy, test via HTTPS
+│   └── --live: Build, deploy, test via HTTPS (use real services)
+├── webhosting
+│   └── Build, upload, restart Passenger, test via HTTPS
+└── Common flow:
+    1. Start infrastructure (mocks if --mock, TLS proxy always)
+    2. Build deployment
+    3. Deploy (local extract or remote upload)
+    4. Start backend (gunicorn or Passenger restart)
+    5. Run tests via HTTPS
+
+# 6. Access deployment
+echo "Admin UI: https://${PUBLIC_FQDN}/admin/login"
+echo "Mailpit: https://${PUBLIC_FQDN}/mailpit/"
+echo "Credentials: admin / admin (from .env.defaults)"
+
+# 7. Run tests (optional)
+./run-local-tests.sh  # Full test suite (90 tests)
+```
 
 ## Document Map (read these, skip the clutter)
 

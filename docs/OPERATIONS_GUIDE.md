@@ -12,7 +12,7 @@
 3. **Export required variables**:
    - `DEPLOYMENT_ENV_FILE` → points to the env file that mirrors the target deployment.
    - `UI_*` variables → required for UI tests (see below).
-   - `LOCAL_DB_PATH`, `LOCAL_APP_HOST`, `LOCAL_TLS_DOMAIN`, etc., as referenced in `tooling/local_proxy/proxy.env`.
+   - `LOCAL_DB_PATH`, `LOCAL_APP_HOST`, `LOCAL_TLS_DOMAIN`, etc., as referenced in `tooling/reverse-proxy/proxy.env`.
 4. **Verify configuration** using the fail-fast errors provided by each script. Missing variables will halt execution with a clear hint.
 
 ## 2. Local Backend Smoke Test
@@ -55,21 +55,21 @@ bash tooling/run-ui-validation.sh
 
 The script performs the following steps automatically:
 
-1. Renders and stages the nginx TLS proxy configuration (using `tooling/local_proxy/render-nginx-conf.sh` and `stage-proxy-inputs.sh`).
-2. Starts Gunicorn for `tooling/local_proxy/local_app:app` on the configured port.
+1. Renders and stages the nginx TLS proxy configuration (using `tooling/reverse-proxy/render-nginx-conf.sh` and `stage-proxy-inputs.sh`).
+2. Starts Gunicorn for `tooling/reverse-proxy/local_app:app` on the configured port.
 3. Launches the TLS proxy via Docker Compose and waits for HTTPS readiness.
 4. Boots the Playwright container (`tooling/playwright/docker-compose.yml`) and confirms the API is reachable.
 5. Runs the requested pytest command inside the Playwright container (default: `pytest ui_tests/tests -vv`).
 6. Tears everything down unless `KEEP_UI_STACK=1`.
 
-If you need to run the proxy separately (for manual browser checks), follow `tooling/local_proxy/README.md` using the same environment variables.
+If you need to run the proxy separately (for manual browser checks), follow `tooling/reverse-proxy/README.md` using the same environment variables.
 
 ## 4. Real-Certificate HTTPS Testing
 
 To test with real Let's Encrypt certificates and a public FQDN (perfect production parity):
 
 ```bash
-cd tooling/local_proxy
+cd tooling/reverse-proxy
 ./auto-detect-fqdn.sh --verify-certs
 ./render-nginx-conf.sh
 ./stage-proxy-inputs.sh

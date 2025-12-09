@@ -9,7 +9,7 @@ This journey tests email flows by:
 5. Following those links to complete workflows
 
 Prerequisites:
-- Mailpit container running: cd tooling/mock-services && docker compose up -d mailpit
+- Mailpit container running: cd tooling/mailpit && docker compose up -d
 - App configured to use mailpit:1025 as SMTP (done by build_deployment.py --local)
 """
 import pytest

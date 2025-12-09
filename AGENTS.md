@@ -37,6 +37,23 @@ app.config['PERMANENT_SESSION_LIFETIME'] = int(os.environ.get('FLASK_SESSION_LIF
 
 See `CONFIG_DRIVEN_ARCHITECTURE.md` for complete guidelines and migration plan.
 
+### Dynamic FQDN Detection
+
+**CRITICAL**: Never hardcode hostnames like `gstammtisch.dchive.de`. The public FQDN is **auto-detected via reverse DNS** and stored in `.env.workspace`.
+
+**All scripts must source `.env.workspace`** to get `PUBLIC_FQDN`:
+```bash
+source .env.workspace  # Sets PUBLIC_FQDN, PUBLIC_IP, cert paths
+echo "Testing: https://${PUBLIC_FQDN}/"
+```
+
+**Update FQDN** (e.g., after IP change):
+```bash
+./detect-fqdn.sh --update-workspace
+```
+
+See [`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md) for complete documentation.
+
 ## Local Testing with Production Parity
 
 **Quick command (HTTP testing):**
@@ -46,7 +63,7 @@ See `CONFIG_DRIVEN_ARCHITECTURE.md` for complete guidelines and migration plan.
 
 **Quick command (HTTPS testing with real Let's Encrypt certificates):**
 ```bash
-cd tooling/local_proxy && ./auto-detect-fqdn.sh && cd ../.. && ./run-local-tests.sh
+cd tooling/reverse-proxy && ./auto-detect-fqdn.sh && cd ../.. && ./run-local-tests.sh
 ```
 
 This runs the complete test suite (90 tests: 27 comprehensive UI, 10 admin, 4 client, 8 API proxy, and more) against a deployment that **exactly mirrors production**:
@@ -97,7 +114,7 @@ See `LOCAL_TESTING_GUIDE.md` and `CONFIG_DRIVEN_ARCHITECTURE.md` for complete de
 **Test with real TLS certificates and 100% production parity:**
 
 ```bash
-cd tooling/local_proxy
+cd tooling/reverse-proxy
 
 # Auto-detect public FQDN from external IP + reverse DNS
 ./auto-detect-fqdn.sh --verify-certs
@@ -284,15 +301,15 @@ cd tooling/playwright && docker compose up -d
 
 # Run interactive UI tests (28 tests - JS, CSS, navigation)
 docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
-  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py -v --timeout=180
+  naf-playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py -v --timeout=180
 
 # Run user journey tests (15 tests - end-to-end workflows)
 docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
-  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_user_journeys.py -v --timeout=180
+  naf-playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_user_journeys.py -v --timeout=180
 
 # Run all UI tests together (43 tests)
 docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
-  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py \
+  naf-playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py \
   /workspaces/netcup-api-filter/ui_tests/tests/test_user_journeys.py -v --timeout=180
 ```
 
@@ -449,7 +466,7 @@ This is the ONLY supported deployment method. Do not manually scp files.
 **Live Server Access Credentials** (from `./build-and-deploy.sh`):
 - SSH: `hosting218629@hosting218629.ae98d.netcup.net`
 - Remote Directory: `/netcup-api-filter`
-- Public URL: `https://naf.vxxu.de/`
+- Public URL: `https://$PUBLIC_FQDN/`
 - Log File: `/netcup-api-filter/netcup_filter.log`
 - Database: `/netcup-api-filter/netcup_filter.db`
 - Restart: `touch /netcup-api-filter/tmp/restart.txt` (Passenger reload)
@@ -476,7 +493,7 @@ cd tooling/playwright && ./start-playwright.sh
 ./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 
 # Stop container when done
-docker stop playwright
+docker stop naf-playwright
 ```
 
 ### What This Provides
@@ -521,7 +538,7 @@ See `tooling/playwright/requirements.root.txt` for complete list.
 You can still hit the Flask server directly via the devcontainer address for
 quick smoke checks. When you need production-like HTTPS (real hostname,
 Let’s Encrypt certificates) but with full control and logging, use the local
-TLS proxy tooling under `tooling/local_proxy/`:
+TLS proxy tooling under `tooling/reverse-proxy/`:
 
 - The README in that folder explains how to configure the reverse proxy via
   environment files so no values are hard-coded.
@@ -529,12 +546,12 @@ TLS proxy tooling under `tooling/local_proxy/`:
   traffic on your machine, making it ideal for debugging flows that are opaque
   on the shared host.
 
-Follow the instructions in `tooling/local_proxy/README.md` to generate the
+Follow the instructions in `tooling/reverse-proxy/README.md` to generate the
 nginx config from your `.env`, mount the Let’s Encrypt tree read-only, and
 point clients at the public FQDN of this host.
 
-- `tooling/local_proxy/render-nginx-conf.sh` renders the nginx config using
-  your `.env` choices, while `tooling/local_proxy/stage-proxy-inputs.sh`
+- `tooling/reverse-proxy/render-nginx-conf.sh` renders the nginx config using
+  your `.env` choices, while `tooling/reverse-proxy/stage-proxy-inputs.sh`
   copies the resulting config and cert bundle into `/tmp/...` so Docker can
   mount them from inside the devcontainer. Run both before restarting the
   proxy.
@@ -556,10 +573,60 @@ and UI testing. The quick steps are:
 
 1. `cd tooling/playwright`
 2. `docker compose up -d`
-3. `docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v`
+3. `docker exec naf-playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v`
 
 For MCP access (optional), use SSH tunnel to expose port 8765 internally.
 See `tooling/playwright/README.md` for detailed setup and usage.
+
+**CRITICAL**: Before implementing any Playwright-based login, 2FA, or navigation tests, read [`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md). This document covers essential patterns that prevent 90% of test flakiness issues:
+- **2FA Form Submission**: Use JavaScript `form.submit()` to avoid race conditions with auto-submit
+- **Live URL Detection**: Always use `browser._page.url` for current URL (not cached `browser.current_url`)
+- **Session Handling**: Detect active sessions before attempting login
+
+## Container Naming Convention
+
+**All testing containers use `naf-` prefix** for easy identification in `docker ps`:
+
+| Container Name | Location | Purpose |
+|----------------|----------|---------|
+| `naf-playwright` | `tooling/playwright/` | Browser automation (WebSocket + MCP) |
+| `naf-mailpit` | `tooling/mailpit/` | SMTP testing (web UI + API) |
+| `naf-mock-geoip` | `tooling/geoip-mock/` | GeoIP API mock |
+| `naf-mock-netcup-api` | `tooling/netcup-api-mock/` | Netcup CCP API mock |
+| `naf-reverse-proxy` | `tooling/reverse-proxy/` | Local TLS reverse proxy (nginx) |
+
+Each service has its own:
+- `.env` - Configuration with fail-fast validation
+- `docker-compose.yml` - Standalone service definition
+- `README.md` - Service-specific documentation
+
+See [`docs/MAILPIT_CONFIGURATION.md`](docs/MAILPIT_CONFIGURATION.md) for Mailpit setup, authentication, and integration with local TLS proxy.
+
+## TLS Certificate Access in Devcontainer (CRITICAL)
+
+**Certificate Location**: `/etc/letsencrypt/live/${PUBLIC_FQDN}/` on HOST filesystem
+
+**Access Pattern**:
+- **Devcontainer**: CANNOT access certificates (isolated from host `/etc/letsencrypt`)
+- **nginx container**: CAN access via docker group mount (`user: 0:${DOCKER_GID}`)
+- **Verification**: Must be done by nginx container startup (not devcontainer checks)
+
+**Why this matters**:
+- Running `ls /etc/letsencrypt/live/` in devcontainer returns "No such file or directory"
+- This is CORRECT behavior (security isolation)
+- nginx container mounts HOST `/etc/letsencrypt` directly from Docker daemon
+- nginx runs with docker group (GID 994) to read certs without world-readable perms
+
+**Troubleshooting**:
+```bash
+# ❌ WRONG: Check from devcontainer (always fails)
+ls /etc/letsencrypt/live/${PUBLIC_FQDN}/
+
+# ✅ CORRECT: Start nginx and check logs
+cd tooling/reverse-proxy
+docker compose --env-file .env up
+# If certs missing/unreadable, nginx logs clear error
+```
 
 ## Automated local UI validation
 

@@ -190,7 +190,7 @@ def mailpit():
     """Fixture that provides a Mailpit client for SMTP testing.
     
     Requires Mailpit container to be running:
-        cd tooling/mock-services && docker compose up -d mailpit
+        cd tooling/mailpit && docker compose up -d
     
     Usage:
         def test_email(mailpit):
@@ -216,7 +216,7 @@ def mailpit():
     try:
         client.clear()
     except Exception:
-        pytest.skip("Mailpit not available - start with: cd tooling/mock-services && docker compose up -d mailpit")
+        pytest.skip("Mailpit not available - start with: cd tooling/mailpit && docker compose up -d")
     
     yield client
     

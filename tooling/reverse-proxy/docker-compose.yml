@@ -1,0 +1,47 @@
+services:
+  reverse-proxy:
+    image: nginx:stable-alpine
+    container_name: naf-reverse-proxy
+    restart: unless-stopped
+    # ====================================================================
+    # CRITICAL: Certificate Access Pattern (devcontainer scenario)
+    # ====================================================================
+    # Run as root with docker group for certificate access
+    # - /etc/letsencrypt on HOST owned by root:docker (perms: drwxr-x---)
+    # - Devcontainer user CANNOT access (isolated from host filesystem)
+    # - nginx container CAN access via docker group membership (GID 994)
+    # - user: "0:${DOCKER_GID}" means UID=0 (root) + GID=docker
+    # - This allows nginx to read certs without making them world-readable
+    # ====================================================================
+    user: "0:${DOCKER_GID:?DOCKER_GID must be set}"
+    networks:
+      - naf-network
+    ports:
+      - "${LOCAL_TLS_BIND_HTTPS:?LOCAL_TLS_BIND_HTTPS must be set}:443"
+      - "${LOCAL_TLS_BIND_HTTP:?LOCAL_TLS_BIND_HTTP must be set}:80"
+    volumes:
+      # ====================================================================
+      # CRITICAL: Config files MUST use PHYSICAL_REPO_ROOT
+      # ====================================================================
+      # Docker daemon copies files from HOST during container start.
+      # PHYSICAL_REPO_ROOT ensures daemon finds files in devcontainer scenario.
+      # ${PWD} would resolve to container's CWD, not host's file location.
+      # ====================================================================
+      - "${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/reverse-proxy/conf.d:/etc/nginx/conf.d:ro"
+      # ====================================================================
+      # CRITICAL: Let's Encrypt Certificate Mount (HOST filesystem)
+      # ====================================================================
+      # Mount /etc/letsencrypt from HOST (not devcontainer)
+      # Docker daemon mounts HOST path directly to container
+      # nginx container reads certs via docker group membership
+      # Devcontainer scripts CANNOT verify cert existence (isolated)
+      # ====================================================================
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    environment:
+      - NGINX_ENTRYPOINT_QUIET_LOGS=1
+      - PUBLIC_FQDN=${PUBLIC_FQDN:?PUBLIC_FQDN must be set}
+
+networks:
+  naf-network:
+    external: true
+    name: "${LOCAL_PROXY_NETWORK:?LOCAL_PROXY_NETWORK must be set}"
