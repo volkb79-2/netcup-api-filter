@@ -9,9 +9,9 @@ Configuration:
         cd tooling/mailpit && docker compose up -d
     
     Access via container hostname on shared network:
-        - Container name: naf-mailpit (for docker ps identification)
-        - Hostname: mailpit or naf-mailpit (both resolve to same container)
-        - API: http://naf-mailpit:8025/mailpit/api/v1
+        - Service name: naf-dev-mailpit (Docker Compose auto-generates container name)
+        - Hostname: naf-dev-mailpit (DNS resolution within Docker network)
+        - API: http://naf-dev-mailpit:8025/mailpit/api/v1
         - SMTP: mailpit:1025
     
     Authentication:
@@ -166,7 +166,7 @@ class MailpitClient:
     """Synchronous client for Mailpit REST API.
     
     Args:
-        base_url: Mailpit API base URL (default: from env or http://naf-mailpit:8025/mailpit)
+        base_url: Mailpit API base URL (default: from env or http://naf-dev-mailpit:8025/mailpit)
         timeout: Request timeout in seconds
     
     Usage:
@@ -195,7 +195,7 @@ class MailpitClient:
         )
     """
     
-    DEFAULT_BASE_URL = "http://naf-mailpit:8025/mailpit"
+    DEFAULT_BASE_URL = "http://naf-dev-mailpit:8025/mailpit"
     
     def __init__(
         self,

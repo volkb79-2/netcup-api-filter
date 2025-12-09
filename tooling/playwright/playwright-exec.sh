@@ -19,7 +19,7 @@ fi
 : "${DOCKER_UID:?DOCKER_UID must be set (source .env.workspace)}"
 : "${DOCKER_GID:?DOCKER_GID must be set (source .env.workspace)}"
 
-CONTAINER_NAME="naf-playwright"
+CONTAINER_NAME="naf-dev-playwright"
 
 # Check if container is running
 if ! docker ps --filter "name=${CONTAINER_NAME}" --filter "status=running" | grep -q "${CONTAINER_NAME}"; then

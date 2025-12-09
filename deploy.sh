@@ -329,7 +329,7 @@ log_error() {
 }
 
 check_playwright_container() {
-    docker ps --filter "name=playwright" --filter "status=running" | grep -q playwright
+    docker ps --filter "name=naf-dev-playwright" --filter "status=running" | grep -q naf-dev-playwright
 }
 
 get_devcontainer_hostname() {
@@ -472,7 +472,7 @@ run_in_playwright() {
             # Explicitly export Mailpit variables for docker exec
             export MAILPIT_USERNAME
             export MAILPIT_PASSWORD
-            export MAILPIT_API_URL="http://naf-mailpit:8025/mailpit"
+            export MAILPIT_API_URL="http://naf-dev-mailpit:8025/mailpit"
         fi
         
         # Load credentials from state file
@@ -613,7 +613,7 @@ start_tls_proxy() {
     # Start proxy via docker-compose
     if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
         log_step "Starting TLS proxy container..."
-        if docker ps | grep -q naf-reverse-proxy; then
+        if docker ps | grep -q naf-dev-reverse-proxy; then
             log_step "TLS proxy already running - restarting..."
             (cd "${proxy_dir}" && docker compose --env-file .env restart) || {
                 log_error "Failed to restart TLS proxy"
@@ -681,7 +681,7 @@ phase_infrastructure() {
         }
     fi
     
-    # Start mock services BEFORE TLS proxy (nginx config references naf-mailpit)
+    # Start mock services BEFORE TLS proxy (nginx config references naf-dev-mailpit)
     if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_mock_services
     fi
@@ -1103,7 +1103,7 @@ stop_all_services() {
     
     # 6. Stop Playwright container
     log_step "Stopping Playwright container..."
-    docker stop naf-playwright 2>/dev/null && log_success "Playwright stopped" || log_step "Playwright not running"
+    docker stop naf-dev-playwright 2>/dev/null && log_success "Playwright stopped" || log_step "Playwright not running"
     
     # Show remaining naf- containers (if any)
     echo ""

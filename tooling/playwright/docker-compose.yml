@@ -28,9 +28,8 @@
 
 services:
   # Certificate generator - creates self-signed certs on startup
-  cert-generator:
+  naf-dev-playwright-cert-gen:
     image: alpine:latest
-    container_name: naf-playwright-cert-gen
     volumes:
       - playwright-certs:/certs
     entrypoint: /bin/sh
@@ -79,17 +78,15 @@ services:
   #     - playwright-workspace:/workspace
 
   # Main Playwright service
-  playwright:
+  naf-dev-playwright:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: naf-playwright
-    hostname: naf-playwright
     # Run as same user as devcontainer (vscode) to avoid permission issues
     # The uid/gid are passed from .env.workspace or default to 1000
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     depends_on:
-      cert-generator:
+      naf-dev-playwright-cert-gen:
         condition: service_completed_successfully
     
     environment:

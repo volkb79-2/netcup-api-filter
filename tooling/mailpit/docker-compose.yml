@@ -1,8 +1,6 @@
 services:
-  mailpit:
+  naf-dev-mailpit:
     image: axllent/mailpit:latest
-    container_name: naf-mailpit
-    hostname: naf-mailpit
     restart: unless-stopped
     ports:
       - "${MAILPIT_WEB_PORT:?MAILPIT_WEB_PORT must be set}:8025"
