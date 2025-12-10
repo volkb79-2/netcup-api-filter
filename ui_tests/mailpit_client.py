@@ -206,7 +206,7 @@ class MailpitClient:
         password: str | None = None,
     ):
         # Read from environment (.env.services) or fall back to static value
-        default_url = os.environ.get("MAILPIT_INTERNAL_URL", self._DEFAULT_BASE_URL_FALLBACK)
+        default_url = os.environ.get("MAILPIT_URL", self._DEFAULT_BASE_URL_FALLBACK)
         self.base_url = (
             base_url
             or default_url
