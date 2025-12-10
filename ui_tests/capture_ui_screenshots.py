@@ -570,24 +570,9 @@ async def main():
         print("=" * 60)
         all_screenshots.extend(await capture_error_pages(browser))
     
-    # Print summary
-    print("\n" + "=" * 60)
-    print("SCREENSHOT SUMMARY")
-    print("=" * 60)
-    print(f"✅ Captured {len(all_screenshots)} screenshots")
+    # Print final count only (details already shown during capture)
+    print(f"\n✅ Captured {len(all_screenshots)} screenshots")
     print(f"📁 Location: {screenshot_dir}/")
-    
-    # Group by category
-    categories = {}
-    for name, path in all_screenshots:
-        category = name.split('-')[0] if '-' in name else 'other'
-        categories.setdefault(category, []).append((name, path))
-    
-    for cat, items in sorted(categories.items()):
-        print(f"\n{cat.upper()}:")
-        for name, path in items:
-            status = "✅" if Path(path).exists() else "❌"
-            print(f"  {status} {name}")
     
     # UX Issues Summary
     if all_ux_issues:

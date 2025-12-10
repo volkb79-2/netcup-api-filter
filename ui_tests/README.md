@@ -2,64 +2,186 @@
 
 Automated UI coverage using a multi-layer testing strategy:
 
-| Layer | File | Tool | Purpose |
-|-------|------|------|---------|
-| Static Audit | `admin_ux_audit.py` | httpx + BeautifulSoup | Element presence, form fields, 500 errors |
-| Functional | `tests/test_ui_functional.py` | Playwright | JS behavior, CSS validation, navigation consistency |
-| UX Validation | `tests/test_ui_ux_validation.py` | Playwright | Page structure, navigation links |
-| Comprehensive | `tests/test_ui_comprehensive.py` | Playwright | Full admin workflows |
+## Test Files Overview
 
-## Testing Layers Explained
+### Journey Tests (Fresh Deployment)
 
-### Layer 1: Static Audit (httpx - No JavaScript)
+**`test_journey_master.py`** - End-to-end workflows on fresh database
+- Bootstrap system from default credentials
+- Complete account registration lifecycle  
+- Populate comprehensive test states (clients, tokens, domains)
+- Generate journey report (journey_report.json)
+- **Run first** on new deployments to establish baseline
+
+### User Journeys (Existing System)
+
+**`test_user_journeys.py`** - Workflows on populated system
+- Account management (CRUD operations)
+- Configuration reviews (Netcup API, Email, System Info)
+- Audit log workflows (filtering, export, auto-refresh)
+- Password changes and theme customization
+- Dashboard statistics and quick actions
+- **Run after** journey tests when data exists
+
+### Core UI Validation
+
+**`test_ui_interactive.py`** - Interactive elements and CSS
+- JavaScript behavior (password toggle, entropy, generate button)
+- CSS variable validation (themes, density)
+- Navigation consistency matrix (navbar, footer, logout)
+- No stale breadcrumbs or H1 icons
+
+**`test_ui_comprehensive.py`** - Complete admin workflows
+- Full CRUD operations on all admin pages
+- Form validation and error handling
+- Multi-step processes (approval, bulk operations)
+
+**`test_ui_functional.py`** - JavaScript and CSS integration
+- Theme switching without reload
+- Dynamic form validation
+- Client-side password strength checks
+
+**`test_ui_ux_validation.py`** - Page structure validation
+- Required elements present on all pages
+- Consistent navigation structure
+- Proper heading hierarchy
+
+**`test_ui_regression.py`** - Visual regression testing
+- Screenshot comparison against baselines
+- Detect unintended layout changes
+
+### Admin Feature Tests
+
+**`test_admin_ui.py`** - Admin-specific functionality
+- Dashboard statistics and quick actions
+- Account management workflows
+- System configuration pages
+
+**`test_config_pages.py`** - Configuration management
+- Netcup API settings
+- Email/SMTP configuration
+- System information display
+
+**`test_audit_logs.py`** - Audit log functionality
+- Filtering by time, status, action
+- Pagination and auto-refresh
+
+**`test_audit_export.py`** - ODS export workflow
+- Export audit logs to spreadsheet format
+
+**`test_bulk_operations.py`** - Bulk actions on accounts/clients
+- Multi-select and bulk approve/delete
+
+### API and Security
+
+**`test_api_proxy.py`** - DNS update API endpoints
+- Token authentication
+- Rate limiting enforcement
+- Request validation
+
+**`test_api_security.py`** - Security hardening
+- CSRF protection
+- SQL injection prevention
+- XSS protection
+
+**`test_security.py`** - Authentication and authorization
+- Login workflows (admin + client)
+- 2FA enforcement
+- Session management
+
+**`test_recovery_codes.py`** - 2FA recovery codes
+- Generation, download, regeneration
+
+### Registration Flows
+
+**`test_registration_e2e.py`** - Complete registration workflow
+- Form submission with email verification
+- 2FA setup on first login
+
+**`test_registration_negative.py`** - Registration error cases
+- Invalid email formats
+- Password validation failures
+- Duplicate username detection
+
+**`test_email_notifications.py`** - Email sending verification
+- 2FA codes delivered
+- Registration confirmation emails
+
+### Mock Service Tests
+
+**`test_mock_api_standalone.py`** - Netcup API mock server
+- Domain listing, record CRUD
+- Error simulation
+
+**`test_mock_smtp.py`** - Mailpit SMTP mock
+- Email delivery to test inbox
+- 2FA code extraction
+
+**`test_mock_geoip.py`** - GeoIP API mock
+- IP geolocation lookups
+
+### Quick Update Tests
+
+**`test_ddns_quick_update.py`** - Rapid DNS update workflow
+- Single-hostname IP updates (DDNS use case)
+- Minimal latency validation
+
+### Performance and Accessibility
+
+**`test_performance.py`** - Load time and responsiveness
+- Page load under 2s
+- API response times
+
+**`test_accessibility.py`** - WCAG compliance
+- ARIA labels, keyboard navigation
+- Screen reader compatibility
+
+**`test_mobile_responsive.py`** - Mobile viewport testing
+- Layout adapts to small screens
+- Touch-friendly controls
+
+**`test_console_errors.py`** - JavaScript error detection
+- No console errors on page load
+- No unhandled promise rejections
+
+### Integration Verification
+
+**`test_live_dns_verification.py`** - Real DNS record updates (requires live credentials)
+**`test_live_email_verification.py`** - Real email sending (requires SMTP credentials)
+**`test_holistic_coverage.py`** - System-wide integration smoke test
+
+## Running Tests
+
+### Full Deployment Test Suite
 
 ```bash
-python ui_tests/admin_ux_audit.py --base-url http://localhost:5100
+# Complete build, deploy, test cycle (recommended)
+./deploy.sh local
+
+# Skip build if deploy-local already exists
+./deploy.sh local --tests-only
 ```
 
-**What it tests:**
-- All admin pages return 200 (no 500 errors)
-- Required form fields exist
-- Navigation links present
-- Page structure matches UI_REQUIREMENTS.md
+**Test Execution Order:**
+1. **Journey Tests** (`test_journey_master.py`) - Establish fresh deployment baseline
+2. **Validation Tests** (all others) - Verify all features on populated system
+3. **Screenshot Capture** - Document all UI states for regression testing
 
-**Limitations:**
-- ❌ No JavaScript execution
-- ❌ Cannot test theme switching
-- ❌ Cannot test form validation
-- ❌ Cannot test dropdowns/modals
-
-**Use for:** Quick sanity checks, CI/CD validation
-
-### Layer 2: Playwright Functional Tests
+### Individual Test Files
 
 ```bash
-docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py -v
+# Journey tests (fresh deployment)
+docker exec naf-playwright pytest ui_tests/tests/test_journey_master.py -v
+
+# User journeys (existing system)
+docker exec naf-playwright pytest ui_tests/tests/test_user_journeys.py -v
+
+# UI interactive tests
+docker exec naf-playwright pytest ui_tests/tests/test_ui_interactive.py -v
+
+# All validation tests
+docker exec naf-playwright pytest ui_tests/tests -v --ignore=ui_tests/tests/test_journey_master.py
 ```
-
-**What it tests:**
-
-1. **JavaScript Behavior:**
-   - Password toggle reveals/hides text
-   - Entropy calculation updates dynamically
-   - Generate button creates strong passwords
-   - Submit button enables when requirements met
-   - Mismatch warning appears for different passwords
-
-2. **CSS Variable Validation:**
-   - Theme variables defined (`--color-bg-primary`, etc.)
-   - Tables don't have white background on dark theme
-   - Theme applies immediately (no reload needed)
-
-3. **Navigation Consistency Matrix:**
-   - Navbar on all pages
-   - Same links across all pages
-   - No stale breadcrumbs
-   - No icons in H1 headings
-   - Footer with build info
-   - Logout accessible everywhere
-
-**Use for:** After CSS/JS changes, theme modifications
 
 ## Prerequisites
 
@@ -137,16 +259,51 @@ if you need to attach them to an issue or PR.
 
 ```
 ui_tests/
-├── admin_ux_audit.py          # Static audit (httpx, no browser)
-├── browser.py                 # Playwright browser wrapper
-├── config.py                  # Test configuration
-├── conftest.py                # Pytest fixtures
-├── workflows.py               # Common test workflows
+├── browser.py                        # Playwright browser wrapper
+├── config.py                         # Test configuration from environment
+├── conftest.py                       # Pytest fixtures (browser, auth)
+├── workflows.py                      # Reusable test workflows
+├── deployment_state.py               # Track deployment credentials
+├── mailpit_client.py                 # Email verification helper
+├── parallel_session_manager.py       # Multi-browser orchestration
+├── playwright_client.py              # MCP server client
+├── capture_ui_screenshots.py         # Automated screenshot capture
+├── analyze_ui_screenshots.py         # Screenshot diff analysis
+├── mock_netcup_api.py                # Netcup CCP API mock server
+├── mock_smtp_server.py               # SMTP testing server
+├── mock_geoip_server.py              # GeoIP lookup mock
 ├── tests/
-│   ├── test_ui_functional.py  # JS/CSS/Navigation tests (NEW)
-│   ├── test_ui_ux_validation.py  # Page structure tests
-│   ├── test_ui_comprehensive.py  # Full workflow tests
-│   ├── test_admin_ui.py       # Admin-specific tests
-│   └── ...
-└── baselines/                 # Visual regression baselines
+│   ├── journeys/
+│   │   └── (journey test modules)    # Imported by test_journey_master.py
+│   ├── test_journey_master.py        # Fresh deployment workflows
+│   ├── test_user_journeys.py         # Existing system workflows
+│   ├── test_ui_interactive.py        # JS/CSS/Navigation
+│   ├── test_ui_comprehensive.py      # Full admin workflows
+│   ├── test_ui_functional.py         # Theme/form validation
+│   ├── test_ui_ux_validation.py      # Page structure
+│   ├── test_ui_regression.py         # Visual regression
+│   ├── test_admin_ui.py              # Admin features
+│   ├── test_config_pages.py          # Configuration management
+│   ├── test_audit_logs.py            # Audit functionality
+│   ├── test_audit_export.py          # ODS export
+│   ├── test_bulk_operations.py       # Bulk actions
+│   ├── test_api_proxy.py             # DNS update API
+│   ├── test_api_security.py          # API security
+│   ├── test_security.py              # Auth/session management
+│   ├── test_recovery_codes.py        # 2FA recovery
+│   ├── test_registration_e2e.py      # Registration workflow
+│   ├── test_registration_negative.py # Registration errors
+│   ├── test_email_notifications.py   # Email delivery
+│   ├── test_ddns_quick_update.py     # Rapid DNS updates
+│   ├── test_performance.py           # Load times
+│   ├── test_accessibility.py         # WCAG compliance
+│   ├── test_mobile_responsive.py     # Mobile layouts
+│   ├── test_console_errors.py        # JavaScript errors
+│   ├── test_mock_api_standalone.py   # Mock API verification
+│   ├── test_mock_smtp.py             # Mock SMTP verification
+│   ├── test_mock_geoip.py            # Mock GeoIP verification
+│   ├── test_live_dns_verification.py # Real DNS (requires creds)
+│   ├── test_live_email_verification.py # Real email (requires creds)
+│   └── test_holistic_coverage.py     # Integration smoke test
+└── requirements.txt                  # Test dependencies
 ```

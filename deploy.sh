@@ -627,11 +627,14 @@ start_tls_proxy() {
     # CRITICAL: Certificate accessibility check
     # Devcontainer CANNOT access /etc/letsencrypt (host filesystem isolation)
     # nginx container CAN access via docker group mount (user: 0:${DOCKER_GID})
-    # We verify by attempting to start nginx and checking if it can read certs
+    # TLS certificate verification happens implicitly during nginx startup:
+    # - If certs missing/unreadable: nginx fails immediately with clear error
+    # - If certs valid: nginx starts successfully and serves HTTPS
+    # - Devcontainer cannot check HOST /etc/letsencrypt (filesystem isolation)
+    # - nginx container reads via docker group (GID ${DOCKER_GID})
     
-    log_step "Verifying TLS certificates accessible to nginx container..."
-    log_step "(Certificates on host at /etc/letsencrypt/live/${PUBLIC_FQDN}/)"
-    log_step "(nginx runs with docker group: 0:${DOCKER_GID} to access host certs)"
+    log_step "Starting TLS proxy (will fail if certs inaccessible)..."
+    log_step "(Certificates: /etc/letsencrypt/live/${PUBLIC_FQDN}/ on HOST, read via docker group)"
     
     # We'll verify by starting nginx - if certs are missing/unreadable, nginx will fail
     # with clear error. No need for devcontainer to check what it cannot access.
@@ -760,23 +763,9 @@ phase_deploy() {
         local)
             log_step "Extracting to $DEPLOY_DIR..."
             
-            # Preserve screenshots directory (may have files from previous runs)
-            if [[ -d "$SCREENSHOT_DIR" ]]; then
-                log_step "Preserving existing screenshots..."
-                mv "$SCREENSHOT_DIR" "${SCREENSHOT_DIR}.bak" 2>/dev/null || true
-            fi
-            
             rm -rf "$DEPLOY_DIR" 2>/dev/null || true
             mkdir -p "$DEPLOY_DIR/tmp" "$SCREENSHOT_DIR"
             unzip -o -q "$ZIP_FILE" -d "$DEPLOY_DIR/"
-            
-            # Restore screenshots
-            if [[ -d "${SCREENSHOT_DIR}.bak" ]]; then
-                # Fix permissions before restoring (Playwright container may have created with different owner)
-                sudo chown -R "$(id -u):$(id -g)" "${SCREENSHOT_DIR}.bak" 2>/dev/null || true
-                mv "${SCREENSHOT_DIR}.bak"/* "$SCREENSHOT_DIR/" 2>/dev/null || true
-                rm -rf "${SCREENSHOT_DIR}.bak"
-            fi
             
             # Fix database permissions
             chmod 666 "$DEPLOY_DIR/netcup_filter.db" 2>/dev/null || true
@@ -1076,13 +1065,6 @@ phase_screenshots() {
         if [[ -f "$SCREENSHOT_DIR/journey_report.json" ]]; then
             log_step "Journey report available: $SCREENSHOT_DIR/journey_report.json"
         fi
-        
-        # Show latest screenshots
-        echo ""
-        echo -e "${CYAN}Recent screenshots:${NC}"
-        ls -lt "$SCREENSHOT_DIR"/*.png "$SCREENSHOT_DIR"/*.webp 2>/dev/null | head -10 | while read -r line; do
-            echo "  $line"
-        done
     else
         log_warning "Screenshot capture failed (non-critical)"
     fi
