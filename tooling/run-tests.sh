@@ -6,6 +6,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Load workspace environment
+if [[ -f "${PROJECT_ROOT}/.env.workspace" ]]; then
+    # shellcheck source=/dev/null
+    source "${PROJECT_ROOT}/.env.workspace"
+fi
+
+# Load service names
+if [[ -f "${PROJECT_ROOT}/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "${PROJECT_ROOT}/.env.services"
+fi
+
+# Fail-fast: require essential variables
+: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,7 +32,7 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # Ensure container is running
-if ! docker compose -f tooling/playwright/docker-compose.yml ps | grep -q "playwright"; then
+if ! docker ps --filter "name=${SERVICE_PLAYWRIGHT}" | grep -q "${SERVICE_PLAYWRIGHT}"; then
     log_info "Starting Playwright container..."
     cd tooling/playwright
     ./setup.sh
@@ -27,7 +42,7 @@ fi
 log_info "Running tests inside Playwright container..."
 
 # Run pytest with project-specific tests
-docker compose -f tooling/playwright/docker-compose.yml exec playwright \
+docker exec "${SERVICE_PLAYWRIGHT}" \
     pytest /workspaces/netcup-api-filter/ui_tests/tests -v --tb=short
 
 EXIT_CODE=$?

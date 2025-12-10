@@ -413,18 +413,77 @@ setup_path() {
 setup_ssh_and_aliases() {
     log_info "Setting up SSH keys and bash aliases..."
 
-    # Add useful aliases
-    if ! grep -q "alias ll=" ~/.bashrc 2>/dev/null; then
-        echo "alias ll='ls -l'" >> ~/.bashrc
-        echo "alias la='ls -la'" >> ~/.bashrc
-        echo "alias lt='tree -L 2'" >> ~/.bashrc
-        echo "alias cat='bat --paging=never'" >> ~/.bashrc
-        echo "alias grep='rg'" >> ~/.bashrc
-        echo "alias find='fd'" >> ~/.bashrc
-        echo "alias ps='htop'" >> ~/.bashrc
-        log_debug "Added bash aliases (ll, la, lt, cat, grep, find, ps)"
+
+    # Add custom aliases if not already present (check for marker comment)
+    if ! grep -q "# Devcontainer Custom Aliases" ~/.bashrc 2>/dev/null; then
+        cat >> ~/.bashrc << 'EOF'
+
+# Devcontainer Custom Aliases (added by post-create.sh)
+
+# File viewing and navigation
+alias ll='ls -l'
+alias la='ls -la'
+alias lt='tree -L 2'                    # tree: 2-level directory view
+alias ltt='tree -L 3'                   # tree: 3-level directory view
+alias cat='bat --paging=never'          # bat: syntax-highlighted cat
+alias less='bat --paging=always'        # bat: pager mode
+
+# Search and find
+alias grep='rg'                         # ripgrep: fast grep
+alias find='fd'                         # fd: fast find
+alias fdf='fdfind'                      # fd-find: Debian package name
+
+# Process management
+alias ps='htop'                         # htop: interactive process viewer
+alias psg='ps aux | grep -i'           # search processes
+
+# Network tools
+alias myip='curl -s ifconfig.me'        # get public IP
+alias listening='netstat -tuln | grep LISTEN'  # show listening ports
+alias ports='ss -tuln'                  # show all ports
+
+# DNS queries
+alias dig-short='dig +short'            # dig: short output only
+alias dig-trace='dig +trace'            # dig: full DNS trace
+alias nsl='nslookup'                    # nslookup: shorthand
+
+# Database clients
+alias psql-local='psql -h localhost -U postgres'  # quick local psql
+alias redis='redis-cli'                 # redis-cli: shorthand
+alias db='sqlite3'                      # sqlite3: shorthand
+
+# HTTP clients
+alias curl-json='curl -H "Content-Type: application/json"'  # JSON curl
+alias curl-time='curl -w "\n\nTime: %{time_total}s\n"'    # curl with timing
+alias GET='http GET'                    # httpie: GET request
+alias POST='http POST'                  # httpie: POST request
+
+# Git shortcuts (in addition to default)
+alias gst='git status'                  # git: status
+alias gd='git diff'                     # git: diff
+alias glog='git log --oneline --graph --all --decorate'  # git: pretty log
+
+# System info
+alias diskspace='df -h'                 # disk usage
+alias meminfo='free -h'                 # memory info
+alias cpuinfo='lscpu'                   # CPU info
+
+# Development tools
+alias check='shellcheck'                # shellcheck: linter
+alias json='jq .'                       # jq: pretty-print JSON
+alias yaml='yq eval'                    # yq: YAML query
+alias man='tldr'                        # tldr: simplified man pages
+
+# File manager
+alias fm='mc --nosubshell'              # Midnight Commander: no subshell
+
+# SSH filesystem
+alias mount-ssh='sshfs'                 # sshfs: shorthand
+alias umount-ssh='fusermount -u'        # unmount sshfs
+EOF
+        log_debug "Added custom bash aliases and shortcuts"
     else
-        log_debug "Bash aliases already configured"
+        log_debug "Custom bash aliases already configured"
     fi
 
     # SSH setup only in devcontainer (not GitHub Actions)

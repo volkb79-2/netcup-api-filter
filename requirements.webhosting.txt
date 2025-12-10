@@ -7,6 +7,7 @@ flask-login>=0.6.0
 flask-wtf>=1.2.0
 sqlalchemy>=2.0.0
 requests>=2.31.0
+httpx>=0.25.0
 pyyaml>=6.0.1
 python-dotenv>=1.0.0
 bcrypt>=4.0.0

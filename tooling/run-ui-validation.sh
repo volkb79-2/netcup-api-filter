@@ -39,6 +39,15 @@ set -a
 source "${PROXY_ENV}"
 set +a
 
+# Load service names from central config
+if [[ -f "${ROOT_DIR}/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "${ROOT_DIR}/.env.services"
+fi
+
+# Fail-fast: require service name
+: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
+
 LOCAL_APP_PORT="${LOCAL_APP_PORT:-5100}"
 LOCAL_PROXY_NETWORK="${LOCAL_PROXY_NETWORK:-naf-local}"
 LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:-naf.localtest.me}"
@@ -194,7 +203,7 @@ popd >/dev/null
 # Wait for Playwright container to be ready
 log_step "Waiting for Playwright container to be ready..."
 for attempt in $(seq 1 30); do
-    if docker exec playwright python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
+    if docker exec "${SERVICE_PLAYWRIGHT}" python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
         echo "[ready] Playwright container"
         break
     fi
@@ -212,5 +221,5 @@ docker exec \
     -e UI_CLIENT_DOMAIN="${UI_CLIENT_DOMAIN}" \
     -e UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX}" \
     -e PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS}" \
-    playwright \
+    "${SERVICE_PLAYWRIGHT}" \
     bash -c "cd /workspaces/netcup-api-filter && ${PYTEST_CMD}"

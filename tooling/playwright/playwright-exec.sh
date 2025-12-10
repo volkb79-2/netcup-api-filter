@@ -14,12 +14,19 @@ if [[ -f "${PROJECT_ROOT}/.env.workspace" ]]; then
     source "${PROJECT_ROOT}/.env.workspace"
 fi
 
+# Source service names for container naming
+if [[ -f "${PROJECT_ROOT}/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "${PROJECT_ROOT}/.env.services"
+fi
+
 # Fail-fast: require essential variables
 : "${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (source .env.workspace)}"
 : "${DOCKER_UID:?DOCKER_UID must be set (source .env.workspace)}"
 : "${DOCKER_GID:?DOCKER_GID must be set (source .env.workspace)}"
 
-CONTAINER_NAME="naf-dev-playwright"
+# Get container name from .env.services
+CONTAINER_NAME="${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT not set (source .env.services)}"
 
 # Check if container is running
 if ! docker ps --filter "name=${CONTAINER_NAME}" --filter "status=running" | grep -q "${CONTAINER_NAME}"; then
@@ -48,6 +55,7 @@ DOCKER_EXEC_ENV=(
     -e NETCUP_API_KEY
     -e NETCUP_API_PASSWORD
     -e NETCUP_CUSTOMER_NUMBER
+    -e SERVICE_MAILPIT
     -e MAILPIT_USERNAME
     -e MAILPIT_PASSWORD
     -e MAILPIT_API_URL

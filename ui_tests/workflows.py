@@ -1013,8 +1013,11 @@ async def admin_email_save_expect_error(browser: Browser) -> None:
     
     # Restore Mailpit config so other tests can send real emails
     # This is important for Registration E2E tests that rely on Mailpit
+    # Read correct hostname from environment (naf-dev-mailpit in local dev)
+    import os
+    mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
     await open_admin_email_settings(browser)
-    await browser.fill("#smtp_host", "mailpit")
+    await browser.fill("#smtp_host", mailpit_host)
     await browser.fill("#smtp_port", "1025")
     await browser.fill("#from_email", "naf@example.com")
     await browser.click('button[type="submit"]')
@@ -1044,8 +1047,10 @@ async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     assert "spinner" in status_html.lower() or "badge" in status_html.lower() or "sending" in status_html.lower() or "check" in status_html.lower()
     
     # Restore Mailpit config so other tests can send real emails
+    import os
+    mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
     await open_admin_email_settings(browser)
-    await browser.fill("#smtp_host", "mailpit")
+    await browser.fill("#smtp_host", mailpit_host)
     await browser.fill("#smtp_port", "1025")
     await browser.fill("#from_email", "naf@example.com")
     await browser.click('button[type="submit"]')

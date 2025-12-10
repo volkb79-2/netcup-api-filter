@@ -190,21 +190,21 @@ class TestEmailConfig:
                 print("No test email received (SMTP may not be configured)")
     
     @pytest.mark.asyncio
-    async def test_08_email_config_save(
+    async def test_08_email_config_display(
         self, admin_session, screenshot_helper
     ):
-        """Can save email config."""
+        """Email config page displays correctly (read-only check)."""
         ss = screenshot_helper('06-config')
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/email'))
         await asyncio.sleep(0.5)
         
-        # Save without changing (idempotent)
-        await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        # Verify page loaded (but don't click Save to avoid overwriting config)
+        submit_btn = await browser.query_selector('button[type="submit"]')
+        assert submit_btn, "Email config should have submit button"
         
-        await ss.capture('email-config-saved', 'Email config saved')
+        await ss.capture('email-config-page', 'Email config page')
 
 
 # ============================================================================

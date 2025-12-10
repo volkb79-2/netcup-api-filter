@@ -8,6 +8,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
+# Load workspace environment
+if [[ -f "${ROOT_DIR}/.env.workspace" ]]; then
+    # shellcheck source=/dev/null
+    source "${ROOT_DIR}/.env.workspace"
+fi
+
+# Load service names
+if [[ -f "${ROOT_DIR}/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "${ROOT_DIR}/.env.services"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,7 +43,11 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
 }
 
-# Configuration
+# Fail-fast: require essential variables
+: "${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (run post-create.sh)}"
+: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
+
+# Configuration with defaults allowed (not critical paths)
 FLASK_PORT="${FLASK_PORT:-8000}"
 FLASK_HOST="${FLASK_HOST:-0.0.0.0}"
 DATABASE_PATH="${DATABASE_PATH:-/workspaces/netcup-api-filter/netcup_filter.db}"
@@ -119,7 +135,7 @@ cd "${ROOT_DIR}"
 # Wait for Playwright to be ready
 log_info "Waiting for Playwright container to be ready..."
 for i in {1..30}; do
-    if docker exec playwright python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
+    if docker exec "${SERVICE_PLAYWRIGHT}" python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
         log_success "Playwright container is ready"
         break
     fi
@@ -138,13 +154,13 @@ log_info "Flask Backend:    http://127.0.0.1:${FLASK_PORT}"
 log_info "                  http://${GATEWAY_IP}:${FLASK_PORT}"
 echo
 log_info "Playwright:       Ready for exec-based testing"
-log_info "                  docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
+log_info "                  docker exec ${SERVICE_PLAYWRIGHT} pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
 echo
 log_info "Default Login:    admin / admin"
 log_info "Test Client:      test_qweqweqwe_vi"
 log_info "Test Token:       qweqweqwe-vi-readonly"
 echo
-log_success "Run tests: docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
+log_success "Run tests: docker exec ${SERVICE_PLAYWRIGHT} pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
 echo
 log_info "Press Ctrl+C to stop all services"
 echo

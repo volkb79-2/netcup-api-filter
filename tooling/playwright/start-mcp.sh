@@ -17,11 +17,19 @@ else
     exit 1
 fi
 
+# Load service names (REQUIRED)
+if [[ -f "$REPO_ROOT/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "$REPO_ROOT/.env.services"
+    echo "✓ Loaded service names from .env.services"
+fi
+
 # Verify required variables from .env.workspace
 : "${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set (run post-create.sh)}"
 : "${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT not set (run post-create.sh)}"
 : "${DOCKER_UID:?DOCKER_UID not set (run post-create.sh)}"
 : "${DOCKER_GID:?DOCKER_GID not set (run post-create.sh)}"
+: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT not set (source .env.services)}"
 
 # Set Playwright-specific variables (with clear defaults for MCP use case)
 export DOCKER_NETWORK_INTERNAL
@@ -49,13 +57,13 @@ docker compose up -d
 echo ""
 echo "✅ Playwright container started!"
 echo ""
-echo "MCP server: http://playwright:8765/mcp"
+echo "MCP server: http://${SERVICE_PLAYWRIGHT}:8765/mcp"
 echo "  - Accessible from: VS Code Copilot, terminal, scripts"
 echo "  - Network: $DOCKER_NETWORK_INTERNAL (Docker DNS resolution)"
 echo "  - NOT exposed to host (secure, private network only)"
 echo ""
 echo "Test connection:"
-echo "  curl http://playwright:8765/mcp"
+echo "  curl http://${SERVICE_PLAYWRIGHT}:8765/mcp"
 echo ""
 echo "If VS Code Copilot shows connection errors:"
 echo "  1. Wait 5-10 seconds for MCP server to start"

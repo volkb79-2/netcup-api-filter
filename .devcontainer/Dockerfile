@@ -9,6 +9,18 @@
 FROM mcr.microsoft.com/devcontainers/python:1-3.11-bookworm
 
 # Install system dependencies matching base image (as root)
+# Binaries provided by each package:
+#   gnupg: gpg, gpg2          lsb-release: lsb_release    curl: curl
+#   wget: wget                git: git                    vim: vim, vi
+#   less: less                netcat-traditional: nc      iputils-ping: ping
+#   dnsutils: dig, nslookup   postgresql-client: psql     redis-tools: redis-cli
+#   sqlite3: sqlite3          ripgrep: rg                 jq: jq
+#   tree: tree                htop: htop                  bat: bat, batcat
+#   fd-find: fdfind, fd       fzf: fzf                    tldr: tldr
+#   httpie: http, https       mc: mc                      shellcheck: shellcheck
+#   sshfs: sshfs
+#
+# Aliases configured in post-create.sh: cat→bat, grep→rg, find→fd, ps→htop, lt→tree
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Core utilities (matching base)
     ca-certificates \
@@ -40,8 +52,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     httpie \
     mc \
     shellcheck \
-    # allow remote filesystem access in VSCode
-    fuse3 sshfs \
+    # Remote filesystem access
+    fuse3 \
+    sshfs \
     && echo "user_allow_other" >> /etc/fuse.conf \
     && rm -rf /var/lib/apt/lists/*
 

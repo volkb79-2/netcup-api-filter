@@ -33,9 +33,16 @@ else
     exit 1
 fi
 
+# Source service names for container naming
+if [[ -f "${PROJECT_ROOT}/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "${PROJECT_ROOT}/.env.services"
+fi
+
 # Fail-fast: require workspace environment
 : "${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set (source .env.workspace)}"
 : "${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (source .env.workspace)}"
+: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
 
 # REPO_ROOT is the container-side path where PHYSICAL_REPO_ROOT gets mounted
 export REPO_ROOT="${REPO_ROOT:-/workspaces/netcup-api-filter}"
@@ -200,7 +207,7 @@ echo -e "${BLUE}Waiting for services to start...${NC}"
 sleep 5
 
 # Check if container is running
-if ! docker ps --filter name=playwright | grep -q playwright; then
+if ! docker ps --filter "name=${SERVICE_PLAYWRIGHT}" | grep -q "${SERVICE_PLAYWRIGHT}"; then
     echo -e "${RED}ERROR: Container failed to start${NC}"
     echo "Check logs: docker compose -f docker-compose.yml logs"
     exit 1

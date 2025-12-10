@@ -48,6 +48,11 @@ fi
 : "${REPO_ROOT:=${SCRIPT_DIR}}"
 export REPO_ROOT
 
+# Map service names to container names (from .env.services)
+CONTAINER_PLAYWRIGHT="${SERVICE_PLAYWRIGHT:?missing SERVICE_PLAYWRIGHT}"
+CONTAINER_REVERSE_PROXY="${SERVICE_REVERSE_PROXY:?missing SERVICE_REVERSE_PROXY}"
+CONTAINER_MAILPIT="${SERVICE_MAILPIT:?missing SERVICE_MAILPIT}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -57,7 +62,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Parse arguments
-DEPLOYMENT_TARGET="${1:-${DEPLOYMENT_TARGET:-local}}"
+DEPLOYMENT_TARGET="${1:-local}"
 
 # Handle --help and --stop first (before shift)
 if [[ "$DEPLOYMENT_TARGET" == "--help" ]] || [[ "$DEPLOYMENT_TARGET" == "-h" ]]; then
@@ -251,9 +256,9 @@ load_proxy_config() {
 # Skip all configuration for --stop mode
 if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
 
-# Default ports from .env.defaults
-LOCAL_FLASK_PORT="${LOCAL_FLASK_PORT:-5100}"
-WEBHOSTING_URL="${WEBHOSTING_URL:-https://naf.vxxu.de}"
+# Default ports from .env.defaults (must be set there)
+LOCAL_FLASK_PORT="${LOCAL_FLASK_PORT:?LOCAL_FLASK_PORT not set - check .env.defaults}"
+WEBHOSTING_URL="${WEBHOSTING_URL:?WEBHOSTING_URL not set - check .env.defaults}"
 
 case "$DEPLOYMENT_TARGET" in
     local)
@@ -270,8 +275,8 @@ case "$DEPLOYMENT_TARGET" in
         # Note: LOCAL_USE_HTTPS from .env.defaults is IGNORED unless --https flag used
         if [[ "$USE_HTTPS" == "true" ]]; then
             load_proxy_config
-            LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:-localhost}"
-            LOCAL_TLS_BIND_HTTPS="${LOCAL_TLS_BIND_HTTPS:-443}"
+            LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:?LOCAL_TLS_DOMAIN not set - check tooling/reverse-proxy/.env}"
+            LOCAL_TLS_BIND_HTTPS="${LOCAL_TLS_BIND_HTTPS:?LOCAL_TLS_BIND_HTTPS not set - check tooling/reverse-proxy/.env}"
             UI_BASE_URL="https://${LOCAL_TLS_DOMAIN}:${LOCAL_TLS_BIND_HTTPS}"
         else
             # Use devcontainer hostname so Playwright container can connect
@@ -292,10 +297,10 @@ case "$DEPLOYMENT_TARGET" in
         BUILD_ARGS="--target webhosting --build-dir deploy --output deploy.zip"
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         
-        # Webhosting connection details (from environment or defaults)
-        NETCUP_USER="${NETCUP_SSH_USER:-hosting218629}"
-        NETCUP_SERVER="${NETCUP_SSH_HOST:-hosting218629.ae98d.netcup.net}"
-        REMOTE_DIR="${NETCUP_REMOTE_DIR:-/netcup-api-filter}"
+        # Webhosting connection details (must be set in .env.defaults)
+        NETCUP_USER="${NETCUP_SSH_USER:?NETCUP_SSH_USER not set - check .env.defaults}"
+        NETCUP_SERVER="${NETCUP_SSH_HOST:?NETCUP_SSH_HOST not set - check .env.defaults}"
+        REMOTE_DIR="${NETCUP_REMOTE_DIR:?NETCUP_REMOTE_DIR not set - check .env.defaults}"
         SSHFS_MOUNT="/home/vscode/sshfs-${NETCUP_USER}@${NETCUP_SERVER}"
         ;;
 esac
@@ -469,6 +474,15 @@ run_in_playwright() {
         export DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
         export DEPLOYMENT_STATE_FILE="$STATE_FILE"
         
+        # Source service names from .env.services for tests
+        # Tests need SERVICE_MAILPIT to restore correct hostname after email config tests
+        if [[ -f "${REPO_ROOT}/.env.services" ]]; then
+            set -a
+            source "${REPO_ROOT}/.env.services"
+            set +a
+            export SERVICE_MAILPIT
+        fi
+        
         # Source Mailpit credentials from container config (NO HARDCODED DEFAULTS)
         if [[ -f "${REPO_ROOT}/tooling/mailpit/.env" ]]; then
             set -a  # Export all variables
@@ -583,11 +597,17 @@ start_tls_proxy() {
         return 1
     fi
     
-    # Ensure workspace environment is loaded
-    if [[ ! -f "${REPO_ROOT}/.env.workspace" ]]; then
-        log_error ".env.workspace not found - run: ./detect-fqdn.sh --update-workspace"
-        return 1
+    # Auto-detect PUBLIC_FQDN if not already in .env.workspace
+    if [[ ! -f "${REPO_ROOT}/.env.workspace" ]] || ! grep -q "PUBLIC_FQDN" "${REPO_ROOT}/.env.workspace"; then
+        log_step "Auto-detecting PUBLIC_FQDN via reverse DNS..."
+        if "${REPO_ROOT}/detect-fqdn.sh" --update-workspace; then
+            log_success "PUBLIC_FQDN detected and saved to .env.workspace"
+        else
+            log_warning "FQDN detection failed - using localhost as fallback"
+        fi
     fi
+    
+    # Load workspace environment (now guaranteed to exist with PUBLIC_FQDN)
     source "${REPO_ROOT}/.env.workspace"
     
     # Render nginx config from template
@@ -650,9 +670,9 @@ start_tls_proxy() {
         done
         
         # After 60 seconds, check if proxy is running but backend unreachable
-        if docker ps | grep -q naf-reverse-proxy; then
+        if docker ps | grep -q "${CONTAINER_REVERSE_PROXY}"; then
             log_error "TLS proxy running but not responsive at ${proxy_url}"
-            log_error "Check: docker logs naf-reverse-proxy"
+            log_error "Check: docker logs ${CONTAINER_REVERSE_PROXY}"
         else
             log_error "TLS proxy container not running"
         fi

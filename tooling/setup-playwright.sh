@@ -32,6 +32,22 @@ log_header() {
 WORKSPACE_DIR="/workspaces/netcup-api-filter"
 cd "${WORKSPACE_DIR}"
 
+# Load workspace environment
+if [[ -f "${WORKSPACE_DIR}/.env.workspace" ]]; then
+    # shellcheck source=/dev/null
+    source "${WORKSPACE_DIR}/.env.workspace"
+fi
+
+# Load service names
+if [[ -f "${WORKSPACE_DIR}/.env.services" ]]; then
+    # shellcheck source=/dev/null
+    source "${WORKSPACE_DIR}/.env.services"
+fi
+
+# Fail-fast: require essential variables
+: "${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (run post-create.sh)}"
+: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
+
 # Header
 log_header "╔════════════════════════════════════════════════════════════════════╗"
 log_header "║  Playwright Dual-Mode Setup & Validation                          ║"
@@ -67,7 +83,7 @@ RETRY_COUNT=0
 CONTAINER_READY=false
 
 while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
-    if docker exec playwright python3 -c "from playwright.async_api import async_playwright; print('OK')" > /dev/null 2>&1; then
+    if docker exec "${SERVICE_PLAYWRIGHT}" python3 -c "from playwright.async_api import async_playwright; print('OK')" > /dev/null 2>&1; then
         CONTAINER_READY=true
         break
     fi
@@ -81,7 +97,7 @@ if [[ "$CONTAINER_READY" == "true" ]]; then
     log_success "Container is ready"
 else
     log_error "Container failed to start within ${MAX_RETRIES} seconds"
-    log_info "Check logs: docker logs playwright"
+    log_info "Check logs: docker logs ${SERVICE_PLAYWRIGHT}"
     exit 1
 fi
 
@@ -92,7 +108,7 @@ log_header "Step 3: Validating Playwright"
 log_info "Running basic Playwright test..."
 echo
 
-if docker exec playwright python3 -c "import asyncio
+if docker exec "${SERVICE_PLAYWRIGHT}" python3 -c "import asyncio
 from playwright.async_api import async_playwright
 
 async def test():
@@ -127,13 +143,13 @@ echo
 log_header "Next Steps:"
 echo
 echo "  1. Run tests inside container:"
-echo "     ${GREEN}docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -v${NC}"
+echo "     ${GREEN}docker exec ${SERVICE_PLAYWRIGHT} pytest /workspaces/netcup-api-filter/ui_tests/tests -v${NC}"
 echo
 echo "  2. Run Python scripts:"
-echo "     ${GREEN}docker exec playwright python3 /workspaces/netcup-api-filter/my_script.py${NC}"
+echo "     ${GREEN}docker exec ${SERVICE_PLAYWRIGHT} python3 /workspaces/netcup-api-filter/my_script.py${NC}"
 echo
 echo "  3. Interactive shell:"
-echo "     ${GREEN}docker exec -it playwright bash${NC}"
+echo "     ${GREEN}docker exec -it ${SERVICE_PLAYWRIGHT} bash${NC}"
 echo
 echo "  4. Stop container when done:"
 echo "     ${GREEN}cd tooling/playwright && docker compose down${NC}"

@@ -336,6 +336,41 @@ def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = Fa
     sys.path.insert(0, str(deploy_path / "vendor"))
     
     try:
+        # Load service names from .env.services BEFORE changing directory
+        # (file is in repo root, not deploy directory)
+        # Use bash to evaluate the file since it contains bash syntax like ${VAR:-default}
+        env_services_path = Path(original_dir) / ".env.services"
+        if env_services_path.exists():
+            try:
+                # Source the file with bash and export all variables
+                result = subprocess.run(
+                    ['/bin/bash', '-c', f'set -a && source "{env_services_path}" && env'],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                # Parse the output and set environment variables
+                for line in result.stdout.split('\n'):
+                    if '=' in line:
+                        key, _, value = line.partition('=')
+                        os.environ[key] = value
+                
+                logger.info(f"Loaded service names from .env.services (SERVICE_MAILPIT={os.environ.get('SERVICE_MAILPIT', 'mailpit')})")
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Failed to load .env.services: {e}")
+        else:
+            logger.warning(f".env.services not found at {env_services_path}")
+        
+        # Set MOCK_SMTP_HOST to use dynamic service name
+        # For local deployments, use the actual container name from .env.services
+        if is_local and 'SERVICE_MAILPIT' in os.environ:
+            os.environ['MOCK_SMTP_HOST'] = os.environ['SERVICE_MAILPIT']
+            logger.info(f"Set MOCK_SMTP_HOST={os.environ['MOCK_SMTP_HOST']} for local deployment")
+        elif is_local:
+            # Fallback if .env.services not loaded
+            os.environ['MOCK_SMTP_HOST'] = 'naf-dev-mailpit'
+            logger.info(f"Set MOCK_SMTP_HOST={os.environ['MOCK_SMTP_HOST']} (fallback)")
+        
         # Change to deploy directory so SQLite can create the database
         os.chdir(deploy_path)
         
