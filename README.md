@@ -77,6 +77,44 @@ echo "Credentials: admin / admin (from .env.defaults)"
 ./run-local-tests.sh  # Full test suite (90 tests)
 ```
 
+## PowerDNS Self-Managed DNS Backend
+
+PowerDNS provides an alternative to the Netcup API for DNS management:
+
+**Benefits:**
+- **Low TTL**: Set as low as 1 second (vs Netcup's 300s minimum)
+- **Full control**: No provider constraints or domain transfer risks
+- **REST API**: Native HTTP/JSON instead of SOAP
+- **Immediate updates**: No propagation delays
+
+**Quick Start:**
+```bash
+# PowerDNS starts automatically with deploy.sh
+# Test API connectivity
+curl -sf -H "X-API-Key: $(grep POWERDNS_API_KEY .env.defaults | cut -d= -f2)" \
+  http://naf-dev-powerdns:8081/api/v1/servers/localhost | python3 -m json.tool
+
+# Create test zone
+cd tooling/backend-powerdns
+./setup-zones.sh dyn.vxxu.de
+
+# List zones
+curl -s -H "X-API-Key: $(grep POWERDNS_API_KEY .env.defaults | cut -d= -f2)" \
+  http://naf-dev-powerdns:8081/api/v1/servers/localhost/zones | python3 -m json.tool
+
+# External access via reverse proxy
+curl -sf -H "X-API-Key: YOUR_KEY" \
+  https://${PUBLIC_FQDN}/backend-powerdns/api/v1/servers/localhost
+```
+
+**DNS Delegation (at parent zone, e.g., Netcup for vxxu.de):**
+```dns
+dyn.vxxu.de.  IN  NS  ${PUBLIC_FQDN}.
+${PUBLIC_FQDN}.  IN  A   <server-public-ip>
+```
+
+See `tooling/backend-powerdns/README.md` for complete documentation.
+
 ## Document Map (read these, skip the clutter)
 
 - `README.md` – High-level overview (this file).

@@ -1,9 +1,10 @@
 # HTTPS server - TLS termination with Let's Encrypt certificates
 # Template variables (substituted by render-nginx-conf.sh using envsubst):
-#   ${LOCAL_TLS_DOMAIN} - Public FQDN (e.g., gstammtisch.dchive.de)
-#   ${LOCAL_APP_HOST}   - Backend hostname (e.g., netcup-api-filter-devcontainer)
-#   ${LOCAL_APP_PORT}   - Backend port (e.g., 5100)
-#   ${HOSTNAME_MAILPIT} - Mailpit service hostname (from .env.services)
+#   ${LOCAL_TLS_DOMAIN}  - Public FQDN (e.g., gstammtisch.dchive.de)
+#   ${LOCAL_APP_HOST}    - Backend hostname (e.g., netcup-api-filter-devcontainer)
+#   ${LOCAL_APP_PORT}    - Backend port (e.g., 5100)
+#   ${HOSTNAME_MAILPIT}  - Mailpit service hostname (from .env.services)
+#   ${HOSTNAME_POWERDNS} - PowerDNS service hostname (from .env.services)
 
 server {
     listen 443 ssl;
@@ -48,6 +49,27 @@ server {
         proxy_pass_header Authorization;
         
         # Disable buffering for SSE/WebSocket
+        proxy_buffering off;
+    }
+
+    # PowerDNS API
+    # Secured by PowerDNS API key (X-API-Key header)
+    location /backend-powerdns/ {
+        # Strip /backend-powerdns prefix, proxy to PowerDNS API root
+        proxy_pass http://${HOSTNAME_POWERDNS}:8081/;
+        proxy_http_version 1.1;
+        
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Pass through API key authentication
+        proxy_set_header X-API-Key $http_x_api_key;
+        proxy_pass_header X-API-Key;
+        
+        # Disable buffering for API responses
         proxy_buffering off;
     }
 

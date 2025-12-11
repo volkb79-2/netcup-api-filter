@@ -58,7 +58,7 @@ proxy_render_nginx_conf() {
     fi
 
     mkdir -p "$(dirname "${output}")"
-    local vars='${LOCAL_TLS_DOMAIN} ${LOCAL_APP_HOST} ${LOCAL_APP_PORT} ${HOSTNAME_MAILPIT}'
+    local vars='${LOCAL_TLS_DOMAIN} ${LOCAL_APP_HOST} ${LOCAL_APP_PORT} ${HOSTNAME_MAILPIT} ${HOSTNAME_POWERDNS}'
     envsubst "${vars}" < "${template}" > "${output}"
 
     echo "Rendered ${output} for ${LOCAL_TLS_DOMAIN} -> ${LOCAL_APP_HOST}:${LOCAL_APP_PORT}"

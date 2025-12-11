@@ -586,6 +586,49 @@ stop_mock_services() {
     (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose down 2>/dev/null) || true
 }
 
+start_powerdns_backend() {
+    log_step "Starting PowerDNS backend..."
+    
+    local powerdns_dir="${REPO_ROOT}/tooling/backend-powerdns"
+    
+    if [[ ! -d "${powerdns_dir}" ]]; then
+        log_warning "PowerDNS backend not configured (${powerdns_dir} not found)"
+        return 0
+    fi
+    
+    # Check if API key is set
+    source "${REPO_ROOT}/.env.defaults"
+    if [[ -z "${POWERDNS_API_KEY:-}" ]]; then
+        log_warning "PowerDNS API key not set (POWERDNS_API_KEY in .env.defaults)"
+        log_step "Generate key: openssl rand -hex 32"
+        return 0
+    fi
+    
+    # Create data directory if missing
+    mkdir -p "${powerdns_dir}/data"
+    
+    # Start container
+    (cd "${powerdns_dir}" && docker compose up -d 2>/dev/null) || log_warning "PowerDNS start failed (may already be running)"
+    
+    # Wait for health check
+    local waited=0
+    while [[ $waited -lt 10 ]]; do
+        if docker ps --filter "name=${SERVICE_POWERDNS:-naf-dev-powerdns}" --filter "health=healthy" | grep -q "${SERVICE_POWERDNS:-naf-dev-powerdns}"; then
+            log_success "PowerDNS backend ready"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    
+    log_warning "PowerDNS health check timeout (container may still be starting)"
+}
+
+stop_powerdns_backend() {
+    log_step "Stopping PowerDNS backend..."
+    (cd "${REPO_ROOT}/tooling/backend-powerdns" && docker compose down 2>/dev/null) || true
+}
+
 start_tls_proxy() {
     log_step "Starting TLS proxy (nginx with Let's Encrypt certs)..."
     
@@ -713,6 +756,11 @@ phase_infrastructure() {
     # Start mock services BEFORE TLS proxy (nginx config references naf-dev-mailpit)
     if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_mock_services
+    fi
+    
+    # Start PowerDNS backend (optional - skip if not configured)
+    if [[ "$DEPLOYMENT_TARGET" == "local" ]]; then
+        start_powerdns_backend
     fi
     
     # Start TLS proxy for HTTPS mode (default for local, use --http to disable)
@@ -1109,7 +1157,11 @@ stop_all_services() {
     log_step "Stopping Mock GeoIP..."
     (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose down 2>/dev/null) && log_success "Mock GeoIP stopped" || log_step "Mock GeoIP not running"
     
-    # 6. Stop Playwright container
+    # 6. Stop PowerDNS backend
+    log_step "Stopping PowerDNS backend..."
+    (cd "${REPO_ROOT}/tooling/backend-powerdns" && docker compose down 2>/dev/null) && log_success "PowerDNS stopped" || log_step "PowerDNS not running"
+    
+    # 7. Stop Playwright container
     log_step "Stopping Playwright container..."
     docker stop "${CONTAINER_PLAYWRIGHT}" 2>/dev/null && log_success "Playwright stopped" || log_step "Playwright not running"
     

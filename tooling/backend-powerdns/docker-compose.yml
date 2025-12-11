@@ -1,0 +1,76 @@
+services:
+  naf-dev-powerdns:
+    image: ${POWERDNS_IMAGE:?POWERDNS_IMAGE must be set}
+    container_name: ${POWERDNS_CONTAINER_NAME:?POWERDNS_CONTAINER_NAME must be set}
+    hostname: ${POWERDNS_CONTAINER_NAME}
+    
+    environment:
+      # API configuration
+      - PDNS_AUTH_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}
+      - PDNS_AUTH_API=${PDNS_AUTH_API}
+      - PDNS_AUTH_WEBSERVER=${PDNS_AUTH_WEBSERVER}
+      - PDNS_AUTH_WEBSERVER_ADDRESS=${PDNS_AUTH_WEBSERVER_ADDRESS}
+      - PDNS_AUTH_WEBSERVER_PORT=${PDNS_AUTH_WEBSERVER_PORT}
+      - PDNS_AUTH_WEBSERVER_ALLOW_FROM=${PDNS_AUTH_WEBSERVER_ALLOW_FROM}
+      
+      # Database backend
+      - PDNS_LAUNCH=${PDNS_LAUNCH}
+      - PDNS_GSQLITE3_DATABASE=${PDNS_GSQLITE3_DATABASE}
+      
+      # Logging
+      - PDNS_LOGLEVEL=${PDNS_LOGLEVEL}
+      - PDNS_LOG_DNS_QUERIES=${PDNS_LOG_DNS_QUERIES}
+      - PDNS_LOG_DNS_DETAILS=${PDNS_LOG_DNS_DETAILS}
+      
+      # Security
+      - PDNS_DISABLE_AXFR=${PDNS_DISABLE_AXFR}
+      - PDNS_ALLOW_AXFR_IPS=${PDNS_ALLOW_AXFR_IPS}
+      
+      # SOA defaults
+      - PDNS_DEFAULT_SOA_NAME=${PDNS_DEFAULT_SOA_NAME}
+      - PDNS_DEFAULT_SOA_MAIL=${PDNS_DEFAULT_SOA_MAIL}
+    
+    ports:
+      # DNS server (public access required)
+      - "${POWERDNS_DNS_PORT_UDP}:53/udp"
+      - "${POWERDNS_DNS_PORT_TCP}:53/tcp"
+      # API port (internal network only - no host exposure needed)
+      # Flask app connects via Docker network to http://naf-dev-powerdns:80
+    
+    volumes:
+      # Persistent database storage
+      - ${POWERDNS_DATA_DIR:?POWERDNS_DATA_DIR must be set}:/var/lib/powerdns
+      # Init script and schema for automatic database creation
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/init-db.sh:/usr/local/bin/init-db.sh:ro
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/schema.sqlite3.sql:/usr/local/share/powerdns/schema.sqlite3.sql:ro
+    
+    # Entrypoint wraps database initialization
+    entrypoint: ["/usr/local/bin/init-db.sh"]
+    command: ["/usr/bin/tini", "--", "/usr/local/sbin/pdns_server-startup"]
+    
+    networks:
+      - naf-network
+    
+    restart: unless-stopped
+    
+    # Required for binding to privileged port 53
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    healthcheck:
+      test: ["CMD", "pdns_control", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    labels:
+      - "project=netcup-api-filter"
+      - "service=powerdns"
+      - "environment=${ENV_TAG:-dev}"
+
+# Use external network (created by devcontainer)
+networks:
+  naf-network:
+    name: ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set}
+    external: true
