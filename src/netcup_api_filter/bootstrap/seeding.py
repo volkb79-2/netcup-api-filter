@@ -401,6 +401,9 @@ def seed_default_entities(
     primary_secret = None
     
     if seed_demo_clients_flag:
+        # Seed demo backend and domain root for testing
+        seed_demo_domain_roots()
+        
         # Get demo account config from env/defaults
         demo_username = os.environ.get('DEFAULT_TEST_CLIENT_ID') or get_default('DEFAULT_TEST_CLIENT_ID', 'demo-user')
         
@@ -1108,3 +1111,53 @@ def create_domain_root(
     db.session.commit()
     logger.info(f"Created domain root: {root_domain} (backend: {backend_service.service_name})")
     return root
+
+
+def seed_demo_domain_roots() -> tuple[BackendService, ManagedDomainRoot]:
+    """Seed demo backend and domain root for testing.
+    
+    Creates a mock netcup backend and a public domain root at dyn.example.com
+    that users can request subdomains under.
+    
+    Returns:
+        Tuple of (demo_backend, demo_domain_root)
+    """
+    # Check if demo backend already exists
+    existing_service = BackendService.query.filter_by(service_name='demo-netcup').first()
+    if existing_service:
+        existing_root = ManagedDomainRoot.query.filter_by(
+            backend_service_id=existing_service.id,
+            root_domain='dyn.example.com'
+        ).first()
+        if existing_root:
+            logger.info("Demo domain root already exists, skipping")
+            return existing_service, existing_root
+    
+    # Create demo backend service
+    demo_backend = create_backend_service(
+        provider_code='netcup',
+        service_name='demo-netcup',
+        display_name='Demo Netcup Backend',
+        config={
+            'customer_id': 'demo123456',
+            'api_key': 'demo-api-key',
+            'api_password': 'demo-api-password',
+        },
+        owner_type='platform',
+        is_active=True,
+    )
+    
+    # Create public domain root for testing
+    demo_root = create_domain_root(
+        backend_service=demo_backend,
+        root_domain='dyn.example.com',
+        dns_zone='example.com',
+        visibility='public',
+        display_name='Demo Dynamic DNS',
+        description='Public zone for testing - request any subdomain',
+        allowed_record_types=['A', 'AAAA', 'TXT'],
+        allowed_operations=['read', 'update'],
+    )
+    
+    logger.info("Demo backend and domain root created for testing")
+    return demo_backend, demo_root

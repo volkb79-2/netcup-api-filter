@@ -33,7 +33,11 @@ from ..account_auth import (
     verify_2fa,
     verify_registration,
 )
-from ..models import Account, AccountRealm, ActivityLog, APIToken, RegistrationRequest, db
+from ..models import (
+    Account, AccountRealm, ActivityLog, APIToken, RegistrationRequest, db,
+    # Multi-backend models
+    BackendService, ManagedDomainRoot, DomainRootGrant, VisibilityEnum, OwnerTypeEnum,
+)
 from ..realm_token_service import (
     create_token,
     get_realms_for_account,
@@ -540,18 +544,97 @@ def dashboard():
 # Realm Management
 # ============================================================================
 
+def get_available_domain_roots_for_account(account):
+    """Get domain roots available to an account.
+    
+    Returns domain roots that are:
+    - Public (any authenticated user can request)
+    - Granted to this specific account
+    """
+    # Get public visibility ID
+    public_vis = VisibilityEnum.query.filter_by(visibility_code='public').first()
+    
+    available_roots = []
+    
+    if public_vis:
+        # Public roots are available to everyone
+        public_roots = ManagedDomainRoot.query.filter_by(
+            visibility_id=public_vis.id,
+            is_active=True
+        ).all()
+        available_roots.extend(public_roots)
+    
+    # Also get roots where user has explicit grant
+    granted_roots = ManagedDomainRoot.query.join(
+        DomainRootGrant,
+        DomainRootGrant.domain_root_id == ManagedDomainRoot.id
+    ).filter(
+        DomainRootGrant.account_id == account.id,
+        DomainRootGrant.revoked_at.is_(None),
+        ManagedDomainRoot.is_active == True
+    ).all()
+    
+    # Add granted roots not already in public
+    existing_ids = {r.id for r in available_roots}
+    for root in granted_roots:
+        if root.id not in existing_ids:
+            available_roots.append(root)
+    
+    return available_roots
+
+
 @account_bp.route('/realms/request', methods=['GET', 'POST'])
 @require_account_auth
 def request_realm_view():
     """Request a new realm."""
     account = g.account
     
+    # Get available domain roots for this account
+    available_roots = get_available_domain_roots_for_account(account)
+    
+    # Also check if user has any own backends (for BYOD)
+    user_backends = BackendService.query.filter_by(
+        owner_id=account.id,
+        is_active=True
+    ).all() if account else []
+    
     if request.method == 'POST':
-        domain = request.form.get('domain', '').strip().lower()
-        realm_type = request.form.get('realm_type', '')
-        realm_value = request.form.get('realm_value', '').strip().lower()
+        domain_root_id = request.form.get('domain_root_id', '')
+        subdomain = request.form.get('subdomain', '').strip().lower()
+        realm_type = request.form.get('realm_type', 'host')
         record_types = request.form.getlist('record_types')
         operations = request.form.getlist('operations')
+        
+        # Validate domain root selection
+        if not domain_root_id:
+            flash('Please select a DNS zone', 'error')
+            return render_template('account/request_realm.html',
+                                 available_roots=available_roots,
+                                 user_backends=user_backends)
+        
+        # Get selected domain root
+        try:
+            root_id = int(domain_root_id)
+            domain_root = ManagedDomainRoot.query.get(root_id)
+        except (ValueError, TypeError):
+            domain_root = None
+        
+        if not domain_root or not domain_root.is_active:
+            flash('Invalid DNS zone selection', 'error')
+            return render_template('account/request_realm.html',
+                                 available_roots=available_roots,
+                                 user_backends=user_backends)
+        
+        # Check user has access to this root
+        if domain_root not in available_roots:
+            flash('You do not have access to this DNS zone', 'error')
+            return render_template('account/request_realm.html',
+                                 available_roots=available_roots,
+                                 user_backends=user_backends)
+        
+        # Build full realm value
+        realm_value = subdomain if subdomain else ''
+        domain = domain_root.root_domain
         
         result = request_realm_service(
             account=account,
@@ -559,7 +642,8 @@ def request_realm_view():
             realm_type=realm_type,
             realm_value=realm_value,
             record_types=record_types,
-            operations=operations
+            operations=operations,
+            domain_root_id=domain_root.id
         )
         
         if result.success:
@@ -568,7 +652,9 @@ def request_realm_view():
         else:
             flash(result.error, 'error')
     
-    return render_template('account/request_realm.html')
+    return render_template('account/request_realm.html',
+                          available_roots=available_roots,
+                          user_backends=user_backends)
 
 
 # ============================================================================

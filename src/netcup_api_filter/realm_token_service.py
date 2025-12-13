@@ -171,7 +171,9 @@ def request_realm(
     realm_type: str,
     realm_value: str,
     record_types: list[str],
-    operations: list[str]
+    operations: list[str],
+    domain_root_id: int | None = None,
+    user_backend_id: int | None = None
 ) -> RealmResult:
     """
     Request a new realm for an account.
@@ -185,6 +187,8 @@ def request_realm(
         realm_value: Subdomain prefix (e.g., 'iot', 'vpn', or '' for apex)
         record_types: Allowed DNS record types
         operations: Allowed operations (read, create, update, delete)
+        domain_root_id: Optional - managed domain root for platform backends
+        user_backend_id: Optional - user's own backend (BYOD)
     """
     # Validate realm type
     is_valid, error = validate_realm_type(realm_type)
@@ -248,7 +252,9 @@ def request_realm(
         realm_type=realm_type,
         realm_value=realm_value_normalized,
         status='pending',
-        requested_at=datetime.utcnow()
+        requested_at=datetime.utcnow(),
+        domain_root_id=domain_root_id,
+        user_backend_id=user_backend_id
     )
     realm.set_allowed_record_types(record_types)
     realm.set_allowed_operations(operations)
