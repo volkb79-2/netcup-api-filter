@@ -1124,7 +1124,9 @@ def seed_demo_domain_roots() -> tuple[BackendService, ManagedDomainRoot]:
     """
     # Check if demo backend already exists
     existing_service = BackendService.query.filter_by(service_name='demo-netcup').first()
+    
     if existing_service:
+        # Service exists - check if domain root also exists
         existing_root = ManagedDomainRoot.query.filter_by(
             backend_service_id=existing_service.id,
             root_domain='dyn.example.com'
@@ -1132,6 +1134,20 @@ def seed_demo_domain_roots() -> tuple[BackendService, ManagedDomainRoot]:
         if existing_root:
             logger.info("Demo domain root already exists, skipping")
             return existing_service, existing_root
+        else:
+            # Service exists but domain root doesn't - create only the root
+            logger.info("Demo backend exists, creating missing domain root")
+            demo_root = create_domain_root(
+                backend_service=existing_service,
+                root_domain='dyn.example.com',
+                dns_zone='example.com',
+                visibility='public',
+                display_name='Demo Dynamic DNS',
+                description='Public zone for testing - request any subdomain',
+                allowed_record_types=['A', 'AAAA', 'TXT'],
+                allowed_operations=['read', 'update'],
+            )
+            return existing_service, demo_root
     
     # Create demo backend service
     demo_backend = create_backend_service(
@@ -1140,8 +1156,8 @@ def seed_demo_domain_roots() -> tuple[BackendService, ManagedDomainRoot]:
         display_name='Demo Netcup Backend',
         config={
             'customer_id': 'demo123456',
-            'api_key': 'demo-api-key',
-            'api_password': 'demo-api-password',
+            'api_key': 'demo-api-key-mock',
+            'api_password': 'demo-api-password-mock',
         },
         owner_type='platform',
         is_active=True,

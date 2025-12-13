@@ -571,7 +571,7 @@ def get_available_domain_roots_for_account(account):
     ).filter(
         DomainRootGrant.account_id == account.id,
         DomainRootGrant.revoked_at.is_(None),
-        ManagedDomainRoot.is_active == True
+        ManagedDomainRoot.is_active.is_(True)
     ).all()
     
     # Add granted roots not already in public

@@ -93,12 +93,8 @@
                                 {% for root in available_roots %}
                                 <option value="{{ root.id }}" data-root-domain="{{ root.root_domain }}">
                                     {{ root.display_name or root.root_domain }}
-                                    {% if root.backend_service %}
-                                    ({{ root.backend_service.provider.display_name }})
-                                    {% endif %}
-                                    {% if root.is_public() %}
-                                    <span class="badge bg-success">Public</span>
-                                    {% endif %}
+                                    {% if root.backend_service %}({{ root.backend_service.provider.display_name }}){% endif %}
+                                    {% if root.is_public() %} [Public]{% endif %}
                                 </option>
                                 {% endfor %}
                                 {% if user_backends %}
