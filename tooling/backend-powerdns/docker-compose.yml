@@ -1,52 +1,101 @@
 services:
+  # Init container - prepares data directory with proper permissions
+  naf-dev-powerdns-init:
+    image: alpine:latest
+    container_name: ${POWERDNS_CONTAINER_NAME:?POWERDNS_CONTAINER_NAME must be set}-init
+    
+    volumes:
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/data:/data
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/schema.sqlite3.sql:/schema.sqlite3.sql:ro
+    
+    command:
+      - sh
+      - -c
+      - |
+        echo '[init] Preparing data directory for PowerDNS (UID 953), group docker (GID from host: ${DOCKER_GID:?DOCKER_GID must be set})'
+        
+        # Ensure directory exists and is writable
+        mkdir -p /data
+        chmod 755 /data
+        ls -l /data
+
+        # Initialize database if missing
+        if [ ! -f /data/pdns.sqlite3 ]; then
+          echo '[init] Creating database from schema'
+          apk add --no-cache sqlite >/dev/null 2>&1
+          sqlite3 /data/pdns.sqlite3 < /schema.sqlite3.sql
+          echo '[init] Database created'
+        else
+          echo '[init] Database exists'
+        fi
+        
+        # Set ownership to PowerDNS user (UID 953, GID 953), group `docker` (GID from host)
+        chown -R 953:${DOCKER_GID:?DOCKER_GID must be set} /data
+        chmod 770 /data
+        chmod 660 /data/*.db /data/*.sqlite* 2>/dev/null || true
+        
+        ls -l /data
+
+        echo '[init] Data directory ready'
+    
+    networks:
+      - naf-network
+    
+    labels:
+      - "project=netcup-api-filter"
+      - "service=powerdns-init"
+      - "environment=${ENV_TAG:-dev}"
+
   naf-dev-powerdns:
     image: ${POWERDNS_IMAGE:?POWERDNS_IMAGE must be set}
     container_name: ${POWERDNS_CONTAINER_NAME:?POWERDNS_CONTAINER_NAME must be set}
-    hostname: ${POWERDNS_CONTAINER_NAME}
+    hostname: ${POWERDNS_CONTAINER_NAME:?POWERDNS_CONTAINER_NAME must be set}
+    
+    # Wait for init container to complete
+    depends_on:
+      naf-dev-powerdns-init:
+        condition: service_completed_successfully
     
     environment:
       # API configuration
       - PDNS_AUTH_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}
-      - PDNS_AUTH_API=${PDNS_AUTH_API}
-      - PDNS_AUTH_WEBSERVER=${PDNS_AUTH_WEBSERVER}
-      - PDNS_AUTH_WEBSERVER_ADDRESS=${PDNS_AUTH_WEBSERVER_ADDRESS}
-      - PDNS_AUTH_WEBSERVER_PORT=${PDNS_AUTH_WEBSERVER_PORT}
-      - PDNS_AUTH_WEBSERVER_ALLOW_FROM=${PDNS_AUTH_WEBSERVER_ALLOW_FROM}
+      - PDNS_AUTH_API=${PDNS_AUTH_API:?PDNS_AUTH_API must be set}
+      - PDNS_AUTH_WEBSERVER=${PDNS_AUTH_WEBSERVER:?PDNS_AUTH_WEBSERVER must be set}
+      - PDNS_AUTH_WEBSERVER_ADDRESS=${PDNS_AUTH_WEBSERVER_ADDRESS:?PDNS_AUTH_WEBSERVER_ADDRESS must be set}
+      - PDNS_AUTH_WEBSERVER_PORT=${PDNS_AUTH_WEBSERVER_PORT:?PDNS_AUTH_WEBSERVER_PORT must be set}
+      - PDNS_AUTH_WEBSERVER_ALLOW_FROM=${PDNS_AUTH_WEBSERVER_ALLOW_FROM:?PDNS_AUTH_WEBSERVER_ALLOW_FROM must be set}
       
       # Database backend
-      - PDNS_LAUNCH=${PDNS_LAUNCH}
-      - PDNS_GSQLITE3_DATABASE=${PDNS_GSQLITE3_DATABASE}
+      - PDNS_LAUNCH=${PDNS_LAUNCH:?PDNS_LAUNCH must be set}
+      - PDNS_GSQLITE3_DATABASE=${PDNS_GSQLITE3_DATABASE:?PDNS_GSQLITE3_DATABASE must be set}
       
       # Logging
-      - PDNS_LOGLEVEL=${PDNS_LOGLEVEL}
-      - PDNS_LOG_DNS_QUERIES=${PDNS_LOG_DNS_QUERIES}
-      - PDNS_LOG_DNS_DETAILS=${PDNS_LOG_DNS_DETAILS}
+      - PDNS_LOGLEVEL=${PDNS_LOGLEVEL:?PDNS_LOGLEVEL must be set}
+      - PDNS_LOG_DNS_QUERIES=${PDNS_LOG_DNS_QUERIES:?PDNS_LOG_DNS_QUERIES must be set}
+      - PDNS_LOG_DNS_DETAILS=${PDNS_LOG_DNS_DETAILS:?PDNS_LOG_DNS_DETAILS must be set}
       
       # Security
-      - PDNS_DISABLE_AXFR=${PDNS_DISABLE_AXFR}
-      - PDNS_ALLOW_AXFR_IPS=${PDNS_ALLOW_AXFR_IPS}
+      - PDNS_DISABLE_AXFR=${PDNS_DISABLE_AXFR:?PDNS_DISABLE_AXFR must be set}
+      - PDNS_ALLOW_AXFR_IPS=${PDNS_ALLOW_AXFR_IPS:?PDNS_ALLOW_AXFR_IPS must be set}
       
       # SOA defaults
-      - PDNS_DEFAULT_SOA_NAME=${PDNS_DEFAULT_SOA_NAME}
-      - PDNS_DEFAULT_SOA_MAIL=${PDNS_DEFAULT_SOA_MAIL}
+      - PDNS_DEFAULT_SOA_NAME=${PDNS_DEFAULT_SOA_NAME:?PDNS_DEFAULT_SOA_NAME must be set}
+      - PDNS_DEFAULT_SOA_MAIL=${PDNS_DEFAULT_SOA_MAIL:?PDNS_DEFAULT_SOA_MAIL must be set}
     
     ports:
       # DNS server (public access required)
-      - "${POWERDNS_DNS_PORT_UDP}:53/udp"
-      - "${POWERDNS_DNS_PORT_TCP}:53/tcp"
+      - "${POWERDNS_DNS_PORT_UDP:?POWERDNS_DNS_PORT_UDP must be set}:53/udp"
+      - "${POWERDNS_DNS_PORT_TCP:?POWERDNS_DNS_PORT_TCP must be set}:53/tcp"
       # API port (internal network only - no host exposure needed)
-      # Flask app connects via Docker network to http://naf-dev-powerdns:80
+      # Flask app connects via Docker network to http://naf-dev-powerdns:8081
     
     volumes:
-      # Persistent database storage
-      - ${POWERDNS_DATA_DIR:?POWERDNS_DATA_DIR must be set}:/var/lib/powerdns
-      # Init script and schema for automatic database creation
-      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/init-db.sh:/usr/local/bin/init-db.sh:ro
-      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/schema.sqlite3.sql:/usr/local/share/powerdns/schema.sqlite3.sql:ro
+      # Persistent database storage (prepared by init container)
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/data:/var/lib/powerdns
     
-    # Entrypoint wraps database initialization
-    entrypoint: ["/usr/local/bin/init-db.sh"]
-    command: ["/usr/bin/tini", "--", "/usr/local/sbin/pdns_server-startup"]
+    # Run as pdns user (UID 953) with docker group (GID from host)
+    # This allows PowerDNS to access database owned by 953:docker
+    user: "953:${DOCKER_GID:?DOCKER_GID must be set}"
     
     networks:
       - naf-network
@@ -67,7 +116,7 @@ services:
     labels:
       - "project=netcup-api-filter"
       - "service=powerdns"
-      - "environment=${ENV_TAG:-dev}"
+      - "environment=${ENV_TAG:?ENV_TAG must be set}"
 
 # Use external network (created by devcontainer)
 networks:

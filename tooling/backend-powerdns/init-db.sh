@@ -25,8 +25,18 @@ if [ ! -f "$DB_PATH" ]; then
     
     # Create database
     echo "[init-db] Creating database with schema from $SCHEMA_FILE"
+    
+    # First ensure directory is writable
+    if [ ! -w "/var/lib/powerdns" ]; then
+        echo "[init-db] ERROR: /var/lib/powerdns is not writable"
+        echo "[init-db] Container UID: $(id -u), GID: $(id -g)"
+        echo "[init-db] Directory owner: $(stat -c '%u:%g' /var/lib/powerdns)"
+        exit 1
+    fi
+    
     sqlite3 "$DB_PATH" < "$SCHEMA_FILE" || {
         echo "[init-db] ERROR: Failed to create database"
+        echo "[init-db] SQLite error - check directory permissions"
         exit 1
     }
     

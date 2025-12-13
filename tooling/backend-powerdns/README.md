@@ -10,6 +10,37 @@ PowerDNS allows delegated DNS zones with full control:
 - **HTTP API**: Direct integration without file parsing
 - **Database-backed**: SQLite for persistent zone storage
 
+## Architecture
+
+**Init Container Pattern** - Proper separation of concerns:
+
+```
+Docker Named Volume: naf-dev-powerdns-data
+  └── Managed by Docker (persistent across container restarts)
+
+naf-dev-powerdns-init (alpine:latest)
+  ├── Runs once on startup (service_completed_successfully)
+  ├── Mounts volume at /data
+  ├── Creates /data directory with 755 permissions
+  ├── Initializes database if missing (sqlite3 + schema.sqlite3.sql)
+  ├── Sets ownership to UID 953:953 (pdns user)
+  └── Exits when complete
+
+naf-dev-powerdns (powerdns/pdns-auth-48:latest)
+  ├── Starts AFTER init container succeeds (depends_on)
+  ├── Mounts same volume at /var/lib/powerdns
+  ├── Runs as pdns user (UID 953)
+  ├── Reads database from volume
+  └── Serves DNS (port 53) and API (port 8081)
+```
+
+**Why Init Container + Named Volume?**
+- **Security**: Data directory owned by PowerDNS user only (770 perms)
+- **Clean separation**: Deploy script doesn't need sudo/chmod/mkdir
+- **Idempotent**: Safe to re-run, only initializes if missing
+- **Fail-fast**: PowerDNS won't start if init fails
+- **Portable**: Named volume survives container recreation
+
 ## Quick Start
 
 ### 1. Generate API Key
@@ -70,6 +101,46 @@ dig @localhost -p 53 dyn.vxxu.de SOA
 
 # Query via public DNS (after delegation propagates)
 dig dyn.vxxu.de SOA
+```
+
+## Volume Management
+
+### Inspect Database
+
+```bash
+# View volume info
+docker volume inspect naf-dev-powerdns-data
+
+# Access database from container
+docker exec naf-dev-powerdns sqlite3 /var/lib/powerdns/pdns.sqlite3 "SELECT * FROM domains;"
+```
+
+### Reset Database
+
+```bash
+# Stop containers
+cd tooling/backend-powerdns
+docker compose down
+
+# Delete volume
+docker volume rm naf-dev-powerdns-data
+
+# Restart (init container will recreate database)
+docker compose up -d
+```
+
+### Backup/Restore
+
+```bash
+# Backup
+docker exec naf-dev-powerdns sqlite3 /var/lib/powerdns/pdns.sqlite3 .dump > backup.sql
+
+# Restore (stop container first)
+docker compose down
+docker volume rm naf-dev-powerdns-data
+docker compose up -d
+# Wait for init, then:
+docker exec -i naf-dev-powerdns sqlite3 /var/lib/powerdns/pdns.sqlite3 < backup.sql
 ```
 
 ## API Examples

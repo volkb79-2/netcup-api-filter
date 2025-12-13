@@ -604,24 +604,34 @@ start_powerdns_backend() {
         return 0
     fi
     
-    # Create data directory if missing
-    mkdir -p "${powerdns_dir}/data"
+    # Export required variables for docker compose
+    export POWERDNS_API_KEY
+    export SERVICE_POWERDNS
+    export DOCKER_NETWORK_INTERNAL
+    export PHYSICAL_REPO_ROOT
     
-    # Start container
+    # Start containers (init container runs first, then PowerDNS)
+    log_step "Running init container to prepare database..."
     (cd "${powerdns_dir}" && docker compose up -d 2>/dev/null) || log_warning "PowerDNS start failed (may already be running)"
     
     # Wait for health check
     local waited=0
-    while [[ $waited -lt 10 ]]; do
+    while [[ $waited -lt 30 ]]; do
         if docker ps --filter "name=${SERVICE_POWERDNS:-naf-dev-powerdns}" --filter "health=healthy" | grep -q "${SERVICE_POWERDNS:-naf-dev-powerdns}"; then
             log_success "PowerDNS backend ready"
             return 0
+        fi
+        # Check if container is restarting (indicates failure)
+        if docker ps --filter "name=${SERVICE_POWERDNS:-naf-dev-powerdns}" --format "{{.Status}}" | grep -q "Restarting"; then
+            log_error "PowerDNS container is restarting (check logs: docker logs ${SERVICE_POWERDNS:-naf-dev-powerdns})"
+            return 1
         fi
         sleep 1
         waited=$((waited + 1))
     done
     
     log_warning "PowerDNS health check timeout (container may still be starting)"
+    log_step "Check logs: docker logs ${SERVICE_POWERDNS:-naf-dev-powerdns}"
 }
 
 stop_powerdns_backend() {
@@ -1159,6 +1169,13 @@ stop_all_services() {
     
     # 6. Stop PowerDNS backend
     log_step "Stopping PowerDNS backend..."
+    if [[ -f "${REPO_ROOT}/.env.defaults" ]]; then
+        source "${REPO_ROOT}/.env.defaults"
+    fi
+    if [[ -f "${REPO_ROOT}/.env.services" ]]; then
+        source "${REPO_ROOT}/.env.services"
+    fi
+    export POWERDNS_API_KEY SERVICE_POWERDNS DOCKER_NETWORK_INTERNAL PHYSICAL_REPO_ROOT
     (cd "${REPO_ROOT}/tooling/backend-powerdns" && docker compose down 2>/dev/null) && log_success "PowerDNS stopped" || log_step "PowerDNS not running"
     
     # 7. Stop Playwright container
