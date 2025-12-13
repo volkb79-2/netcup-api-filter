@@ -5,6 +5,7 @@ Updated for Account → Realms → Tokens architecture.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
@@ -384,6 +385,9 @@ def seed_default_entities(
     Returns:
         Tuple of (primary_client_id, primary_secret_key, all_demo_clients)
     """
+    # Seed multi-backend infrastructure first (enum tables + providers)
+    seed_multi_backend_infrastructure()
+    
     # Ensure admin account exists
     admin = ensure_admin_account(admin_options or AdminSeedOptions())
     db.session.commit()
