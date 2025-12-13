@@ -38,6 +38,7 @@
                                 <option value="">Select a DNS provider...</option>
                                 {% for provider in providers %}
                                 <option value="{{ provider.id }}" 
+                                        data-provider-code="{{ provider.provider_code }}"
                                         data-config-schema="{{ provider.config_schema | tojson | e }}"
                                         {% if backend and backend.provider_id == provider.id %}selected{% endif %}
                                         {% if not provider.is_enabled %}disabled{% endif %}>
@@ -212,31 +213,28 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function showProviderConfig() {
         const selectedOption = providerSelect.options[providerSelect.selectedIndex];
-        const providerCode = selectedOption.text.toLowerCase().split(' ')[0];  // Extract provider code from name
+        const providerCode = selectedOption.dataset.providerCode || '';
         
         // Hide all config sections
         configContainers.forEach(c => c.classList.add('d-none'));
         
         // Show appropriate config section
-        if (providerSelect.value) {
+        if (providerSelect.value && providerCode) {
             placeholder.classList.add('d-none');
             
-            // Map provider names to config IDs
+            // Map provider codes to config IDs
             const configMap = {
                 'netcup': 'config-netcup',
                 'powerdns': 'config-powerdns',
                 'cloudflare': 'config-cloudflare',
-                'aws': 'config-route53',
-                'route': 'config-route53'
+                'route53': 'config-route53'
             };
             
-            for (const [key, id] of Object.entries(configMap)) {
-                if (providerCode.includes(key)) {
-                    const configEl = document.getElementById(id);
-                    if (configEl) {
-                        configEl.classList.remove('d-none');
-                    }
-                    break;
+            const configId = configMap[providerCode];
+            if (configId) {
+                const configEl = document.getElementById(configId);
+                if (configEl) {
+                    configEl.classList.remove('d-none');
                 }
             }
         } else {

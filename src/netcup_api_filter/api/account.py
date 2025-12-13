@@ -1978,6 +1978,39 @@ def setup_2fa():
 # User Backend Management (BYOD - Bring Your Own DNS)
 # ============================================================================
 
+def _build_backend_config_from_form(provider_code):
+    """Build backend config dict from form data based on provider.
+    
+    Args:
+        provider_code: The provider code (netcup, powerdns, cloudflare, route53)
+        
+    Returns:
+        dict: Configuration dictionary for the provider
+    """
+    if provider_code == 'netcup':
+        return {
+            'customer_id': request.form.get('config_customer_id', ''),
+            'api_key': request.form.get('config_api_key', ''),
+            'api_password': request.form.get('config_api_password', ''),
+        }
+    elif provider_code == 'powerdns':
+        return {
+            'api_url': request.form.get('config_api_url', ''),
+            'api_key': request.form.get('config_pdns_api_key', ''),
+        }
+    elif provider_code == 'cloudflare':
+        return {
+            'api_token': request.form.get('config_cf_api_token', ''),
+        }
+    elif provider_code == 'route53':
+        return {
+            'access_key_id': request.form.get('config_access_key_id', ''),
+            'secret_access_key': request.form.get('config_secret_access_key', ''),
+            'region': request.form.get('config_region', 'us-east-1'),
+        }
+    return {}
+
+
 @account_bp.route('/backends')
 @require_account_auth
 def backends_list():
@@ -2044,28 +2077,7 @@ def backend_create():
                                   account=account, backend=None, providers=providers)
         
         # Build config from form based on provider
-        config = {}
-        if provider.provider_code == 'netcup':
-            config = {
-                'customer_id': request.form.get('config_customer_id', ''),
-                'api_key': request.form.get('config_api_key', ''),
-                'api_password': request.form.get('config_api_password', ''),
-            }
-        elif provider.provider_code == 'powerdns':
-            config = {
-                'api_url': request.form.get('config_api_url', ''),
-                'api_key': request.form.get('config_pdns_api_key', ''),
-            }
-        elif provider.provider_code == 'cloudflare':
-            config = {
-                'api_token': request.form.get('config_cf_api_token', ''),
-            }
-        elif provider.provider_code == 'route53':
-            config = {
-                'access_key_id': request.form.get('config_access_key_id', ''),
-                'secret_access_key': request.form.get('config_secret_access_key', ''),
-                'region': request.form.get('config_region', 'us-east-1'),
-            }
+        config = _build_backend_config_from_form(provider.provider_code)
         
         # Get user owner type
         user_owner_type = OwnerTypeEnum.query.filter_by(owner_code='user').first()
@@ -2152,28 +2164,7 @@ def backend_edit(backend_id):
                                   account=account, backend=backend, providers=providers)
         
         # Build config from form based on provider
-        config = {}
-        if backend.provider.provider_code == 'netcup':
-            config = {
-                'customer_id': request.form.get('config_customer_id', ''),
-                'api_key': request.form.get('config_api_key', ''),
-                'api_password': request.form.get('config_api_password', ''),
-            }
-        elif backend.provider.provider_code == 'powerdns':
-            config = {
-                'api_url': request.form.get('config_api_url', ''),
-                'api_key': request.form.get('config_pdns_api_key', ''),
-            }
-        elif backend.provider.provider_code == 'cloudflare':
-            config = {
-                'api_token': request.form.get('config_cf_api_token', ''),
-            }
-        elif backend.provider.provider_code == 'route53':
-            config = {
-                'access_key_id': request.form.get('config_access_key_id', ''),
-                'secret_access_key': request.form.get('config_secret_access_key', ''),
-                'region': request.form.get('config_region', 'us-east-1'),
-            }
+        config = _build_backend_config_from_form(backend.provider.provider_code)
         
         # Update backend
         backend.service_name = service_name
