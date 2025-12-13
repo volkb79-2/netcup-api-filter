@@ -564,13 +564,46 @@ CREATE TABLE backend_providers (
     updated_at DATETIME NOT NULL
 );
 
--- Seed built-in providers
+-- Seed built-in providers (using proper JSON Schema format for validation)
 INSERT INTO backend_providers (provider_code, display_name, config_schema, is_builtin, is_enabled)
 VALUES 
-    ('netcup', 'Netcup CCP API', '{"customer_id":"string","api_key":"string","api_password":"string"}', 1, 1),
-    ('powerdns', 'PowerDNS', '{"api_url":"string","api_key":"string"}', 1, 1),
-    ('cloudflare', 'Cloudflare DNS', '{"api_token":"string","zone_id":"string"}', 1, 0),
-    ('route53', 'AWS Route 53', '{"access_key_id":"string","secret_access_key":"string"}', 1, 0);
+    ('netcup', 'Netcup CCP API', '{
+        "type": "object",
+        "properties": {
+            "customer_id": {"type": "string", "minLength": 1},
+            "api_key": {"type": "string", "minLength": 1},
+            "api_password": {"type": "string", "minLength": 1},
+            "api_url": {"type": "string", "format": "uri"},
+            "timeout": {"type": "integer", "minimum": 5, "maximum": 120, "default": 30}
+        },
+        "required": ["customer_id", "api_key", "api_password"]
+    }', 1, 1),
+    ('powerdns', 'PowerDNS', '{
+        "type": "object",
+        "properties": {
+            "api_url": {"type": "string", "format": "uri"},
+            "api_key": {"type": "string", "minLength": 1},
+            "timeout": {"type": "integer", "minimum": 5, "maximum": 120, "default": 30}
+        },
+        "required": ["api_url", "api_key"]
+    }', 1, 1),
+    ('cloudflare', 'Cloudflare DNS', '{
+        "type": "object",
+        "properties": {
+            "api_token": {"type": "string", "minLength": 1},
+            "zone_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"}
+        },
+        "required": ["api_token"]
+    }', 1, 0),
+    ('route53', 'AWS Route 53', '{
+        "type": "object",
+        "properties": {
+            "access_key_id": {"type": "string", "pattern": "^AKIA[0-9A-Z]{16}$"},
+            "secret_access_key": {"type": "string", "minLength": 40},
+            "region": {"type": "string", "default": "us-east-1"}
+        },
+        "required": ["access_key_id", "secret_access_key"]
+    }', 1, 0);
 ```
 
 Then `backend_services` references provider:
@@ -757,8 +790,25 @@ ALTER TABLE account_realms ADD COLUMN user_backend_id INTEGER REFERENCES backend
 
 -- Constraint: exactly one of domain_root_id or user_backend_id must be set
 -- (realm is either under platform root OR uses user's own backend)
--- CHECK((domain_root_id IS NOT NULL AND user_backend_id IS NULL) OR 
---       (domain_root_id IS NULL AND user_backend_id IS NOT NULL))
+-- NOTE: Add this constraint AFTER migration phase when legacy realms are updated
+CREATE TRIGGER check_realm_backend_exclusive
+    BEFORE INSERT ON account_realms
+    WHEN NEW.domain_root_id IS NULL AND NEW.user_backend_id IS NULL
+    BEGIN
+        SELECT RAISE(ABORT, 'Realm must have either domain_root_id or user_backend_id');
+    END;
+
+CREATE TRIGGER check_realm_backend_exclusive_update
+    BEFORE UPDATE ON account_realms
+    WHEN NEW.domain_root_id IS NULL AND NEW.user_backend_id IS NULL
+    BEGIN
+        SELECT RAISE(ABORT, 'Realm must have either domain_root_id or user_backend_id');
+    END;
+
+-- Alternative: Use CHECK constraint (if SQLite version supports it on ALTER)
+-- ALTER TABLE account_realms ADD CONSTRAINT check_backend_exclusivity
+--     CHECK((domain_root_id IS NOT NULL AND user_backend_id IS NULL) OR 
+--           (domain_root_id IS NULL AND user_backend_id IS NOT NULL));
 ```
 
 ---
@@ -935,7 +985,12 @@ def get_backend_for_realm(realm: AccountRealm) -> DNSBackend:
 
 
 def instantiate_backend(service: BackendService) -> DNSBackend:
-    """Create backend instance from service configuration."""
+    """Create backend instance from service configuration.
+    
+    Validates config against provider's JSON Schema before instantiation.
+    """
+    import jsonschema
+    
     provider = BackendProvider.query.get(service.provider_id)
     if not provider or not provider.is_enabled:
         raise BackendError(f"Provider {service.provider_id} is not available")
@@ -944,7 +999,17 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
     if not backend_class:
         raise BackendError(f"No implementation for provider: {provider.provider_code}")
     
-    return backend_class(json.loads(service.config))
+    # Parse and validate config against provider schema
+    try:
+        config = json.loads(service.config)
+        schema = json.loads(provider.config_schema)
+        jsonschema.validate(instance=config, schema=schema)
+    except json.JSONDecodeError as e:
+        raise BackendError(f"Invalid config JSON: {e}")
+    except jsonschema.ValidationError as e:
+        raise BackendError(f"Config validation failed: {e.message}")
+    
+    return backend_class(config)
 ```
 
 ---
@@ -1003,8 +1068,29 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
 
 1. **Credential Encryption**: Backend service configs should be encrypted at rest
    ```python
-   # Use Fernet symmetric encryption with key from environment
-   config_encrypted = encrypt(json.dumps(config), ENCRYPTION_KEY)
+   import os
+   from cryptography.fernet import Fernet
+   
+   # ENCRYPTION_KEY management:
+   # - Store in environment variable (not in code or database)
+   # - Use secrets manager (AWS Secrets Manager, HashiCorp Vault) in production
+   # - Key should be base64-encoded 32-byte key, generated via Fernet.generate_key()
+   # - Rotate key periodically; re-encrypt all configs during rotation
+   # - Example: export NAF_CONFIG_ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+   
+   ENCRYPTION_KEY = os.environ.get('NAF_CONFIG_ENCRYPTION_KEY')
+   if not ENCRYPTION_KEY:
+       raise RuntimeError("NAF_CONFIG_ENCRYPTION_KEY environment variable not set")
+   
+   fernet = Fernet(ENCRYPTION_KEY.encode())
+   
+   def encrypt_config(config: dict) -> str:
+       """Encrypt config for storage."""
+       return fernet.encrypt(json.dumps(config).encode()).decode()
+   
+   def decrypt_config(encrypted: str) -> dict:
+       """Decrypt config for use."""
+       return json.loads(fernet.decrypt(encrypted.encode()).decode())
    ```
 
 2. **User Backend Validation**: Before allowing user backends, require:
