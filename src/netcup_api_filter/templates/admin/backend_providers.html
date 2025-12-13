@@ -1,0 +1,99 @@
+{# Admin Backend Providers List - View available DNS providers #}
+{% extends "admin/base.html" %}
+
+{% block title %}Backend Providers - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Backend Providers</h1>
+        <p class="text-muted mb-0">Available DNS provider plugins</p>
+    </div>
+    <a href="{{ url_for('admin.backends') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Backends
+    </a>
+</div>
+
+<!-- Providers Grid -->
+<div class="row g-4">
+    {% for provider in providers %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 {% if not provider.is_enabled %}bg-light{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="bi bi-plug me-1"></i>
+                    <strong>{{ provider.provider_code }}</strong>
+                </span>
+                {% if provider.is_enabled %}
+                <span class="badge bg-success">Enabled</span>
+                {% else %}
+                <span class="badge bg-secondary">Disabled</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">{{ provider.display_name }}</h5>
+                <p class="card-text text-muted small">{{ provider.description or 'No description' }}</p>
+                
+                <hr>
+                
+                <p class="small mb-2"><strong>Capabilities:</strong></p>
+                <ul class="list-unstyled small mb-3">
+                    <li>
+                        {% if provider.supports_zone_list %}
+                        <i class="bi bi-check-circle text-success me-1"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% endif %}
+                        Zone Enumeration
+                    </li>
+                    <li>
+                        {% if provider.supports_zone_create %}
+                        <i class="bi bi-check-circle text-success me-1"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% endif %}
+                        Zone Creation
+                    </li>
+                    <li>
+                        {% if provider.supports_dnssec %}
+                        <i class="bi bi-check-circle text-success me-1"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% endif %}
+                        DNSSEC Support
+                    </li>
+                </ul>
+                
+                {% set record_types = provider.get_supported_record_types() %}
+                {% if record_types %}
+                <p class="small mb-1"><strong>Record Types:</strong></p>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for rtype in record_types %}
+                    <span class="badge bg-light text-dark">{{ rtype }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        {% if provider.is_builtin %}Built-in{% else %}Custom{% endif %}
+                    </small>
+                    <span class="badge bg-secondary">
+                        {{ provider.services | length }} service{% if provider.services | length != 1 %}s{% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-1"></i>
+            No backend providers found. Run database seeding to initialize providers.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,269 @@
+{# Admin Backend Service Detail - View and edit backend service #}
+{% extends "admin/base.html" %}
+
+{% block title %}{{ backend.display_name }} - Backend Services - Admin{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{{ url_for('admin.backends') }}">Backends</a></li>
+                <li class="breadcrumb-item active">{{ backend.service_name }}</li>
+            </ol>
+        </nav>
+        <h1 class="h3 mb-0">{{ backend.display_name }}</h1>
+    </div>
+    <div class="d-flex gap-2">
+        <form action="{{ url_for('admin.backend_test', backend_id=backend.id) }}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-secondary">
+                <i class="bi bi-plug me-1"></i>Test Connection
+            </button>
+        </form>
+        <a href="{{ url_for('admin.backend_edit', backend_id=backend.id) }}" class="btn btn-primary">
+            <i class="bi bi-pencil me-1"></i>Edit
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Main Info -->
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-1"></i>Service Information
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Service Name</dt>
+                    <dd class="col-sm-8"><code>{{ backend.service_name }}</code></dd>
+                    
+                    <dt class="col-sm-4">Display Name</dt>
+                    <dd class="col-sm-8">{{ backend.display_name }}</dd>
+                    
+                    <dt class="col-sm-4">Provider</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-secondary">{{ backend.provider.provider_code }}</span>
+                        {{ backend.provider.display_name }}
+                    </dd>
+                    
+                    <dt class="col-sm-4">Owner</dt>
+                    <dd class="col-sm-8">
+                        {% if backend.owner_type.owner_code == 'platform' %}
+                        <span class="badge bg-info">Platform</span>
+                        {% else %}
+                        <span class="badge bg-secondary">User</span>
+                        <a href="{{ url_for('admin.account_detail', account_id=backend.owner_id) }}">
+                            {{ backend.owner.username }}
+                        </a>
+                        {% endif %}
+                    </dd>
+                    
+                    <dt class="col-sm-4">Status</dt>
+                    <dd class="col-sm-8">
+                        {% if backend.is_active %}
+                        <span class="badge bg-success">Active</span>
+                        {% else %}
+                        <span class="badge bg-danger">Inactive</span>
+                        {% endif %}
+                    </dd>
+                    
+                    <dt class="col-sm-4">Created</dt>
+                    <dd class="col-sm-8">{{ backend.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
+                    
+                    <dt class="col-sm-4">Last Updated</dt>
+                    <dd class="col-sm-8">{{ backend.updated_at.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- Connection Test Results -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-plug me-1"></i>Connection Status
+            </div>
+            <div class="card-body">
+                {% if backend.test_status %}
+                <div class="alert {% if backend.test_status.status_code == 'success' %}alert-success{% elif backend.test_status.status_code == 'failed' %}alert-danger{% else %}alert-warning{% endif %} mb-3">
+                    <strong>
+                        {% if backend.test_status.status_code == 'success' %}
+                        <i class="bi bi-check-circle me-1"></i>Connection Successful
+                        {% elif backend.test_status.status_code == 'failed' %}
+                        <i class="bi bi-x-circle me-1"></i>Connection Failed
+                        {% else %}
+                        <i class="bi bi-hourglass-split me-1"></i>Test Pending
+                        {% endif %}
+                    </strong>
+                    {% if backend.test_message %}
+                    <p class="mb-0 mt-2">{{ backend.test_message }}</p>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="alert alert-secondary mb-3">
+                    <i class="bi bi-question-circle me-1"></i>No connection test performed yet.
+                </div>
+                {% endif %}
+                
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Last Tested</dt>
+                    <dd class="col-sm-8">
+                        {% if backend.last_tested_at %}
+                        {{ backend.last_tested_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                        {% else %}
+                        Never
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- Configuration (redacted) -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-gear me-1"></i>Configuration
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Sensitive credentials are masked. Click "Edit" to modify.
+                </p>
+                {% set config = backend.get_config() %}
+                <dl class="row mb-0">
+                    {% for key, value in config.items() %}
+                    <dt class="col-sm-4">{{ key }}</dt>
+                    <dd class="col-sm-8">
+                        {% if 'password' in key.lower() or 'key' in key.lower() or 'secret' in key.lower() %}
+                        <code class="text-muted">••••••••</code>
+                        {% else %}
+                        <code>{{ value }}</code>
+                        {% endif %}
+                    </dd>
+                    {% endfor %}
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Domain Roots using this backend -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-globe me-1"></i>Domain Roots</span>
+                <a href="{{ url_for('admin.domain_root_create', backend_id=backend.id) }}" 
+                   class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-plus"></i>
+                </a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for root in backend.domain_roots %}
+                <a href="{{ url_for('admin.domain_root_detail', root_id=root.id) }}" 
+                   class="list-group-item list-group-item-action">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ root.root_domain }}</strong>
+                            <br>
+                            <small class="text-muted">{{ root.dns_zone }}</small>
+                        </div>
+                        <div>
+                            {% if root.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                            {% if root.is_public() %}
+                            <span class="badge bg-info">Public</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+                {% else %}
+                <div class="list-group-item text-center text-muted py-4">
+                    No domain roots configured.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Provider Capabilities -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-lightning me-1"></i>Provider Capabilities
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li>
+                        {% if backend.provider.supports_zone_list %}
+                        <i class="bi bi-check-circle text-success me-1"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% endif %}
+                        Zone Enumeration
+                    </li>
+                    <li>
+                        {% if backend.provider.supports_zone_create %}
+                        <i class="bi bi-check-circle text-success me-1"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% endif %}
+                        Zone Creation
+                    </li>
+                    <li>
+                        {% if backend.provider.supports_dnssec %}
+                        <i class="bi bi-check-circle text-success me-1"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger me-1"></i>
+                        {% endif %}
+                        DNSSEC
+                    </li>
+                </ul>
+                
+                {% set record_types = backend.provider.get_supported_record_types() %}
+                {% if record_types %}
+                <hr>
+                <p class="small text-muted mb-2">Supported Record Types:</p>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for rtype in record_types %}
+                    <span class="badge bg-light text-dark">{{ rtype }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="card border-danger">
+            <div class="card-header bg-danger bg-opacity-10 text-danger">
+                <i class="bi bi-exclamation-triangle me-1"></i>Danger Zone
+            </div>
+            <div class="card-body">
+                {% if backend.is_active %}
+                <form action="{{ url_for('admin.backend_disable', backend_id=backend.id) }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-warning w-100 mb-2"
+                            onclick="return confirm('Disable this backend? Realms using it will stop working.')">
+                        <i class="bi bi-pause-circle me-1"></i>Disable Backend
+                    </button>
+                </form>
+                {% else %}
+                <form action="{{ url_for('admin.backend_enable', backend_id=backend.id) }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-success w-100 mb-2">
+                        <i class="bi bi-play-circle me-1"></i>Enable Backend
+                    </button>
+                </form>
+                {% endif %}
+                
+                <form action="{{ url_for('admin.backend_delete', backend_id=backend.id) }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-danger w-100"
+                            onclick="return confirm('Delete this backend? This cannot be undone!')">
+                        <i class="bi bi-trash me-1"></i>Delete Backend
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

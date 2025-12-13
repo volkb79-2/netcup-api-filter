@@ -1,0 +1,214 @@
+{# Admin Domain Root Create/Edit Form #}
+{% extends "admin/base.html" %}
+
+{% block title %}{% if root %}Edit {{ root.root_domain }}{% else %}Create Domain Root{% endif %} - Admin{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-1">
+            <li class="breadcrumb-item"><a href="{{ url_for('admin.domain_roots') }}">Domain Roots</a></li>
+            {% if root %}
+            <li class="breadcrumb-item"><a href="{{ url_for('admin.domain_root_detail', root_id=root.id) }}">{{ root.root_domain }}</a></li>
+            <li class="breadcrumb-item active">Edit</li>
+            {% else %}
+            <li class="breadcrumb-item active">Create</li>
+            {% endif %}
+        </ol>
+    </nav>
+    <h1 class="h3 mb-0">{% if root %}Edit Domain Root{% else %}Create Domain Root{% endif %}</h1>
+</div>
+
+<form method="POST" id="domainRootForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <!-- Basic Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-globe me-1"></i>Domain Information
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="root_domain">Root Domain <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control font-monospace" id="root_domain" name="root_domain"
+                                   value="{{ root.root_domain if root else '' }}"
+                                   pattern="[a-z0-9.\-]+" required
+                                   {% if root %}readonly{% endif %}
+                                   placeholder="e.g., dyn.vxxu.de">
+                            <div class="form-text">The domain users will see and request subdomains under</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="dns_zone">DNS Zone <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control font-monospace" id="dns_zone" name="dns_zone"
+                                   value="{{ root.dns_zone if root else '' }}" required
+                                   placeholder="e.g., vxxu.de">
+                            <div class="form-text">Actual zone in the DNS backend (may differ from root)</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="backend_service_id">Backend Service <span class="text-danger">*</span></label>
+                            <select class="form-select" id="backend_service_id" name="backend_service_id" required>
+                                <option value="">Select a backend...</option>
+                                {% for backend in backends %}
+                                <option value="{{ backend.id }}"
+                                        {% if (root and root.backend_service_id == backend.id) or (preselect_backend == backend.id) %}selected{% endif %}>
+                                    {{ backend.service_name }} ({{ backend.provider.provider_code }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="visibility">Visibility <span class="text-danger">*</span></label>
+                            <select class="form-select" id="visibility" name="visibility" required>
+                                {% for vis in visibilities %}
+                                <option value="{{ vis.visibility_code }}"
+                                        {% if root and root.visibility_id == vis.id %}selected{% endif %}>
+                                    {{ vis.display_name }} - {{ vis.description }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="display_name">Display Name</label>
+                            <input type="text" class="form-control" id="display_name" name="display_name"
+                                   value="{{ root.display_name if root else '' }}"
+                                   placeholder="e.g., Dynamic DNS Zone">
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="description">Description</label>
+                            <input type="text" class="form-control" id="description" name="description"
+                                   value="{{ root.description if root else '' }}"
+                                   placeholder="Optional description for users">
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                       {% if not root or root.is_active %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">
+                                    Active (accept realm requests)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subdomain Policy -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-sliders me-1"></i>Subdomain Policy
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="allow_apex_access" name="allow_apex_access"
+                                       {% if root and root.allow_apex_access %}checked{% endif %}>
+                                <label class="form-check-label" for="allow_apex_access">
+                                    Allow apex access (users can create records at the root domain itself)
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="min_subdomain_depth">Minimum Subdomain Depth</label>
+                            <input type="number" class="form-control" id="min_subdomain_depth" name="min_subdomain_depth"
+                                   value="{{ root.min_subdomain_depth if root else 1 }}" min="0" max="10">
+                            <div class="form-text">0 = apex allowed, 1 = at least one subdomain level</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="max_subdomain_depth">Maximum Subdomain Depth</label>
+                            <input type="number" class="form-control" id="max_subdomain_depth" name="max_subdomain_depth"
+                                   value="{{ root.max_subdomain_depth if root else 3 }}" min="1" max="10">
+                            <div class="form-text">Maximum nesting level for subdomains</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="allowed_record_types">Allowed Record Types</label>
+                            <select class="form-select" id="allowed_record_types" name="allowed_record_types" multiple size="6">
+                                {% set current_types = root.get_allowed_record_types() if root else [] %}
+                                {% for rtype in ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'SRV', 'CAA', 'NS'] %}
+                                <option value="{{ rtype }}" {% if not current_types or rtype in current_types %}selected{% endif %}>
+                                    {{ rtype }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Hold Ctrl/Cmd to select multiple. Select all for unrestricted.</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="allowed_operations">Allowed Operations</label>
+                            <select class="form-select" id="allowed_operations" name="allowed_operations" multiple size="4">
+                                {% set current_ops = root.get_allowed_operations() if root else [] %}
+                                {% for op in ['read', 'create', 'update', 'delete'] %}
+                                <option value="{{ op }}" {% if not current_ops or op in current_ops %}selected{% endif %}>
+                                    {{ op }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Operations allowed for realms under this root</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Actions -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-lightning me-1"></i>Actions
+                </div>
+                <div class="card-body d-grid gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i>{% if root %}Update Root{% else %}Create Root{% endif %}
+                    </button>
+                    <a href="{{ url_for('admin.domain_roots') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x me-1"></i>Cancel
+                    </a>
+                </div>
+            </div>
+
+            <!-- Help -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-question-circle me-1"></i>Help
+                </div>
+                <div class="card-body small text-muted">
+                    <p><strong>Root Domain</strong> is what users see (e.g., <code>dyn.vxxu.de</code>).</p>
+                    <p><strong>DNS Zone</strong> is the actual zone in the backend. For delegated subdomains, this might differ (e.g., root=<code>dyn.vxxu.de</code>, zone=<code>dyn.vxxu.de</code> for PowerDNS).</p>
+                    <p><strong>Visibility:</strong></p>
+                    <ul class="ps-3">
+                        <li><strong>Public</strong> - Any user can claim subdomains</li>
+                        <li><strong>Private</strong> - Only granted users</li>
+                        <li><strong>Invite</strong> - Requires invitation</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Auto-fill dns_zone from root_domain if empty
+document.getElementById('root_domain').addEventListener('blur', function() {
+    const dnsZone = document.getElementById('dns_zone');
+    if (!dnsZone.value && this.value) {
+        dnsZone.value = this.value;
+    }
+});
+</script>
+{% endblock %}

@@ -33,6 +33,9 @@ from ..geoip_service import geoip_location
 from ..models import (
     Account, AccountRealm, ActivityLog, APIToken, db, Settings,
     validate_password,
+    # Multi-backend models
+    BackendProvider, BackendService, ManagedDomainRoot, DomainRootGrant,
+    OwnerTypeEnum, VisibilityEnum, TestStatusEnum, GrantTypeEnum,
 )
 from ..realm_token_service import (
     approve_realm,
@@ -44,6 +47,7 @@ from ..database import get_setting, set_setting
 from ..config_defaults import get_default
 
 import ipaddress
+import json
 import os
 import random
 import time
@@ -2360,3 +2364,501 @@ def generate_recovery_codes():
                           codes=codes_to_display,
                           has_recovery_codes=has_recovery_codes,
                           codes_generated_at=codes_generated_at)
+
+# ============================================================================
+# Multi-Backend Management Routes
+# ============================================================================
+
+@admin_bp.route('/backends')
+@require_admin
+def backends():
+    """List all backend services."""
+    # Get filter parameters
+    provider_filter = request.args.get('provider', 'all')
+    owner_type_filter = request.args.get('owner_type', 'all')
+    
+    # Build query
+    query = BackendService.query
+    
+    if provider_filter != 'all':
+        provider = BackendProvider.query.filter_by(provider_code=provider_filter).first()
+        if provider:
+            query = query.filter_by(provider_id=provider.id)
+    
+    if owner_type_filter != 'all':
+        owner_type = OwnerTypeEnum.query.filter_by(owner_code=owner_type_filter).first()
+        if owner_type:
+            query = query.filter_by(owner_type_id=owner_type.id)
+    
+    backends = query.order_by(BackendService.service_name).all()
+    providers = BackendProvider.query.filter_by(is_enabled=True).all()
+    
+    # Calculate stats
+    platform_type = OwnerTypeEnum.query.filter_by(owner_code='platform').first()
+    stats = {
+        'total': BackendService.query.count(),
+        'active': BackendService.query.filter_by(is_active=True).count(),
+        'platform_owned': BackendService.query.filter_by(owner_type_id=platform_type.id).count() if platform_type else 0,
+        'user_owned': BackendService.query.count() - (BackendService.query.filter_by(owner_type_id=platform_type.id).count() if platform_type else 0),
+    }
+    
+    return render_template('admin/backends_list.html',
+                          backends=backends,
+                          providers=providers,
+                          stats=stats,
+                          provider_filter=provider_filter,
+                          owner_type_filter=owner_type_filter)
+
+
+@admin_bp.route('/backends/providers')
+@require_admin
+def backend_providers():
+    """List available backend providers."""
+    providers = BackendProvider.query.order_by(BackendProvider.provider_code).all()
+    return render_template('admin/backend_providers.html', providers=providers)
+
+
+@admin_bp.route('/backends/new', methods=['GET', 'POST'])
+@require_admin
+def backend_create():
+    """Create a new backend service."""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            service_name = request.form.get('service_name', '').strip().lower()
+            display_name = request.form.get('display_name', '').strip()
+            provider_id = int(request.form.get('provider_id'))
+            owner_type_code = request.form.get('owner_type')
+            owner_id = request.form.get('owner_id')
+            is_active = 'is_active' in request.form
+            
+            # Validate
+            if not service_name or not display_name or not provider_id:
+                flash('All required fields must be filled', 'error')
+                return redirect(url_for('admin.backend_create'))
+            
+            # Check uniqueness
+            if BackendService.query.filter_by(service_name=service_name).first():
+                flash(f'Service name "{service_name}" already exists', 'error')
+                return redirect(url_for('admin.backend_create'))
+            
+            # Get owner type
+            owner_type = OwnerTypeEnum.query.filter_by(owner_code=owner_type_code).first()
+            if not owner_type:
+                flash('Invalid owner type', 'error')
+                return redirect(url_for('admin.backend_create'))
+            
+            # Build config from form fields
+            provider = BackendProvider.query.get(provider_id)
+            config = {}
+            for key in request.form:
+                if key.startswith('config_'):
+                    config_key = key[7:]  # Remove 'config_' prefix
+                    value = request.form.get(key, '').strip()
+                    if value:
+                        config[config_key] = value
+            
+            # Create backend service
+            backend = BackendService(
+                provider_id=provider_id,
+                service_name=service_name,
+                display_name=display_name,
+                owner_type_id=owner_type.id,
+                owner_id=int(owner_id) if owner_id and owner_type_code == 'user' else None,
+                config=json.dumps(config),
+                is_active=is_active,
+            )
+            db.session.add(backend)
+            db.session.commit()
+            
+            flash(f'Backend service "{display_name}" created successfully', 'success')
+            return redirect(url_for('admin.backend_detail', backend_id=backend.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to create backend: {e}")
+            flash(f'Failed to create backend: {e}', 'error')
+    
+    providers = BackendProvider.query.filter_by(is_enabled=True).all()
+    accounts = Account.query.filter_by(is_active=True).order_by(Account.username).all()
+    
+    return render_template('admin/backend_form.html',
+                          backend=None,
+                          providers=providers,
+                          accounts=accounts)
+
+
+@admin_bp.route('/backends/<int:backend_id>')
+@require_admin
+def backend_detail(backend_id):
+    """View backend service details."""
+    backend = BackendService.query.get_or_404(backend_id)
+    return render_template('admin/backend_detail.html', backend=backend)
+
+
+@admin_bp.route('/backends/<int:backend_id>/edit', methods=['GET', 'POST'])
+@require_admin
+def backend_edit(backend_id):
+    """Edit a backend service."""
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    if request.method == 'POST':
+        try:
+            backend.display_name = request.form.get('display_name', '').strip()
+            backend.is_active = 'is_active' in request.form
+            
+            # Update owner
+            owner_type_code = request.form.get('owner_type')
+            owner_type = OwnerTypeEnum.query.filter_by(owner_code=owner_type_code).first()
+            if owner_type:
+                backend.owner_type_id = owner_type.id
+                owner_id = request.form.get('owner_id')
+                backend.owner_id = int(owner_id) if owner_id and owner_type_code == 'user' else None
+            
+            # Update config
+            config = {}
+            for key in request.form:
+                if key.startswith('config_'):
+                    config_key = key[7:]
+                    value = request.form.get(key, '').strip()
+                    if value:
+                        config[config_key] = value
+            backend.config = json.dumps(config)
+            
+            db.session.commit()
+            flash('Backend service updated successfully', 'success')
+            return redirect(url_for('admin.backend_detail', backend_id=backend_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to update backend: {e}")
+            flash(f'Failed to update backend: {e}', 'error')
+    
+    providers = BackendProvider.query.filter_by(is_enabled=True).all()
+    accounts = Account.query.filter_by(is_active=True).order_by(Account.username).all()
+    
+    return render_template('admin/backend_form.html',
+                          backend=backend,
+                          providers=providers,
+                          accounts=accounts)
+
+
+@admin_bp.route('/backends/<int:backend_id>/test', methods=['POST'])
+@require_admin
+def backend_test(backend_id):
+    """Test backend connection."""
+    from datetime import datetime
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    try:
+        from ..backends import get_backend
+        
+        config = backend.get_config()
+        dns_backend = get_backend(backend.provider.provider_code, config)
+        success, message = dns_backend.test_connection()
+        
+        # Update test status
+        if success:
+            test_status = TestStatusEnum.query.filter_by(status_code='success').first()
+        else:
+            test_status = TestStatusEnum.query.filter_by(status_code='failed').first()
+        
+        backend.test_status_id = test_status.id if test_status else None
+        backend.test_message = message
+        backend.last_tested_at = datetime.utcnow()
+        db.session.commit()
+        
+        if success:
+            flash(f'Connection test successful: {message}', 'success')
+        else:
+            flash(f'Connection test failed: {message}', 'error')
+            
+    except Exception as e:
+        logger.error(f"Backend test failed: {e}")
+        test_status = TestStatusEnum.query.filter_by(status_code='failed').first()
+        backend.test_status_id = test_status.id if test_status else None
+        backend.test_message = str(e)
+        backend.last_tested_at = datetime.utcnow()
+        db.session.commit()
+        flash(f'Connection test error: {e}', 'error')
+    
+    return redirect(url_for('admin.backend_detail', backend_id=backend_id))
+
+
+@admin_bp.route('/backends/<int:backend_id>/enable', methods=['POST'])
+@require_admin
+def backend_enable(backend_id):
+    """Enable a backend service."""
+    backend = BackendService.query.get_or_404(backend_id)
+    backend.is_active = True
+    db.session.commit()
+    flash(f'Backend "{backend.display_name}" enabled', 'success')
+    return redirect(url_for('admin.backend_detail', backend_id=backend_id))
+
+
+@admin_bp.route('/backends/<int:backend_id>/disable', methods=['POST'])
+@require_admin
+def backend_disable(backend_id):
+    """Disable a backend service."""
+    backend = BackendService.query.get_or_404(backend_id)
+    backend.is_active = False
+    db.session.commit()
+    flash(f'Backend "{backend.display_name}" disabled', 'warning')
+    return redirect(url_for('admin.backend_detail', backend_id=backend_id))
+
+
+@admin_bp.route('/backends/<int:backend_id>/delete', methods=['POST'])
+@require_admin
+def backend_delete(backend_id):
+    """Delete a backend service."""
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    # Check for dependencies
+    if backend.domain_roots:
+        flash('Cannot delete backend with existing domain roots', 'error')
+        return redirect(url_for('admin.backend_detail', backend_id=backend_id))
+    
+    service_name = backend.service_name
+    db.session.delete(backend)
+    db.session.commit()
+    flash(f'Backend "{service_name}" deleted', 'success')
+    return redirect(url_for('admin.backends'))
+
+
+# ============================================================================
+# Domain Roots Management Routes
+# ============================================================================
+
+@admin_bp.route('/domain-roots')
+@require_admin
+def domain_roots():
+    """List all managed domain roots."""
+    visibility_filter = request.args.get('visibility', 'all')
+    backend_filter = request.args.get('backend', 'all')
+    
+    query = ManagedDomainRoot.query
+    
+    if visibility_filter != 'all':
+        visibility = VisibilityEnum.query.filter_by(visibility_code=visibility_filter).first()
+        if visibility:
+            query = query.filter_by(visibility_id=visibility.id)
+    
+    if backend_filter != 'all':
+        query = query.filter_by(backend_service_id=int(backend_filter))
+    
+    roots = query.order_by(ManagedDomainRoot.root_domain).all()
+    backends = BackendService.query.filter_by(is_active=True).all()
+    
+    # Add realm counts
+    for root in roots:
+        root.realm_count = AccountRealm.query.filter_by(domain_root_id=root.id).count()
+    
+    # Stats
+    public_vis = VisibilityEnum.query.filter_by(visibility_code='public').first()
+    private_vis = VisibilityEnum.query.filter_by(visibility_code='private').first()
+    stats = {
+        'total': ManagedDomainRoot.query.count(),
+        'public': ManagedDomainRoot.query.filter_by(visibility_id=public_vis.id).count() if public_vis else 0,
+        'private': ManagedDomainRoot.query.filter_by(visibility_id=private_vis.id).count() if private_vis else 0,
+        'realms': AccountRealm.query.filter(AccountRealm.domain_root_id.isnot(None)).count(),
+    }
+    
+    return render_template('admin/domain_roots_list.html',
+                          roots=roots,
+                          backends=backends,
+                          stats=stats,
+                          visibility_filter=visibility_filter,
+                          backend_filter=backend_filter)
+
+
+@admin_bp.route('/domain-roots/new', methods=['GET', 'POST'])
+@require_admin
+def domain_root_create():
+    """Create a new domain root."""
+    preselect_backend = request.args.get('backend_id', type=int)
+    
+    if request.method == 'POST':
+        try:
+            root_domain = request.form.get('root_domain', '').strip().lower()
+            dns_zone = request.form.get('dns_zone', '').strip().lower()
+            backend_service_id = int(request.form.get('backend_service_id'))
+            visibility_code = request.form.get('visibility')
+            display_name = request.form.get('display_name', '').strip()
+            description = request.form.get('description', '').strip()
+            is_active = 'is_active' in request.form
+            allow_apex = 'allow_apex_access' in request.form
+            min_depth = int(request.form.get('min_subdomain_depth', 1))
+            max_depth = int(request.form.get('max_subdomain_depth', 3))
+            
+            # Get selected record types and operations
+            record_types = request.form.getlist('allowed_record_types')
+            operations = request.form.getlist('allowed_operations')
+            
+            # Validate
+            if not root_domain or not dns_zone or not backend_service_id:
+                flash('All required fields must be filled', 'error')
+                return redirect(url_for('admin.domain_root_create'))
+            
+            # Check uniqueness
+            if ManagedDomainRoot.query.filter_by(
+                backend_service_id=backend_service_id,
+                root_domain=root_domain
+            ).first():
+                flash(f'Domain root "{root_domain}" already exists for this backend', 'error')
+                return redirect(url_for('admin.domain_root_create'))
+            
+            # Get visibility
+            visibility = VisibilityEnum.query.filter_by(visibility_code=visibility_code).first()
+            if not visibility:
+                flash('Invalid visibility', 'error')
+                return redirect(url_for('admin.domain_root_create'))
+            
+            # Create domain root
+            root = ManagedDomainRoot(
+                backend_service_id=backend_service_id,
+                root_domain=root_domain,
+                dns_zone=dns_zone,
+                visibility_id=visibility.id,
+                display_name=display_name or root_domain,
+                description=description or None,
+                is_active=is_active,
+                allow_apex_access=allow_apex,
+                min_subdomain_depth=min_depth,
+                max_subdomain_depth=max_depth,
+            )
+            
+            # Set restrictions (None = all allowed)
+            all_record_types = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'SRV', 'CAA', 'NS']
+            all_operations = ['read', 'create', 'update', 'delete']
+            root.set_allowed_record_types(record_types if set(record_types) != set(all_record_types) else None)
+            root.set_allowed_operations(operations if set(operations) != set(all_operations) else None)
+            
+            db.session.add(root)
+            db.session.commit()
+            
+            flash(f'Domain root "{root_domain}" created successfully', 'success')
+            return redirect(url_for('admin.domain_root_detail', root_id=root.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to create domain root: {e}")
+            flash(f'Failed to create domain root: {e}', 'error')
+    
+    backends = BackendService.query.filter_by(is_active=True).order_by(BackendService.service_name).all()
+    visibilities = VisibilityEnum.query.all()
+    
+    return render_template('admin/domain_root_form.html',
+                          root=None,
+                          backends=backends,
+                          visibilities=visibilities,
+                          preselect_backend=preselect_backend)
+
+
+@admin_bp.route('/domain-roots/<int:root_id>')
+@require_admin
+def domain_root_detail(root_id):
+    """View domain root details."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+    realms = AccountRealm.query.filter_by(domain_root_id=root_id).order_by(AccountRealm.realm_value).all()
+    return render_template('admin/domain_root_detail.html', root=root, realms=realms)
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/edit', methods=['GET', 'POST'])
+@require_admin
+def domain_root_edit(root_id):
+    """Edit a domain root."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+    
+    if request.method == 'POST':
+        try:
+            root.dns_zone = request.form.get('dns_zone', '').strip().lower()
+            root.display_name = request.form.get('display_name', '').strip() or root.root_domain
+            root.description = request.form.get('description', '').strip() or None
+            root.is_active = 'is_active' in request.form
+            root.allow_apex_access = 'allow_apex_access' in request.form
+            root.min_subdomain_depth = int(request.form.get('min_subdomain_depth', 1))
+            root.max_subdomain_depth = int(request.form.get('max_subdomain_depth', 3))
+            
+            visibility_code = request.form.get('visibility')
+            visibility = VisibilityEnum.query.filter_by(visibility_code=visibility_code).first()
+            if visibility:
+                root.visibility_id = visibility.id
+            
+            backend_id = request.form.get('backend_service_id')
+            if backend_id:
+                root.backend_service_id = int(backend_id)
+            
+            # Update restrictions
+            record_types = request.form.getlist('allowed_record_types')
+            operations = request.form.getlist('allowed_operations')
+            all_record_types = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'SRV', 'CAA', 'NS']
+            all_operations = ['read', 'create', 'update', 'delete']
+            root.set_allowed_record_types(record_types if set(record_types) != set(all_record_types) else None)
+            root.set_allowed_operations(operations if set(operations) != set(all_operations) else None)
+            
+            db.session.commit()
+            flash('Domain root updated successfully', 'success')
+            return redirect(url_for('admin.domain_root_detail', root_id=root_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to update domain root: {e}")
+            flash(f'Failed to update domain root: {e}', 'error')
+    
+    backends = BackendService.query.filter_by(is_active=True).order_by(BackendService.service_name).all()
+    visibilities = VisibilityEnum.query.all()
+    
+    return render_template('admin/domain_root_form.html',
+                          root=root,
+                          backends=backends,
+                          visibilities=visibilities,
+                          preselect_backend=None)
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/grants')
+@require_admin
+def domain_root_grants(root_id):
+    """Manage grants for a domain root."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+    return render_template('admin/domain_root_grants.html', root=root)
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/enable', methods=['POST'])
+@require_admin
+def domain_root_enable(root_id):
+    """Enable a domain root."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+    root.is_active = True
+    db.session.commit()
+    flash(f'Domain root "{root.root_domain}" enabled', 'success')
+    return redirect(url_for('admin.domain_root_detail', root_id=root_id))
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/disable', methods=['POST'])
+@require_admin
+def domain_root_disable(root_id):
+    """Disable a domain root."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+    root.is_active = False
+    db.session.commit()
+    flash(f'Domain root "{root.root_domain}" disabled', 'warning')
+    return redirect(url_for('admin.domain_root_detail', root_id=root_id))
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/delete', methods=['POST'])
+@require_admin
+def domain_root_delete(root_id):
+    """Delete a domain root."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+    
+    # Check for dependencies
+    realm_count = AccountRealm.query.filter_by(domain_root_id=root_id).count()
+    if realm_count > 0:
+        flash(f'Cannot delete domain root with {realm_count} existing realms', 'error')
+        return redirect(url_for('admin.domain_root_detail', root_id=root_id))
+    
+    domain_name = root.root_domain
+    db.session.delete(root)
+    db.session.commit()
+    flash(f'Domain root "{domain_name}" deleted', 'success')
+    return redirect(url_for('admin.domain_roots'))

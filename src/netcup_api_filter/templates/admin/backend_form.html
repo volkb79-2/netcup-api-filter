@@ -1,0 +1,301 @@
+{# Admin Backend Service Create/Edit Form #}
+{% extends "admin/base.html" %}
+
+{% block title %}{% if backend %}Edit {{ backend.display_name }}{% else %}Create Backend Service{% endif %} - Admin{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-1">
+            <li class="breadcrumb-item"><a href="{{ url_for('admin.backends') }}">Backends</a></li>
+            {% if backend %}
+            <li class="breadcrumb-item"><a href="{{ url_for('admin.backend_detail', backend_id=backend.id) }}">{{ backend.service_name }}</a></li>
+            <li class="breadcrumb-item active">Edit</li>
+            {% else %}
+            <li class="breadcrumb-item active">Create</li>
+            {% endif %}
+        </ol>
+    </nav>
+    <h1 class="h3 mb-0">{% if backend %}Edit Backend Service{% else %}Create Backend Service{% endif %}</h1>
+</div>
+
+<form method="POST" id="backendForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <!-- Basic Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-info-circle me-1"></i>Basic Information
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="service_name">Service Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control font-monospace" id="service_name" name="service_name"
+                                   value="{{ backend.service_name if backend else '' }}"
+                                   pattern="[a-z0-9\-]+" required
+                                   {% if backend %}readonly{% endif %}
+                                   placeholder="e.g., netcup-production">
+                            <div class="form-text">Unique identifier (lowercase, hyphens allowed)</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="display_name">Display Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="display_name" name="display_name"
+                                   value="{{ backend.display_name if backend else '' }}" required
+                                   placeholder="e.g., Netcup Production">
+                            <div class="form-text">Human-readable name</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="provider_id">Provider <span class="text-danger">*</span></label>
+                            <select class="form-select" id="provider_id" name="provider_id" required
+                                    {% if backend %}disabled{% endif %}>
+                                <option value="">Select a provider...</option>
+                                {% for provider in providers %}
+                                <option value="{{ provider.id }}" 
+                                        data-config-schema="{{ provider.config_schema }}"
+                                        {% if backend and backend.provider_id == provider.id %}selected{% endif %}>
+                                    {{ provider.display_name }} ({{ provider.provider_code }})
+                                    {% if not provider.is_enabled %} - Disabled{% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if backend %}
+                            <input type="hidden" name="provider_id" value="{{ backend.provider_id }}">
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label" for="owner_type">Owner Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="owner_type" name="owner_type" required>
+                                <option value="platform" {% if not backend or backend.owner_type.owner_code == 'platform' %}selected{% endif %}>
+                                    Platform (admin-managed)
+                                </option>
+                                <option value="user" {% if backend and backend.owner_type.owner_code == 'user' %}selected{% endif %}>
+                                    User (BYOD)
+                                </option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-12" id="ownerSelectContainer" style="display: none;">
+                            <label class="form-label" for="owner_id">Owner Account</label>
+                            <select class="form-select" id="owner_id" name="owner_id">
+                                <option value="">Select user...</option>
+                                {% for account in accounts %}
+                                <option value="{{ account.id }}"
+                                        {% if backend and backend.owner_id == account.id %}selected{% endif %}>
+                                    {{ account.username }} ({{ account.email }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                       {% if not backend or backend.is_active %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">
+                                    Active (enable this backend)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Provider Configuration -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-gear me-1"></i>Provider Configuration
+                </div>
+                <div class="card-body">
+                    <div id="configFields">
+                        <p class="text-muted">Select a provider to see configuration options.</p>
+                    </div>
+                    
+                    <!-- Netcup Config Template -->
+                    <div id="config-netcup" class="config-template d-none">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Customer Number <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control font-monospace config-field" name="config_customer_id"
+                                       placeholder="e.g., 12345678">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">API Key <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control font-monospace config-field" name="config_api_key"
+                                           placeholder="API Key">
+                                    <button type="button" class="btn btn-outline-secondary toggle-password" tabindex="-1">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">API Password <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control font-monospace config-field" name="config_api_password"
+                                           placeholder="API Password">
+                                    <button type="button" class="btn btn-outline-secondary toggle-password" tabindex="-1">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Timeout (seconds)</label>
+                                <input type="number" class="form-control config-field" name="config_timeout"
+                                       value="30" min="5" max="120">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- PowerDNS Config Template -->
+                    <div id="config-powerdns" class="config-template d-none">
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label class="form-label">API URL <span class="text-danger">*</span></label>
+                                <input type="url" class="form-control font-monospace config-field" name="config_api_url"
+                                       placeholder="http://powerdns:8081">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Server ID</label>
+                                <input type="text" class="form-control font-monospace config-field" name="config_server_id"
+                                       value="localhost" placeholder="localhost">
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">API Key <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control font-monospace config-field" name="config_api_key"
+                                           placeholder="X-API-Key value">
+                                    <button type="button" class="btn btn-outline-secondary toggle-password" tabindex="-1">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Timeout (seconds)</label>
+                                <input type="number" class="form-control config-field" name="config_timeout"
+                                       value="30" min="5" max="120">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generic Config Template (fallback) -->
+                    <div id="config-generic" class="config-template d-none">
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Enter configuration as JSON
+                        </div>
+                        <textarea class="form-control font-monospace config-field" name="config_json"
+                                  rows="6" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Actions -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-lightning me-1"></i>Actions
+                </div>
+                <div class="card-body d-grid gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i>{% if backend %}Update Backend{% else %}Create Backend{% endif %}
+                    </button>
+                    <a href="{{ url_for('admin.backends') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x me-1"></i>Cancel
+                    </a>
+                </div>
+            </div>
+            
+            <!-- Help -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-question-circle me-1"></i>Help
+                </div>
+                <div class="card-body small text-muted">
+                    <p><strong>Platform backends</strong> are managed by administrators and used for managed domain roots that users can request subdomains under.</p>
+                    <p><strong>User backends</strong> are created by users who bring their own DNS credentials (BYOD).</p>
+                    <p class="mb-0">After creating a backend, you can add domain roots that users can request realms under.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Show/hide owner select based on owner type
+document.getElementById('owner_type').addEventListener('change', function() {
+    const ownerContainer = document.getElementById('ownerSelectContainer');
+    ownerContainer.style.display = this.value === 'user' ? 'block' : 'none';
+    document.getElementById('owner_id').required = this.value === 'user';
+});
+// Initialize on load
+document.getElementById('owner_type').dispatchEvent(new Event('change'));
+
+// Show config fields based on selected provider
+document.getElementById('provider_id').addEventListener('change', function() {
+    const configFields = document.getElementById('configFields');
+    const selectedOption = this.options[this.selectedIndex];
+    const providerCode = selectedOption.text.match(/\(([^)]+)\)/);
+    
+    // Hide all templates
+    document.querySelectorAll('.config-template').forEach(el => el.classList.add('d-none'));
+    
+    if (!this.value) {
+        configFields.innerHTML = '<p class="text-muted">Select a provider to see configuration options.</p>';
+        return;
+    }
+    
+    // Show appropriate template
+    let templateId = 'config-generic';
+    if (providerCode) {
+        const code = providerCode[1].toLowerCase();
+        if (document.getElementById('config-' + code)) {
+            templateId = 'config-' + code;
+        }
+    }
+    
+    const template = document.getElementById(templateId);
+    template.classList.remove('d-none');
+    configFields.innerHTML = '';
+    configFields.appendChild(template.cloneNode(true)).classList.remove('d-none');
+});
+
+// Toggle password visibility
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.toggle-password')) {
+        const btn = e.target.closest('.toggle-password');
+        const input = btn.parentElement.querySelector('input');
+        const icon = btn.querySelector('i');
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.classList.replace('bi-eye', 'bi-eye-slash');
+        } else {
+            input.type = 'password';
+            icon.classList.replace('bi-eye-slash', 'bi-eye');
+        }
+    }
+});
+
+// Initialize provider selection on edit
+{% if backend %}
+document.getElementById('provider_id').dispatchEvent(new Event('change'));
+// Fill in existing config values
+{% set config = backend.get_config() %}
+{% for key, value in config.items() %}
+const field_{{ loop.index }} = document.querySelector('[name="config_{{ key }}"]');
+if (field_{{ loop.index }}) field_{{ loop.index }}.value = "{{ value }}";
+{% endfor %}
+{% endif %}
+</script>
+{% endblock %}
