@@ -512,3 +512,543 @@ def list_records(domain):
 
 ---
 
+## Holistic Multi-Backend Architecture Proposal (v2)
+
+### Executive Summary
+
+The original proposal in sections above is technically sound but incomplete. It addresses **backend abstraction** but doesn't address the **fundamental ownership and authorization model**. Specifically:
+
+1. **Realms cannot be freely user-chosen** - The platform must control the DNS zones where it performs operations
+2. **Two distinct use cases** need support:
+   - **Platform-managed backends**: Admin provides credentials, users get subdomain access
+   - **User-managed backends**: User provides their own DNS credentials (BYOD - Bring Your Own DNS)
+3. **`backend_type` should be a foreign key** to a `backend_providers` table (plugins), not a text column
+
+This section provides a comprehensive architectural redesign addressing all gaps.
+
+---
+
+### Design Decisions & Rationale
+
+#### ✅ Decision 1: `backend_type` as Foreign Key (AGREED)
+
+**Issue**: Original proposal uses `backend_type VARCHAR(32)` with CHECK constraint. This is problematic:
+- No extensibility without schema migration
+- Can't track provider metadata (version, capabilities, documentation URL)
+- Can't enable/disable providers dynamically
+
+**Solution**: Create `backend_providers` table as registry of available backends:
+
+```sql
+CREATE TABLE backend_providers (
+    id INTEGER PRIMARY KEY,
+    provider_code VARCHAR(32) UNIQUE NOT NULL,     -- 'netcup', 'powerdns', 'cloudflare'
+    display_name VARCHAR(128) NOT NULL,            -- 'Netcup CCP API'
+    description TEXT,                              -- Provider description
+    config_schema TEXT NOT NULL,                   -- JSON Schema for config validation
+    documentation_url VARCHAR(512),                -- Link to provider docs
+    icon_class VARCHAR(64),                        -- CSS class for UI icon
+    
+    -- Capabilities
+    supports_zone_create BOOLEAN DEFAULT 0,        -- Can create new zones
+    supports_zone_delete BOOLEAN DEFAULT 0,        -- Can delete zones
+    supports_dnssec BOOLEAN DEFAULT 0,             -- DNSSEC support
+    supports_record_types TEXT,                    -- JSON: ["A", "AAAA", "CNAME", ...]
+    
+    -- Status
+    is_enabled BOOLEAN DEFAULT 1,                  -- Admin can disable providers
+    is_builtin BOOLEAN DEFAULT 1,                  -- vs dynamically loaded plugin
+    
+    -- Timestamps
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+-- Seed built-in providers
+INSERT INTO backend_providers (provider_code, display_name, config_schema, is_builtin, is_enabled)
+VALUES 
+    ('netcup', 'Netcup CCP API', '{"customer_id":"string","api_key":"string","api_password":"string"}', 1, 1),
+    ('powerdns', 'PowerDNS', '{"api_url":"string","api_key":"string"}', 1, 1),
+    ('cloudflare', 'Cloudflare DNS', '{"api_token":"string","zone_id":"string"}', 1, 0),
+    ('route53', 'AWS Route 53', '{"access_key_id":"string","secret_access_key":"string"}', 1, 0);
+```
+
+Then `backend_services` references provider:
+```sql
+ALTER TABLE backend_services ADD COLUMN provider_id INTEGER REFERENCES backend_providers(id) NOT NULL;
+```
+
+#### ✅ Decision 2: DNS Abstraction Interface
+
+**Current State**: `netcup_client.py` is directly used in `dns_api.py`
+
+**Solution**: Create abstract interface as described in Phase 2 above. The implementation is correct. Key additions:
+
+```python
+# src/netcup_api_filter/backends/base.py
+
+class DNSBackend(ABC):
+    """Abstract base for DNS backends."""
+    
+    # Add zone enumeration capability
+    @abstractmethod
+    def list_zones(self) -> List[str]:
+        """List all zones manageable by this backend.
+        
+        Used for admin UI to select available zones when
+        creating managed domain roots.
+        """
+        pass
+    
+    # Add zone validation  
+    @abstractmethod
+    def validate_zone_access(self, zone: str) -> tuple[bool, str]:
+        """Verify backend can manage this zone.
+        
+        Returns (can_manage, error_message).
+        Used before allowing realm creation.
+        """
+        pass
+```
+
+#### ✅ Decision 3: Realm Ownership Model (CRITICAL)
+
+**Problem Statement Analysis**:
+> "the realm to be created... needs to be somehow under control of our platform"
+
+This is correct. The original design allowed users to request ANY domain as a realm. This is fundamentally broken because:
+1. NAF can't perform DNS operations on domains it has no credentials for
+2. Users could claim authority over domains they don't own
+3. No validation that the backend actually controls the claimed zone
+
+**Solution**: Introduce **Managed Domain Roots** - admin-controlled DNS zones that users can request subdomains within.
+
+---
+
+### Revised Database Schema
+
+```sql
+-- ============================================================================
+-- Provider Registry (plugin system foundation)
+-- ============================================================================
+CREATE TABLE backend_providers (
+    id INTEGER PRIMARY KEY,
+    provider_code VARCHAR(32) UNIQUE NOT NULL,     -- 'netcup', 'powerdns'
+    display_name VARCHAR(128) NOT NULL,
+    description TEXT,
+    config_schema TEXT NOT NULL,                   -- JSON Schema
+    supports_zone_list BOOLEAN DEFAULT 0,          -- Can enumerate zones
+    supports_zone_create BOOLEAN DEFAULT 0,
+    supports_dnssec BOOLEAN DEFAULT 0,
+    supported_record_types TEXT,                   -- JSON array
+    is_enabled BOOLEAN DEFAULT 1,
+    is_builtin BOOLEAN DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- Backend Services (credential instances)
+-- ============================================================================
+CREATE TABLE backend_services (
+    id INTEGER PRIMARY KEY,
+    provider_id INTEGER NOT NULL REFERENCES backend_providers(id),
+    service_name VARCHAR(64) UNIQUE NOT NULL,      -- 'netcup-production', 'powerdns-iot'
+    display_name VARCHAR(128) NOT NULL,
+    
+    -- Ownership
+    owner_type VARCHAR(20) NOT NULL,               -- 'platform' or 'user'
+    owner_id INTEGER,                              -- NULL for platform, account.id for user
+    
+    -- Configuration (encrypted JSON in production)
+    config TEXT NOT NULL,
+    
+    -- Status
+    is_active BOOLEAN DEFAULT 1,
+    is_default_for_owner BOOLEAN DEFAULT 0,
+    
+    -- Health monitoring
+    last_tested_at DATETIME,
+    test_status VARCHAR(20),                       -- 'success', 'failed', 'pending'
+    test_message TEXT,
+    
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    
+    CHECK(owner_type IN ('platform', 'user')),
+    FOREIGN KEY (owner_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+-- Index for user-owned backends lookup
+CREATE INDEX idx_backend_services_owner ON backend_services(owner_type, owner_id);
+
+-- ============================================================================
+-- Managed Domain Roots (admin-controlled zones)
+-- ============================================================================
+CREATE TABLE managed_domain_roots (
+    id INTEGER PRIMARY KEY,
+    backend_service_id INTEGER NOT NULL REFERENCES backend_services(id),
+    
+    -- Zone identification
+    root_domain VARCHAR(255) NOT NULL,             -- 'vxxu.de' or 'dyn.vxxu.de'
+    dns_zone VARCHAR(255) NOT NULL,                -- Actual zone in backend (may differ)
+    
+    -- Access control
+    visibility VARCHAR(20) NOT NULL DEFAULT 'private', -- 'public', 'private', 'invite'
+    
+    -- Subdomain policy
+    allow_apex_access BOOLEAN DEFAULT 0,           -- Can users get apex records?
+    min_subdomain_depth INTEGER DEFAULT 1,         -- Minimum label depth below root
+    max_subdomain_depth INTEGER DEFAULT 3,         -- Maximum label depth below root
+    
+    -- Record type restrictions (JSON array, NULL = all allowed)
+    allowed_record_types TEXT,
+    
+    -- Operation restrictions (JSON array, NULL = all allowed)
+    allowed_operations TEXT,
+    
+    -- Description for users
+    display_name VARCHAR(128),
+    description TEXT,
+    
+    -- Status
+    is_active BOOLEAN DEFAULT 1,
+    verified_at DATETIME,                          -- When admin verified backend access
+    
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(backend_service_id, root_domain),
+    CHECK(visibility IN ('public', 'private', 'invite'))
+);
+
+-- ============================================================================
+-- User Access Grants (links users to domain roots they can use)
+-- ============================================================================
+CREATE TABLE domain_root_grants (
+    id INTEGER PRIMARY KEY,
+    domain_root_id INTEGER NOT NULL REFERENCES managed_domain_roots(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    
+    -- Grant type
+    grant_type VARCHAR(20) NOT NULL DEFAULT 'standard', -- 'standard', 'admin', 'invite_only'
+    
+    -- Additional restrictions (tighter than root's defaults)
+    allowed_record_types TEXT,                     -- JSON, NULL = inherit from root
+    allowed_operations TEXT,                       -- JSON, NULL = inherit from root
+    max_realms INTEGER DEFAULT 5,                  -- Max realms under this root
+    
+    -- Metadata
+    granted_by_id INTEGER REFERENCES accounts(id),
+    granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,                           -- NULL = never
+    revoked_at DATETIME,
+    revoke_reason TEXT,
+    
+    UNIQUE(domain_root_id, account_id)
+);
+
+-- ============================================================================
+-- Account Realms (MODIFIED - now links to domain roots)
+-- ============================================================================
+-- Add columns to existing account_realms table
+ALTER TABLE account_realms ADD COLUMN domain_root_id INTEGER REFERENCES managed_domain_roots(id);
+ALTER TABLE account_realms ADD COLUMN user_backend_id INTEGER REFERENCES backend_services(id);
+
+-- Constraint: exactly one of domain_root_id or user_backend_id must be set
+-- (realm is either under platform root OR uses user's own backend)
+-- CHECK((domain_root_id IS NOT NULL AND user_backend_id IS NULL) OR 
+--       (domain_root_id IS NULL AND user_backend_id IS NOT NULL))
+```
+
+---
+
+### Use Case A: Platform-Managed Backends
+
+**Scenario**: Admin configures Netcup credentials for `vxxu.de`. Users can request subdomain realms like `home.dyn.vxxu.de`.
+
+**Workflow**:
+
+1. **Admin creates Backend Service**:
+   ```
+   Provider: netcup
+   Service Name: netcup-production  
+   Config: {customer_id, api_key, api_password}
+   Owner Type: platform
+   ```
+
+2. **Admin creates Managed Domain Root**:
+   ```
+   Backend: netcup-production
+   Root Domain: dyn.vxxu.de
+   DNS Zone: vxxu.de (actual zone in Netcup)
+   Visibility: public
+   Min Subdomain Depth: 1 (e.g., home.dyn.vxxu.de)
+   Allowed Record Types: [A, AAAA, TXT]
+   Allowed Operations: [read, update]
+   ```
+
+3. **User creates Realm** (UI shows dropdown of available roots):
+   ```
+   Available Roots: [dyn.vxxu.de (Public - Netcup)]
+   Selected: dyn.vxxu.de
+   Requested Subdomain: myrouter  → myrouter.dyn.vxxu.de
+   Realm Type: host
+   Record Types: [A, AAAA]
+   Operations: [read, update]
+   ```
+
+4. **Admin approves** (or auto-approve for public roots)
+
+5. **User creates API token** for the realm
+
+6. **API calls route through platform backend**:
+   ```
+   Token → Realm(myrouter.dyn.vxxu.de) → DomainRoot(dyn.vxxu.de) → BackendService(netcup-production)
+   ```
+
+**UI Changes for Realm Creation**:
+```html
+<!-- Instead of free-text domain input -->
+<div class="form-group">
+  <label>DNS Zone</label>
+  <select name="domain_root_id" required>
+    <option value="">Select available zone...</option>
+    {% for root in available_roots %}
+    <option value="{{ root.id }}">
+      {{ root.root_domain }} ({{ root.backend_service.display_name }})
+      {% if root.visibility == 'public' %} - Public{% endif %}
+    </option>
+    {% endfor %}
+    {% if user_has_own_backends %}
+    <option disabled>──────────────</option>
+    <option value="user_backend">Use my own backend credentials</option>
+    {% endif %}
+  </select>
+</div>
+
+<div class="form-group">
+  <label>Subdomain</label>
+  <div class="input-group">
+    <input type="text" name="subdomain" placeholder="myhost" pattern="[a-z0-9-]+">
+    <span class="input-group-text">.{{ selected_root.root_domain }}</span>
+  </div>
+  <small>Your full hostname will be: <code id="preview">myhost.dyn.vxxu.de</code></small>
+</div>
+```
+
+---
+
+### Use Case B: User-Managed Backends (BYOD)
+
+**Scenario**: User has their own Netcup account and wants to use NAF as a filter/proxy frontend.
+
+**Workflow**:
+
+1. **User navigates to "My Backends"** (new account page):
+   ```
+   /account/backends
+   ```
+
+2. **User adds their own Backend Service**:
+   ```
+   Provider: netcup
+   Service Name: my-netcup
+   Config: {customer_id, api_key, api_password}
+   Owner Type: user
+   Owner ID: <current_user_id>
+   ```
+
+3. **System validates credentials** (test connection)
+
+4. **User can now enumerate their zones**:
+   ```
+   Available zones in my-netcup:
+   - example.com
+   - myproject.io
+   ```
+
+5. **User creates Realm against their backend**:
+   ```
+   Backend: my-netcup (User Backend)
+   Zone: example.com
+   Subdomain: ddns
+   Full Realm: ddns.example.com
+   ```
+
+6. **No admin approval needed** (user owns the credentials)
+
+7. **API calls route through user's backend**:
+   ```
+   Token → Realm(ddns.example.com) → UserBackend(my-netcup) → Netcup API
+   ```
+
+**New UI Pages**:
+- `/account/backends` - List user's backend services
+- `/account/backends/new` - Add new backend (select provider, enter credentials)
+- `/account/backends/<id>` - View/edit backend, test connection
+- `/account/backends/<id>/zones` - List available zones from backend
+
+---
+
+### Backend Resolution Logic
+
+```python
+# src/netcup_api_filter/backends/resolver.py
+
+def get_backend_for_realm(realm: AccountRealm) -> DNSBackend:
+    """Resolve the correct backend for a realm.
+    
+    Priority:
+    1. User's own backend (if user_backend_id set)
+    2. Platform backend via domain root (if domain_root_id set)
+    3. Legacy fallback to global netcup_config (migration path)
+    """
+    
+    # Case B: User-provided backend
+    if realm.user_backend_id:
+        service = BackendService.query.get(realm.user_backend_id)
+        if not service or not service.is_active:
+            raise BackendError("User backend is disabled or deleted")
+        if service.owner_id != realm.account_id:
+            raise SecurityError("Backend ownership mismatch")
+        return instantiate_backend(service)
+    
+    # Case A: Platform-managed via domain root
+    if realm.domain_root_id:
+        root = ManagedDomainRoot.query.get(realm.domain_root_id)
+        if not root or not root.is_active:
+            raise BackendError("Domain root is disabled")
+        service = BackendService.query.get(root.backend_service_id)
+        if not service or not service.is_active:
+            raise BackendError("Backend service is disabled")
+        return instantiate_backend(service)
+    
+    # Legacy: Fall back to global config (for migration)
+    config = Settings.get('netcup_config')
+    if config:
+        logger.warning(f"Realm {realm.id} using legacy global backend")
+        from .netcup import NetcupBackend
+        return NetcupBackend(config)
+    
+    raise BackendError("No backend configured for realm")
+
+
+def instantiate_backend(service: BackendService) -> DNSBackend:
+    """Create backend instance from service configuration."""
+    provider = BackendProvider.query.get(service.provider_id)
+    if not provider or not provider.is_enabled:
+        raise BackendError(f"Provider {service.provider_id} is not available")
+    
+    backend_class = BACKEND_REGISTRY.get(provider.provider_code)
+    if not backend_class:
+        raise BackendError(f"No implementation for provider: {provider.provider_code}")
+    
+    return backend_class(json.loads(service.config))
+```
+
+---
+
+### Admin UI Additions
+
+#### New Pages
+
+| Route | Purpose |
+|-------|---------|
+| `/admin/backends` | List all platform backend services |
+| `/admin/backends/new` | Add new platform backend |
+| `/admin/backends/<id>` | Edit/test platform backend |
+| `/admin/domain-roots` | List managed domain roots |
+| `/admin/domain-roots/new` | Create new domain root |
+| `/admin/domain-roots/<id>` | Edit root, manage user grants |
+| `/admin/domain-roots/<id>/grants` | Manage user access to root |
+
+#### User Account Pages
+
+| Route | Purpose |
+|-------|---------|
+| `/account/backends` | List user's own backends |
+| `/account/backends/new` | Add user backend |
+| `/account/backends/<id>` | Edit/test user backend |
+| `/account/backends/<id>/zones` | Browse zones from backend |
+
+---
+
+### Migration Strategy
+
+**Phase 1: Schema Migration** (backward compatible)
+1. Add new tables (backend_providers, backend_services, managed_domain_roots, domain_root_grants)
+2. Add new columns to account_realms (domain_root_id, user_backend_id, both nullable)
+3. Keep existing netcup_config in Settings as fallback
+
+**Phase 2: Admin Setup**
+1. Admin creates backend_providers entries (or use seeds)
+2. Admin creates backend_services for existing netcup_config
+3. Admin creates managed_domain_roots for known zones
+4. Existing realms continue working via legacy fallback
+
+**Phase 3: Realm Migration**
+1. For each existing realm, determine correct domain_root
+2. Update realm.domain_root_id accordingly
+3. Validate all realms have proper backend path
+
+**Phase 4: Deprecation**
+1. Remove legacy fallback code path
+2. Make domain_root_id OR user_backend_id required
+3. Remove netcup_config from Settings (move to backend_services)
+
+---
+
+### Security Considerations
+
+1. **Credential Encryption**: Backend service configs should be encrypted at rest
+   ```python
+   # Use Fernet symmetric encryption with key from environment
+   config_encrypted = encrypt(json.dumps(config), ENCRYPTION_KEY)
+   ```
+
+2. **User Backend Validation**: Before allowing user backends, require:
+   - Email verification
+   - Optional: Admin approval for user backend feature
+   - Connection test must succeed
+
+3. **Zone Ownership Validation**: 
+   - Platform backends: Admin manually verifies zone access
+   - User backends: Connection test + zone list enumeration
+
+4. **Audit Logging**: Log all backend credential changes with actor, timestamp, IP
+
+---
+
+### Implementation Priority
+
+| Priority | Component | Effort | Dependencies |
+|----------|-----------|--------|--------------|
+| P0 | Backend abstraction interface | 1 day | None |
+| P0 | Netcup backend implementation | 0.5 day | P0 |
+| P1 | Database schema migration | 1 day | None |
+| P1 | Backend providers seeding | 0.5 day | P1 |
+| P2 | Admin backend management UI | 2 days | P0, P1 |
+| P2 | Managed domain roots UI | 1.5 days | P1 |
+| P2 | Realm creation with root selection | 1 day | P2 |
+| P3 | User backend management | 2 days | P0, P1 |
+| P3 | PowerDNS backend implementation | 1 day | P0 |
+| P4 | Cloudflare backend implementation | 1 day | P0 |
+| P4 | Route53 backend implementation | 1 day | P0 |
+
+---
+
+### Summary of Architectural Changes
+
+| Current | Proposed |
+|---------|----------|
+| Free-text realm domain | Dropdown of available domain roots |
+| Single global netcup_config | Multiple backend services |
+| Hard-coded Netcup calls | Abstract DNSBackend interface |
+| No backend type tracking | Foreign key to backend_providers |
+| No user-owned backends | User backend management (BYOD) |
+| No zone validation | Backend validates zone access |
+| Admin approves any domain | Admin controls available roots |
+
+This proposal maintains backward compatibility while enabling the multi-backend, multi-tenant architecture required for production use.
+
