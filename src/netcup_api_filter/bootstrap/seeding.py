@@ -23,6 +23,15 @@ from ..models import (
     generate_user_alias,
     hash_token,
     validate_username,
+    # Multi-backend models
+    BackendProvider,
+    BackendService,
+    DomainRootGrant,
+    GrantTypeEnum,
+    ManagedDomainRoot,
+    OwnerTypeEnum,
+    TestStatusEnum,
+    VisibilityEnum,
 )
 from ..config_defaults import get_default, load_defaults, require_default
 
@@ -812,3 +821,286 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
     logger.info(f"  Realms: {len(demo_realms)}")
     logger.info(f"  Tokens: {len(demo_tokens)}")
     logger.info(f"  Activity logs: {len(activity_logs)}")
+
+
+# ============================================================================
+# Multi-Backend Seeding
+# ============================================================================
+
+def seed_enum_tables() -> None:
+    """Seed enum tables with predefined values.
+    
+    Called during database initialization to ensure all enum values exist.
+    """
+    logger.info("Seeding enum tables for multi-backend architecture...")
+    
+    # Test Status Enum
+    test_statuses = [
+        (TestStatusEnum.PENDING, "Pending"),
+        (TestStatusEnum.SUCCESS, "Success"),
+        (TestStatusEnum.FAILED, "Failed"),
+    ]
+    for code, name in test_statuses:
+        if not TestStatusEnum.query.filter_by(status_code=code).first():
+            db.session.add(TestStatusEnum(status_code=code, display_name=name))
+    
+    # Visibility Enum
+    visibilities = [
+        (VisibilityEnum.PUBLIC, "Public", "Any authenticated user can request subdomains"),
+        (VisibilityEnum.PRIVATE, "Private", "Only explicitly granted users can request subdomains"),
+        (VisibilityEnum.INVITE, "Invite Only", "Users need invitation code to request subdomains"),
+    ]
+    for code, name, desc in visibilities:
+        if not VisibilityEnum.query.filter_by(visibility_code=code).first():
+            db.session.add(VisibilityEnum(visibility_code=code, display_name=name, description=desc))
+    
+    # Owner Type Enum
+    owner_types = [
+        (OwnerTypeEnum.PLATFORM, "Platform"),
+        (OwnerTypeEnum.USER, "User"),
+    ]
+    for code, name in owner_types:
+        if not OwnerTypeEnum.query.filter_by(owner_code=code).first():
+            db.session.add(OwnerTypeEnum(owner_code=code, display_name=name))
+    
+    # Grant Type Enum
+    grant_types = [
+        (GrantTypeEnum.STANDARD, "Standard"),
+        (GrantTypeEnum.ADMIN, "Administrator"),
+        (GrantTypeEnum.INVITE_ONLY, "Invite Only"),
+    ]
+    for code, name in grant_types:
+        if not GrantTypeEnum.query.filter_by(grant_code=code).first():
+            db.session.add(GrantTypeEnum(grant_code=code, display_name=name))
+    
+    db.session.commit()
+    logger.info("Enum tables seeded successfully")
+
+
+def seed_backend_providers() -> None:
+    """Seed built-in backend providers with their configurations.
+    
+    Called during database initialization to register available DNS providers.
+    """
+    logger.info("Seeding backend providers...")
+    
+    providers = [
+        {
+            "provider_code": "netcup",
+            "display_name": "Netcup CCP API",
+            "description": "Netcup Customer Control Panel DNS API",
+            "config_schema": json.dumps({
+                "type": "object",
+                "properties": {
+                    "customer_id": {"type": "string", "minLength": 1, "description": "Netcup customer number"},
+                    "api_key": {"type": "string", "minLength": 1, "description": "API key from CCP"},
+                    "api_password": {"type": "string", "minLength": 1, "description": "API password from CCP"},
+                    "api_url": {"type": "string", "format": "uri", "description": "API endpoint URL"},
+                    "timeout": {"type": "integer", "minimum": 5, "maximum": 120, "default": 30}
+                },
+                "required": ["customer_id", "api_key", "api_password"]
+            }),
+            "supports_zone_list": False,
+            "supports_zone_create": False,
+            "supports_dnssec": False,
+            "supported_record_types": json.dumps(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA"]),
+            "is_enabled": True,
+            "is_builtin": True,
+        },
+        {
+            "provider_code": "powerdns",
+            "display_name": "PowerDNS",
+            "description": "PowerDNS Authoritative Server HTTP API",
+            "config_schema": json.dumps({
+                "type": "object",
+                "properties": {
+                    "api_url": {"type": "string", "format": "uri", "description": "PowerDNS API URL"},
+                    "api_key": {"type": "string", "minLength": 1, "description": "X-API-Key header value"},
+                    "timeout": {"type": "integer", "minimum": 5, "maximum": 120, "default": 30},
+                    "server_id": {"type": "string", "default": "localhost", "description": "PowerDNS server ID"}
+                },
+                "required": ["api_url", "api_key"]
+            }),
+            "supports_zone_list": True,
+            "supports_zone_create": True,
+            "supports_dnssec": True,
+            "supported_record_types": json.dumps(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA", "SOA", "PTR"]),
+            "is_enabled": True,
+            "is_builtin": True,
+        },
+        {
+            "provider_code": "cloudflare",
+            "display_name": "Cloudflare DNS",
+            "description": "Cloudflare DNS API (not yet implemented)",
+            "config_schema": json.dumps({
+                "type": "object",
+                "properties": {
+                    "api_token": {"type": "string", "minLength": 1, "description": "Cloudflare API token"},
+                    "zone_id": {"type": "string", "pattern": "^[a-f0-9]{32}$", "description": "Zone ID"}
+                },
+                "required": ["api_token"]
+            }),
+            "supports_zone_list": True,
+            "supports_zone_create": False,
+            "supports_dnssec": True,
+            "supported_record_types": json.dumps(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV"]),
+            "is_enabled": False,  # Not yet implemented
+            "is_builtin": True,
+        },
+        {
+            "provider_code": "route53",
+            "display_name": "AWS Route 53",
+            "description": "Amazon Route 53 DNS API (not yet implemented)",
+            "config_schema": json.dumps({
+                "type": "object",
+                "properties": {
+                    "access_key_id": {"type": "string", "description": "AWS Access Key ID"},
+                    "secret_access_key": {"type": "string", "minLength": 40, "description": "AWS Secret Access Key"},
+                    "region": {"type": "string", "default": "us-east-1", "description": "AWS Region"}
+                },
+                "required": ["access_key_id", "secret_access_key"]
+            }),
+            "supports_zone_list": True,
+            "supports_zone_create": True,
+            "supports_dnssec": True,
+            "supported_record_types": json.dumps(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "SOA"]),
+            "is_enabled": False,  # Not yet implemented
+            "is_builtin": True,
+        },
+    ]
+    
+    for provider_data in providers:
+        existing = BackendProvider.query.filter_by(provider_code=provider_data["provider_code"]).first()
+        if not existing:
+            provider = BackendProvider(**provider_data)
+            db.session.add(provider)
+            logger.info(f"Added backend provider: {provider_data['provider_code']}")
+        else:
+            logger.info(f"Backend provider {provider_data['provider_code']} already exists")
+    
+    db.session.commit()
+    logger.info("Backend providers seeded successfully")
+
+
+def seed_multi_backend_infrastructure() -> None:
+    """Seed all multi-backend infrastructure (enums + providers).
+    
+    Main entry point for setting up the multi-backend system.
+    Call this during database initialization.
+    """
+    seed_enum_tables()
+    seed_backend_providers()
+
+
+def get_or_create_owner_type(code: str) -> OwnerTypeEnum:
+    """Get or create an owner type enum by code."""
+    owner_type = OwnerTypeEnum.query.filter_by(owner_code=code).first()
+    if not owner_type:
+        seed_enum_tables()
+        owner_type = OwnerTypeEnum.query.filter_by(owner_code=code).first()
+    return owner_type
+
+
+def get_or_create_visibility(code: str) -> VisibilityEnum:
+    """Get or create a visibility enum by code."""
+    visibility = VisibilityEnum.query.filter_by(visibility_code=code).first()
+    if not visibility:
+        seed_enum_tables()
+        visibility = VisibilityEnum.query.filter_by(visibility_code=code).first()
+    return visibility
+
+
+def create_backend_service(
+    provider_code: str,
+    service_name: str,
+    display_name: str,
+    config: dict,
+    owner_type: str = "platform",
+    owner: Account = None,
+    is_active: bool = True,
+) -> BackendService:
+    """Create a backend service.
+    
+    Args:
+        provider_code: Provider identifier (e.g., 'netcup', 'powerdns')
+        service_name: Unique service name
+        display_name: Human-readable display name
+        config: Provider-specific configuration dict
+        owner_type: 'platform' or 'user'
+        owner: Account that owns this service (for user-owned)
+        is_active: Whether the service is active
+    
+    Returns:
+        Created BackendService
+    """
+    provider = BackendProvider.query.filter_by(provider_code=provider_code).first()
+    if not provider:
+        seed_backend_providers()
+        provider = BackendProvider.query.filter_by(provider_code=provider_code).first()
+        if not provider:
+            raise ValueError(f"Unknown provider: {provider_code}")
+    
+    owner_type_enum = get_or_create_owner_type(owner_type)
+    
+    service = BackendService(
+        provider_id=provider.id,
+        service_name=service_name,
+        display_name=display_name,
+        config=json.dumps(config),
+        owner_type_id=owner_type_enum.id,
+        owner_id=owner.id if owner else None,
+        is_active=is_active,
+    )
+    db.session.add(service)
+    db.session.commit()
+    logger.info(f"Created backend service: {service_name} ({provider_code})")
+    return service
+
+
+def create_domain_root(
+    backend_service: BackendService,
+    root_domain: str,
+    dns_zone: str = None,
+    visibility: str = "private",
+    display_name: str = None,
+    description: str = None,
+    allowed_record_types: list = None,
+    allowed_operations: list = None,
+) -> ManagedDomainRoot:
+    """Create a managed domain root.
+    
+    Args:
+        backend_service: BackendService that manages this domain
+        root_domain: The domain root (e.g., 'dyn.vxxu.de')
+        dns_zone: Actual zone in backend (defaults to root_domain)
+        visibility: 'public', 'private', or 'invite'
+        display_name: Human-readable name
+        description: Description for users
+        allowed_record_types: List of allowed record types (None = all)
+        allowed_operations: List of allowed operations (None = all)
+    
+    Returns:
+        Created ManagedDomainRoot
+    """
+    visibility_enum = get_or_create_visibility(visibility)
+    
+    root = ManagedDomainRoot(
+        backend_service_id=backend_service.id,
+        root_domain=root_domain,
+        dns_zone=dns_zone or root_domain,
+        visibility_id=visibility_enum.id,
+        display_name=display_name or root_domain,
+        description=description,
+        is_active=True,
+        verified_at=datetime.utcnow(),
+    )
+    
+    if allowed_record_types:
+        root.set_allowed_record_types(allowed_record_types)
+    if allowed_operations:
+        root.set_allowed_operations(allowed_operations)
+    
+    db.session.add(root)
+    db.session.commit()
+    logger.info(f"Created domain root: {root_domain} (backend: {backend_service.service_name})")
+    return root

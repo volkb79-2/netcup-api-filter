@@ -57,8 +57,7 @@ def get_backend_for_realm(realm: 'AccountRealm') -> DNSBackend:
         Configured DNSBackend instance for this realm
     
     Raises:
-        BackendError: If backend resolution fails
-        SecurityError: If backend ownership doesn't match realm
+        BackendError: If backend resolution fails or ownership mismatch
     """
     # Lazy import to avoid circular dependencies
     from ..models import BackendProvider, BackendService, ManagedDomainRoot

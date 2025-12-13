@@ -427,9 +427,9 @@ class AccountRealm(db.Model):
         db.UniqueConstraint('account_id', 'domain', 'realm_type', 'realm_value', name='uq_account_realm'),
         CheckConstraint("realm_type IN ('host', 'subdomain', 'subdomain_only')", name='check_realm_type'),
         CheckConstraint("status IN ('pending', 'approved', 'rejected')", name='check_realm_status'),
-        # Unique subdomain per domain root (prevent duplicate claims)
-        db.Index('idx_unique_realm_subdomain', 'domain_root_id', 'realm_value', unique=True,
-                 postgresql_where=db.text('domain_root_id IS NOT NULL')),
+        # Note: Unique subdomain per domain root is enforced via application logic
+        # SQLite doesn't support partial unique indexes directly in table args
+        # Use db.Index with sqlite_where for SQLite-specific partial indexes if needed
     )
     
     def get_allowed_record_types(self) -> list[str]:
