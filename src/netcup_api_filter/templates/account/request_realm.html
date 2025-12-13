@@ -1,4 +1,4 @@
-{# Request Realm Page #}
+{# Request Realm Page - Updated for Multi-Backend Architecture #}
 {% extends "account/base.html" %}
 
 {% block title %}Request New Realm{% endblock %}
@@ -14,9 +14,22 @@
                 </a>
                 <div>
                     <h2 class="mb-0">Request New Realm</h2>
-                    <small class="text-muted">Request access to a domain or subdomain</small>
+                    <small class="text-muted">Request access to manage DNS records</small>
                 </div>
             </div>
+
+            {% if not available_roots %}
+            <!-- No Available Roots Alert -->
+            <div class="alert alert-warning">
+                <h5 class="alert-heading">
+                    <i class="bi bi-exclamation-triangle me-2"></i>No DNS Zones Available
+                </h5>
+                <p class="mb-0">
+                    There are currently no DNS zones available for you to request realms under.
+                    Please contact an administrator to get access to a DNS zone.
+                </p>
+            </div>
+            {% else %}
 
             <!-- Use Case Templates -->
             <div class="card mb-4">
@@ -72,18 +85,39 @@
                     <form action="{{ url_for('account.request_realm') }}" method="post" id="request-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                        <!-- Domain / Realm Value -->
+                        <!-- DNS Zone Selection (Dropdown) -->
                         <div class="mb-4">
-                            <label for="realm-value" class="form-label">Domain or Hostname</label>
+                            <label for="domain_root_id" class="form-label">DNS Zone <span class="text-danger">*</span></label>
+                            <select class="form-select" id="domain_root_id" name="domain_root_id" required>
+                                <option value="">Select available zone...</option>
+                                {% for root in available_roots %}
+                                <option value="{{ root.id }}" data-root-domain="{{ root.root_domain }}">
+                                    {{ root.display_name or root.root_domain }}
+                                    {% if root.backend_service %}({{ root.backend_service.provider.display_name }}){% endif %}
+                                    {% if root.is_public() %} [Public]{% endif %}
+                                </option>
+                                {% endfor %}
+                                {% if user_backends %}
+                                <option disabled>──────────────</option>
+                                <option value="user_backend">Use my own backend credentials</option>
+                                {% endif %}
+                            </select>
+                            <div class="form-text">
+                                Select the DNS zone you want to manage records under
+                            </div>
+                        </div>
+
+                        <!-- Subdomain Input -->
+                        <div class="mb-4">
+                            <label for="subdomain" class="form-label">Subdomain</label>
                             <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-globe"></i>
-                                </span>
-                                <input type="text" class="form-control" id="realm-value" name="realm_value"
-                                       placeholder="example.com or home.example.com" required>
+                                <input type="text" class="form-control" id="subdomain" name="subdomain"
+                                       pattern="[a-z0-9\-]*"
+                                       placeholder="myhost">
+                                <span class="input-group-text" id="domain-suffix">.example.com</span>
                             </div>
                             <div class="form-text">
-                                Enter the domain or hostname you want to manage DNS records for
+                                Your full hostname will be: <code id="full-hostname-preview">myhost.example.com</code>
                             </div>
                         </div>
 
@@ -94,7 +128,7 @@
                                 <div class="col-md-4">
                                     <div class="form-check card p-3">
                                         <input class="form-check-input" type="radio" name="realm_type" 
-                                               id="type-host" value="host">
+                                               id="type-host" value="host" checked>
                                         <label class="form-check-label d-block" for="type-host">
                                             <strong>Exact Host</strong>
                                             <small class="d-block text-muted">Only this hostname</small>
@@ -104,7 +138,7 @@
                                 <div class="col-md-4">
                                     <div class="form-check card p-3">
                                         <input class="form-check-input" type="radio" name="realm_type" 
-                                               id="type-subdomain" value="subdomain" checked>
+                                               id="type-subdomain" value="subdomain">
                                         <label class="form-check-label d-block" for="type-subdomain">
                                             <strong>Subdomain Zone</strong>
                                             <small class="d-block text-muted">Domain + all subdomains</small>
@@ -156,16 +190,6 @@
                             </div>
                         </div>
 
-                        <!-- Justification -->
-                        <div class="mb-4">
-                            <label for="justification" class="form-label">Justification</label>
-                            <textarea class="form-control" id="justification" name="justification" 
-                                      rows="3" placeholder="Explain why you need access to this realm (optional)"></textarea>
-                            <div class="form-text">
-                                Help the admin understand your use case for faster approval
-                            </div>
-                        </div>
-
                         <!-- Submit -->
                         <div class="d-flex justify-content-end gap-2">
                             <a href="{{ url_for('account.realms') }}" class="btn btn-outline-secondary">Cancel</a>
@@ -188,11 +212,35 @@
                     <li>Once approved, you can create tokens for this realm</li>
                 </ul>
             </div>
+            {% endif %}
         </div>
     </div>
 </div>
 
 <script>
+// Update domain suffix when zone is selected
+document.getElementById('domain_root_id').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const rootDomain = selectedOption.dataset.rootDomain || 'example.com';
+    document.getElementById('domain-suffix').textContent = '.' + rootDomain;
+    updatePreview();
+});
+
+// Update preview when subdomain changes
+document.getElementById('subdomain').addEventListener('input', updatePreview);
+
+function updatePreview() {
+    const subdomain = document.getElementById('subdomain').value.toLowerCase().replace(/[^a-z0-9\-]/g, '');
+    const rootDomain = document.getElementById('domain-suffix').textContent.substring(1);
+    const preview = document.getElementById('full-hostname-preview');
+    
+    if (subdomain) {
+        preview.textContent = subdomain + '.' + rootDomain;
+    } else {
+        preview.textContent = rootDomain + ' (apex)';
+    }
+}
+
 // Template button handling
 document.querySelectorAll('.template-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -225,5 +273,8 @@ document.querySelectorAll('.template-btn').forEach(btn => {
         this.classList.add('active');
     });
 });
+
+// Initialize preview
+updatePreview();
 </script>
 {% endblock %}

@@ -39,6 +39,30 @@
         </a>
     </li>
     <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle {% if 'backend' in (request.endpoint or '') or 'domain_root' in (request.endpoint or '') %}active{% endif %}" 
+           href="#" data-bs-toggle="dropdown">
+            DNS
+        </a>
+        <ul class="dropdown-menu">
+            <li>
+                <a class="dropdown-item" href="{{ url_for('admin.backends') }}">
+                    Backend Services
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item" href="{{ url_for('admin.domain_roots') }}">
+                    Domain Roots
+                </a>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+                <a class="dropdown-item" href="{{ url_for('admin.backend_providers') }}">
+                    Providers
+                </a>
+            </li>
+        </ul>
+    </li>
+    <li class="nav-item dropdown">
         <a class="nav-link dropdown-toggle {% if 'config' in (request.endpoint or '') or 'system' in (request.endpoint or '') %}active{% endif %}" 
            href="#" data-bs-toggle="dropdown">
             Config

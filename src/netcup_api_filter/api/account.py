@@ -33,7 +33,12 @@ from ..account_auth import (
     verify_2fa,
     verify_registration,
 )
-from ..models import Account, AccountRealm, ActivityLog, APIToken, RegistrationRequest, db
+from ..models import (
+    Account, AccountRealm, ActivityLog, APIToken, RegistrationRequest, db,
+    # Multi-backend models
+    BackendService, BackendProvider, ManagedDomainRoot, DomainRootGrant, 
+    VisibilityEnum, OwnerTypeEnum, TestStatusEnum,
+)
 from ..realm_token_service import (
     create_token,
     get_realms_for_account,
@@ -540,18 +545,97 @@ def dashboard():
 # Realm Management
 # ============================================================================
 
+def get_available_domain_roots_for_account(account):
+    """Get domain roots available to an account.
+    
+    Returns domain roots that are:
+    - Public (any authenticated user can request)
+    - Granted to this specific account
+    """
+    # Get public visibility ID
+    public_vis = VisibilityEnum.query.filter_by(visibility_code='public').first()
+    
+    available_roots = []
+    
+    if public_vis:
+        # Public roots are available to everyone
+        public_roots = ManagedDomainRoot.query.filter_by(
+            visibility_id=public_vis.id,
+            is_active=True
+        ).all()
+        available_roots.extend(public_roots)
+    
+    # Also get roots where user has explicit grant
+    granted_roots = ManagedDomainRoot.query.join(
+        DomainRootGrant,
+        DomainRootGrant.domain_root_id == ManagedDomainRoot.id
+    ).filter(
+        DomainRootGrant.account_id == account.id,
+        DomainRootGrant.revoked_at.is_(None),
+        ManagedDomainRoot.is_active.is_(True)
+    ).all()
+    
+    # Add granted roots not already in public
+    existing_ids = {r.id for r in available_roots}
+    for root in granted_roots:
+        if root.id not in existing_ids:
+            available_roots.append(root)
+    
+    return available_roots
+
+
 @account_bp.route('/realms/request', methods=['GET', 'POST'])
 @require_account_auth
 def request_realm_view():
     """Request a new realm."""
     account = g.account
     
+    # Get available domain roots for this account
+    available_roots = get_available_domain_roots_for_account(account)
+    
+    # Also check if user has any own backends (for BYOD)
+    user_backends = BackendService.query.filter_by(
+        owner_id=account.id,
+        is_active=True
+    ).all() if account else []
+    
     if request.method == 'POST':
-        domain = request.form.get('domain', '').strip().lower()
-        realm_type = request.form.get('realm_type', '')
-        realm_value = request.form.get('realm_value', '').strip().lower()
+        domain_root_id = request.form.get('domain_root_id', '')
+        subdomain = request.form.get('subdomain', '').strip().lower()
+        realm_type = request.form.get('realm_type', 'host')
         record_types = request.form.getlist('record_types')
         operations = request.form.getlist('operations')
+        
+        # Validate domain root selection
+        if not domain_root_id:
+            flash('Please select a DNS zone', 'error')
+            return render_template('account/request_realm.html',
+                                 available_roots=available_roots,
+                                 user_backends=user_backends)
+        
+        # Get selected domain root
+        try:
+            root_id = int(domain_root_id)
+            domain_root = ManagedDomainRoot.query.get(root_id)
+        except (ValueError, TypeError):
+            domain_root = None
+        
+        if not domain_root or not domain_root.is_active:
+            flash('Invalid DNS zone selection', 'error')
+            return render_template('account/request_realm.html',
+                                 available_roots=available_roots,
+                                 user_backends=user_backends)
+        
+        # Check user has access to this root
+        if domain_root not in available_roots:
+            flash('You do not have access to this DNS zone', 'error')
+            return render_template('account/request_realm.html',
+                                 available_roots=available_roots,
+                                 user_backends=user_backends)
+        
+        # Build full realm value
+        realm_value = subdomain if subdomain else ''
+        domain = domain_root.root_domain
         
         result = request_realm_service(
             account=account,
@@ -559,7 +643,8 @@ def request_realm_view():
             realm_type=realm_type,
             realm_value=realm_value,
             record_types=record_types,
-            operations=operations
+            operations=operations,
+            domain_root_id=domain_root.id
         )
         
         if result.success:
@@ -568,7 +653,9 @@ def request_realm_view():
         else:
             flash(result.error, 'error')
     
-    return render_template('account/request_realm.html')
+    return render_template('account/request_realm.html',
+                          available_roots=available_roots,
+                          user_backends=user_backends)
 
 
 # ============================================================================
@@ -1885,6 +1972,339 @@ create_token_view = create_token_select
 def setup_2fa():
     """Alias for setup_totp."""
     return setup_totp()
+
+
+# ============================================================================
+# User Backend Management (BYOD - Bring Your Own DNS)
+# ============================================================================
+
+def _build_backend_config_from_form(provider_code):
+    """Build backend config dict from form data based on provider.
+    
+    Args:
+        provider_code: The provider code (netcup, powerdns, cloudflare, route53)
+        
+    Returns:
+        dict: Configuration dictionary for the provider
+    """
+    if provider_code == 'netcup':
+        return {
+            'customer_id': request.form.get('config_customer_id', ''),
+            'api_key': request.form.get('config_api_key', ''),
+            'api_password': request.form.get('config_api_password', ''),
+        }
+    elif provider_code == 'powerdns':
+        return {
+            'api_url': request.form.get('config_api_url', ''),
+            'api_key': request.form.get('config_pdns_api_key', ''),
+        }
+    elif provider_code == 'cloudflare':
+        return {
+            'api_token': request.form.get('config_cf_api_token', ''),
+        }
+    elif provider_code == 'route53':
+        return {
+            'access_key_id': request.form.get('config_access_key_id', ''),
+            'secret_access_key': request.form.get('config_secret_access_key', ''),
+            'region': request.form.get('config_region', 'us-east-1'),
+        }
+    return {}
+
+
+@account_bp.route('/backends')
+@require_account_auth
+def backends_list():
+    """List user's own backends."""
+    account = g.account
+    
+    # Get user-owned backends only
+    user_owner_type = OwnerTypeEnum.query.filter_by(owner_code='user').first()
+    
+    if user_owner_type:
+        backends = BackendService.query.filter_by(
+            owner_type_id=user_owner_type.id,
+            owner_id=account.id
+        ).all()
+    else:
+        backends = []
+    
+    # Count total realms using user backends
+    total_realms = sum(len(b.realms) if hasattr(b, 'realms') and b.realms else 0 for b in backends)
+    
+    # Get available providers
+    providers = BackendProvider.query.filter_by(is_enabled=True).all()
+    
+    return render_template('account/backends_list.html',
+                          account=account,
+                          backends=backends,
+                          providers=providers,
+                          total_realms=total_realms)
+
+
+@account_bp.route('/backends/new', methods=['GET', 'POST'])
+@require_account_auth
+def backend_create():
+    """Create a new user backend."""
+    import json
+    account = g.account
+    
+    providers = BackendProvider.query.filter_by(is_enabled=True).all()
+    
+    if request.method == 'POST':
+        provider_id = request.form.get('provider_id', '')
+        service_name = request.form.get('service_name', '').strip().lower()
+        display_name = request.form.get('display_name', '').strip()
+        
+        # Validate provider
+        try:
+            provider_id_int = int(provider_id)
+        except (ValueError, TypeError):
+            flash('Invalid provider selected', 'error')
+            return render_template('account/backend_form.html', 
+                                  account=account, backend=None, providers=providers)
+        
+        provider = BackendProvider.query.get(provider_id_int)
+        if not provider or not provider.is_enabled:
+            flash('Provider not available', 'error')
+            return render_template('account/backend_form.html',
+                                  account=account, backend=None, providers=providers)
+        
+        # Validate service name uniqueness
+        existing = BackendService.query.filter_by(service_name=service_name).first()
+        if existing:
+            flash('Service name already in use', 'error')
+            return render_template('account/backend_form.html',
+                                  account=account, backend=None, providers=providers)
+        
+        # Build config from form based on provider
+        config = _build_backend_config_from_form(provider.provider_code)
+        
+        # Get user owner type
+        user_owner_type = OwnerTypeEnum.query.filter_by(owner_code='user').first()
+        if not user_owner_type:
+            flash('System configuration error: user owner type not found', 'error')
+            return render_template('account/backend_form.html',
+                                  account=account, backend=None, providers=providers)
+        
+        # Create backend
+        backend = BackendService(
+            provider_id=provider.id,
+            service_name=service_name,
+            display_name=display_name,
+            owner_type_id=user_owner_type.id,
+            owner_id=account.id,
+            config=json.dumps(config),
+            is_active=True,
+        )
+        db.session.add(backend)
+        db.session.commit()
+        
+        flash(f'Backend "{display_name}" created successfully', 'success')
+        return redirect(url_for('account.backend_detail', backend_id=backend.id))
+    
+    return render_template('account/backend_form.html',
+                          account=account,
+                          backend=None,
+                          providers=providers)
+
+
+@account_bp.route('/backends/<int:backend_id>')
+@require_account_auth
+def backend_detail(backend_id):
+    """View a user backend."""
+    account = g.account
+    
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    # Verify ownership
+    if backend.owner_id != account.id:
+        flash('Access denied', 'error')
+        return redirect(url_for('account.backends_list'))
+    
+    # Get realms using this backend
+    realms = AccountRealm.query.filter_by(
+        user_backend_id=backend.id,
+        account_id=account.id
+    ).all()
+    
+    return render_template('account/backend_detail.html',
+                          account=account,
+                          backend=backend,
+                          realms=realms)
+
+
+@account_bp.route('/backends/<int:backend_id>/edit', methods=['GET', 'POST'])
+@require_account_auth
+def backend_edit(backend_id):
+    """Edit a user backend."""
+    import json
+    account = g.account
+    
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    # Verify ownership
+    if backend.owner_id != account.id:
+        flash('Access denied', 'error')
+        return redirect(url_for('account.backends_list'))
+    
+    providers = BackendProvider.query.filter_by(is_enabled=True).all()
+    
+    if request.method == 'POST':
+        service_name = request.form.get('service_name', '').strip().lower()
+        display_name = request.form.get('display_name', '').strip()
+        
+        # Validate service name uniqueness (excluding current)
+        existing = BackendService.query.filter(
+            BackendService.service_name == service_name,
+            BackendService.id != backend.id
+        ).first()
+        if existing:
+            flash('Service name already in use', 'error')
+            return render_template('account/backend_form.html',
+                                  account=account, backend=backend, providers=providers)
+        
+        # Build config from form based on provider
+        config = _build_backend_config_from_form(backend.provider.provider_code)
+        
+        # Update backend
+        backend.service_name = service_name
+        backend.display_name = display_name
+        backend.config = json.dumps(config)
+        db.session.commit()
+        
+        flash('Backend updated successfully', 'success')
+        return redirect(url_for('account.backend_detail', backend_id=backend.id))
+    
+    return render_template('account/backend_form.html',
+                          account=account,
+                          backend=backend,
+                          providers=providers)
+
+
+@account_bp.route('/backends/<int:backend_id>/test', methods=['POST'])
+@require_account_auth
+def backend_test(backend_id):
+    """Test backend connection."""
+    import json
+    account = g.account
+    
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    # Verify ownership
+    if backend.owner_id != account.id:
+        flash('Access denied', 'error')
+        return redirect(url_for('account.backends_list'))
+    
+    try:
+        from ..backends.registry import get_backend
+        
+        config = json.loads(backend.config) if isinstance(backend.config, str) else backend.config
+        backend_instance = get_backend(backend.provider.provider_code, config)
+        success, message = backend_instance.test_connection()
+        
+        # Update test status
+        if success:
+            test_status = TestStatusEnum.query.filter_by(status_code='success').first()
+        else:
+            test_status = TestStatusEnum.query.filter_by(status_code='failed').first()
+        
+        backend.test_status_id = test_status.id if test_status else None
+        backend.test_message = message
+        backend.last_tested_at = datetime.utcnow()
+        db.session.commit()
+        
+        if success:
+            flash(f'Connection successful: {message}', 'success')
+        else:
+            flash(f'Connection failed: {message}', 'error')
+            
+    except Exception as e:
+        logger.error(f"Backend test failed: {e}", exc_info=True)
+        test_status = TestStatusEnum.query.filter_by(status_code='failed').first()
+        backend.test_status_id = test_status.id if test_status else None
+        backend.test_message = str(e)
+        backend.last_tested_at = datetime.utcnow()
+        db.session.commit()
+        flash(f'Connection test error: {str(e)}', 'error')
+    
+    return redirect(url_for('account.backend_detail', backend_id=backend.id))
+
+
+@account_bp.route('/backends/<int:backend_id>/zones')
+@require_account_auth
+def backend_zones(backend_id):
+    """List zones available in a backend."""
+    import json
+    account = g.account
+    
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    # Verify ownership
+    if backend.owner_id != account.id:
+        flash('Access denied', 'error')
+        return redirect(url_for('account.backends_list'))
+    
+    zones = []
+    error = None
+    
+    try:
+        from ..backends.registry import get_backend
+        
+        config = json.loads(backend.config) if isinstance(backend.config, str) else backend.config
+        backend_instance = get_backend(backend.provider.provider_code, config)
+        
+        # Try to list zones if supported
+        if hasattr(backend_instance, 'list_zones'):
+            zone_names = backend_instance.list_zones()
+            zones = [{'name': z, 'kind': 'Primary'} for z in zone_names]
+        else:
+            error = 'This provider does not support zone enumeration'
+            
+    except Exception as e:
+        logger.error(f"Failed to list zones: {e}", exc_info=True)
+        error = str(e)
+    
+    # Get existing realms for this backend to show status
+    existing_realms = {}
+    for realm in AccountRealm.query.filter_by(
+        user_backend_id=backend.id,
+        account_id=account.id
+    ).all():
+        existing_realms[realm.domain] = realm
+    
+    return render_template('account/backend_zones.html',
+                          account=account,
+                          backend=backend,
+                          zones=zones,
+                          error=error,
+                          existing_realms=existing_realms)
+
+
+@account_bp.route('/backends/<int:backend_id>/delete', methods=['POST'])
+@require_account_auth
+def backend_delete(backend_id):
+    """Delete a user backend."""
+    account = g.account
+    
+    backend = BackendService.query.get_or_404(backend_id)
+    
+    # Verify ownership
+    if backend.owner_id != account.id:
+        flash('Access denied', 'error')
+        return redirect(url_for('account.backends_list'))
+    
+    # Check if any realms are using this backend
+    realms_count = AccountRealm.query.filter_by(user_backend_id=backend.id).count()
+    if realms_count > 0:
+        flash(f'Cannot delete backend with {realms_count} active realm(s)', 'error')
+        return redirect(url_for('account.backend_detail', backend_id=backend.id))
+    
+    display_name = backend.display_name
+    db.session.delete(backend)
+    db.session.commit()
+    
+    flash(f'Backend "{display_name}" deleted', 'success')
+    return redirect(url_for('account.backends_list'))
 
 
 # ============================================================================

@@ -384,6 +384,11 @@ class AccountRealm(db.Model):
     - domain: The base domain (e.g., example.com)
     - realm_type: How matching is done
     - realm_value: The specific host/subdomain prefix (e.g., "iot", "vpn", or empty for apex)
+    
+    Backend Resolution:
+    - domain_root_id: Link to platform-managed domain root (Case A)
+    - user_backend_id: Link to user's own backend service (Case B / BYOD)
+    - Exactly one must be set (enforced by application logic)
     """
     __tablename__ = 'account_realms'
     
@@ -396,6 +401,10 @@ class AccountRealm(db.Model):
     
     allowed_record_types = db.Column(db.Text, nullable=False)  # JSON array
     allowed_operations = db.Column(db.Text, nullable=False)  # JSON array
+    
+    # Backend resolution (exactly one should be set)
+    domain_root_id = db.Column(db.Integer, db.ForeignKey('managed_domain_roots.id'), index=True)
+    user_backend_id = db.Column(db.Integer, db.ForeignKey('backend_services.id'), index=True)
     
     # Request/approval workflow
     status = db.Column(db.String(20), default='pending')  # 'pending', 'approved', 'rejected'
@@ -411,11 +420,16 @@ class AccountRealm(db.Model):
     account = db.relationship('Account', back_populates='realms', foreign_keys=[account_id])
     approved_by = db.relationship('Account', foreign_keys=[approved_by_id])
     tokens = db.relationship('APIToken', back_populates='realm', cascade='all, delete-orphan')
+    domain_root = db.relationship('ManagedDomainRoot', foreign_keys=[domain_root_id])
+    user_backend = db.relationship('BackendService', foreign_keys=[user_backend_id])
     
     __table_args__ = (
         db.UniqueConstraint('account_id', 'domain', 'realm_type', 'realm_value', name='uq_account_realm'),
         CheckConstraint("realm_type IN ('host', 'subdomain', 'subdomain_only')", name='check_realm_type'),
         CheckConstraint("status IN ('pending', 'approved', 'rejected')", name='check_realm_status'),
+        # Note: Unique subdomain per domain root is enforced via application logic
+        # SQLite doesn't support partial unique indexes directly in table args
+        # Use db.Index with sqlite_where for SQLite-specific partial indexes if needed
     )
     
     def get_allowed_record_types(self) -> list[str]:
@@ -882,3 +896,333 @@ class ResetToken(db.Model):
     
     def __repr__(self):
         return f'<ResetToken {self.token_type} target={self.target_type}:{self.target_id}>'
+
+
+# ============================================================================
+# Multi-Backend Architecture Models
+# ============================================================================
+
+class TestStatusEnum(db.Model):
+    """Test status enumeration for type-safe status tracking."""
+    __tablename__ = 'test_status_enum'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    status_code = db.Column(db.String(20), unique=True, nullable=False)
+    display_name = db.Column(db.String(64), nullable=False)
+    
+    # Status codes
+    PENDING = 'pending'
+    SUCCESS = 'success'
+    FAILED = 'failed'
+    
+    def __repr__(self):
+        return f'<TestStatusEnum {self.status_code}>'
+
+
+class VisibilityEnum(db.Model):
+    """Visibility enumeration for domain root access control."""
+    __tablename__ = 'visibility_enum'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    visibility_code = db.Column(db.String(20), unique=True, nullable=False)
+    display_name = db.Column(db.String(64), nullable=False)
+    description = db.Column(db.Text)
+    
+    # Visibility codes
+    PUBLIC = 'public'
+    PRIVATE = 'private'
+    INVITE = 'invite'
+    
+    def __repr__(self):
+        return f'<VisibilityEnum {self.visibility_code}>'
+
+
+class OwnerTypeEnum(db.Model):
+    """Owner type enumeration for backend service ownership."""
+    __tablename__ = 'owner_type_enum'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    owner_code = db.Column(db.String(20), unique=True, nullable=False)
+    display_name = db.Column(db.String(64), nullable=False)
+    
+    # Owner codes
+    PLATFORM = 'platform'
+    USER = 'user'
+    
+    def __repr__(self):
+        return f'<OwnerTypeEnum {self.owner_code}>'
+
+
+class GrantTypeEnum(db.Model):
+    """Grant type enumeration for domain root access grants."""
+    __tablename__ = 'grant_type_enum'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    grant_code = db.Column(db.String(20), unique=True, nullable=False)
+    display_name = db.Column(db.String(64), nullable=False)
+    
+    # Grant codes
+    STANDARD = 'standard'
+    ADMIN = 'admin'
+    INVITE_ONLY = 'invite_only'
+    
+    def __repr__(self):
+        return f'<GrantTypeEnum {self.grant_code}>'
+
+
+class BackendProvider(db.Model):
+    """
+    Backend provider registry (plugin system foundation).
+    
+    Each entry represents a DNS provider type (Netcup, PowerDNS, etc.)
+    that can be used to create backend services.
+    """
+    __tablename__ = 'backend_providers'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    provider_code = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    display_name = db.Column(db.String(128), nullable=False)
+    description = db.Column(db.Text)
+    config_schema = db.Column(db.Text, nullable=False)  # JSON Schema
+    
+    # Capabilities
+    supports_zone_list = db.Column(db.Boolean, default=False)
+    supports_zone_create = db.Column(db.Boolean, default=False)
+    supports_dnssec = db.Column(db.Boolean, default=False)
+    supported_record_types = db.Column(db.Text)  # JSON array
+    
+    # Status
+    is_enabled = db.Column(db.Boolean, default=True)
+    is_builtin = db.Column(db.Boolean, default=True)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    services = db.relationship('BackendService', back_populates='provider')
+    
+    def get_supported_record_types(self) -> list[str]:
+        """Parse supported_record_types from JSON."""
+        try:
+            return json.loads(self.supported_record_types) if self.supported_record_types else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    
+    def set_supported_record_types(self, types: list[str]):
+        """Set supported_record_types as JSON."""
+        self.supported_record_types = json.dumps(types)
+    
+    def __repr__(self):
+        return f'<BackendProvider {self.provider_code}>'
+
+
+class BackendService(db.Model):
+    """
+    Backend service (credential instance).
+    
+    Each entry represents a configured connection to a DNS provider,
+    either owned by the platform or by a specific user (BYOD).
+    """
+    __tablename__ = 'backend_services'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    provider_id = db.Column(db.Integer, db.ForeignKey('backend_providers.id'), nullable=False, index=True)
+    service_name = db.Column(db.String(64), unique=True, nullable=False)
+    display_name = db.Column(db.String(128), nullable=False)
+    
+    # Ownership (FK to enum table for type safety)
+    owner_type_id = db.Column(db.Integer, db.ForeignKey('owner_type_enum.id'), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('accounts.id', ondelete='CASCADE'))
+    
+    # Configuration (plaintext JSON for now, encryption postponed)
+    config = db.Column(db.Text, nullable=False)
+    
+    # Status
+    is_active = db.Column(db.Boolean, default=True)
+    is_default_for_owner = db.Column(db.Boolean, default=False)
+    
+    # Health monitoring (FK to enum table for type safety)
+    last_tested_at = db.Column(db.DateTime)
+    test_status_id = db.Column(db.Integer, db.ForeignKey('test_status_enum.id'))
+    test_message = db.Column(db.Text)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    provider = db.relationship('BackendProvider', back_populates='services')
+    owner_type = db.relationship('OwnerTypeEnum')
+    owner = db.relationship('Account', foreign_keys=[owner_id])
+    test_status = db.relationship('TestStatusEnum')
+    domain_roots = db.relationship('ManagedDomainRoot', back_populates='backend_service')
+    
+    def get_config(self) -> dict[str, Any]:
+        """Parse config from JSON."""
+        try:
+            return json.loads(self.config) if self.config else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_config(self, config: dict[str, Any]):
+        """Set config as JSON."""
+        self.config = json.dumps(config)
+    
+    def is_platform_owned(self) -> bool:
+        """Check if this service is platform-owned."""
+        return self.owner_type and self.owner_type.owner_code == OwnerTypeEnum.PLATFORM
+    
+    def __repr__(self):
+        return f'<BackendService {self.service_name}>'
+
+
+class ManagedDomainRoot(db.Model):
+    """
+    Managed domain root (admin-controlled zone).
+    
+    Represents a DNS zone that the platform manages and can offer
+    to users for creating subdomains.
+    """
+    __tablename__ = 'managed_domain_roots'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    backend_service_id = db.Column(db.Integer, db.ForeignKey('backend_services.id'), nullable=False, index=True)
+    
+    # Zone identification
+    root_domain = db.Column(db.String(255), nullable=False, index=True)
+    dns_zone = db.Column(db.String(255), nullable=False)  # Actual zone in backend
+    
+    # Access control (FK to enum table for type safety)
+    visibility_id = db.Column(db.Integer, db.ForeignKey('visibility_enum.id'), nullable=False)
+    
+    # Subdomain policy
+    allow_apex_access = db.Column(db.Boolean, default=False)
+    min_subdomain_depth = db.Column(db.Integer, default=1)
+    max_subdomain_depth = db.Column(db.Integer, default=3)
+    
+    # Restrictions (JSON arrays, NULL = all allowed)
+    allowed_record_types = db.Column(db.Text)
+    allowed_operations = db.Column(db.Text)
+    
+    # Description for users
+    display_name = db.Column(db.String(128))
+    description = db.Column(db.Text)
+    
+    # Status
+    is_active = db.Column(db.Boolean, default=True)
+    verified_at = db.Column(db.DateTime)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    backend_service = db.relationship('BackendService', back_populates='domain_roots')
+    visibility = db.relationship('VisibilityEnum')
+    grants = db.relationship('DomainRootGrant', back_populates='domain_root', cascade='all, delete-orphan')
+    
+    __table_args__ = (
+        db.UniqueConstraint('backend_service_id', 'root_domain', name='uq_backend_root_domain'),
+    )
+    
+    def get_allowed_record_types(self) -> list[str] | None:
+        """Parse allowed_record_types from JSON. Returns None if not restricted."""
+        if self.allowed_record_types is None:
+            return None
+        try:
+            return json.loads(self.allowed_record_types)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    
+    def set_allowed_record_types(self, types: list[str] | None):
+        """Set allowed_record_types as JSON."""
+        self.allowed_record_types = json.dumps(types) if types else None
+    
+    def get_allowed_operations(self) -> list[str] | None:
+        """Parse allowed_operations from JSON. Returns None if not restricted."""
+        if self.allowed_operations is None:
+            return None
+        try:
+            return json.loads(self.allowed_operations)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    
+    def set_allowed_operations(self, operations: list[str] | None):
+        """Set allowed_operations as JSON."""
+        self.allowed_operations = json.dumps(operations) if operations else None
+    
+    def is_public(self) -> bool:
+        """Check if this root is publicly accessible."""
+        return self.visibility and self.visibility.visibility_code == VisibilityEnum.PUBLIC
+    
+    def __repr__(self):
+        return f'<ManagedDomainRoot {self.root_domain}>'
+
+
+class DomainRootGrant(db.Model):
+    """
+    Domain root access grant (links users to domain roots).
+    
+    Explicitly grants a user access to request realms under a domain root.
+    Required for private/invite-only roots.
+    """
+    __tablename__ = 'domain_root_grants'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    domain_root_id = db.Column(db.Integer, db.ForeignKey('managed_domain_roots.id', ondelete='CASCADE'), nullable=False, index=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, index=True)
+    
+    # Grant type (FK to enum table for type safety)
+    grant_type_id = db.Column(db.Integer, db.ForeignKey('grant_type_enum.id'), nullable=False)
+    
+    # Additional restrictions (tighter than root's defaults)
+    allowed_record_types = db.Column(db.Text)  # JSON, NULL = inherit from root
+    allowed_operations = db.Column(db.Text)  # JSON, NULL = inherit from root
+    max_realms = db.Column(db.Integer, default=5)
+    
+    # Metadata
+    granted_by_id = db.Column(db.Integer, db.ForeignKey('accounts.id'))
+    granted_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime)  # NULL = never
+    revoked_at = db.Column(db.DateTime)
+    revoke_reason = db.Column(db.Text)
+    
+    # Relationships
+    domain_root = db.relationship('ManagedDomainRoot', back_populates='grants')
+    account = db.relationship('Account', foreign_keys=[account_id])
+    grant_type = db.relationship('GrantTypeEnum')
+    granted_by = db.relationship('Account', foreign_keys=[granted_by_id])
+    
+    __table_args__ = (
+        db.UniqueConstraint('domain_root_id', 'account_id', name='uq_grant_root_account'),
+    )
+    
+    def is_active(self) -> bool:
+        """Check if this grant is currently active."""
+        if self.revoked_at is not None:
+            return False
+        if self.expires_at is not None and self.expires_at < datetime.utcnow():
+            return False
+        return True
+    
+    def get_allowed_record_types(self) -> list[str] | None:
+        """Parse allowed_record_types from JSON. Returns None if inheriting from root."""
+        if self.allowed_record_types is None:
+            return None
+        try:
+            return json.loads(self.allowed_record_types)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    
+    def get_allowed_operations(self) -> list[str] | None:
+        """Parse allowed_operations from JSON. Returns None if inheriting from root."""
+        if self.allowed_operations is None:
+            return None
+        try:
+            return json.loads(self.allowed_operations)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    
+    def __repr__(self):
+        return f'<DomainRootGrant root={self.domain_root_id} account={self.account_id}>'

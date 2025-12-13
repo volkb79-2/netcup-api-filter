@@ -1,0 +1,134 @@
+{# User Account: Backend Zones Browser (BYOD) #}
+{% extends "account/base.html" %}
+
+{% block title %}Zones: {{ backend.display_name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    {# Header #}
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{{ url_for('account.backends_list') }}">My Backends</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('account.backend_detail', backend_id=backend.id) }}">{{ backend.display_name }}</a></li>
+                <li class="breadcrumb-item active">Zones</li>
+            </ol>
+        </nav>
+        <h1>Available Zones</h1>
+        <p class="text-muted">Zones available in your backend: {{ backend.display_name }}</p>
+    </div>
+    
+    {% if error %}
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>Error fetching zones:</strong> {{ error }}
+    </div>
+    {% endif %}
+    
+    {% if zones %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Zones ({{ zones|length }})</h5>
+            <form action="{{ url_for('account.backend_zones', backend_id=backend.id) }}" method="get" class="d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                </button>
+            </form>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Zone</th>
+                        <th>Type</th>
+                        <th>Records</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for zone in zones %}
+                    <tr>
+                        <td>
+                            <i class="bi bi-globe me-2 text-primary"></i>
+                            <strong>{{ zone.name }}</strong>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ zone.kind or 'Primary' }}</span>
+                        </td>
+                        <td>
+                            {% if zone.records_count is defined %}
+                            <span class="badge bg-secondary">{{ zone.records_count }} records</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {# Check if user already has a realm for this zone #}
+                            {% set existing_realm = existing_realms.get(zone.name) %}
+                            {% if existing_realm %}
+                            <a href="{{ url_for('account.realm_detail', realm_id=existing_realm.id) }}" 
+                               class="btn btn-sm btn-success" title="View existing realm">
+                                <i class="bi bi-check-circle me-1"></i>Realm Active
+                            </a>
+                            {% else %}
+                            <a href="{{ url_for('account.request_realm_view') }}?backend_id={{ backend.id }}&zone={{ zone.name }}" 
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-plus-lg me-1"></i>Create Realm
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            {% if error %}
+            <i class="bi bi-exclamation-triangle display-1 text-danger"></i>
+            <h4 class="mt-3">Could Not Fetch Zones</h4>
+            <p class="text-muted">
+                Please check your backend credentials and try again.
+            </p>
+            <a href="{{ url_for('account.backend_edit', backend_id=backend.id) }}" class="btn btn-primary">
+                <i class="bi bi-pencil me-1"></i>Edit Backend Settings
+            </a>
+            {% else %}
+            <i class="bi bi-inbox display-1 text-muted"></i>
+            <h4 class="mt-3">No Zones Found</h4>
+            <p class="text-muted">
+                No zones were found in this backend. This might mean:
+            </p>
+            <ul class="text-start d-inline-block">
+                <li>The account has no zones configured</li>
+                <li>The API credentials don't have permission to list zones</li>
+                <li>The provider doesn't support zone enumeration</li>
+            </ul>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {# Info Card #}
+    <div class="card mt-4">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-info-circle me-1"></i>About Zone Listing</h6>
+        </div>
+        <div class="card-body">
+            <p class="mb-0">
+                This page shows zones that your DNS provider account has access to manage.
+                You can create a realm for any zone to control DNS records through our API filter.
+            </p>
+            {% if backend.provider and not backend.provider.supports_zone_list %}
+            <div class="alert alert-warning mt-3 mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Note:</strong> This provider may not support automatic zone enumeration.
+                You may need to specify the zone name manually when creating a realm.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

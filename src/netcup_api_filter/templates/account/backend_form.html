@@ -1,0 +1,253 @@
+{# User Account: Backend Create/Edit Form (BYOD) #}
+{% extends "account/base.html" %}
+
+{% block title %}{% if backend %}Edit Backend{% else %}Add DNS Backend{% endif %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    {# Header #}
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{{ url_for('account.backends_list') }}">My Backends</a></li>
+                {% if backend %}
+                <li class="breadcrumb-item"><a href="{{ url_for('account.backend_detail', backend_id=backend.id) }}">{{ backend.display_name }}</a></li>
+                <li class="breadcrumb-item active">Edit</li>
+                {% else %}
+                <li class="breadcrumb-item active">Add Backend</li>
+                {% endif %}
+            </ol>
+        </nav>
+        <h1>{% if backend %}Edit Backend{% else %}Add DNS Backend{% endif %}</h1>
+    </div>
+    
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form method="post" id="backend-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        {# Basic Info #}
+                        <h5 class="mb-3">Basic Information</h5>
+                        
+                        <div class="mb-3">
+                            <label for="provider_id" class="form-label">Provider <span class="text-danger">*</span></label>
+                            <select class="form-select" id="provider_id" name="provider_id" required 
+                                    {% if backend %}disabled{% endif %}>
+                                <option value="">Select a DNS provider...</option>
+                                {% for provider in providers %}
+                                <option value="{{ provider.id }}" 
+                                        data-provider-code="{{ provider.provider_code }}"
+                                        data-config-schema="{{ provider.config_schema | tojson | e }}"
+                                        {% if backend and backend.provider_id == provider.id %}selected{% endif %}
+                                        {% if not provider.is_enabled %}disabled{% endif %}>
+                                    {{ provider.display_name }}
+                                    {% if not provider.is_enabled %}(Coming Soon){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if backend %}
+                            <input type="hidden" name="provider_id" value="{{ backend.provider_id }}">
+                            <small class="text-muted">Provider cannot be changed after creation</small>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="service_name" class="form-label">Service Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="service_name" name="service_name" 
+                                   value="{{ backend.service_name if backend else '' }}"
+                                   pattern="[a-z0-9-]+" maxlength="64" required
+                                   placeholder="my-netcup-backend">
+                            <small class="text-muted">Unique identifier (lowercase letters, numbers, hyphens)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="display_name" class="form-label">Display Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="display_name" name="display_name" 
+                                   value="{{ backend.display_name if backend else '' }}"
+                                   maxlength="128" required
+                                   placeholder="My Netcup Account">
+                            <small class="text-muted">Human-readable name for display</small>
+                        </div>
+                        
+                        <hr class="my-4">
+                        
+                        {# Provider-specific Configuration #}
+                        <h5 class="mb-3">Provider Configuration</h5>
+                        
+                        {# Dynamic config fields based on provider selection #}
+                        <div id="provider-config">
+                            {# Netcup Configuration #}
+                            <div id="config-netcup" class="provider-config d-none">
+                                <div class="mb-3">
+                                    <label for="config_customer_id" class="form-label">Customer ID <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="config_customer_id" name="config_customer_id"
+                                           placeholder="12345678">
+                                    <small class="text-muted">Your Netcup customer number</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="config_api_key" class="form-label">API Key <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="config_api_key" name="config_api_key"
+                                           placeholder="API key from CCP">
+                                    <small class="text-muted">Generate in Customer Control Panel → API</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="config_api_password" class="form-label">API Password <span class="text-danger">*</span></label>
+                                    <input type="password" class="form-control" id="config_api_password" name="config_api_password"
+                                           placeholder="API password">
+                                    <small class="text-muted">Set when generating API key in CCP</small>
+                                </div>
+                            </div>
+                            
+                            {# PowerDNS Configuration #}
+                            <div id="config-powerdns" class="provider-config d-none">
+                                <div class="mb-3">
+                                    <label for="config_api_url" class="form-label">API URL <span class="text-danger">*</span></label>
+                                    <input type="url" class="form-control" id="config_api_url" name="config_api_url"
+                                           placeholder="http://powerdns:8081">
+                                    <small class="text-muted">PowerDNS API endpoint URL</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="config_pdns_api_key" class="form-label">API Key <span class="text-danger">*</span></label>
+                                    <input type="password" class="form-control" id="config_pdns_api_key" name="config_pdns_api_key"
+                                           placeholder="PowerDNS API key">
+                                    <small class="text-muted">Configured in pdns.conf</small>
+                                </div>
+                            </div>
+                            
+                            {# Cloudflare Configuration #}
+                            <div id="config-cloudflare" class="provider-config d-none">
+                                <div class="mb-3">
+                                    <label for="config_cf_api_token" class="form-label">API Token <span class="text-danger">*</span></label>
+                                    <input type="password" class="form-control" id="config_cf_api_token" name="config_cf_api_token"
+                                           placeholder="Cloudflare API token">
+                                    <small class="text-muted">Create in Cloudflare Dashboard → My Profile → API Tokens</small>
+                                </div>
+                            </div>
+                            
+                            {# Route53 Configuration #}
+                            <div id="config-route53" class="provider-config d-none">
+                                <div class="mb-3">
+                                    <label for="config_access_key_id" class="form-label">Access Key ID <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="config_access_key_id" name="config_access_key_id"
+                                           placeholder="AKIA...">
+                                    <small class="text-muted">AWS IAM access key</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="config_secret_access_key" class="form-label">Secret Access Key <span class="text-danger">*</span></label>
+                                    <input type="password" class="form-control" id="config_secret_access_key" name="config_secret_access_key"
+                                           placeholder="Secret key">
+                                    <small class="text-muted">AWS IAM secret access key</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="config_region" class="form-label">Region</label>
+                                    <input type="text" class="form-control" id="config_region" name="config_region"
+                                           value="us-east-1" placeholder="us-east-1">
+                                    <small class="text-muted">AWS region (default: us-east-1)</small>
+                                </div>
+                            </div>
+                            
+                            {# No provider selected message #}
+                            <div id="config-placeholder">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Select a provider above to see the required configuration fields.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <hr class="my-4">
+                        
+                        {# Submit #}
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg me-1"></i>
+                                {% if backend %}Save Changes{% else %}Add Backend{% endif %}
+                            </button>
+                            <a href="{{ url_for('account.backends_list') }}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        {# Help Sidebar #}
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-question-circle me-1"></i>Getting Help</h6>
+                </div>
+                <div class="card-body">
+                    <h6>Netcup</h6>
+                    <p class="small">
+                        API credentials are created in the 
+                        <a href="https://www.customercontrolpanel.de/" target="_blank">Customer Control Panel (CCP)</a>
+                        under "Master Data" → "API".
+                    </p>
+                    
+                    <h6>PowerDNS</h6>
+                    <p class="small">
+                        The API key is set in your <code>pdns.conf</code> file as <code>api-key=...</code>.
+                        Ensure the API is enabled with <code>api=yes</code>.
+                    </p>
+                    
+                    <hr>
+                    
+                    <h6>Security Note</h6>
+                    <p class="small text-muted mb-0">
+                        Your credentials are stored securely and only used to perform DNS operations
+                        you explicitly request. We never share your credentials with third parties.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const providerSelect = document.getElementById('provider_id');
+    const configContainers = document.querySelectorAll('.provider-config');
+    const placeholder = document.getElementById('config-placeholder');
+    
+    function showProviderConfig() {
+        const selectedOption = providerSelect.options[providerSelect.selectedIndex];
+        const providerCode = selectedOption.dataset.providerCode || '';
+        
+        // Hide all config sections
+        configContainers.forEach(c => c.classList.add('d-none'));
+        
+        // Show appropriate config section
+        if (providerSelect.value && providerCode) {
+            placeholder.classList.add('d-none');
+            
+            // Map provider codes to config IDs
+            const configMap = {
+                'netcup': 'config-netcup',
+                'powerdns': 'config-powerdns',
+                'cloudflare': 'config-cloudflare',
+                'route53': 'config-route53'
+            };
+            
+            const configId = configMap[providerCode];
+            if (configId) {
+                const configEl = document.getElementById(configId);
+                if (configEl) {
+                    configEl.classList.remove('d-none');
+                }
+            }
+        } else {
+            placeholder.classList.remove('d-none');
+        }
+    }
+    
+    providerSelect.addEventListener('change', showProviderConfig);
+    
+    // Show config for pre-selected provider (edit mode)
+    if (providerSelect.value) {
+        showProviderConfig();
+    }
+});
+</script>
+{% endblock %}

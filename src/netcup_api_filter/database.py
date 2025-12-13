@@ -34,9 +34,29 @@ from .models import (
     RegistrationRequest,
     Settings,
     validate_username,
+    # Multi-backend models
+    BackendProvider,
+    BackendService,
+    ManagedDomainRoot,
+    DomainRootGrant,
+    OwnerTypeEnum,
+    VisibilityEnum,
+    TestStatusEnum,
+    GrantTypeEnum,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def seed_multi_backend_infrastructure():
+    """Seed enum tables and backend providers for multi-backend support."""
+    from .bootstrap.seeding import seed_enum_tables, seed_backend_providers
+    
+    # Seed enum tables (test_status, visibility, owner_type, grant_type)
+    seed_enum_tables()
+    
+    # Seed built-in backend providers (netcup, powerdns, etc.)
+    seed_backend_providers()
 
 
 def get_db_path() -> str:
@@ -76,6 +96,9 @@ def init_db(app):
         # Create all tables from models
         db.create_all()
         logger.info("Database tables created/verified")
+        
+        # Seed multi-backend infrastructure (enum tables + providers)
+        seed_multi_backend_infrastructure()
         
         # Seed default admin account
         seed_admin_account()
