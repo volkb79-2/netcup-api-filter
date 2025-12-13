@@ -2427,13 +2427,23 @@ def backend_create():
             # Get form data
             service_name = request.form.get('service_name', '').strip().lower()
             display_name = request.form.get('display_name', '').strip()
-            provider_id = int(request.form.get('provider_id'))
+            provider_id_str = request.form.get('provider_id', '')
             owner_type_code = request.form.get('owner_type')
             owner_id = request.form.get('owner_id')
             is_active = 'is_active' in request.form
             
-            # Validate
-            if not service_name or not display_name or not provider_id:
+            # Validate provider_id
+            if not provider_id_str:
+                flash('Provider is required', 'error')
+                return redirect(url_for('admin.backend_create'))
+            try:
+                provider_id = int(provider_id_str)
+            except ValueError:
+                flash('Invalid provider selection', 'error')
+                return redirect(url_for('admin.backend_create'))
+            
+            # Validate other fields
+            if not service_name or not display_name:
                 flash('All required fields must be filled', 'error')
                 return redirect(url_for('admin.backend_create'))
             
@@ -2644,7 +2654,11 @@ def domain_roots():
             query = query.filter_by(visibility_id=visibility.id)
     
     if backend_filter != 'all':
-        query = query.filter_by(backend_service_id=int(backend_filter))
+        try:
+            backend_id = int(backend_filter)
+            query = query.filter_by(backend_service_id=backend_id)
+        except ValueError:
+            pass  # Invalid filter value, ignore
     
     roots = query.order_by(ManagedDomainRoot.root_domain).all()
     backends = BackendService.query.filter_by(is_active=True).all()
@@ -2681,21 +2695,39 @@ def domain_root_create():
         try:
             root_domain = request.form.get('root_domain', '').strip().lower()
             dns_zone = request.form.get('dns_zone', '').strip().lower()
-            backend_service_id = int(request.form.get('backend_service_id'))
+            backend_service_id_str = request.form.get('backend_service_id', '')
             visibility_code = request.form.get('visibility')
             display_name = request.form.get('display_name', '').strip()
             description = request.form.get('description', '').strip()
             is_active = 'is_active' in request.form
             allow_apex = 'allow_apex_access' in request.form
-            min_depth = int(request.form.get('min_subdomain_depth', 1))
-            max_depth = int(request.form.get('max_subdomain_depth', 3))
+            
+            # Validate backend_service_id
+            if not backend_service_id_str:
+                flash('Backend service is required', 'error')
+                return redirect(url_for('admin.domain_root_create'))
+            try:
+                backend_service_id = int(backend_service_id_str)
+            except ValueError:
+                flash('Invalid backend service selection', 'error')
+                return redirect(url_for('admin.domain_root_create'))
+            
+            # Parse integer values with defaults
+            try:
+                min_depth = int(request.form.get('min_subdomain_depth', 1))
+            except ValueError:
+                min_depth = 1
+            try:
+                max_depth = int(request.form.get('max_subdomain_depth', 3))
+            except ValueError:
+                max_depth = 3
             
             # Get selected record types and operations
             record_types = request.form.getlist('allowed_record_types')
             operations = request.form.getlist('allowed_operations')
             
-            # Validate
-            if not root_domain or not dns_zone or not backend_service_id:
+            # Validate domain fields
+            if not root_domain or not dns_zone:
                 flash('All required fields must be filled', 'error')
                 return redirect(url_for('admin.domain_root_create'))
             
@@ -2786,7 +2818,10 @@ def domain_root_edit(root_id):
             
             backend_id = request.form.get('backend_service_id')
             if backend_id:
-                root.backend_service_id = int(backend_id)
+                try:
+                    root.backend_service_id = int(backend_id)
+                except ValueError:
+                    pass  # Keep existing value
             
             # Update restrictions
             record_types = request.form.getlist('allowed_record_types')

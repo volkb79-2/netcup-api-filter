@@ -294,7 +294,7 @@ document.getElementById('provider_id').dispatchEvent(new Event('change'));
 {% set config = backend.get_config() %}
 {% for key, value in config.items() %}
 const field_{{ loop.index }} = document.querySelector('[name="config_{{ key }}"]');
-if (field_{{ loop.index }}) field_{{ loop.index }}.value = "{{ value }}";
+if (field_{{ loop.index }}) field_{{ loop.index }}.value = {{ value | tojson }};
 {% endfor %}
 {% endif %}
 </script>
