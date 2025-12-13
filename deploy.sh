@@ -1005,6 +1005,7 @@ phase_tests() {
         "UI Interactive|ui_tests/tests/test_ui_interactive.py|all"
         "UI Functional|ui_tests/tests/test_ui_functional.py|all"
         "User Journeys|ui_tests/tests/test_user_journeys.py|all"
+        "Backends UI|ui_tests/tests/test_backends_ui.py|all"
         "Console Errors|ui_tests/tests/test_console_errors.py|all"
         "Bulk Operations|ui_tests/tests/test_bulk_operations.py|all"
         "Accessibility|ui_tests/tests/test_accessibility.py|all"
