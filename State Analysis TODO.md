@@ -523,8 +523,15 @@ The original proposal in sections above is technically sound but incomplete. It 
    - **Platform-managed backends**: Admin provides credentials, users get subdomain access
    - **User-managed backends**: User provides their own DNS credentials (BYOD - Bring Your Own DNS)
 3. **`backend_type` should be a foreign key** to a `backend_providers` table (plugins), not a text column
+4. **Multiple backends per domain tree supported**: e.g., `vxxu.de` at Netcup AND `dyn.vxxu.de` delegated to PowerDNS
 
 This section provides a comprehensive architectural redesign addressing all gaps.
+
+**Design Principles**:
+- Greenfield implementation (no legacy/migration considerations)
+- No encryption at rest for now (external service dependency postponed)
+- Strong typing: ENUMs and foreign keys instead of unconstrained text fields
+- Realm uniqueness: Same subdomain cannot be claimed by multiple accounts
 
 ---
 
@@ -662,6 +669,54 @@ This is correct. The original design allowed users to request ANY domain as a re
 
 ```sql
 -- ============================================================================
+-- ENUM-like Status Tables (for type safety instead of VARCHAR with CHECK)
+-- ============================================================================
+
+-- Test status enumeration
+CREATE TABLE test_status_enum (
+    id INTEGER PRIMARY KEY,
+    status_code VARCHAR(20) UNIQUE NOT NULL,
+    display_name VARCHAR(64) NOT NULL
+);
+INSERT INTO test_status_enum (status_code, display_name) VALUES
+    ('pending', 'Pending'),
+    ('success', 'Success'),
+    ('failed', 'Failed');
+
+-- Visibility enumeration
+CREATE TABLE visibility_enum (
+    id INTEGER PRIMARY KEY,
+    visibility_code VARCHAR(20) UNIQUE NOT NULL,
+    display_name VARCHAR(64) NOT NULL,
+    description TEXT
+);
+INSERT INTO visibility_enum (visibility_code, display_name, description) VALUES
+    ('public', 'Public', 'Any authenticated user can request subdomains'),
+    ('private', 'Private', 'Only explicitly granted users can request subdomains'),
+    ('invite', 'Invite Only', 'Users need invitation code to request subdomains');
+
+-- Owner type enumeration  
+CREATE TABLE owner_type_enum (
+    id INTEGER PRIMARY KEY,
+    owner_code VARCHAR(20) UNIQUE NOT NULL,
+    display_name VARCHAR(64) NOT NULL
+);
+INSERT INTO owner_type_enum (owner_code, display_name) VALUES
+    ('platform', 'Platform'),
+    ('user', 'User');
+
+-- Grant type enumeration
+CREATE TABLE grant_type_enum (
+    id INTEGER PRIMARY KEY,
+    grant_code VARCHAR(20) UNIQUE NOT NULL,
+    display_name VARCHAR(64) NOT NULL
+);
+INSERT INTO grant_type_enum (grant_code, display_name) VALUES
+    ('standard', 'Standard'),
+    ('admin', 'Administrator'),
+    ('invite_only', 'Invite Only');
+
+-- ============================================================================
 -- Provider Registry (plugin system foundation)
 -- ============================================================================
 CREATE TABLE backend_providers (
@@ -689,31 +744,30 @@ CREATE TABLE backend_services (
     service_name VARCHAR(64) UNIQUE NOT NULL,      -- 'netcup-production', 'powerdns-iot'
     display_name VARCHAR(128) NOT NULL,
     
-    -- Ownership
-    owner_type VARCHAR(20) NOT NULL,               -- 'platform' or 'user'
+    -- Ownership (FK to enum table for type safety)
+    owner_type_id INTEGER NOT NULL REFERENCES owner_type_enum(id),
     owner_id INTEGER,                              -- NULL for platform, account.id for user
     
-    -- Configuration (encrypted JSON in production)
+    -- Configuration (plaintext JSON for now, encryption postponed)
     config TEXT NOT NULL,
     
     -- Status
     is_active BOOLEAN DEFAULT 1,
     is_default_for_owner BOOLEAN DEFAULT 0,
     
-    -- Health monitoring
+    -- Health monitoring (FK to enum table for type safety)
     last_tested_at DATETIME,
-    test_status VARCHAR(20),                       -- 'success', 'failed', 'pending'
+    test_status_id INTEGER REFERENCES test_status_enum(id),
     test_message TEXT,
     
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-    CHECK(owner_type IN ('platform', 'user')),
     FOREIGN KEY (owner_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
 -- Index for user-owned backends lookup
-CREATE INDEX idx_backend_services_owner ON backend_services(owner_type, owner_id);
+CREATE INDEX idx_backend_services_owner ON backend_services(owner_type_id, owner_id);
 
 -- ============================================================================
 -- Managed Domain Roots (admin-controlled zones)
@@ -726,8 +780,8 @@ CREATE TABLE managed_domain_roots (
     root_domain VARCHAR(255) NOT NULL,             -- 'vxxu.de' or 'dyn.vxxu.de'
     dns_zone VARCHAR(255) NOT NULL,                -- Actual zone in backend (may differ)
     
-    -- Access control
-    visibility VARCHAR(20) NOT NULL DEFAULT 'private', -- 'public', 'private', 'invite'
+    -- Access control (FK to enum table for type safety)
+    visibility_id INTEGER NOT NULL REFERENCES visibility_enum(id),
     
     -- Subdomain policy
     allow_apex_access BOOLEAN DEFAULT 0,           -- Can users get apex records?
@@ -751,8 +805,7 @@ CREATE TABLE managed_domain_roots (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-    UNIQUE(backend_service_id, root_domain),
-    CHECK(visibility IN ('public', 'private', 'invite'))
+    UNIQUE(backend_service_id, root_domain)
 );
 
 -- ============================================================================
@@ -763,8 +816,8 @@ CREATE TABLE domain_root_grants (
     domain_root_id INTEGER NOT NULL REFERENCES managed_domain_roots(id) ON DELETE CASCADE,
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     
-    -- Grant type
-    grant_type VARCHAR(20) NOT NULL DEFAULT 'standard', -- 'standard', 'admin', 'invite_only'
+    -- Grant type (FK to enum table for type safety)
+    grant_type_id INTEGER NOT NULL REFERENCES grant_type_enum(id),
     
     -- Additional restrictions (tighter than root's defaults)
     allowed_record_types TEXT,                     -- JSON, NULL = inherit from root
@@ -790,7 +843,6 @@ ALTER TABLE account_realms ADD COLUMN user_backend_id INTEGER REFERENCES backend
 
 -- Constraint: exactly one of domain_root_id or user_backend_id must be set
 -- (realm is either under platform root OR uses user's own backend)
--- NOTE: Add this constraint AFTER migration phase when legacy realms are updated
 CREATE TRIGGER check_realm_backend_exclusive
     BEFORE INSERT ON account_realms
     WHEN NEW.domain_root_id IS NULL AND NEW.user_backend_id IS NULL
@@ -805,57 +857,106 @@ CREATE TRIGGER check_realm_backend_exclusive_update
         SELECT RAISE(ABORT, 'Realm must have either domain_root_id or user_backend_id');
     END;
 
--- Alternative: Use CHECK constraint (if SQLite version supports it on ALTER)
--- ALTER TABLE account_realms ADD CONSTRAINT check_backend_exclusivity
---     CHECK((domain_root_id IS NOT NULL AND user_backend_id IS NULL) OR 
---           (domain_root_id IS NULL AND user_backend_id IS NOT NULL));
+-- ============================================================================
+-- Realm Uniqueness Constraint (prevent duplicate subdomain claims)
+-- ============================================================================
+-- Ensure the same subdomain under a domain root can only be claimed by one account
+-- This prevents user A from claiming 'myhost.dyn.vxxu.de' if user B already has it
+CREATE UNIQUE INDEX idx_unique_realm_subdomain 
+    ON account_realms(domain_root_id, realm_value) 
+    WHERE domain_root_id IS NOT NULL;
+
+-- For user backends, uniqueness is per-user (same user can't have duplicate realms)
+CREATE UNIQUE INDEX idx_unique_user_realm 
+    ON account_realms(user_backend_id, account_id, domain, realm_value) 
+    WHERE user_backend_id IS NOT NULL;
 ```
 
 ---
 
-### Use Case A: Platform-Managed Backends
+### Use Case A: Platform-Managed Backends (Multi-Backend Example)
 
-**Scenario**: Admin configures Netcup credentials for `vxxu.de`. Users can request subdomain realms like `home.dyn.vxxu.de`.
+**Scenario**: Admin has multiple DNS backends:
+- `vxxu.de` is hosted at Netcup (registrar DNS)
+- `dyn.vxxu.de` is delegated via NS records to a self-hosted PowerDNS instance
+
+Users can request realms under either zone, with different backends handling the DNS operations.
 
 **Workflow**:
 
-1. **Admin creates Backend Service**:
-   ```
-   Provider: netcup
-   Service Name: netcup-production  
-   Config: {customer_id, api_key, api_password}
-   Owner Type: platform
-   ```
+**Step 1: Admin creates TWO Backend Services**
 
-2. **Admin creates Managed Domain Root**:
-   ```
-   Backend: netcup-production
-   Root Domain: dyn.vxxu.de
-   DNS Zone: vxxu.de (actual zone in Netcup)
-   Visibility: public
-   Min Subdomain Depth: 1 (e.g., home.dyn.vxxu.de)
-   Allowed Record Types: [A, AAAA, TXT]
-   Allowed Operations: [read, update]
-   ```
+```
+Backend Service 1:
+  Provider: netcup
+  Service Name: netcup-vxxu  
+  Config: {customer_id, api_key, api_password}
+  Owner Type: platform
 
-3. **User creates Realm** (UI shows dropdown of available roots):
-   ```
-   Available Roots: [dyn.vxxu.de (Public - Netcup)]
-   Selected: dyn.vxxu.de
-   Requested Subdomain: myrouter  → myrouter.dyn.vxxu.de
-   Realm Type: host
-   Record Types: [A, AAAA]
-   Operations: [read, update]
-   ```
+Backend Service 2:
+  Provider: powerdns
+  Service Name: powerdns-dyn  
+  Config: {api_url: "http://powerdns:8081", api_key: "xxx"}
+  Owner Type: platform
+```
 
-4. **Admin approves** (or auto-approve for public roots)
+**Step 2: Admin creates TWO Managed Domain Roots**
 
-5. **User creates API token** for the realm
+```
+Domain Root 1 (for direct vxxu.de records):
+  Backend: netcup-vxxu
+  Root Domain: vxxu.de
+  DNS Zone: vxxu.de (same - managed at Netcup)
+  Visibility: private (admin grants required)
+  Min Subdomain Depth: 1
+  Allowed Record Types: [A, AAAA, CNAME, TXT]
+  Allowed Operations: [read, update]
 
-6. **API calls route through platform backend**:
-   ```
-   Token → Realm(myrouter.dyn.vxxu.de) → DomainRoot(dyn.vxxu.de) → BackendService(netcup-production)
-   ```
+Domain Root 2 (for delegated dyn.vxxu.de zone):
+  Backend: powerdns-dyn
+  Root Domain: dyn.vxxu.de
+  DNS Zone: dyn.vxxu.de (delegated zone in PowerDNS)
+  Visibility: public (any user can claim free subdomain)
+  Min Subdomain Depth: 1
+  Allowed Record Types: [A, AAAA, TXT]
+  Allowed Operations: [read, update]
+```
+
+**Step 3: Different users create realms under different roots**
+
+```
+User A (granted access to vxxu.de):
+  Available Roots: [vxxu.de (Private - Netcup), dyn.vxxu.de (Public - PowerDNS)]
+  Selected: vxxu.de
+  Requested Subdomain: host1 → host1.vxxu.de
+  → Realm uses Netcup API
+
+User B (public access):
+  Available Roots: [dyn.vxxu.de (Public - PowerDNS)]
+  Selected: dyn.vxxu.de
+  Requested Subdomain: host2 → host2.dyn.vxxu.de
+  → Realm uses PowerDNS API
+
+User C (also public):
+  Available Roots: [dyn.vxxu.de (Public - PowerDNS)]
+  Selected: dyn.vxxu.de
+  Requested Subdomain: host2 → ERROR: "host2.dyn.vxxu.de already claimed"
+  → Uniqueness constraint prevents duplicate claims
+```
+
+**Step 4: API calls route to correct backend**
+
+```
+Token(host1.vxxu.de) → Realm → DomainRoot(vxxu.de) → BackendService(netcup-vxxu) → Netcup API
+Token(host2.dyn.vxxu.de) → Realm → DomainRoot(dyn.vxxu.de) → BackendService(powerdns-dyn) → PowerDNS API
+```
+
+**Key Design Points**:
+- Same domain tree can have multiple backends at different delegation points
+- Each `managed_domain_root` points to exactly one `backend_service`
+- Public roots allow any authenticated user to claim free subdomains
+- Uniqueness index prevents multiple accounts from claiming the same subdomain
+- Backend resolution is transparent to API clients (they just use their token)
 
 **UI Changes for Realm Creation**:
 ```html
@@ -867,7 +968,7 @@ CREATE TRIGGER check_realm_backend_exclusive_update
     {% for root in available_roots %}
     <option value="{{ root.id }}">
       {{ root.root_domain }} ({{ root.backend_service.display_name }})
-      {% if root.visibility == 'public' %} - Public{% endif %}
+      {% if root.visibility.visibility_code == 'public' %} - Public{% endif %}
     </option>
     {% endfor %}
     {% if user_has_own_backends %}
@@ -949,13 +1050,11 @@ CREATE TRIGGER check_realm_backend_exclusive_update
 def get_backend_for_realm(realm: AccountRealm) -> DNSBackend:
     """Resolve the correct backend for a realm.
     
-    Priority:
-    1. User's own backend (if user_backend_id set)
-    2. Platform backend via domain root (if domain_root_id set)
-    3. Legacy fallback to global netcup_config (migration path)
+    Exactly one of domain_root_id or user_backend_id must be set
+    (enforced by database trigger).
     """
     
-    # Case B: User-provided backend
+    # Case B: User-provided backend (BYOD)
     if realm.user_backend_id:
         service = BackendService.query.get(realm.user_backend_id)
         if not service or not service.is_active:
@@ -974,14 +1073,8 @@ def get_backend_for_realm(realm: AccountRealm) -> DNSBackend:
             raise BackendError("Backend service is disabled")
         return instantiate_backend(service)
     
-    # Legacy: Fall back to global config (for migration)
-    config = Settings.get('netcup_config')
-    if config:
-        logger.warning(f"Realm {realm.id} using legacy global backend")
-        from .netcup import NetcupBackend
-        return NetcupBackend(config)
-    
-    raise BackendError("No backend configured for realm")
+    # Should never reach here due to database trigger constraint
+    raise BackendError("No backend configured for realm (invalid state)")
 
 
 def instantiate_backend(service: BackendService) -> DNSBackend:
@@ -1039,59 +1132,12 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
 
 ---
 
-### Migration Strategy
-
-**Phase 1: Schema Migration** (backward compatible)
-1. Add new tables (backend_providers, backend_services, managed_domain_roots, domain_root_grants)
-2. Add new columns to account_realms (domain_root_id, user_backend_id, both nullable)
-3. Keep existing netcup_config in Settings as fallback
-
-**Phase 2: Admin Setup**
-1. Admin creates backend_providers entries (or use seeds)
-2. Admin creates backend_services for existing netcup_config
-3. Admin creates managed_domain_roots for known zones
-4. Existing realms continue working via legacy fallback
-
-**Phase 3: Realm Migration**
-1. For each existing realm, determine correct domain_root
-2. Update realm.domain_root_id accordingly
-3. Validate all realms have proper backend path
-
-**Phase 4: Deprecation**
-1. Remove legacy fallback code path
-2. Make domain_root_id OR user_backend_id required
-3. Remove netcup_config from Settings (move to backend_services)
-
----
-
 ### Security Considerations
 
-1. **Credential Encryption**: Backend service configs should be encrypted at rest
-   ```python
-   import os
-   from cryptography.fernet import Fernet
-   
-   # ENCRYPTION_KEY management:
-   # - Store in environment variable (not in code or database)
-   # - Use secrets manager (AWS Secrets Manager, HashiCorp Vault) in production
-   # - Key should be base64-encoded 32-byte key, generated via Fernet.generate_key()
-   # - Rotate key periodically; re-encrypt all configs during rotation
-   # - Example: export NAF_CONFIG_ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-   
-   ENCRYPTION_KEY = os.environ.get('NAF_CONFIG_ENCRYPTION_KEY')
-   if not ENCRYPTION_KEY:
-       raise RuntimeError("NAF_CONFIG_ENCRYPTION_KEY environment variable not set")
-   
-   fernet = Fernet(ENCRYPTION_KEY.encode())
-   
-   def encrypt_config(config: dict) -> str:
-       """Encrypt config for storage."""
-       return fernet.encrypt(json.dumps(config).encode()).decode()
-   
-   def decrypt_config(encrypted: str) -> dict:
-       """Decrypt config for use."""
-       return json.loads(fernet.decrypt(encrypted.encode()).decode())
-   ```
+1. **Credential Storage**: Backend service configs are stored as plaintext JSON for now
+   - Encryption at rest postponed (requires external key management service)
+   - Database file should be protected at filesystem level
+   - Future: Add Fernet encryption when external KMS is available
 
 2. **User Backend Validation**: Before allowing user backends, require:
    - Email verification
@@ -1102,7 +1148,12 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
    - Platform backends: Admin manually verifies zone access
    - User backends: Connection test + zone list enumeration
 
-4. **Audit Logging**: Log all backend credential changes with actor, timestamp, IP
+4. **Realm Uniqueness**: 
+   - Database index prevents duplicate subdomain claims under same domain root
+   - First user to claim a subdomain owns it exclusively
+   - Audit log tracks all realm creation/deletion
+
+5. **Audit Logging**: Log all backend credential changes with actor, timestamp, IP
 
 ---
 
@@ -1110,14 +1161,15 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
 
 | Priority | Component | Effort | Dependencies |
 |----------|-----------|--------|--------------|
+| P0 | Database schema (all tables) | 1 day | None |
 | P0 | Backend abstraction interface | 1 day | None |
 | P0 | Netcup backend implementation | 0.5 day | P0 |
-| P1 | Database schema migration | 1 day | None |
-| P1 | Backend providers seeding | 0.5 day | P1 |
-| P2 | Admin backend management UI | 2 days | P0, P1 |
-| P2 | Managed domain roots UI | 1.5 days | P1 |
-| P2 | Realm creation with root selection | 1 day | P2 |
-| P3 | User backend management | 2 days | P0, P1 |
+| P1 | Backend providers seeding | 0.5 day | P0 |
+| P1 | Admin backend management UI | 2 days | P0 |
+| P1 | Managed domain roots UI | 1.5 days | P0 |
+| P2 | Realm creation with root selection | 1 day | P1 |
+| P2 | Realm uniqueness enforcement | 0.5 day | P2 |
+| P3 | User backend management (BYOD) | 2 days | P0 |
 | P3 | PowerDNS backend implementation | 1 day | P0 |
 | P4 | Cloudflare backend implementation | 1 day | P0 |
 | P4 | Route53 backend implementation | 1 day | P0 |
@@ -1126,15 +1178,17 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
 
 ### Summary of Architectural Changes
 
-| Current | Proposed |
-|---------|----------|
-| Free-text realm domain | Dropdown of available domain roots |
-| Single global netcup_config | Multiple backend services |
-| Hard-coded Netcup calls | Abstract DNSBackend interface |
-| No backend type tracking | Foreign key to backend_providers |
-| No user-owned backends | User backend management (BYOD) |
-| No zone validation | Backend validates zone access |
-| Admin approves any domain | Admin controls available roots |
+| Aspect | Implementation |
+|--------|---------------|
+| Realm selection | Dropdown of available domain roots (not free-text) |
+| Backend configuration | Multiple `backend_services` with FK to `backend_providers` |
+| DNS operations | Abstract `DNSBackend` interface with provider implementations |
+| Status/type fields | ENUM tables with foreign keys (type-safe) |
+| User backends | BYOD support via user-owned `backend_services` |
+| Zone validation | Backend validates zone access before realm creation |
+| Domain roots | Admin-controlled `managed_domain_roots` with visibility policies |
+| Realm uniqueness | Database index prevents duplicate subdomain claims |
+| Multi-backend trees | Same domain tree can have different backends at delegation points |
 
-This proposal maintains backward compatibility while enabling the multi-backend, multi-tenant architecture required for production use.
+This is a greenfield implementation enabling multi-backend, multi-tenant architecture.
 
