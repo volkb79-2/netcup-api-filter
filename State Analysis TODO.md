@@ -1159,36 +1159,107 @@ def instantiate_backend(service: BackendService) -> DNSBackend:
 
 ### Implementation Priority
 
-| Priority | Component | Effort | Dependencies |
-|----------|-----------|--------|--------------|
-| P0 | Database schema (all tables) | 1 day | None |
-| P0 | Backend abstraction interface | 1 day | None |
-| P0 | Netcup backend implementation | 0.5 day | P0 |
-| P1 | Backend providers seeding | 0.5 day | P0 |
-| P1 | Admin backend management UI | 2 days | P0 |
-| P1 | Managed domain roots UI | 1.5 days | P0 |
-| P2 | Realm creation with root selection | 1 day | P1 |
-| P2 | Realm uniqueness enforcement | 0.5 day | P2 |
-| P3 | User backend management (BYOD) | 2 days | P0 |
-| P3 | PowerDNS backend implementation | 1 day | P0 |
-| P4 | Cloudflare backend implementation | 1 day | P0 |
-| P4 | Route53 backend implementation | 1 day | P0 |
+| Priority | Component | Effort | Dependencies | **Status** |
+|----------|-----------|--------|--------------|------------|
+| P0 | Database schema (all tables) | 1 day | None | ✅ Complete |
+| P0 | Backend abstraction interface | 1 day | None | ✅ Complete |
+| P0 | Netcup backend implementation | 0.5 day | P0 | ✅ Complete |
+| P1 | Backend providers seeding | 0.5 day | P0 | ✅ Complete |
+| P1 | Admin backend management UI | 2 days | P0 | ✅ Complete |
+| P1 | Managed domain roots UI | 1.5 days | P0 | ✅ Complete |
+| P2 | Realm creation with root selection | 1 day | P1 | ✅ Complete |
+| P2 | Realm uniqueness enforcement | 0.5 day | P2 | ✅ Complete |
+| P3 | User backend management (BYOD) | 2 days | P0 | ✅ Complete |
+| P3 | PowerDNS backend implementation | 1 day | P0 | ✅ Complete |
+| P4 | Cloudflare backend implementation | 1 day | P0 | 🔲 Not Started |
+| P4 | Route53 backend implementation | 1 day | P0 | 🔲 Not Started |
 
 ---
 
 ### Summary of Architectural Changes
 
-| Aspect | Implementation |
-|--------|---------------|
-| Realm selection | Dropdown of available domain roots (not free-text) |
-| Backend configuration | Multiple `backend_services` with FK to `backend_providers` |
-| DNS operations | Abstract `DNSBackend` interface with provider implementations |
-| Status/type fields | ENUM tables with foreign keys (type-safe) |
-| User backends | BYOD support via user-owned `backend_services` |
-| Zone validation | Backend validates zone access before realm creation |
-| Domain roots | Admin-controlled `managed_domain_roots` with visibility policies |
-| Realm uniqueness | Database index prevents duplicate subdomain claims |
-| Multi-backend trees | Same domain tree can have different backends at delegation points |
+| Aspect | Implementation | **Status** |
+|--------|---------------|------------|
+| Realm selection | Dropdown of available domain roots (not free-text) | ✅ Complete |
+| Backend configuration | Multiple `backend_services` with FK to `backend_providers` | ✅ Complete |
+| DNS operations | Abstract `DNSBackend` interface with provider implementations | ✅ Complete |
+| Status/type fields | ENUM tables with foreign keys (type-safe) | ✅ Complete |
+| User backends | BYOD support via user-owned `backend_services` | ✅ Complete |
+| Zone validation | Backend validates zone access before realm creation | ✅ Complete |
+| Domain roots | Admin-controlled `managed_domain_roots` with visibility policies | ✅ Complete |
+| Realm uniqueness | Database index prevents duplicate subdomain claims | ✅ Complete |
+| Multi-backend trees | Same domain tree can have different backends at delegation points | ✅ Complete |
 
 This is a greenfield implementation enabling multi-backend, multi-tenant architecture.
+
+---
+
+## Implementation Status Summary
+
+### Completed Features
+
+#### Backend Abstraction Layer
+- ✅ `DNSBackend` abstract base class (`backends/base.py`)
+- ✅ Netcup CCP API implementation (`backends/netcup.py`)
+- ✅ PowerDNS HTTP API implementation (`backends/powerdns.py`)
+- ✅ Backend registry with provider discovery (`backends/registry.py`)
+
+#### Database Models (9 new tables)
+- ✅ 4 ENUM tables: TestStatusEnum, VisibilityEnum, OwnerTypeEnum, GrantTypeEnum
+- ✅ BackendProvider - Plugin registry with JSON Schema config
+- ✅ BackendService - Credential instances (platform/user-owned)
+- ✅ ManagedDomainRoot - Admin-controlled zones with visibility policies
+- ✅ DomainRootGrant - User access grants
+- ✅ Modified AccountRealm with domain_root_id and user_backend_id
+
+#### Admin UI (10+ templates)
+- ✅ `backends_list.html` - List all backend services with filters
+- ✅ `backend_detail.html` - View backend with connection status
+- ✅ `backend_form.html` - Create/edit with provider-specific config
+- ✅ `backend_providers.html` - View available providers
+- ✅ `domain_roots_list.html` - List domain roots with stats
+- ✅ `domain_root_detail.html` - View root with realms and grants
+- ✅ `domain_root_form.html` - Create/edit with policies
+- ✅ `domain_root_grants.html` - Manage user grants
+- ✅ Updated `base.html` with DNS dropdown menu
+
+#### User Account UI (BYOD)
+- ✅ `account/backends_list.html` - List user's own backends
+- ✅ `account/backend_detail.html` - View backend with realms
+- ✅ `account/backend_form.html` - Create/edit with provider-specific config
+- ✅ `account/backend_zones.html` - Browse available zones
+- ✅ Updated `account/base.html` with "My Backends" nav link
+- ✅ Updated `account/request_realm.html` with domain root dropdown
+
+#### Routes
+- ✅ Admin backend CRUD: list, create, detail, edit, test, enable, disable, delete
+- ✅ Admin domain root CRUD: list, create, detail, edit, enable, disable, delete
+- ✅ Admin provider listing
+- ✅ User backend CRUD: list, create, detail, edit, test, delete
+- ✅ User backend zones browsing
+- ✅ Updated realm request with domain root selection
+
+#### Tests
+- ✅ Journey test `test_09_multibackend.py` (14 test cases)
+  - Admin views providers, backends, domain roots
+  - Admin create forms accessibility
+  - User realm request with dropdown
+  - User backend management (BYOD)
+  - State combinations (visibility, status)
+  - Navigation tests
+- ✅ UI tests `test_backends_ui.py` (14 test cases)
+  - Admin backends list, providers, create
+  - User backends list, create, providers info
+  - Navigation tests
+  - Stats display tests
+
+#### Seeding
+- ✅ Auto-seeding of enum tables and providers on database init
+- ✅ Demo backend + public domain root at dyn.example.com
+
+### Not Yet Implemented
+
+- 🔲 Cloudflare backend implementation
+- 🔲 Route53 backend implementation
+- 🔲 Encryption at rest for credentials (requires external KMS)
 

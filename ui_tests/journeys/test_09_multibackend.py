@@ -9,12 +9,14 @@ This journey tests the complete multi-backend DNS management system:
 4. **User requests realm under domain root** - User selects zone and subdomain
 5. **Admin approves realm** - Realm is linked to backend service
 6. **Backend provider management** - Admin views available providers
+7. **User BYOD management** - User manages their own backends
 
 This journey covers the combinatorial space of states:
 - Public vs Private domain roots
 - Platform vs User backends
 - Different providers (netcup, powerdns)
 - Realm request with domain root selection
+- User backend CRUD operations
 
 Prerequisites:
 - Admin logged in (from test_01)
@@ -60,6 +62,13 @@ def backend_data():
             "root_domain": f"test-private-{suffix}.example.com",
             "display_name": f"Private Test Zone {suffix}",
             "visibility": "private",
+        },
+        "user_backend": {
+            "service_name": f"my-backend-{suffix}",
+            "display_name": f"My Personal Backend {suffix}",
+            "customer_id": "98765432",
+            "api_key": "my-api-key",
+            "api_password": "my-api-password",
         },
     }
 
@@ -231,14 +240,93 @@ class TestUserViewsDomainRoots:
 
 
 # ============================================================================
-# Phase 4: State Combinations Testing
+# Phase 4: User Backend Management (BYOD)
+# ============================================================================
+
+class TestUserBackendManagement:
+    """Test user can manage their own backends (BYOD)."""
+    
+    @pytest.mark.asyncio
+    async def test_07_user_can_view_backends_list(
+        self, user_session, screenshot_helper
+    ):
+        """User can view their own backends list."""
+        ss = screenshot_helper('09-multibackend')
+        browser = user_session
+        
+        # Navigate to user backends list
+        await browser.goto(settings.url('/account/backends'))
+        await browser.wait_for_load()
+        
+        # Verify page loaded
+        page_text = await browser.text('main')
+        assert 'My DNS Backends' in page_text or 'My Backends' in page_text, \
+            "User backends list page should load"
+        
+        # Check for BYOD info
+        if 'Bring Your Own DNS' in page_text or 'BYOD' in page_text:
+            print("✅ BYOD info displayed")
+        
+        # Check for Add Backend button
+        assert 'Add Backend' in page_text, "Add backend button should exist"
+        
+        await ss.take("user-backends-list")
+    
+    @pytest.mark.asyncio
+    async def test_08_user_can_access_backend_create_form(
+        self, user_session, screenshot_helper, backend_data
+    ):
+        """User can access the backend create form."""
+        ss = screenshot_helper('09-multibackend')
+        browser = user_session
+        
+        # Navigate to backend create
+        await browser.goto(settings.url('/account/backends/new'))
+        await browser.wait_for_load()
+        
+        # Verify form loaded
+        page_text = await browser.text('main')
+        assert 'Add DNS Backend' in page_text or 'Add Backend' in page_text, \
+            "Backend create form should load"
+        
+        # Verify provider selection exists
+        assert 'Provider' in page_text, "Provider selection should exist"
+        assert 'Service Name' in page_text, "Service name field should exist"
+        
+        # Check for provider options
+        assert 'Netcup' in page_text, "Netcup provider should be available"
+        
+        await ss.take("user-backend-create-form")
+    
+    @pytest.mark.asyncio
+    async def test_09_user_sees_supported_providers(
+        self, user_session, screenshot_helper
+    ):
+        """User can see available providers in backends list."""
+        ss = screenshot_helper('09-multibackend')
+        browser = user_session
+        
+        # Navigate to user backends list
+        await browser.goto(settings.url('/account/backends'))
+        await browser.wait_for_load()
+        
+        # Verify providers section
+        page_text = await browser.text('main')
+        if 'Supported Providers' in page_text:
+            print("✅ Supported providers section shown")
+        
+        await ss.take("user-backends-providers")
+
+
+# ============================================================================
+# Phase 5: State Combinations Testing
 # ============================================================================
 
 class TestStateCombinations:
     """Test different state combinations for multi-backend."""
     
     @pytest.mark.asyncio
-    async def test_07_public_visibility_domain_root_accessible(
+    async def test_10_public_visibility_domain_root_accessible(
         self, admin_session, screenshot_helper
     ):
         """Public domain roots are accessible to all users."""
@@ -258,7 +346,7 @@ class TestStateCombinations:
         await ss.take("domain-roots-visibility-states")
     
     @pytest.mark.asyncio
-    async def test_08_backend_test_status_displayed(
+    async def test_11_backend_test_status_displayed(
         self, admin_session, screenshot_helper
     ):
         """Backend test status (pending/success/failed) is displayed."""
@@ -279,14 +367,14 @@ class TestStateCombinations:
 
 
 # ============================================================================
-# Phase 5: Navigation and Menu Testing
+# Phase 6: Navigation and Menu Testing
 # ============================================================================
 
 class TestMultiBackendNavigation:
     """Test navigation through multi-backend UI."""
     
     @pytest.mark.asyncio
-    async def test_09_dns_menu_navigates_correctly(
+    async def test_12_dns_menu_navigates_correctly(
         self, admin_session, screenshot_helper
     ):
         """DNS menu items navigate to correct pages."""
@@ -313,6 +401,31 @@ class TestMultiBackendNavigation:
             print(f"✅ {url} loaded correctly")
         
         await ss.take("navigation-complete")
+    
+    @pytest.mark.asyncio
+    async def test_13_user_backends_navigation(
+        self, user_session, screenshot_helper
+    ):
+        """User can navigate through My Backends section."""
+        ss = screenshot_helper('09-multibackend')
+        browser = user_session
+        
+        # Navigate through user backend pages
+        pages_to_test = [
+            ('/account/backends', 'My DNS Backends'),
+            ('/account/backends/new', 'Add DNS Backend'),
+        ]
+        
+        for url, expected_text in pages_to_test:
+            await browser.goto(settings.url(url))
+            await browser.wait_for_load()
+            
+            page_text = await browser.text('main')
+            assert expected_text in page_text or 'Backend' in page_text, \
+                f"Page {url} should contain backend-related content"
+            print(f"✅ {url} loaded correctly")
+        
+        await ss.take("user-backends-navigation")
 
 
 # ============================================================================

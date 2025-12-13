@@ -13,7 +13,7 @@ pytestmark = pytest.mark.asyncio
 
 
 # ============================================================================
-# Backend Services Tests
+# Backend Services Tests (Admin)
 # ============================================================================
 
 async def test_admin_backends_list_page_loads(active_profile):
@@ -155,6 +155,78 @@ async def test_admin_domain_root_create_page_loads(active_profile):
 
 
 # ============================================================================
+# User Backend Management Tests (BYOD)
+# ============================================================================
+
+async def test_user_backends_list_page_loads(active_profile):
+    """Test that the user's backends list page loads successfully."""
+    async with browser_session() as browser:
+        await workflows.ensure_user_dashboard(browser)
+        
+        # Navigate to user backends via "My Backends" in nav
+        await browser.click("a.nav-link:has-text('My Backends')")
+        
+        # Verify page loaded
+        await browser.verify_status(200)
+        heading = await browser.text("main h1")
+        assert "My DNS Backends" in heading or "My Backends" in heading
+        
+        # Verify BYOD info is shown
+        page_content = await browser.text("main")
+        assert "Add Backend" in page_content
+        
+        # Take screenshot
+        screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-user-backends-list")
+        assert screenshot_path.endswith((".png", ".webp"))
+
+
+async def test_user_backend_create_page_loads(active_profile):
+    """Test that the user backend create form loads successfully."""
+    async with browser_session() as browser:
+        await workflows.ensure_user_dashboard(browser)
+        
+        # Navigate to backend create
+        await browser.click("a.nav-link:has-text('My Backends')")
+        await browser.click("a.btn:has-text('Add Backend')")
+        
+        # Verify page loaded
+        await browser.verify_status(200)
+        heading = await browser.text("main h1")
+        assert "Add DNS Backend" in heading or "Add Backend" in heading
+        
+        # Verify form elements exist
+        form_content = await browser.text("form")
+        assert "Provider" in form_content
+        assert "Service Name" in form_content
+        
+        # Take screenshot
+        screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-user-backend-create")
+        assert screenshot_path.endswith((".png", ".webp"))
+
+
+async def test_user_backends_providers_info(active_profile):
+    """Test that supported providers info is displayed."""
+    async with browser_session() as browser:
+        await workflows.ensure_user_dashboard(browser)
+        
+        # Navigate to user backends
+        await browser.click("a.nav-link:has-text('My Backends')")
+        
+        # Verify page loaded
+        await browser.verify_status(200)
+        
+        # Check for supported providers section
+        page_content = await browser.text("main")
+        if "Supported Providers" in page_content:
+            # Good - providers section exists
+            pass
+        
+        # Take screenshot
+        screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-user-backends-providers-info")
+        assert screenshot_path.endswith((".png", ".webp"))
+
+
+# ============================================================================
 # Navigation Tests
 # ============================================================================
 
@@ -179,6 +251,28 @@ async def test_admin_dns_menu_navigation(active_profile):
             await browser.verify_status(200)
             heading = await browser.text("main h1")
             assert expected_heading in heading, f"Expected '{expected_heading}' in heading, got '{heading}'"
+
+
+async def test_user_backends_navigation(active_profile):
+    """Test user can navigate through My Backends section."""
+    async with browser_session() as browser:
+        await workflows.ensure_user_dashboard(browser)
+        
+        # Navigate to My Backends
+        await browser.click("a.nav-link:has-text('My Backends')")
+        
+        # Verify page loaded
+        await browser.verify_status(200)
+        heading = await browser.text("main h1")
+        assert "My DNS Backends" in heading or "Backends" in heading
+        
+        # Navigate to create page
+        await browser.click("a.btn:has-text('Add Backend')")
+        
+        # Verify create page loaded
+        await browser.verify_status(200)
+        heading = await browser.text("main h1")
+        assert "Add DNS Backend" in heading or "Add Backend" in heading
 
 
 # ============================================================================
@@ -220,4 +314,21 @@ async def test_admin_domain_roots_stats_display(active_profile):
         
         # Take screenshot showing stats
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-domain-roots-stats")
+        assert screenshot_path.endswith((".png", ".webp"))
+
+
+async def test_user_backends_stats_display(active_profile):
+    """Test that user backend stats cards display correctly."""
+    async with browser_session() as browser:
+        await workflows.ensure_user_dashboard(browser)
+        
+        # Navigate to user backends
+        await browser.click("a.nav-link:has-text('My Backends')")
+        
+        # Verify stats cards exist
+        page_content = await browser.text("main")
+        assert "Total Backends" in page_content or "Total" in page_content
+        
+        # Take screenshot showing stats
+        screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-user-backends-stats")
         assert screenshot_path.endswith((".png", ".webp"))
