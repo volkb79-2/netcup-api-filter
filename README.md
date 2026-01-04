@@ -19,6 +19,7 @@ Netcup issues a single credential set with full control over every DNS record, d
 - Config-driven email notifications, auditing, and IP/network allowlists.
 - Build + deployment scripts that mirror the production package.
 - Playwright UI tests (local HTTP, HTTPS with real certs, and MCP mode).
+- **DDNS protocol support** - DynDNS2 and No-IP compatible endpoints for routers and DDNS clients.
 
 ## Quick Start
 
@@ -77,6 +78,27 @@ echo "Credentials: admin / admin (from .env.defaults)"
 ./run-local-tests.sh  # Full test suite (90 tests)
 ```
 
+## DDNS Protocol Support
+
+Use your router, ddclient, or inadyn with DynDNS2/No-IP protocols:
+
+```bash
+# Example: Update device.iot.example.com with auto-detected IP
+curl "https://${PUBLIC_FQDN}/api/ddns/dyndns2/update?hostname=device.iot.example.com&myip=auto" \
+  -H "Authorization: Bearer naf_<your_token>"
+
+# Response: good 203.0.113.42
+```
+
+**Supported:**
+- ✅ DynDNS2 protocol (`/api/ddns/dyndns2/update`)
+- ✅ No-IP protocol (`/api/ddns/noip/update`)
+- ✅ Auto IP detection (respects X-Forwarded-For)
+- ✅ IPv6 support (automatic AAAA record handling)
+- ✅ Bearer token authentication (no username/password fallback)
+
+**See:** [docs/DDNS_PROTOCOLS.md](docs/DDNS_PROTOCOLS.md) for complete documentation and client configuration examples.
+
 ## PowerDNS Self-Managed DNS Backend
 
 PowerDNS provides an alternative to the Netcup API for DNS management:
@@ -123,6 +145,8 @@ See `tooling/backend-powerdns/README.md` for complete documentation.
 - `docs/OPERATIONS_GUIDE.md` – Day-to-day runbook for building, testing, and deploying.
 - `docs/ADMIN_GUIDE.md` – Admin UI walkthrough (user-oriented doc retained as-is).
 - `docs/CLIENT_USAGE.md` – Instructions for client token holders and API examples.
+- `docs/DDNS_PROTOCOLS.md` – DynDNS2/No-IP protocol documentation with client configuration examples.
+- `docs/API_REFERENCE.md` – Complete API reference including DDNS endpoints.
 - `PLAYWRIGHT_CONTAINER.md` – Dedicated Playwright container architecture and usage.
 - `PYTHON_PACKAGES.md` – Python dependencies and requirements management.
 - `AGENTS.md` – Agent instructions and project context (for AI assistants).
