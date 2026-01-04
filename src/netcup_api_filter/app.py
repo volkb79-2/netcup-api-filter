@@ -14,7 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config_defaults import get_default, require_default
 from .database import init_db, db
-from .api import account_bp, admin_bp, dns_api_bp
+from .api import account_bp, admin_bp, dns_api_bp, ddns_protocols_bp
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     
     # Exempt API endpoints from CSRF (they use Bearer tokens)
     csrf.exempt(dns_api_bp)
+    csrf.exempt(ddns_protocols_bp)
     
     # =========================================================================
     # Rate Limiting
@@ -165,6 +166,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(account_bp)
     app.register_blueprint(dns_api_bp)
+    app.register_blueprint(ddns_protocols_bp)
     
     # =========================================================================
     # Template Filters
