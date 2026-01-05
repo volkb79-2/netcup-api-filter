@@ -1,108 +1,75 @@
 {# 2FA Login Verification Page #}
-{% extends "base.html" %}
+{% extends "standalone_base.html" %}
 
-{% block title %}Two-Factor Authentication{% endblock %}
+{% block title %}Two-Factor Authentication - Netcup API Filter{% endblock %}
 
-{% block content %}
-<div class="container">
-    <div class="row justify-content-center min-vh-75 align-items-center py-5">
-        <div class="col-md-6 col-lg-5 col-xl-4">
-            <div class="text-center mb-4">
-                <a href="/" class="text-decoration-none">
-                    <i class="bi bi-shield-lock display-4 text-primary"></i>
-                    <h1 class="h4 mt-2">Netcup API Filter</h1>
-                </a>
-            </div>
+{% block icon %}
+{% if method == 'totp' %}bi-phone
+{% elif method == 'telegram' %}bi-telegram
+{% elif method == 'email' %}bi-envelope
+{% else %}bi-shield-check{% endif %}
+{% endblock %}
 
-            <div class="card">
-                <div class="card-body p-4">
-                    <h2 class="card-title text-center mb-2">Two-Factor Authentication</h2>
-                    <p class="text-center text-muted mb-4">
-                        Enter the code from your authenticator app
-                    </p>
+{% block heading %}Two-Factor Authentication{% endblock %}
 
-                    {% with messages = get_flashed_messages(with_categories=true) %}
-                        {% if messages %}
-                            {% for category, message in messages %}
-                                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                                    {{ message }}
-                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                </div>
-                            {% endfor %}
-                        {% endif %}
-                    {% endwith %}
+{% block form_content %}
+<p class="text-center text-muted mb-4">
+    {% if method == 'totp' %}Enter the code from your authenticator app
+    {% elif method == 'telegram' %}Enter the code sent to your Telegram
+    {% elif method == 'email' %}Enter the code sent to your email
+    {% else %}Enter your verification code{% endif %}
+</p>
 
-                    <!-- Method indicator -->
-                    {% if method == 'totp' %}
-                    <div class="text-center mb-4">
-                        <i class="bi bi-phone fs-1 text-primary"></i>
-                        <p class="text-muted small mt-2">Authenticator App</p>
-                    </div>
-                    {% elif method == 'telegram' %}
-                    <div class="text-center mb-4">
-                        <i class="bi bi-telegram fs-1 text-info"></i>
-                        <p class="text-muted small mt-2">Telegram</p>
-                    </div>
-                    {% elif method == 'email' %}
-                    <div class="text-center mb-4">
-                        <i class="bi bi-envelope fs-1 text-warning"></i>
-                        <p class="text-muted small mt-2">Email Code</p>
-                    </div>
-                    {% endif %}
+<form action="{{ url_for('account.login_2fa') }}" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="mb-4">
+        <label for="code" class="form-label visually-hidden">Verification Code</label>
+        <input type="text" class="form-control form-control-lg text-center" 
+               id="code" name="code"
+               inputmode="numeric" pattern="[0-9]{6}" 
+               maxlength="6" autocomplete="one-time-code"
+               placeholder="000000" required autofocus
+               style="letter-spacing: 0.5em; font-family: monospace; font-size: 1.5rem;">
+    </div>
 
-                    <form action="{{ url_for('account.login_2fa') }}" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        
-                        <div class="mb-4">
-                            <label for="code" class="form-label visually-hidden">Verification Code</label>
-                            <input type="text" class="form-control form-control-lg text-center" 
-                                   id="code" name="code"
-                                   inputmode="numeric" pattern="[0-9]{6}" 
-                                   maxlength="6" autocomplete="one-time-code"
-                                   placeholder="000000" required autofocus
-                                   style="letter-spacing: 0.5em; font-family: monospace; font-size: 1.5rem;">
-                        </div>
+    <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-check-lg me-1"></i>Verify
+        </button>
+    </div>
+</form>
 
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="bi bi-check-lg me-1"></i>Verify
-                            </button>
-                        </div>
-                    </form>
-
-                    <!-- Alternative methods -->
-                    <div class="mt-4 pt-3 border-top">
-                        <p class="text-muted text-center small mb-2">Having trouble?</p>
-                        <div class="d-flex flex-column gap-2">
-                            {% if method != 'email' %}
-                            <form action="{{ url_for('account.resend_2fa_code') }}" method="post" class="text-center">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="method" value="email">
-                                <button type="submit" class="btn btn-link btn-sm text-muted">
-                                    <i class="bi bi-envelope me-1"></i>Send code via email
-                                </button>
-                            </form>
-                            {% endif %}
-                            <div class="text-center">
-                                <a href="#" data-bs-toggle="modal" data-bs-target="#recovery-modal" 
-                                   class="btn btn-link btn-sm text-muted">
-                                    <i class="bi bi-key me-1"></i>Use recovery code
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="text-center mt-4">
-                <a href="{{ url_for('account.login') }}" class="text-muted text-decoration-none">
-                    <i class="bi bi-arrow-left me-1"></i>Back to login
-                </a>
-            </div>
+<!-- Alternative methods -->
+<div class="mt-4 pt-3 border-top">
+    <p class="text-muted text-center small mb-2">Having trouble?</p>
+    <div class="d-flex flex-column gap-2">
+        {% if method != 'email' %}
+        <form action="{{ url_for('account.resend_2fa_code') }}" method="post" class="text-center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="method" value="email">
+            <button type="submit" class="btn btn-link btn-sm text-muted">
+                <i class="bi bi-envelope me-1"></i>Send code via email
+            </button>
+        </form>
+        {% endif %}
+        <div class="text-center">
+            <a href="#" data-bs-toggle="modal" data-bs-target="#recovery-modal" 
+               class="btn btn-link btn-sm text-muted">
+                <i class="bi bi-key me-1"></i>Use recovery code
+            </a>
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block footer_links %}
+<a href="{{ url_for('account.login') }}" class="text-muted text-decoration-none">
+    <i class="bi bi-arrow-left me-1"></i>Back to login
+</a>
+{% endblock %}
+
+{% block extra_scripts %}
 <!-- Recovery Code Modal -->
 <div class="modal fade" id="recovery-modal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">

@@ -1,231 +1,170 @@
 {# Admin 2FA Login Page - Step 2: Verification Code #}
 {# Supports: email, TOTP (authenticator app), and recovery codes #}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify Login - Admin - Netcup API Filter</title>
-    
-    <!-- Bootstrap 5 CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-    
-    <!-- Theme flash prevention -->
-    <script>
-        (function() {
-            const theme = localStorage.getItem('naf-theme') || 'cobalt-2';
-            if (theme !== 'cobalt-2') document.documentElement.classList.add('theme-' + theme);
-        })();
-    </script>
-</head>
-<body class="app-body">
-<div class="login-container d-flex align-items-center justify-content-center min-vh-100">
-    <div style="max-width: 480px; width: 100%;">
-        <!-- App Title - Outside Card -->
-        <h1 class="text-center mb-4 fw-bold">Netcup API Filter</h1>
-        
-        <!-- Flash Messages - Above the card -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-            <div class="mb-4">
-                {% for category, message in messages %}
-                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show d-flex align-items-center" role="alert">
-                    <i class="bi bi-{% if category == 'error' %}exclamation-triangle{% elif category == 'success' %}check-circle{% elif category == 'warning' %}exclamation-circle{% else %}info-circle{% endif %}-fill me-2"></i>
-                    <div>{{ message }}</div>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-        {% endwith %}
-        
-        <div class="login-card card">
-            <div class="card-body p-4 p-md-5">
-                <!-- Card Title -->
-                <div class="text-center mb-4">
-                    <div class="mb-3">
-                        {% if method == 'totp' %}
-                        <i class="bi bi-phone display-4 text-primary"></i>
-                        {% elif method == 'recovery' %}
-                        <i class="bi bi-key display-4 text-warning"></i>
-                        {% else %}
-                        <i class="bi bi-envelope display-4 text-primary"></i>
-                        {% endif %}
-                    </div>
-                    <h2 class="h4 fw-semibold">Two-Factor Authentication</h2>
-                    <p class="text-muted mb-0">
-                        {% if method == 'totp' %}
-                        Enter the code from your authenticator app
-                        {% elif method == 'recovery' %}
-                        Enter one of your recovery codes
-                        {% else %}
-                        A verification code has been sent to<br>
-                        <strong>{{ masked_email }}</strong>
-                        {% endif %}
-                    </p>
-                </div>
-                
-                <!-- Method Selector (if multiple methods available) -->
-                {% if has_totp and has_email %}
-                <div class="mb-4">
-                    <div class="btn-group w-100" role="group" aria-label="2FA method">
-                        <a href="{{ url_for('admin.login_2fa', method='totp') }}" 
-                           class="btn btn-outline-secondary {% if method == 'totp' %}active{% endif %}">
-                            <i class="bi bi-phone me-1"></i>App
-                        </a>
-                        <a href="{{ url_for('admin.login_2fa', method='email') }}" 
-                           class="btn btn-outline-secondary {% if method == 'email' %}active{% endif %}">
-                            <i class="bi bi-envelope me-1"></i>Email
-                        </a>
-                        <a href="{{ url_for('admin.login_2fa', method='recovery') }}" 
-                           class="btn btn-outline-secondary {% if method == 'recovery' %}active{% endif %}">
-                            <i class="bi bi-key me-1"></i>Recovery
-                        </a>
-                    </div>
-                </div>
-                {% endif %}
-                
-                <!-- 2FA Form -->
-                <form method="POST" action="{{ url_for('admin.login_2fa') }}" id="twoFaForm">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="method" value="{{ method or 'email' }}">
-                    
-                    <div class="mb-4">
-                        <label for="code" class="form-label">
-                            {% if method == 'recovery' %}Recovery Code{% else %}Verification Code{% endif %}
-                        </label>
-                        {% if method == 'recovery' %}
-                        <input type="text" 
-                               class="form-control form-control-lg text-center font-monospace" 
-                               id="code" 
-                               name="code" 
-                               placeholder="XXXX-XXXX"
-                               autocomplete="off"
-                               autofocus
-                               required>
-                        <div class="form-text text-center">
-                            Enter a recovery code (format: XXXX-XXXX)
-                        </div>
-                        {% else %}
-                        <input type="text" 
-                               class="form-control form-control-lg text-center font-monospace" 
-                               id="code" 
-                               name="code" 
-                               placeholder="000000"
-                               autocomplete="one-time-code"
-                               inputmode="numeric"
-                               pattern="[0-9]{6}"
-                               maxlength="6"
-                               autofocus
-                               required>
-                        <div class="form-text text-center">
-                            {% if method == 'totp' %}
-                            Enter the 6-digit code from your authenticator app
-                            {% else %}
-                            Enter the 6-digit code from your email
-                            {% endif %}
-                        </div>
-                        {% endif %}
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
-                        <i class="bi bi-check2-circle me-2"></i>Verify
-                    </button>
-                </form>
-                
-                <!-- Resend Code (email only) -->
-                {% if method == 'email' or (not method and not has_totp) %}
-                <div class="text-center">
-                    <form method="POST" action="{{ url_for('admin.resend_2fa') }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-link text-decoration-none">
-                            <i class="bi bi-arrow-repeat me-1"></i>Resend code
-                        </button>
-                    </form>
-                </div>
-                {% endif %}
-                
-                <!-- Alternative methods -->
-                {% if not has_totp and not has_email %}
-                <div class="text-center text-muted small">
-                    <i class="bi bi-key me-1"></i>
-                    <a href="{{ url_for('admin.login_2fa', method='recovery') }}">Use recovery code</a>
-                </div>
-                {% endif %}
-                
-                <!-- Cancel -->
-                <hr class="my-4">
-                <div class="text-center">
-                    <a href="{{ url_for('admin.login') }}" class="btn btn-outline-secondary btn-sm">
-                        <i class="bi bi-arrow-left me-1"></i>Back to login
-                    </a>
-                </div>
-            </div>
-            
-            <!-- Security Notice -->
-            <div class="card-footer text-center py-3 bg-transparent border-top">
-                <small class="text-muted">
-                    {% if method == 'totp' %}
-                    <i class="bi bi-info-circle me-1"></i>Code changes every 30 seconds
-                    {% elif method == 'recovery' %}
-                    <i class="bi bi-exclamation-triangle me-1"></i>Recovery codes can only be used once
-                    {% else %}
-                    <i class="bi bi-clock me-1"></i>Code expires in 5 minutes
-                    {% endif %}
-                </small>
-            </div>
-        </div>
+{% extends "standalone_base.html" %}
+
+{% block title %}Verify Login - Admin - Netcup API Filter{% endblock %}
+
+{% block icon %}
+{% if method == 'totp' %}
+<i class="bi bi-phone display-4 text-primary"></i>
+{% elif method == 'recovery' %}
+<i class="bi bi-key display-4 text-warning"></i>
+{% else %}
+<i class="bi bi-envelope display-4 text-primary"></i>
+{% endif %}
+{% endblock %}
+
+{% block heading %}Two-Factor Authentication{% endblock %}
+
+{% block form_content %}
+<p class="text-center text-muted mb-4">
+    {% if method == 'totp' %}
+    Enter the code from your authenticator app
+    {% elif method == 'recovery' %}
+    Enter one of your recovery codes
+    {% else %}
+    A verification code has been sent to<br>
+    <strong>{{ masked_email }}</strong>
+    {% endif %}
+</p>
+
+<!-- Method Selector (if multiple methods available) -->
+{% if has_totp and has_email %}
+<div class="mb-4">
+    <div class="btn-group w-100" role="group" aria-label="2FA method">
+        <a href="{{ url_for('admin.login_2fa', method='totp') }}" 
+           class="btn btn-outline-secondary {% if method == 'totp' %}active{% endif %}">
+            <i class="bi bi-phone me-1"></i>App
+        </a>
+        <a href="{{ url_for('admin.login_2fa', method='email') }}" 
+           class="btn btn-outline-secondary {% if method == 'email' %}active{% endif %}">
+            <i class="bi bi-envelope me-1"></i>Email
+        </a>
+        <a href="{{ url_for('admin.login_2fa', method='recovery') }}" 
+           class="btn btn-outline-secondary {% if method == 'recovery' %}active{% endif %}">
+            <i class="bi bi-key me-1"></i>Recovery
+        </a>
     </div>
 </div>
+{% endif %}
 
-<style>
-.login-container {
-    background: var(--gradient-primary);
-    min-height: 100vh;
-}
-
-.login-card {
-    background: var(--gradient-surface);
-    border: 1px solid var(--color-border-card);
-    box-shadow: var(--card-shadow);
-}
-
-/* Large monospace input for code */
-#code {
-    font-size: 1.75rem;
-    letter-spacing: 0.5em;
-    padding-left: 1em;
-}
-</style>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- 2FA Form -->
+<form method="POST" action="{{ url_for('admin.login_2fa') }}" id="twoFaForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="method" value="{{ method or 'email' }}">
     
-    <script>
-    // Auto-submit when 6 digits entered (for TOTP and email codes, not recovery)
-    document.getElementById('code').addEventListener('input', function(e) {
-        const method = document.querySelector('input[name="method"]').value;
-        
-        if (method === 'recovery') {
-            // Format recovery code with dash
-            this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-            if (this.value.length > 4 && !this.value.includes('-')) {
-                this.value = this.value.slice(0, 4) + '-' + this.value.slice(4, 8);
-            }
-        } else {
-            // Only allow digits for TOTP and email
-            this.value = this.value.replace(/\D/g, '');
-            
-            // Auto-submit when complete
-            if (this.value.length === 6) {
-                setTimeout(() => {
-                    document.getElementById('twoFaForm').submit();
-                }, 300);
-            }
+    <div class="mb-4">
+        <label for="code" class="form-label">
+            {% if method == 'recovery' %}Recovery Code{% else %}Verification Code{% endif %}
+        </label>
+        {% if method == 'recovery' %}
+        <input type="text" 
+               class="form-control form-control-lg text-center font-monospace" 
+               style="letter-spacing: 0.5em; font-size: 1.75rem;"
+               id="code" 
+               name="code" 
+               placeholder="XXXX-XXXX"
+               autocomplete="off"
+               autofocus
+               required>
+        <div class="form-text text-center">
+            Enter a recovery code (format: XXXX-XXXX)
+        </div>
+        {% else %}
+        <input type="text" 
+               class="form-control form-control-lg text-center font-monospace" 
+               style="letter-spacing: 0.5em; font-size: 1.75rem;"
+               id="code" 
+               name="code" 
+               placeholder="000000"
+               autocomplete="one-time-code"
+               inputmode="numeric"
+               pattern="[0-9]{6}"
+               maxlength="6"
+               autofocus
+               required>
+        <div class="form-text text-center">
+            {% if method == 'totp' %}
+            Enter the 6-digit code from your authenticator app
+            {% else %}
+            Enter the 6-digit code from your email
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
+        <i class="bi bi-check2-circle me-2"></i>Verify
+    </button>
+</form>
+
+<!-- Resend Code (email only) -->
+{% if method == 'email' or (not method and not has_totp) %}
+<div class="text-center mb-3">
+    <form method="POST" action="{{ url_for('admin.resend_2fa') }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-link text-decoration-none">
+            <i class="bi bi-arrow-repeat me-1"></i>Resend code
+        </button>
+    </form>
+</div>
+{% endif %}
+
+<!-- Alternative methods -->
+{% if not has_totp and not has_email %}
+<div class="text-center text-muted small">
+    <i class="bi bi-key me-1"></i>
+    <a href="{{ url_for('admin.login_2fa', method='recovery') }}">Use recovery code</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block card_footer %}
+<!-- Security Notice -->
+<div class="text-center py-3">
+    <small class="text-muted">
+        {% if method == 'totp' %}
+        <i class="bi bi-info-circle me-1"></i>Code changes every 30 seconds
+        {% elif method == 'recovery' %}
+        <i class="bi bi-exclamation-triangle me-1"></i>Recovery codes can only be used once
+        {% else %}
+        <i class="bi bi-clock me-1"></i>Code expires in 5 minutes
+        {% endif %}
+    </small>
+</div>
+{% endblock %}
+
+{% block footer_links %}
+<div class="text-center mt-4">
+    <a href="{{ url_for('admin.login') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Back to login
+    </a>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Auto-submit when 6 digits entered (for TOTP and email codes, not recovery)
+document.getElementById('code').addEventListener('input', function(e) {
+    const method = document.querySelector('input[name="method"]').value;
+    
+    if (method === 'recovery') {
+        // Format recovery code with dash
+        this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (this.value.length > 4 && !this.value.includes('-')) {
+            this.value = this.value.slice(0, 4) + '-' + this.value.slice(4, 8);
         }
-    });
-    </script>
-</body>
-</html>
+    } else {
+        // Only allow digits for TOTP and email
+        this.value = this.value.replace(/\D/g, '');
+        
+        // Auto-submit when complete
+        if (this.value.length === 6) {
+            setTimeout(() => {
+                document.getElementById('twoFaForm').submit();
+            }, 300);
+        }
+    }
+});
+</script>
+{% endblock %}

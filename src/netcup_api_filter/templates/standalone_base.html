@@ -1,0 +1,225 @@
+{# Standalone Login Base Template - For pages without navbar (login, forgot password, etc.) #}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Login - Netcup API Filter{% endblock %}</title>
+    
+    {% include 'components/head_includes.html' %}
+    
+    <!-- Theme persistence -->
+    <script>
+        (function() {
+            const theme = localStorage.getItem('naf-theme') || 'cobalt-2';
+            if (theme !== 'cobalt-2') {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+        })();
+    </script>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Floating Theme Switcher -->
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1050;">
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary bg-dark bg-opacity-75" 
+                    type="button" 
+                    data-bs-toggle="dropdown" 
+                    aria-expanded="false"
+                    title="Change theme">
+                <i class="bi bi-palette2"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" style="min-width: 200px;">
+                <li><h6 class="dropdown-header"><i class="bi bi-brush me-2"></i>Theme</h6></li>
+                <li><button class="dropdown-item" onclick="setTheme('cobalt-2')"><span class="theme-swatch" style="background: #4a9eff"></span> Cobalt-2</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('deep-ocean')"><span class="theme-swatch" style="background: #3b82f6"></span> Deep Ocean</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('graphite')"><span class="theme-swatch" style="background: #3b82f6"></span> Graphite</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('zinc')"><span class="theme-swatch" style="background: #2dd4bf"></span> Zinc</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('obsidian-noir')"><span class="theme-swatch" style="background: #a78bfa"></span> Obsidian Noir</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('ember')"><span class="theme-swatch" style="background: #f97316"></span> Ember</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('arctic')"><span class="theme-swatch" style="background: #38bdf8"></span> Arctic</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('jade')"><span class="theme-swatch" style="background: #34d399"></span> Jade</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('rose-quartz')"><span class="theme-swatch" style="background: #f472b6"></span> Rose Quartz</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('nord')"><span class="theme-swatch" style="background: #88c0d0"></span> Nord</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('gruvbox')"><span class="theme-swatch" style="background: #d79921"></span> Gruvbox</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('dracula')"><span class="theme-swatch" style="background: #bd93f9"></span> Dracula</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('monokai')"><span class="theme-swatch" style="background: #f92672"></span> Monokai</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('solarized-dark')"><span class="theme-swatch" style="background: #b58900"></span> Solarized Dark</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('tokyo-night')"><span class="theme-swatch" style="background: #7aa2f7"></span> Tokyo Night</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('catppuccin')"><span class="theme-swatch" style="background: #f5c2e7"></span> Catppuccin</button></li>
+                <li><button class="dropdown-item" onclick="setTheme('one-dark')"><span class="theme-swatch" style="background: #61afef"></span> One Dark</button></li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="login-wrapper">
+        <div class="container">
+            <div class="login-container">
+                <!-- Logo/Header -->
+                <div class="text-center mb-4">
+                    <div class="login-icon">
+                        <i class="bi {% block icon %}bi-shield-lock{% endblock %} display-3"></i>
+                    </div>
+                    <h1 class="h3 mt-3 mb-1 fw-bold">{% block heading %}Portal Login{% endblock %}</h1>
+                    <p class="text-muted small">Netcup API Filter</p>
+                </div>
+                
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show d-flex align-items-center" role="alert">
+                        <i class="bi bi-{% if category == 'error' %}exclamation-triangle{% elif category == 'success' %}check-circle{% elif category == 'warning' %}exclamation-circle{% else %}info-circle{% endif %}-fill me-2"></i>
+                        <div>{{ message }}</div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endwith %}
+                
+                <!-- Login Card -->
+                <div class="card login-card">
+                    <div class="card-body p-4">
+                        {% block form_content %}
+                        {# Override this block in child templates #}
+                        {% endblock %}
+                    </div>
+                    
+                    {% block card_footer %}
+                    {# Optional footer - override in child templates #}
+                    {% endblock %}
+                </div>
+                
+                <!-- Footer Links -->
+                <div class="text-center mt-4">
+                    {% block footer_links %}
+                    {# Override this block in child templates #}
+                    {% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% include 'components/scripts_includes.html' %}
+    
+    <!-- Theme switcher -->
+    <script>
+    function setTheme(theme) {
+        // Remove existing theme classes
+        const themeRegex = /theme-\S+/g;
+        document.documentElement.className = document.documentElement.className.replace(themeRegex, '').trim();
+        document.body.className = document.body.className.replace(themeRegex, '').trim();
+        
+        // Apply new theme
+        if (theme !== 'cobalt-2') {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.classList.add('theme-' + theme);
+            document.body.classList.add('theme-' + theme);
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
+        
+        localStorage.setItem('naf-theme', theme);
+    }
+    </script>
+    
+    <!-- Password toggle helper -->
+    <script>
+    function togglePassword(inputId) {
+        const input = document.getElementById(inputId);
+        const icon = document.querySelector(`#${inputId} + button i, button[onclick*="${inputId}"] i`);
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            if (icon) icon.classList.replace('bi-eye', 'bi-eye-slash');
+        } else {
+            input.type = 'password';
+            if (icon) icon.classList.replace('bi-eye-slash', 'bi-eye');
+        }
+    }
+    </script>
+    
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
+
+<style>
+.theme-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.login-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--color-bg-primary, #0a0e1a) 0%, var(--color-bg-secondary, #0f1420) 100%);
+    padding: 2rem 1rem;
+}
+
+.login-container {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+.login-icon {
+    color: var(--color-primary, #4a9eff);
+}
+
+.login-card {
+    background: var(--color-surface-card, rgba(17, 24, 39, 0.8));
+    border: 1px solid var(--color-border-card, rgba(75, 85, 99, 0.3));
+    border-radius: 0.75rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+.login-card .form-control,
+.login-card .input-group-text {
+    background-color: var(--color-input-bg, rgba(31, 41, 55, 0.6));
+    border-color: var(--color-border-input, rgba(75, 85, 99, 0.4));
+    color: var(--color-text-primary, #e5e7eb);
+}
+
+.login-card .form-control:focus {
+    background-color: var(--color-input-bg-focus, rgba(31, 41, 55, 0.8));
+    border-color: var(--color-primary, #4a9eff);
+    box-shadow: 0 0 0 0.2rem rgba(74, 158, 255, 0.25);
+    color: var(--color-text-primary, #e5e7eb);
+}
+
+.login-card .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary, #4a9eff) 0%, var(--color-primary-dark, #2563eb) 100%);
+    border: none;
+    padding: 0.75rem;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.login-card .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+}
+
+.login-card .input-group-text {
+    border-right: none;
+}
+
+.login-card .input-group .form-control {
+    border-left: none;
+}
+
+.login-card .input-group-text i {
+    opacity: 0.7;
+}
+</style>

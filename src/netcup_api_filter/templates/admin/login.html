@@ -1,130 +1,70 @@
-{# Admin Login Page - Standalone (no navbar) #}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login - Netcup API Filter</title>
+{% extends "standalone_base.html" %}
+
+{% block title %}Admin Login - Netcup API Filter{% endblock %}
+
+{% block icon %}bi-shield-shaded{% endblock %}
+
+{% block heading %}Admin Login{% endblock %}
+
+{% block form_content %}
+<form method="POST" action="{{ url_for('admin.login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     
-    <!-- Bootstrap 5 CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-    
-    <!-- Theme flash prevention -->
-    <script>
-        (function() {
-            const theme = localStorage.getItem('naf-theme') || 'cobalt-2';
-            if (theme !== 'cobalt-2') document.documentElement.classList.add('theme-' + theme);
-        })();
-    </script>
-</head>
-<body class="app-body">
-<div class="login-container d-flex align-items-center justify-content-center min-vh-100">
-    <div style="max-width: 480px; width: 100%;">
-        <!-- App Title - Outside Card -->
-        <h1 class="text-center mb-4 fw-bold">Netcup API Filter</h1>
-        
-        <!-- Flash Messages - Above the card, centered, wider -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-            <div class="mb-4">
-                {% for category, message in messages %}
-                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show d-flex align-items-center" role="alert">
-                    <i class="bi bi-{% if category == 'error' %}exclamation-triangle{% elif category == 'success' %}check-circle{% elif category == 'warning' %}exclamation-circle{% else %}info-circle{% endif %}-fill me-2"></i>
-                    <div>{{ message }}</div>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
-        {% endwith %}
-        
-        <div class="login-card card">
-            <div class="card-body p-4 p-md-5">
-                <!-- Card Title -->
-                <div class="text-center mb-4">
-                    <h2 class="h4 fw-semibold">Admin Login</h2>
-                </div>
-                
-                <!-- Login Form -->
-                <form method="POST" action="{{ url_for('admin.login') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" 
-                               class="form-control form-control-lg" 
-                               id="username" 
-                               name="username" 
-                               placeholder="admin"
-                               autocomplete="username"
-                               autofocus
-                               required>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label for="password" class="form-label">Password</label>
-                        <div class="input-group">
-                            <input type="password" 
-                                   class="form-control form-control-lg" 
-                                   id="password" 
-                                   name="password" 
-                                   placeholder="••••••••••••"
-                                   autocomplete="current-password"
-                                   required>
-                            <button class="btn btn-outline-secondary" 
-                                    type="button" 
-                                    onclick="togglePassword('password', this)"
-                                    title="Show/Hide Password"
-                                    aria-label="Toggle password visibility">
-                                <i class="bi bi-eye" aria-hidden="true"></i>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        Sign In
-                    </button>
-                </form>
-            </div>
-            
-            <!-- Security Notice -->
-            <div class="card-footer text-center py-3 bg-transparent border-top">
-                <small class="fw-medium">Secure administrative access</small>
-            </div>
+    <!-- Username -->
+    <div class="mb-3">
+        <label for="username" class="form-label">Username</label>
+        <div class="input-group">
+            <span class="input-group-text">
+                <i class="bi bi-person"></i>
+            </span>
+            <input type="text" 
+                   class="form-control" 
+                   id="username" 
+                   name="username" 
+                   placeholder="admin"
+                   autocomplete="username"
+                   autofocus
+                   required>
         </div>
     </div>
-</div>
-
-<style>
-.login-container {
-    background: var(--gradient-primary);
-    min-height: 100vh;
-}
-
-.login-card {
-    background: var(--gradient-surface);
-    border: 1px solid var(--color-border-card);
-    box-shadow: var(--card-shadow);
-}
-</style>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
-    <script>
-    function togglePassword(inputId, button) {
-        const input = document.getElementById(inputId);
-        const icon = button.querySelector('i');
-        
-        if (input.type === 'password') {
-            input.type = 'text';
-            icon.classList.replace('bi-eye', 'bi-eye-slash');
-        } else {
-            input.type = 'password';
-            icon.classList.replace('bi-eye-slash', 'bi-eye');
-        }
-    }
-    </script>
-</body>
-</html>
+    <!-- Password -->
+    <div class="mb-3">
+        <label for="password" class="form-label">Password</label>
+        <div class="input-group">
+            <span class="input-group-text">
+                <i class="bi bi-key"></i>
+            </span>
+            <input type="password" 
+                   class="form-control" 
+                   id="password" 
+                   name="password" 
+                   placeholder="Enter password"
+                   autocomplete="current-password"
+                   required>
+            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('password')">
+                <i class="bi bi-eye"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Submit -->
+    <div class="d-grid mt-4">
+        <button type="submit" class="btn btn-primary btn-lg">
+            Sign In
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block card_footer %}
+<div class="card-footer text-center py-3 bg-transparent border-top">
+    <small class="fw-medium">Secure administrative access</small>
+</div>
+{% endblock %}
+
+{% block footer_links %}
+<small class="text-muted">
+    <a href="{{ url_for('account.login') }}" class="text-decoration-none">Client Portal Login</a>
+</small>
+{% endblock %}

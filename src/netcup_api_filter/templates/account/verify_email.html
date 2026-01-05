@@ -1,89 +1,62 @@
 {# Email Verification Page #}
-{% extends "base.html" %}
+{% extends "standalone_base.html" %}
 
-{% block title %}Verify Your Email{% endblock %}
+{% block title %}Verify Your Email - Netcup API Filter{% endblock %}
 
-{% block content %}
-<div class="container">
-    <div class="row justify-content-center min-vh-75 align-items-center py-5">
-        <div class="col-md-6 col-lg-5 col-xl-4">
-            <div class="text-center mb-4">
-                <a href="/" class="text-decoration-none">
-                    <i class="bi bi-shield-lock display-4 text-primary"></i>
-                    <h1 class="h4 mt-2">Netcup API Filter</h1>
-                </a>
-            </div>
+{% block icon %}bi-envelope-check{% endblock %}
 
-            <div class="card">
-                <div class="card-body p-4 text-center">
-                    <div class="mb-4">
-                        <i class="bi bi-envelope-check text-warning" style="font-size: 4rem;"></i>
-                    </div>
-                    
-                    <h2 class="card-title mb-2">Verify Your Email</h2>
-                    <p class="text-muted mb-4">
-                        We've sent a verification code to<br>
-                        <strong>{{ email }}</strong>
-                    </p>
+{% block heading %}Verify Your Email{% endblock %}
 
-                    {% with messages = get_flashed_messages(with_categories=true) %}
-                        {% if messages %}
-                            {% for category, message in messages %}
-                                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show text-start" role="alert">
-                                    {{ message }}
-                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                </div>
-                            {% endfor %}
-                        {% endif %}
-                    {% endwith %}
+{% block form_content %}
+<p class="text-center text-muted mb-4">
+    We've sent a verification code to<br>
+    <strong>{{ email }}</strong>
+</p>
 
-                    <form action="{{ url_for('account.verify_email') }}" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="email" value="{{ email }}">
-                        
-                        <div class="mb-4">
-                            <label for="code" class="form-label visually-hidden">Verification Code</label>
-                            <input type="text" class="form-control form-control-lg text-center" 
-                                   id="code" name="code"
-                                   inputmode="numeric" pattern="[0-9]{6}" 
-                                   maxlength="6"
-                                   placeholder="000000" required autofocus
-                                   style="letter-spacing: 0.5em; font-family: monospace; font-size: 1.5rem;">
-                            <div class="form-text">Enter the 6-digit code from your email</div>
-                        </div>
-
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="bi bi-check-lg me-1"></i>Verify Email
-                            </button>
-                        </div>
-                    </form>
-
-                    <div class="mt-4 pt-3 border-top">
-                        <p class="text-muted small mb-2">Didn't receive the email?</p>
-                        <form action="{{ url_for('account.resend_code') }}" method="post" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="email" value="{{ email }}">
-                            <button type="submit" class="btn btn-link btn-sm">
-                                <i class="bi bi-arrow-clockwise me-1"></i>Resend verification code
-                            </button>
-                        </form>
-                        <p class="text-muted small mt-2">
-                            Check your spam folder or try a different email
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="text-center mt-4">
-                <a href="{{ url_for('account.register') }}" class="text-muted text-decoration-none">
-                    <i class="bi bi-arrow-left me-1"></i>Back to registration
-                </a>
-            </div>
-        </div>
+<form action="{{ url_for('account.verify_email') }}" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="email" value="{{ email }}">
+    
+    <div class="mb-4">
+        <label for="code" class="form-label visually-hidden">Verification Code</label>
+        <input type="text" class="form-control form-control-lg text-center" 
+               id="code" name="code"
+               inputmode="numeric" pattern="[0-9]{6}" 
+               maxlength="6"
+               placeholder="000000" required autofocus
+               style="letter-spacing: 0.5em; font-family: monospace; font-size: 1.5rem;">
+        <div class="form-text text-center">Enter the 6-digit code from your email</div>
     </div>
-</div>
 
+    <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-check-lg me-1"></i>Verify Email
+        </button>
+    </div>
+</form>
+
+<div class="mt-4 pt-3 border-top">
+    <p class="text-muted small mb-2 text-center">Didn't receive the email?</p>
+    <form action="{{ url_for('account.resend_code') }}" method="post" class="text-center">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="email" value="{{ email }}">
+        <button type="submit" class="btn btn-link btn-sm">
+            <i class="bi bi-arrow-clockwise me-1"></i>Resend verification code
+        </button>
+    </form>
+    <p class="text-muted small mt-2 text-center">
+        Check your spam folder or try a different email
+    </p>
+</div>
+{% endblock %}
+
+{% block footer_links %}
+<a href="{{ url_for('account.register') }}" class="text-muted text-decoration-none">
+    <i class="bi bi-arrow-left me-1"></i>Back to registration
+</a>
+{% endblock %}
+
+{% block extra_scripts %}
 <script>
 // Auto-format code input
 document.getElementById('code').addEventListener('input', function(e) {
