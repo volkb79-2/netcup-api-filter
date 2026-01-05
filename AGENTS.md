@@ -49,7 +49,8 @@ echo "Testing: https://${PUBLIC_FQDN}/"
 
 **Update FQDN** (e.g., after IP change):
 ```bash
-./detect-fqdn.sh --update-workspace
+# Rebuild devcontainer to regenerate .env.workspace with new FQDN
+# Or manually update PUBLIC_FQDN in .env.workspace
 ```
 
 See [`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md) for complete documentation.
@@ -63,7 +64,7 @@ See [`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md) for complete documentatio
 
 **Quick command (HTTPS testing with real Let's Encrypt certificates):**
 ```bash
-cd tooling/reverse-proxy && ./auto-detect-fqdn.sh && cd ../.. && ./run-local-tests.sh
+./run-local-tests.sh
 ```
 
 This runs the complete test suite (90 tests: 27 comprehensive UI, 10 admin, 4 client, 8 API proxy, and more) against a deployment that **exactly mirrors production**:
@@ -116,8 +117,9 @@ See `LOCAL_TESTING_GUIDE.md` and `CONFIG_DRIVEN_ARCHITECTURE.md` for complete de
 ```bash
 cd tooling/reverse-proxy
 
-# Auto-detect public FQDN from external IP + reverse DNS
-./auto-detect-fqdn.sh --verify-certs
+# PUBLIC_FQDN is auto-detected by post-create.sh and stored in .env.workspace
+# Verify certificates exist for your FQDN
+ls -l /etc/letsencrypt/live/$(source ../../.env.workspace && echo $PUBLIC_FQDN)/
 
 # Start HTTPS proxy with Let's Encrypt certificates
 ./render-nginx-conf.sh && ./stage-proxy-inputs.sh

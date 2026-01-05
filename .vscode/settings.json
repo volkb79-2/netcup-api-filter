@@ -1,4 +1,20 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    
+    // Terminal profiles for different use cases
+    "terminal.integrated.profiles.linux": {
+        "bash (default)": {
+            "path": "bash",
+            "icon": "terminal-bash"
+        },
+        // Terminal profile for chat to circumvent alias issues
+        "bash (clean - no aliases)": {
+            "path": "bash",
+            "args": ["--norc", "--noprofile"],
+            "icon": "tools",
+            "overrideName": true
+        }
+    },
+    "terminal.integrated.scrollback": 10000
 }

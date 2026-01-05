@@ -135,6 +135,69 @@ setup_python_environment() {
 }
 
 # ============================================================================
+# PUBLIC FQDN DETECTION (REVERSE DNS)
+# ============================================================================
+# Detect public FQDN via reverse DNS for TLS certificate management
+# Used by nginx reverse proxy and other tools that need the public hostname
+
+detect_public_fqdn() {
+    log_info "Detecting public FQDN via reverse DNS..."
+
+    # Detect public IP
+    local public_ip="${FORCE_PUBLIC_IP:-}"
+    
+    if [[ -z "$public_ip" ]]; then
+        local ip_endpoints=(
+            "https://api.ipify.org"
+            "https://icanhazip.com"
+            "https://ifconfig.me/ip"
+        )
+        
+        for endpoint in "${ip_endpoints[@]}"; do
+            if public_ip=$(curl -s --max-time 3 "$endpoint" 2>/dev/null | tr -d '[:space:]'); then
+                if [[ "$public_ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                    log_debug "Detected IP: $public_ip"
+                    break
+                fi
+            fi
+            public_ip=""
+        done
+    fi
+
+    if [[ -z "$public_ip" ]]; then
+        log_warn "Failed to detect public IP, using localhost"
+        export PUBLIC_IP="127.0.0.1"
+        export PUBLIC_FQDN="localhost"
+        return 0
+    fi
+
+    export PUBLIC_IP="$public_ip"
+
+    # Perform reverse DNS lookup
+    local public_fqdn="${FORCE_FQDN:-}"
+    
+    if [[ -z "$public_fqdn" ]]; then
+        if command -v dig >/dev/null 2>&1; then
+            public_fqdn=$(dig +short -x "$public_ip" 2>/dev/null | sed 's/\.$//' | head -1 || echo "")
+        elif command -v host >/dev/null 2>&1; then
+            public_fqdn=$(host "$public_ip" 2>/dev/null | awk '/domain name pointer/ {print $NF}' | sed 's/\.$//' || echo "")
+        fi
+    fi
+
+    if [[ -z "$public_fqdn" ]]; then
+        log_warn "No reverse DNS record found, using localhost"
+        export PUBLIC_FQDN="localhost"
+    else
+        log_success "Detected FQDN: $public_fqdn"
+        export PUBLIC_FQDN="$public_fqdn"
+    fi
+
+    # Construct TLS cert paths
+    export PUBLIC_TLS_CRT_PEM="/etc/letsencrypt/live/${PUBLIC_FQDN}/fullchain.pem"
+    export PUBLIC_TLS_KEY_PEM="/etc/letsencrypt/live/${PUBLIC_FQDN}/privkey.pem"
+}
+
+# ============================================================================
 # REPOSITORY PATH MANAGEMENT (CENTRALIZED)
 # ============================================================================
 # Set canonical repository paths for ALL downstream scripts and tools
@@ -214,6 +277,12 @@ export PHYSICAL_REPO_ROOT="$PHYSICAL_REPO_ROOT"
 # Docker container user IDs (for playwright and other services)
 export DOCKER_UID="$USER_UID"
 export DOCKER_GID="$DOCKER_GID"
+
+# Public FQDN and IP (for TLS proxy and external access)
+export PUBLIC_IP="${PUBLIC_IP:-127.0.0.1}"
+export PUBLIC_FQDN="${PUBLIC_FQDN:-localhost}"
+export PUBLIC_TLS_CRT_PEM="${PUBLIC_TLS_CRT_PEM:-/etc/letsencrypt/live/localhost/fullchain.pem}"
+export PUBLIC_TLS_KEY_PEM="${PUBLIC_TLS_KEY_PEM:-/etc/letsencrypt/live/localhost/privkey.pem}"
 EOF
 
     # Also append to ~/.bashrc for future shells
@@ -789,6 +858,15 @@ main() {
     log_debug "Calling detect_environment..."
     detect_environment
     log_debug "detect_environment completed"
+
+    log_debug "Calling detect_public_fqdn..."
+    if ! detect_public_fqdn; then
+        log_warn "Public FQDN detection had issues (non-critical)"
+        # Don't exit - FQDN detection failure shouldn't break devcontainer
+        export PUBLIC_FQDN="localhost"
+        export PUBLIC_IP="127.0.0.1"
+    fi
+    log_debug "detect_public_fqdn completed"
 
     log_debug "Calling setup_python_environment..."
     if ! setup_python_environment; then

@@ -116,7 +116,8 @@ def copy_application_files(deploy_dir):
     # Files to copy
     files_to_copy = [
         ("src/netcup_api_filter/passenger_wsgi.py", "passenger_wsgi.py"),
-        ".env.defaults",  # Default credentials (single source of truth)
+        # .env.defaults is copied temporarily for database seeding, then removed before packaging
+        ".env.defaults",  # Temporary: needed for bootstrap/seeding during build only
         "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
         "DEBUG_QUICK_START.md",  # Quick debugging reference
         "READY_TO_DEPLOY.md",  # Instructions based on working hello world
@@ -732,6 +733,12 @@ def main():
         
         # Create deployment README
         create_deploy_readme(deploy_dir)
+        
+        # Remove .env.defaults before packaging (was only needed for database seeding)
+        env_defaults_in_deploy = Path(deploy_dir) / ".env.defaults"
+        if env_defaults_in_deploy.exists():
+            env_defaults_in_deploy.unlink()
+            logger.info("Removed .env.defaults from deployment (not needed in production)")
         
         # Create zip package
         zip_path, hash_file = create_zip_package(deploy_dir, args.output)

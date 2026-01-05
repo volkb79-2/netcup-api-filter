@@ -6,6 +6,10 @@
 #   ${HOSTNAME_MAILPIT}  - Mailpit service hostname (from .env.services)
 #   ${HOSTNAME_POWERDNS} - PowerDNS service hostname (from .env.services)
 
+# Docker's embedded DNS resolver (allows runtime hostname resolution)
+# This prevents nginx from failing at startup if upstreams are unavailable
+resolver 127.0.0.11 valid=10s ipv6=off;
+
 server {
     listen 443 ssl;
     # Server name matches the public FQDN (from proxy.env)
@@ -30,8 +34,10 @@ server {
     # Mailpit web UI and API
     # Mailpit handles webroot internally via MP_WEBROOT environment variable
     location /mailpit/ {
+        # Use variable to force runtime DNS resolution (nginx won't fail at startup if service unavailable)
+        set $mailpit_upstream ${HOSTNAME_MAILPIT}:8025;
         # Proxy to Mailpit WITHOUT stripping prefix (Mailpit expects /mailpit/)
-        proxy_pass http://${HOSTNAME_MAILPIT}:8025;
+        proxy_pass http://$mailpit_upstream;
         proxy_http_version 1.1;
         
         # WebSocket support (for real-time UI updates)
@@ -55,8 +61,10 @@ server {
     # PowerDNS API
     # Secured by PowerDNS API key (X-API-Key header)
     location /backend-powerdns/ {
+        # Use variable to force runtime DNS resolution (nginx won't fail at startup if service unavailable)
+        set $powerdns_upstream ${HOSTNAME_POWERDNS}:8081;
         # Strip /backend-powerdns prefix, proxy to PowerDNS API root
-        proxy_pass http://${HOSTNAME_POWERDNS}:8081/;
+        proxy_pass http://$powerdns_upstream/;
         proxy_http_version 1.1;
         
         # Standard proxy headers
@@ -74,9 +82,11 @@ server {
     }
 
     location / {
+        # Use variable to force runtime DNS resolution (nginx won't fail at startup if service unavailable)
+        set $backend_upstream ${LOCAL_APP_HOST}:${LOCAL_APP_PORT};
         # Forward all requests to Flask backend (HTTP, not HTTPS)
         # nginx terminates TLS, backend receives plain HTTP
-        proxy_pass http://${LOCAL_APP_HOST}:${LOCAL_APP_PORT};
+        proxy_pass http://$backend_upstream;
         proxy_http_version 1.1;
         
         # Preserve original Host header

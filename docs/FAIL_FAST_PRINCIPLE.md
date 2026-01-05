@@ -60,7 +60,7 @@ source "${REPO_ROOT:?REPO_ROOT not set}/.env.workspace"
 # Then validate all required variables
 DOCKER_NETWORK="${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set (source .env.workspace)}"
 FLASK_PORT="${LOCAL_FLASK_PORT:?LOCAL_FLASK_PORT not set (check .env.defaults)}"
-PUBLIC_FQDN="${PUBLIC_FQDN:?PUBLIC_FQDN not set (run: ./detect-fqdn.sh --update-workspace)}"
+PUBLIC_FQDN="${PUBLIC_FQDN:?PUBLIC_FQDN not set (source .env.workspace or rebuild devcontainer)}"
 ```
 
 #### Error Message Format

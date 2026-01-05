@@ -218,7 +218,7 @@ load_env_defaults() {
         grep -v '^#' "$env_file" | \
             grep -v '^$' | \
             grep '=' | \
-            grep -vE '^\s*(if|then|else|fi|function|{|}|\()' > "$temp_env" || true
+            grep -vE '^\s*(if|then|else|fi|function|\{|\}|\()' > "$temp_env" || true
         if [[ -s "$temp_env" ]]; then
             set -a
             source "$temp_env"
@@ -298,10 +298,10 @@ case "$DEPLOYMENT_TARGET" in
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         
         # Webhosting connection details (must be set in .env.defaults)
-        NETCUP_USER="${NETCUP_SSH_USER:?NETCUP_SSH_USER not set - check .env.defaults}"
-        NETCUP_SERVER="${NETCUP_SSH_HOST:?NETCUP_SSH_HOST not set - check .env.defaults}"
-        REMOTE_DIR="${NETCUP_REMOTE_DIR:?NETCUP_REMOTE_DIR not set - check .env.defaults}"
-        SSHFS_MOUNT="/home/vscode/sshfs-${NETCUP_USER}@${NETCUP_SERVER}"
+        WEBHOSTING_SSH_USER="${WEBHOSTING_SSH_USER:?WEBHOSTING_SSH_USER not set - check .env.defaults}"
+        WEBHOSTING_SSH_SERVER="${WEBHOSTING_SSH_HOST:?WEBHOSTING_SSH_HOST not set - check .env.defaults}"
+        WEBHOSTING_REMOTE_DIR="${WEBHOSTING_REMOTE_DIR:?WEBHOSTING_REMOTE_DIR not set - check .env.defaults}"
+        SSHFS_MOUNT="/home/vscode/sshfs-${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}"
         ;;
 esac
 
@@ -646,22 +646,21 @@ start_tls_proxy() {
     
     if [[ ! -f "${proxy_dir}/.env" ]]; then
         log_error "TLS proxy not configured: ${proxy_dir}/.env not found"
-        log_step "Run: ./detect-fqdn.sh --update-workspace"
+        log_step "Check tooling/reverse-proxy/.env configuration"
         return 1
     fi
     
-    # Auto-detect PUBLIC_FQDN if not already in .env.workspace
-    if [[ ! -f "${REPO_ROOT}/.env.workspace" ]] || ! grep -q "PUBLIC_FQDN" "${REPO_ROOT}/.env.workspace"; then
-        log_step "Auto-detecting PUBLIC_FQDN via reverse DNS..."
-        if "${REPO_ROOT}/detect-fqdn.sh" --update-workspace; then
-            log_success "PUBLIC_FQDN detected and saved to .env.workspace"
-        else
-            log_warning "FQDN detection failed - using localhost as fallback"
-        fi
+    # Load workspace environment (PUBLIC_FQDN set by post-create.sh)
+    if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
+        source "${REPO_ROOT}/.env.workspace"
     fi
     
-    # Load workspace environment (now guaranteed to exist with PUBLIC_FQDN)
-    source "${REPO_ROOT}/.env.workspace"
+    # Check for PUBLIC_FQDN
+    if [[ -z "${PUBLIC_FQDN:-}" ]]; then
+        log_warning "PUBLIC_FQDN not set (should be auto-detected by post-create.sh)"
+        log_step "Rebuild devcontainer to regenerate .env.workspace"
+        return 1
+    fi
     
     # Render nginx config from template
     if [[ -f "${proxy_dir}/render-nginx-conf.sh" ]]; then
@@ -837,27 +836,27 @@ phase_deploy() {
             ;;
             
         webhosting)
-            log_step "Uploading to ${NETCUP_SERVER}..."
-            scp "$ZIP_FILE" "${NETCUP_USER}@${NETCUP_SERVER}:/"
+            log_step "Uploading to ${WEBHOSTING_SSH_SERVER}..."
+            scp "$ZIP_FILE" "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}:/"
             
             log_step "Extracting and restarting on server..."
-            ssh "${NETCUP_USER}@${NETCUP_SERVER}" \
-                "cd / && rm -rf ${REMOTE_DIR}/* ${REMOTE_DIR}/.[!.]* ${REMOTE_DIR}/..?* && \
-                 mkdir -p ${REMOTE_DIR}/tmp/ && \
-                 unzip -o -u deploy.zip -d ${REMOTE_DIR}/ && \
-                 touch ${REMOTE_DIR}/tmp/restart.txt"
+            ssh "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}" \
+                "cd / && rm -rf ${WEBHOSTING_REMOTE_DIR}/* ${WEBHOSTING_REMOTE_DIR}/.[!.]* ${WEBHOSTING_REMOTE_DIR}/..?* && \
+                 mkdir -p ${WEBHOSTING_REMOTE_DIR}/tmp/ && \
+                 unzip -o -u deploy.zip -d ${WEBHOSTING_REMOTE_DIR}/ && \
+                 touch ${WEBHOSTING_REMOTE_DIR}/tmp/restart.txt"
             
             # State file is already created in REPO_ROOT by build_deployment.py
             # (deployment_state_webhosting.json - not deployed, contains secrets)
             log_success "State file: $STATE_FILE"
             
-            log_success "Deployed to $NETCUP_SERVER"
+            log_success "Deployed to $WEBHOSTING_SSH_SERVER"
             
             # Mount SSHFS if not already mounted
             if [[ ! -d "$SSHFS_MOUNT" ]] || ! mountpoint -q "$SSHFS_MOUNT" 2>/dev/null; then
                 log_step "Mounting remote filesystem via SSHFS..."
                 mkdir -p "$SSHFS_MOUNT"
-                if sshfs "${NETCUP_USER}@${NETCUP_SERVER}:${REMOTE_DIR}" "$SSHFS_MOUNT" \
+                if sshfs "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}:${WEBHOSTING_REMOTE_DIR}" "$SSHFS_MOUNT" \
                      -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 2>/dev/null; then
                     log_success "Mounted at $SSHFS_MOUNT"
                 else
@@ -1152,8 +1151,24 @@ stop_all_services() {
     # 2. Stop TLS reverse proxy
     log_step "Stopping TLS reverse proxy..."
     local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
+    # Try docker compose first (graceful), then fallback to direct container stop
     if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
-        (cd "${proxy_dir}" && docker compose --env-file .env down 2>/dev/null) && log_success "TLS proxy stopped" || log_step "TLS proxy not running"
+        # Source workspace environment for PUBLIC_FQDN and other required vars
+        if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
+            set -a
+            source "${REPO_ROOT}/.env.workspace"
+            set +a
+        fi
+        if (cd "${proxy_dir}" && docker compose --env-file .env down 2>/dev/null); then
+            log_success "TLS proxy stopped"
+        else
+            # Fallback: stop container directly if docker compose fails (missing env vars)
+            if docker stop naf-dev-reverse-proxy 2>/dev/null && docker rm naf-dev-reverse-proxy 2>/dev/null; then
+                log_success "TLS proxy stopped (direct)"
+            else
+                log_step "TLS proxy not running"
+            fi
+        fi
     fi
     
     # 3. Stop Mailpit
