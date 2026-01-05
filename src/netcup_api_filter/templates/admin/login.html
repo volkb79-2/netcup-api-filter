@@ -2,9 +2,9 @@
 
 {% block title %}Admin Login - Netcup API Filter{% endblock %}
 
-{% block icon %}bi-shield-shaded{% endblock %}
+{% block icon %}<i class="bi bi-shield-shaded display-3"></i>{% endblock %}
 
-{% block heading %}Admin Login{% endblock %}
+{% block heading %}Admin Portal{% endblock %}
 
 {% block form_content %}
 <form method="POST" action="{{ url_for('admin.login') }}">
@@ -49,22 +49,20 @@
     </div>
     
     <!-- Submit -->
-    <div class="d-grid mt-4">
-        <button type="submit" class="btn btn-primary btn-lg">
-            Sign In
+    <div class="mt-4 text-center">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-box-arrow-in-right me-1"></i>Sign In
         </button>
     </div>
 </form>
 {% endblock %}
 
 {% block card_footer %}
-<div class="card-footer text-center py-3 bg-transparent border-top">
-    <small class="fw-medium">Secure administrative access</small>
-</div>
 {% endblock %}
 
 {% block footer_links %}
-<small class="text-muted">
-    <a href="{{ url_for('account.login') }}" class="text-decoration-none">Client Portal Login</a>
-</small>
+<div class="text-center mt-4">
+    <span class="text-muted">Have a regular user account?</span>
+    <a href="{{ url_for('account.login') }}" class="ms-1">Client Portal</a>
+</div>
 {% endblock %}

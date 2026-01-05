@@ -1,7 +1,8 @@
 {
 	"servers": {
 		"playwright": {
-			"url": "http://playwright:8765/mcp",
+			// point to the container name and port where MCP is running
+			"url": "http://naf-dev-playwright:8765/mcp",
 			"type": "http"
 		}
 	},

@@ -40,6 +40,8 @@ transport_security = TransportSecuritySettings(
         f"localhost:{MCP_PORT}",
         "playwright",
         f"playwright:{MCP_PORT}",
+        "naf-dev-playwright",
+        f"naf-dev-playwright:{MCP_PORT}",
         "127.0.0.1",
         f"127.0.0.1:{MCP_PORT}",
         "0.0.0.0",
@@ -50,6 +52,8 @@ transport_security = TransportSecuritySettings(
         f"http://localhost:{MCP_PORT}",
         "http://playwright",
         f"http://playwright:{MCP_PORT}",
+        "http://naf-dev-playwright",
+        f"http://naf-dev-playwright:{MCP_PORT}",
         "vscode-file://vscode-app",
     ],
 )

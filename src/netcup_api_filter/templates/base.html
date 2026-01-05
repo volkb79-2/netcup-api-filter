@@ -50,87 +50,7 @@
                         <!-- Right side -->
                         <div class="navbar-nav ms-auto d-flex align-items-center gap-2">
                             <!-- Theme Switcher -->
-                            <div class="dropdown" x-data="{ open: false }">
-                                <button @click="open = !open" 
-                                        class="btn btn-sm btn-outline-secondary border-0" 
-                                        title="Theme & Density">
-                                    <i class="bi bi-palette2"></i>
-                                </button>
-                                <div x-show="open" 
-                                     @click.away="open = false" 
-                                     x-cloak
-                                     class="dropdown-menu dropdown-menu-end show theme-dropdown"
-                                     style="min-width: 200px;">
-                                    <h6 class="dropdown-header">
-                                        <i class="bi bi-brush me-2"></i>Theme
-                                    </h6>
-                                    <!-- All 17 themes from demo2, in same order -->
-                                    <button class="dropdown-item" onclick="setTheme('deep-ocean')">
-                                        <span class="theme-swatch" style="background: #3b82f6"></span> Deep Ocean
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('graphite')">
-                                        <span class="theme-swatch" style="background: #3b82f6"></span> Graphite
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('zinc')">
-                                        <span class="theme-swatch" style="background: #2dd4bf"></span> Zinc
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('obsidian-noir')">
-                                        <span class="theme-swatch" style="background: #a78bfa"></span> Obsidian Noir
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('ember')">
-                                        <span class="theme-swatch" style="background: #f97316"></span> Ember
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('arctic')">
-                                        <span class="theme-swatch" style="background: #38bdf8"></span> Arctic
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('jade')">
-                                        <span class="theme-swatch" style="background: #34d399"></span> Jade
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('rose-quartz')">
-                                        <span class="theme-swatch" style="background: #f472b6"></span> Rose Quartz
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('gold-dust')">
-                                        <span class="theme-swatch" style="background: #fbbf24"></span> Gold Dust
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('crimson')">
-                                        <span class="theme-swatch" style="background: #f87171"></span> Crimson
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('amethyst')">
-                                        <span class="theme-swatch" style="background: #c084fc"></span> Amethyst
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('sapphire')">
-                                        <span class="theme-swatch" style="background: #818cf8"></span> Sapphire
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('slate-luxe')">
-                                        <span class="theme-swatch" style="background: #22d3ee"></span> Slate Luxe
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('navy')">
-                                        <span class="theme-swatch" style="background: #4f7cff"></span> Navy
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('cobalt')">
-                                        <span class="theme-swatch" style="background: #2563eb"></span> Cobalt
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('midnight-blue')">
-                                        <span class="theme-swatch" style="background: #6889ff"></span> Midnight Blue
-                                    </button>
-                                    <button class="dropdown-item" onclick="setTheme('cobalt-2')">
-                                        <span class="theme-swatch" style="background: #3b7cf5"></span> Cobalt 2 ★
-                                    </button>
-                                    <div class="dropdown-divider"></div>
-                                    <h6 class="dropdown-header">
-                                        <i class="bi bi-arrows-collapse me-2"></i>Density
-                                    </h6>
-                                    <button class="dropdown-item" onclick="setDensity('comfortable')">
-                                        <i class="bi bi-distribute-vertical me-2"></i> Comfortable
-                                    </button>
-                                    <button class="dropdown-item" onclick="setDensity('compact')">
-                                        <i class="bi bi-arrows-collapse me-2"></i> Compact
-                                    </button>
-                                    <button class="dropdown-item" onclick="setDensity('ultra-compact')">
-                                        <i class="bi bi-arrows-vertical me-2"></i> Ultra Compact
-                                    </button>
-                                </div>
-                            </div>
+                            {% include 'components/theme_switcher.html' %}
                             
                             {% block user_menu %}{% endblock %}
                         </div>
@@ -189,34 +109,8 @@
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     
-    <!-- Theme & Density Functions -->
+    <!-- Utility Functions -->
     <script>
-        function setTheme(theme) {
-            // Remove existing theme classes from both html and body
-            const themeRegex = /theme-\S+/g;
-            document.documentElement.className = document.documentElement.className.replace(themeRegex, '').trim();
-            document.body.className = document.body.className.replace(themeRegex, '').trim();
-            
-            // Apply new theme to both html and body (CSS may target either)
-            if (theme !== 'cobalt-2') {
-                document.documentElement.classList.add('theme-' + theme);
-                document.body.classList.add('theme-' + theme);
-            }
-            localStorage.setItem('naf-theme', theme);
-        }
-        
-        function setDensity(density) {
-            const densityRegex = /density-\S+/g;
-            document.documentElement.className = document.documentElement.className.replace(densityRegex, '').trim();
-            document.body.className = document.body.className.replace(densityRegex, '').trim();
-            
-            if (density !== 'comfortable') {
-                document.documentElement.classList.add('density-' + density);
-                document.body.classList.add('density-' + density);
-            }
-            localStorage.setItem('naf-density', density);
-        }
-        
         function copyToClipboard(text, button) {
             navigator.clipboard.writeText(text).then(() => {
                 const icon = button.querySelector('i');

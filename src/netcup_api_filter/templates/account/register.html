@@ -10,8 +10,6 @@
 {% block heading %}Create Account{% endblock %}
 
 {% block form_content %}
-<p class="text-center text-muted mb-4">Join Netcup API Filter</p>
-
 <!-- Registration Form -->
 <form method="POST" action="{{ url_for('account.register') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -38,10 +36,9 @@
     </div>
     
     <div class="mb-3">
-        <label class="form-label" for="password">Password <span class="text-danger">*</span></label>
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <span></span>
-            <button type="button" class="btn btn-primary btn-sm" onclick="generatePassword()" title="Generate secure password">
+            <label class="form-label mb-0" for="password">Password <span class="text-danger">*</span></label>
+            <button type="button" class="btn btn-primary btn-xs" onclick="generatePassword()" title="Generate secure password">
                 <i class="bi bi-shuffle me-1"></i>Generate
             </button>
         </div>
@@ -84,6 +81,7 @@
         <small class="text-danger d-none" id="passwordMismatch">Passwords do not match</small>
     </div>
     
+    <!-- Terms of Service - commented out until pages are created
     <div class="form-check mb-4">
         <input type="checkbox" class="form-check-input" id="terms" name="terms" required>
         <label class="form-check-label" for="terms">
@@ -91,9 +89,10 @@
             <a href="#" target="_blank">Privacy Policy</a>
         </label>
     </div>
+    -->
     
-    <div class="d-grid">
-        <button type="submit" class="btn btn-primary btn-lg">
+    <div class="text-center">
+        <button type="submit" class="btn btn-primary">
             <i class="bi bi-person-plus me-1"></i>Create Account
         </button>
     </div>

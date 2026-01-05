@@ -603,14 +603,10 @@ html.density-ultra-compact {
     padding: var(--density-input-padding-y) var(--density-input-padding-x);
 }
 
+
 /* Button sizing - respects density */
 .btn {
     padding: var(--density-input-padding-y) var(--density-card-padding);
-}
-
-.btn-sm {
-    padding: calc(var(--density-input-padding-y) * 0.75) calc(var(--density-card-padding) * 0.75);
-    font-size: var(--density-font-sm);
 }
 
 /* Navbar height - respects density */
@@ -1100,6 +1096,17 @@ code {
     cursor: not-allowed;
 }
 
+/* Button size variants - MUST come after base .btn */
+.btn-sm {
+    padding: calc(var(--density-input-padding-y) * 0.75) calc(var(--density-card-padding) * 0.75);
+    font-size: var(--density-font-sm);
+}
+
+.btn-xs {
+    padding: calc(var(--density-input-padding-y) * 0.2) calc(var(--density-input-padding-x) * 1.0);
+    font-size: calc(var(--density-font-sm) * 0.9);
+}
+
 /* Override Bootstrap 5's btn-primary with theme accent color */
 .btn-primary {
     --bs-btn-bg: var(--color-accent);
@@ -1163,11 +1170,6 @@ code {
 .btn-outline:hover:not(:disabled) {
     background: rgba(59, 130, 246, 0.1);
     border-color: var(--color-accent);
-}
-
-.btn-sm {
-    padding: var(--space-xs) var(--space-md);
-    font-size: 0.8125rem;
 }
 
 .btn-lg {
@@ -1288,6 +1290,7 @@ textarea.form-control {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.875rem;
+    color: var(--color-text-primary); /* Ensure text is visible */
     --bs-table-bg: transparent;
     --bs-table-color: var(--color-text-secondary);
     --bs-table-hover-bg: rgba(59, 130, 246, 0.05);
@@ -1391,7 +1394,7 @@ textarea.form-control {
     align-items: center;
     padding: 0.25rem 0.75rem;
     border-radius: 9999px;
-    font-size: 0.75rem;
+    font-size: var(--density-font-xs); /* Use density variable instead of hardcoded 0.75rem */
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1596,11 +1599,6 @@ textarea.form-control {
 }
 
 .checkbox label {
-    color: var(--color-text-primary);
-}
-
-/* Fix table text colors */
-.table {
     color: var(--color-text-primary);
 }
 
@@ -1953,18 +1951,7 @@ textarea.form-control {
    LOGIN PAGE (Centered)
    =================================================================== */
 
-.login-container {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-md);
-}
-
-.login-card {
-    width: 100%;
-    max-width: 400px;
-}
+/* Note: .login-container and .login-card styles are now in standalone_base.html inline styles */
 
 /* Disable hover lift effect on login card for cleaner UX */
 .login-card:hover {

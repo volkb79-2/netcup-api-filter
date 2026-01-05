@@ -11,7 +11,7 @@
             data-bs-toggle="dropdown" 
             aria-expanded="false"
             title="Theme & Density">
-        <i class="bi bi-palette2"></i>
+        <i class="bi bi-stars"></i>
     </button>
     <div class="dropdown-menu dropdown-menu-end" style="min-width: 220px;">
         <h6 class="dropdown-header">
@@ -68,3 +68,45 @@
         </button>
     </div>
 </div>
+
+<script>
+// Theme and Density switcher functions
+// Included with component so always available
+if (typeof setTheme === 'undefined') {
+    function setTheme(theme) {
+        const themeRegex = /theme-\S+/g;
+        document.documentElement.className = document.documentElement.className.replace(themeRegex, '').trim();
+        document.body.className = document.body.className.replace(themeRegex, '').trim();
+        document.documentElement.setAttribute('data-theme', theme);
+        
+        if (theme !== 'cobalt-2') {
+            document.documentElement.classList.add('theme-' + theme);
+            document.body.classList.add('theme-' + theme);
+        }
+        localStorage.setItem('naf-theme', theme);
+    }
+}
+
+if (typeof setDensity === 'undefined') {
+    function setDensity(density) {
+        const densityRegex = /density-\S+/g;
+        document.documentElement.className = document.documentElement.className.replace(densityRegex, '').trim();
+        document.body.className = document.body.className.replace(densityRegex, '').trim();
+        
+        if (density !== 'comfortable') {
+            document.documentElement.classList.add('density-' + density);
+            document.body.classList.add('density-' + density);
+        }
+        localStorage.setItem('naf-density', density);
+    }
+    
+    // Load saved density on page load
+    (function() {
+        const density = localStorage.getItem('naf-density') || 'comfortable';
+        if (density !== 'comfortable') {
+            document.documentElement.classList.add('density-' + density);
+            document.body.classList.add('density-' + density);
+        }
+    })();
+}
+</script>
