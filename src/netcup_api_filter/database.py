@@ -115,9 +115,24 @@ def seed_admin_account():
     Seed default admin account if it doesn't exist.
     
     Reads credentials from environment or .env.defaults.
+    Gracefully skips if defaults not available and admin exists (production deployment).
     """
     admin_username = os.environ.get('DEFAULT_ADMIN_USERNAME') or get_default('DEFAULT_ADMIN_USERNAME', 'admin')
-    admin_password = os.environ.get('DEFAULT_ADMIN_PASSWORD') or require_default('DEFAULT_ADMIN_PASSWORD')
+    
+    # Check if admin already exists
+    existing = Account.query.filter_by(username=admin_username).first()
+    if existing:
+        logger.debug(f"Admin account '{admin_username}' already exists")
+        return
+    
+    # Only require password if admin doesn't exist (fresh deployment)
+    # In production deployments, database is pre-seeded so this should not be reached
+    admin_password = os.environ.get('DEFAULT_ADMIN_PASSWORD') or get_default('DEFAULT_ADMIN_PASSWORD')
+    if not admin_password:
+        logger.warning(f"Admin account '{admin_username}' does not exist and DEFAULT_ADMIN_PASSWORD not available")
+        logger.warning("This may indicate a database reset or corruption. Database should be pre-seeded during deployment.")
+        return
+    
     admin_email = os.environ.get('DEFAULT_ADMIN_EMAIL') or get_default('DEFAULT_ADMIN_EMAIL', 'admin@localhost')
     
     # Check if admin already exists

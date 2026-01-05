@@ -9,7 +9,7 @@
             "icon": "terminal-bash"
         },
         // Terminal profile for chat to circumvent alias issues
-        "bash (clean - no aliases)": {
+        "bash (clean - no aliases - for chat)": {
             "path": "bash",
             "args": ["--norc", "--noprofile"],
             "icon": "tools",

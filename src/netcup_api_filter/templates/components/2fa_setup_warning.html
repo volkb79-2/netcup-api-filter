@@ -1,0 +1,31 @@
+<!-- 2FA Setup Warning Banner -->
+<!-- Show this when admin account doesn't have 2FA enabled -->
+{% if current_user.requires_2fa_setup() %}
+<div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
+    <div class="d-flex align-items-start">
+        <span class="me-3" style="font-size: 1.5rem;">🔒</span>
+        <div class="flex-grow-1">
+            <h5 class="alert-heading mb-2">Secure Your Admin Account</h5>
+            <p class="mb-2">
+                Your admin account doesn't have two-factor authentication (2FA) enabled. 
+                This is a security risk - attackers only need your password to gain full system access.
+            </p>
+            <p class="mb-3">
+                <strong>Recommended:</strong> Set up 2FA now to protect your account and the system.
+            </p>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{{ url_for('admin.setup_totp') }}" class="btn btn-warning btn-sm">
+                    <i class="bi bi-phone"></i> Set Up Authenticator App (TOTP)
+                </a>
+                <a href="{{ url_for('admin.config_email') }}" class="btn btn-outline-warning btn-sm">
+                    <i class="bi bi-envelope"></i> Configure Email 2FA
+                </a>
+                <a href="https://docs.example.com/security/2fa" target="_blank" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-question-circle"></i> Learn More
+                </a>
+            </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+</div>
+{% endif %}

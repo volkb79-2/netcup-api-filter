@@ -288,13 +288,13 @@ case "$DEPLOYMENT_TARGET" in
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         ;;
     webhosting)
-        DEPLOY_DIR="${REPO_ROOT}/deploy"
+        DEPLOY_DIR="${REPO_ROOT}/deploy-webhosting"
         STATE_FILE="${REPO_ROOT}/deployment_state_webhosting.json"
-        SCREENSHOT_DIR="${REPO_ROOT}/deploy-local/screenshots"
+        SCREENSHOT_DIR="${REPO_ROOT}/deploy-webhosting/screenshots"
         LOG_DIR="${REPO_ROOT}/tmp"
         UI_BASE_URL="${WEBHOSTING_URL}"
         # Same deploy.zip for both targets - reduces drift
-        BUILD_ARGS="--target webhosting --build-dir deploy --output deploy.zip"
+        BUILD_ARGS="--target webhosting --build-dir deploy-webhosting --output deploy.zip"
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         
         # Webhosting connection details (must be set in .env.defaults)

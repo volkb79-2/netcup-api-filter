@@ -41,15 +41,34 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     # Security Configuration
     # =========================================================================
     
-    # Secret key for sessions
-    secret_key = os.environ.get('SECRET_KEY') or require_default('SECRET_KEY')
+    # Secret key for sessions (with production validation)
+    secret_key = os.environ.get('SECRET_KEY')
+    
+    # In production, SECRET_KEY must be set and not use default
+    flask_env = os.environ.get('FLASK_ENV', '')
+    if not flask_env or flask_env == 'production':
+        default_secret = get_default('SECRET_KEY', '')
+        if not secret_key:
+            raise RuntimeError(
+                "SECRET_KEY environment variable not set. "
+                "Generate one with: openssl rand -hex 32"
+            )
+        if secret_key == default_secret and default_secret:
+            raise RuntimeError(
+                f"SECRET_KEY is using insecure default value ('{default_secret[:20]}...'). "
+                "Generate a secure key with: openssl rand -hex 32"
+            )
+    
+    # Development/testing can use default if not provided
+    if not secret_key:
+        secret_key = require_default('SECRET_KEY')
+    
     app.config['SECRET_KEY'] = secret_key
     
     # Maximum request size (10 MB)
     app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 10 * 1024 * 1024))
     
     # Session cookie configuration (config-driven)
-    flask_env = os.environ.get('FLASK_ENV', '')
     
     # Secure cookie - auto mode: off for local testing, on for production
     secure_setting = os.environ.get('FLASK_SESSION_COOKIE_SECURE', 
@@ -337,8 +356,8 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         if session.get('account_id'):
             return redirect(url_for('account.dashboard'))
         
-        # Default to admin login
-        return redirect(url_for('admin.login'))
+        # Default to account login (user-facing portal)
+        return redirect(url_for('account.login'))
     
     # =========================================================================
     # Design System Demos (public)

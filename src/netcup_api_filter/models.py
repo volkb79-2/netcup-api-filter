@@ -311,12 +311,9 @@ class Account(db.Model):
                              foreign_keys='AccountRealm.account_id')
     approved_by = db.relationship('Account', remote_side=[id], foreign_keys=[approved_by_id])
     
-    __table_args__ = (
-        CheckConstraint(
-            'email_2fa_enabled = 1 OR totp_enabled = 1 OR telegram_enabled = 1',
-            name='check_2fa_enabled'
-        ),
-    )
+    # NOTE: 2FA is strongly recommended but NOT mandatory
+    # Fresh installations need admin to configure 2FA after initial password change
+    # __table_args__ removed to allow accounts without 2FA during initial setup
     
     def set_password(self, password: str):
         """Hash and set password."""
@@ -328,6 +325,15 @@ class Account(db.Model):
             return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
         except (ValueError, TypeError):
             return False
+    
+    def has_2fa_enabled(self) -> bool:
+        """Check if account has at least one 2FA method enabled."""
+        return self.email_2fa_enabled or self.totp_enabled or self.telegram_enabled
+    
+    def requires_2fa_setup(self) -> bool:
+        """Check if account should be prompted to set up 2FA."""
+        # Admin accounts without 2FA should be warned
+        return self.is_admin and not self.has_2fa_enabled()
     
     def regenerate_user_alias(self) -> tuple[str, int]:
         """

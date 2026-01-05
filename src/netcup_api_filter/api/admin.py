@@ -310,8 +310,15 @@ def login():
                     logger.warning(f"2FA BYPASSED for {username} (test mode)")
                     return _complete_admin_login(admin, client_ip, 'test_bypass')
                 
+                # Check if admin has any 2FA method enabled
+                if not admin.has_2fa_enabled():
+                    # Admin hasn't set up 2FA yet - allow login without 2FA
+                    # They'll see a warning banner on the dashboard
+                    logger.warning(f"Admin login without 2FA: {username} (2FA not configured)")
+                    return _complete_admin_login(admin, client_ip, 'no_2fa_configured')
+                
                 # Check if admin has valid email for 2FA
-                if not admin.email or admin.email == 'admin@localhost':
+                if admin.email_2fa_enabled and (not admin.email or admin.email == 'admin@localhost'):
                     # Admin needs to set email first - proceed to password change which handles this
                     session[SESSION_KEY_ADMIN_ID] = admin.id
                     session[SESSION_KEY_ADMIN_USERNAME] = admin.username

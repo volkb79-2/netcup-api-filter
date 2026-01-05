@@ -51,6 +51,28 @@ if 'NETCUP_FILTER_DB_PATH' not in os.environ:
     os.environ['NETCUP_FILTER_DB_PATH'] = db_path
     logger.info(f"Using database at: {db_path}")
 
+# Load SECRET_KEY from .env.webhosting if present (for webhosting deployments)
+# This file is created by deployment script and contains production secrets
+webhosting_env = os.path.join(app_root, '.env.webhosting')
+if os.path.exists(webhosting_env):
+    logger.info(f"Loading webhosting environment from: {webhosting_env}")
+    with open(webhosting_env) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                if key.strip() not in os.environ:
+                    os.environ[key.strip()] = value.strip()
+
+# Generate SECRET_KEY if not provided (fallback for first-time deployments)
+# SECURITY: In production, set SECRET_KEY via control panel or environment variable
+if 'SECRET_KEY' not in os.environ:
+    import secrets
+    generated_key = secrets.token_hex(32)
+    os.environ['SECRET_KEY'] = generated_key
+    logger.warning(f"Generated temporary SECRET_KEY (sessions will be invalidated on restart)")
+    logger.warning("For production: Set SECRET_KEY environment variable via hosting control panel")
+
 try:
     from netcup_api_filter.app import create_app
     from netcup_api_filter.filter_proxy import filter_proxy_bp

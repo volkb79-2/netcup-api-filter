@@ -21,7 +21,20 @@ Netcup issues a single credential set with full control over every DNS record, d
 - Playwright UI tests (local HTTP, HTTPS with real certs, and MCP mode).
 - **DDNS protocol support** - DynDNS2 and No-IP compatible endpoints for routers and DDNS clients.
 
-## Quick Start
+## Quick Start - Installation
+
+Initial Setup Flow for fresh installation via provided `deploy.zip` package:
+
+1. Extract deploy.zip → Access site
+2. Login: admin/admin → Forced password change
+3. Dashboard → See 2FA warning banner
+4. Click "Set Up Authenticator App (TOTP)" → Scan QR code
+5. Configure Netcup API credentials
+6. Configure Email SMTP (optional)
+7. System ready for use
+
+
+## Quick Start - Development
 
 ```
 

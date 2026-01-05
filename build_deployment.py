@@ -116,8 +116,8 @@ def copy_application_files(deploy_dir):
     # Files to copy
     files_to_copy = [
         ("src/netcup_api_filter/passenger_wsgi.py", "passenger_wsgi.py"),
-        # .env.defaults is copied temporarily for database seeding, then removed before packaging
-        ".env.defaults",  # Temporary: needed for bootstrap/seeding during build only
+        # .env.defaults copied temporarily for database seeding during build, then removed
+        ".env.defaults",  # Temporary: needed for seeding during build, removed before packaging
         "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
         "DEBUG_QUICK_START.md",  # Quick debugging reference
         "READY_TO_DEPLOY.md",  # Instructions based on working hello world
@@ -297,16 +297,22 @@ def create_initial_env_webhosting(deploy_dir):
     
     defaults = _load_env_defaults()
     
+    # Generate unique SECRET_KEY for this deployment if not already set
+    import secrets
+    secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+    
     # Create .env.webhosting with deployment state
     env_webhosting_path = Path(deploy_dir) / ".env.webhosting"
     with open(env_webhosting_path, 'w') as f:
         f.write("# DEPRECATED: Use deployment_state.json instead\n")
         f.write("# Deployment state - updated by tests when passwords change\n\n")
+        f.write(f"# Flask Secret Key (generated at build time)\n")
+        f.write(f"SECRET_KEY={secret_key}\n\n")
         f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', 'admin')}\n")
         f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', 'admin')}\n")
         f.write(f"DEPLOYED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z\n")
     
-    logger.info(f"Created {env_webhosting_path} with initial deployment state")
+    logger.info(f"Created {env_webhosting_path} with initial deployment state (including SECRET_KEY)")
 
 
 def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = False) -> Tuple[str, str, list]:
@@ -734,11 +740,12 @@ def main():
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
-        # Remove .env.defaults before packaging (was only needed for database seeding)
+        # Remove .env.defaults from production package (not needed - database already seeded)
+        # Code now lazy-loads defaults and gracefully handles missing file
         env_defaults_in_deploy = Path(deploy_dir) / ".env.defaults"
         if env_defaults_in_deploy.exists():
             env_defaults_in_deploy.unlink()
-            logger.info("Removed .env.defaults from deployment (not needed in production)")
+            logger.info("Removed .env.defaults from deployment (database pre-seeded, config from env vars)")
         
         # Create zip package
         zip_path, hash_file = create_zip_package(deploy_dir, args.output)

@@ -8,7 +8,10 @@ from typing import Dict
 
 @lru_cache(maxsize=1)
 def load_defaults() -> Dict[str, str]:
-    """Load key/value defaults from .env.defaults with fail-fast semantics."""
+    """Load key/value defaults from .env.defaults with graceful fallback.
+    
+    Returns empty dict if .env.defaults not found (e.g., in production with env vars).
+    """
     search_paths = [
         Path.cwd() / ".env.defaults",
         Path(__file__).resolve().parent.parent.parent / ".env.defaults",
@@ -18,7 +21,9 @@ def load_defaults() -> Dict[str, str]:
         if env_path.exists():
             return _parse_env_file(env_path)
 
-    raise RuntimeError(".env.defaults not found in expected locations")
+    # Return empty dict instead of raising - allows running without .env.defaults
+    # (e.g., in production where all config comes from environment variables)
+    return {}
 
 
 def get_default(key: str, fallback: str | None = None) -> str | None:

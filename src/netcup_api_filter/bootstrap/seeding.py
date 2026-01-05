@@ -38,7 +38,16 @@ from ..config_defaults import get_default, load_defaults, require_default
 
 logger = logging.getLogger(__name__)
 
-_ENV_DEFAULTS = load_defaults()
+# Lazy-load environment defaults only when needed (not at module import)
+# This allows the module to be imported without .env.defaults present
+_ENV_DEFAULTS = None
+
+def _get_env_defaults():
+    """Lazy-load environment defaults only when actually seeding."""
+    global _ENV_DEFAULTS
+    if _ENV_DEFAULTS is None:
+        _ENV_DEFAULTS = load_defaults()
+    return _ENV_DEFAULTS
 
 
 @dataclass
@@ -110,8 +119,10 @@ def ensure_admin_account(options: AdminSeedOptions) -> Account:
             username=options.username,
             user_alias=user_alias,
             email=options.email,
-            email_verified=1,
-            email_2fa_enabled=1,
+            email_verified=0,  # Not verified yet
+            email_2fa_enabled=0,  # Will be set up after initial password change
+            totp_enabled=0,
+            telegram_enabled=0,
             is_active=1,
             is_admin=1,
             approved_at=datetime.utcnow()
@@ -119,7 +130,7 @@ def ensure_admin_account(options: AdminSeedOptions) -> Account:
         account.set_password(options.password)
         account.must_change_password = 1 if options.must_change_password else 0
         db.session.add(account)
-        logger.info(f"Created admin account: {options.username} (alias: {user_alias[:4]}...)")
+        logger.info(f"Created admin account: {options.username} (alias: {user_alias[:4]}...) - 2FA setup required")
     else:
         # Ensure existing account has user_alias
         if not account.user_alias:
@@ -147,8 +158,10 @@ def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None)
             username=options.username,
             user_alias=user_alias,
             email=options.email,
-            email_verified=1,
-            email_2fa_enabled=1,
+            email_verified=0,  # Not verified yet
+            email_2fa_enabled=0,  # Optional for non-admin accounts
+            totp_enabled=0,
+            telegram_enabled=0,
             is_active=1,
             is_admin=0,
             approved_by_id=approved_by.id if approved_by else None,
