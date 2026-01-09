@@ -256,3 +256,4 @@ deployment_state_*.json
 # maxmind geo ip location database license key file
 geoIP.conf
 
+.app_startup

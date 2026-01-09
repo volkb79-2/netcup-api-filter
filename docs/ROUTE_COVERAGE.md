@@ -212,8 +212,27 @@ Complete inventory of all routes with test and screenshot coverage status.
 
 | Route Pattern | Primary Test File |
 |---------------|------------------|
-| `/admin/*` | `test_admin_*.py`, `test_user_journeys.py` |
-| `/account/login\|register\|forgot-password` | `test_account_portal.py` |
-| `/account/dashboard\|realms\|tokens` | `test_holistic_coverage.py` (new) |
+| `/admin/*` | `test_admin_*.py`, `test_admin_portal_complete.py`, `test_user_journeys.py` |
+| `/admin/accounts/<id>` | `test_admin_portal_complete.py` |
+| `/admin/realms/<id>` | `test_admin_portal_complete.py` |
+| `/admin/tokens/<id>` | `test_admin_portal_complete.py` |
+| `/admin/backends/*` | `test_backends_ui.py`, `test_multi_backend_dns.py` |
+| `/admin/domain-roots/*` | `test_multi_backend_dns.py` |
+| `/account/login\|register\|forgot-password` | `test_registration_2fa_complete.py` |
+| `/account/dashboard\|realms\|tokens` | `test_account_portal_complete.py` |
+| `/account/settings/*` | `test_account_portal_complete.py`, `test_registration_2fa_complete.py` |
+| `/account/realms/<id>/dns/*` | `test_multi_backend_dns.py` |
+| Security scenarios | `test_security_scenarios.py` |
 | All pages | `test_ux_theme_validation.py` (CSS compliance) |
 | All forms | `test_ui_interactive.py` (JS validation) |
+
+## New Test Files Added (PR #XX)
+
+| Test File | Tests | Focus Area |
+|-----------|-------|------------|
+| `test_account_portal_complete.py` | 15 | Account dashboard, realms, tokens, settings, activity |
+| `test_admin_portal_complete.py` | 25 | Admin detail pages, APIs, backends, domain roots |
+| `test_security_scenarios.py` | 20 | Auth security, CSRF, error pages, XSS prevention |
+| `test_multi_backend_dns.py` | 15 | Backends, domain roots, DNS records |
+| `test_registration_2fa_complete.py` | 18 | Registration, email verification, 2FA setup |
+| **Total New Tests** | **93** | |

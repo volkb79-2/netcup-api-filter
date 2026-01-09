@@ -356,6 +356,41 @@ def create_app(config_path: str = "config.yaml") -> Flask:
             return response
     
     # =========================================================================
+    # Security Headers
+    # =========================================================================
+    
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to all responses.
+        
+        These headers protect against common web vulnerabilities:
+        - X-Frame-Options: Prevents clickjacking attacks
+        - X-Content-Type-Options: Prevents MIME-type sniffing
+        - X-XSS-Protection: Enables browser XSS filter (legacy browsers)
+        - Referrer-Policy: Controls referrer information leakage
+        - Permissions-Policy: Restricts browser features
+        """
+        # Prevent clickjacking - page cannot be embedded in frames
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        
+        # Prevent MIME type sniffing
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        
+        # Enable XSS filter in browsers
+        # Note: This header is deprecated in modern browsers in favor of CSP,
+        # but is kept for legacy browser support (IE, older Edge).
+        # Modern browsers ignore this header when CSP is present.
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        
+        # Control referrer information sent with requests
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        
+        # Restrict browser features (modern replacement for many headers)
+        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+        
+        return response
+    
+    # =========================================================================
     # Root Redirect
     # =========================================================================
     
