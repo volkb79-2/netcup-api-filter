@@ -19,19 +19,69 @@
 #
 # =============================================================================
 
-# Rate Limiting
+# =============================================================================
+# RATE LIMITING
+# =============================================================================
 # Format: "<number> per <unit>" (e.g., "10 per minute", "100 per hour")
+# Protects against brute-force attacks and API abuse
 [rate_limits]
 admin = "50 per minute"      # Admin portal rate limit
 account = "50 per minute"    # Account portal rate limit
-api = "60 per minute"         # API endpoints rate limit
+api = "60 per minute"        # API endpoints rate limit
 
-# Security Settings
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
 [security]
 password_reset_expiry_hours = 1   # Password reset link validity (hours)
-invite_expiry_hours = 48           # Account invite link validity (hours)
+invite_expiry_hours = 48          # Account invite link validity (hours)
 
-# SMTP Configuration (Email Settings)
+# =============================================================================
+# SESSION CONFIGURATION (NEW)
+# =============================================================================
+# Flask session settings - can also be set via FLASK_SESSION_* env vars
+# Uncomment to override .env.defaults values
+# [session]
+# cookie_secure = "auto"       # true, false, or "auto" (detects HTTPS)
+# cookie_httponly = true       # Prevent JavaScript access to cookies
+# cookie_samesite = "Lax"      # CSRF protection: Strict, Lax, or None
+# lifetime_seconds = 3600      # Session timeout in seconds (3600 = 1 hour)
+
+# =============================================================================
+# ADMIN SECURITY CONFIGURATION (NEW)
+# =============================================================================
+# Additional security for admin portal
+# Uncomment to enable IP restrictions
+# [admin]
+# ip_whitelist = ["192.168.1.0/24", "10.0.0.1"]  # IPs/CIDRs allowed access
+# bind_session_to_ip = true   # Bind sessions to originating IP
+# require_2fa = true          # Require 2FA for admin accounts (recommended)
+
+# =============================================================================
+# LOGGING CONFIGURATION (NEW)
+# =============================================================================
+# Control application logging behavior
+# Uncomment to override defaults
+# [logging]
+# level = "INFO"              # DEBUG, INFO, WARNING, ERROR, CRITICAL
+# max_size_mb = 10            # Log file size before rotation
+# backup_count = 5            # Number of backup files to keep
+
+# =============================================================================
+# NOTIFICATION SETTINGS (NEW)
+# =============================================================================
+# Email notifications sent to admin
+# Uncomment to configure admin alerts
+# [notifications]
+# admin_email = "admin@example.com"   # Admin notification recipient
+# notify_new_account = true           # Email on new user registrations
+# notify_realm_request = true         # Email on realm access requests
+# notify_security_events = true       # Email on security alerts
+# notify_token_expiring_days = 7      # Days before token expiry to notify
+
+# =============================================================================
+# SMTP CONFIGURATION (Email Settings)
+# =============================================================================
 # Leave commented for initial setup via admin UI
 # Uncomment and configure for automated deployment
 [smtp]
@@ -46,9 +96,10 @@ from_name = "Netcup API Filter"
 # GeoIP Configuration (MaxMind)
 # Leave commented to disable GeoIP lookups
 # Uncomment and configure to enable
+# Get credentials: https://www.maxmind.com/en/geolite2/signup
 [geoip]
-account_id = "1262143"
-license_key = ""
+account_id = "YOUR_MAXMIND_ACCOUNT_ID"  # e.g., "1234567"
+license_key = "YOUR_MAXMIND_LICENSE_KEY"
 api_url = "https://geoip.maxmind.com"  # Optional, uses default if not set
 edition_ids = "GeoLite2-ASN GeoLite2-City GeoLite2-Country"
 
@@ -59,12 +110,13 @@ edition_ids = "GeoLite2-ASN GeoLite2-City GeoLite2-Country"
 # Each backend is created as a BackendService in the database
 
 # Platform-owned Netcup account (example - primary account)
+# Get API credentials from Netcup CCP: https://ccp.netcup.net
 [[backends]]
 service_name = "platform-netcup-primary"
 provider = "netcup"
 owner = "platform"  # "platform" or username for user-owned
 display_name = "Platform Netcup (Primary)"
-config = { customer_id = "221368", api_key = "ZzMzZ21oNTg3NFRINTU4OTExM3IyR1N1NklCNDl2N2JhbWZNUW", api_password = "your-api-password", api_url = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON", timeout = 30 }
+config = { customer_id = "YOUR_CUSTOMER_ID", api_key = "YOUR_API_KEY", api_password = "YOUR_API_PASSWORD", api_url = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON", timeout = 30 }
 
 # Platform-owned Netcup account (example - secondary account for different zones)
 # [[backends]]
