@@ -675,6 +675,11 @@ class ActivityLog(db.Model):
     token = db.relationship('APIToken', back_populates='activity')
     account = db.relationship('Account')
     
+    # Composite index for efficient filtered log queries (account + time range)
+    __table_args__ = (
+        db.Index('ix_activity_log_account_time', 'account_id', 'created_at'),
+    )
+    
     def get_request_data(self) -> dict[str, Any]:
         """Parse request_data from JSON."""
         try:
