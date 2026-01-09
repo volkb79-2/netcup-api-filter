@@ -1111,6 +1111,10 @@ class ManagedDomainRoot(db.Model):
     allowed_record_types = db.Column(db.Text)
     allowed_operations = db.Column(db.Text)
     
+    # User quotas and policies (JSON for flexible storage)
+    user_quotas = db.Column(db.Text)  # JSON: {"max_hosts_per_user": 5, ...}
+    require_email_verification = db.Column(db.Boolean, default=False)
+    
     # Description for users
     display_name = db.Column(db.String(128))
     description = db.Column(db.Text)
@@ -1157,6 +1161,24 @@ class ManagedDomainRoot(db.Model):
     def set_allowed_operations(self, operations: list[str] | None):
         """Set allowed_operations as JSON."""
         self.allowed_operations = json.dumps(operations) if operations else None
+    
+    def get_user_quotas(self) -> dict[str, Any]:
+        """Parse user_quotas from JSON."""
+        if self.user_quotas is None:
+            return {}
+        try:
+            return json.loads(self.user_quotas)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    
+    def set_user_quotas(self, quotas: dict[str, Any] | None):
+        """Set user_quotas as JSON."""
+        self.user_quotas = json.dumps(quotas) if quotas else None
+    
+    def get_max_hosts_per_user(self) -> int | None:
+        """Get max_hosts_per_user from user_quotas. Returns None if not set."""
+        quotas = self.get_user_quotas()
+        return quotas.get('max_hosts_per_user')
     
     def is_public(self) -> bool:
         """Check if this root is publicly accessible."""

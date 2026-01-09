@@ -322,13 +322,15 @@ def initialize_platform_backends():
                         logger.info(f"Generated password for {username}: {password} (SAVE THIS - shown once)")
                     
                     # Create user account
-                    from netcup_api_filter.models import hash_password
+                    from netcup_api_filter.utils import hash_password
+                    from netcup_api_filter.models import generate_user_alias
                     account = Account(
                         username=username,
+                        user_alias=generate_user_alias(),  # Required field for token attribution
                         email=email,
                         password_hash=hash_password(password),
-                        is_approved=is_approved,
-                        must_change_password=must_change_password,
+                        is_active=1 if is_approved else 0,  # is_approved maps to is_active
+                        must_change_password=1 if must_change_password else 0,
                     )
                     db.session.add(account)
                     db.session.flush()  # Get ID before commit
@@ -377,7 +379,7 @@ def initialize_platform_backends():
                     # Determine owner type and account
                     if owner == 'platform':
                         owner_type = 'platform'
-                        owner_account_id = None
+                        owner_account = None
                     else:
                         # User-owned backend
                         owner_account = users_created.get(owner) or Account.query.filter_by(username=owner).first()
@@ -385,7 +387,6 @@ def initialize_platform_backends():
                             logger.error(f"User {owner} not found for backend {service_name}, skipping")
                             continue
                         owner_type = 'user'
-                        owner_account_id = owner_account.id
                     
                     # Create backend service
                     service = create_backend_service(
@@ -394,7 +395,7 @@ def initialize_platform_backends():
                         display_name=display_name,
                         config=processed_config,
                         owner_type=owner_type,
-                        owner_account_id=owner_account_id,
+                        owner=owner_account,  # Pass Account object, not ID
                         is_active=True,
                     )
                     backends_created[service_name] = service
