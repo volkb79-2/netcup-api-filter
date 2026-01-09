@@ -20,7 +20,7 @@
     
     {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="login-page">
     <!-- Product Name Header -->
     <div class="text-center py-4">
         <h2 class="h5 mb-0 text-muted fw-light">Netcup API Filter</h2>
@@ -122,46 +122,3 @@
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>
-
-<style>
-/* Login page layout - minimal overrides, respect Bootstrap & theme system */
-body {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow-x: hidden;
-}
-
-.login-wrapper {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, var(--color-bg-primary, #0a0e1a) 0%, var(--color-bg-secondary, #0f1420) 100%);
-    padding: 0rem 1rem;
-}
-
-.login-container {
-    width: 100%;
-    max-width: 480px;
-    margin: 0 auto;
-}
-
-.login-icon {
-    color: var(--color-primary, #4a9eff);
-}
-
-.login-card {
-    background: var(--color-surface-card, rgba(17, 24, 39, 0.8));
-    border: 1px solid var(--color-border-card, rgba(75, 85, 99, 0.3));
-    border-radius: 0.75rem;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(10px);
-}
-
-/* Subtle hover lift effect for primary buttons (respects Bootstrap sizing) */
-.login-card .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
-}
-</style>

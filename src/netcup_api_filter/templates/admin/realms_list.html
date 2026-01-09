@@ -1,7 +1,13 @@
 {# Admin Realms List - All realms across all accounts #}
 {% extends "admin/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}Realms - Admin - Netcup API Filter{% endblock %}
+
+{% block extra_head %}
+<!-- List.js for client-side filtering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
@@ -24,15 +30,7 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="GET" action="{{ url_for('admin.realms_list') }}" class="row g-3">
-            <div class="col-md-5">
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text" class="form-control" name="search" 
-                           placeholder="Search by domain, realm value, or username..." 
-                           value="{{ search }}">
-                </div>
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <select class="form-select" name="status">
                     <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
                     <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
@@ -40,14 +38,12 @@
                     <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
                 </select>
             </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-funnel me-1"></i>Filter
+            <div class="col-md-6">
+                <button type="submit" class="btn btn-secondary">
+                    <i class="bi bi-filter me-1"></i>Filter
                 </button>
-            </div>
-            <div class="col-md-2">
-                <a href="{{ url_for('admin.realms_list') }}" class="btn btn-outline-secondary w-100">
-                    <i class="bi bi-x-lg me-1"></i>Clear
+                <a href="{{ url_for('admin.realms_list') }}" class="btn btn-outline-secondary ms-2">
+                    Clear
                 </a>
             </div>
         </form>
@@ -55,9 +51,15 @@
 </div>
 
 <!-- Realms Table -->
-<div class="card">
+<div class="card" id="realmsTable">
+    {{ table_header(
+        title='Realms',
+        search_id='quickFilter',
+        search_placeholder='Search realms...'
+    ) }}
+    
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 table-sm">
             <thead>
                 <tr>
                     <th>Status</th>
@@ -190,4 +192,5 @@
     </div>
     {% endif %}
 </div>
+
 {% endblock %}

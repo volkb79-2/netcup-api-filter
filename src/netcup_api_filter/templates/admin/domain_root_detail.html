@@ -113,7 +113,7 @@
                         {% if record_types %}
                         <div class="d-flex flex-wrap gap-1">
                             {% for rtype in record_types %}
-                            <span class="badge bg-light text-dark">{{ rtype }}</span>
+                            <span class="badge bg-secondary">{{ rtype }}</span>
                             {% endfor %}
                         </div>
                         {% else %}
@@ -127,7 +127,7 @@
                         {% if operations %}
                         <div class="d-flex flex-wrap gap-1">
                             {% for op in operations %}
-                            <span class="badge bg-light text-dark">{{ op }}</span>
+                            <span class="badge bg-secondary">{{ op }}</span>
                             {% endfor %}
                         </div>
                         {% else %}
@@ -146,7 +146,7 @@
             </div>
             <div class="table-responsive">
                 <table class="table table-sm mb-0">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th>Realm</th>
                             <th>Account</th>

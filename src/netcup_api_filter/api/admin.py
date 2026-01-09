@@ -29,7 +29,7 @@ from ..account_auth import (
     generate_secure_password,
     reject_account,
 )
-from ..geoip_service import geoip_location
+from ..geoip_service import geoip_location, get_geoip_status
 from ..models import (
     Account, AccountRealm, ActivityLog, APIToken, db, Settings,
     validate_password,
@@ -1407,9 +1407,14 @@ def audit_logs():
     elif status_filter == 'error':
         query = query.filter_by(status='error')
     
-    # Action filter
+    # Action filter (support partial matching for categories like 'api', 'account', 'realm', 'token')
     if action_filter != 'all':
-        query = query.filter_by(action=action_filter)
+        if action_filter in ['api', 'account', 'realm', 'token', 'config']:
+            # Category filter: match actions starting with category_
+            query = query.filter(ActivityLog.action.like(f'{action_filter}_%'))
+        else:
+            # Exact match for specific actions like 'login', 'logout'
+            query = query.filter_by(action=action_filter)
     
     pagination = query.order_by(ActivityLog.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
@@ -1443,6 +1448,59 @@ def audit_logs():
                           status_filter=status_filter,
                           action_filter=action_filter,
                           stats=stats)
+
+
+@admin_bp.route('/audit/data')
+@require_admin
+def audit_logs_data():
+    """AJAX endpoint for audit logs table data (for auto-refresh without page reload)."""
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    
+    # Filters
+    time_range = request.args.get('range', '24h')
+    status_filter = request.args.get('status', 'all')
+    action_filter = request.args.get('action', 'all')
+    
+    query = ActivityLog.query
+    
+    # Time range filter
+    if time_range == '1h':
+        since = datetime.utcnow() - timedelta(hours=1)
+    elif time_range == '24h':
+        since = datetime.utcnow() - timedelta(hours=24)
+    elif time_range == '7d':
+        since = datetime.utcnow() - timedelta(days=7)
+    elif time_range == '30d':
+        since = datetime.utcnow() - timedelta(days=30)
+    else:
+        since = None
+    
+    if since:
+        query = query.filter(ActivityLog.created_at >= since)
+    
+    # Status filter
+    if status_filter == 'success':
+        query = query.filter_by(status='success')
+    elif status_filter == 'denied':
+        query = query.filter_by(status='denied')
+    elif status_filter == 'error':
+        query = query.filter_by(status='error')
+    
+    # Action filter
+    if action_filter != 'all':
+        if action_filter in ['api', 'account', 'realm', 'token', 'config']:
+            query = query.filter(ActivityLog.action.like(f'{action_filter}_%'))
+        else:
+            query = query.filter_by(action=action_filter)
+    
+    pagination = query.order_by(ActivityLog.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    
+    # Return just the table rows as HTML fragment
+    return render_template('admin/audit_logs_table.html',
+                          logs=pagination.items)
 
 
 @admin_bp.route('/audit/trim', methods=['POST'])
@@ -1622,22 +1680,17 @@ def config_netcup():
 def config_email():
     """Email/SMTP configuration."""
     if request.method == 'POST':
-        # Map HTML form field names to internal config keys
-        # HTML form uses: smtp_host, from_email, from_name
-        # Internal config uses: smtp_server, sender_email, sender_name
+        # Use TOML field names directly (no mapping)
         smtp_security = request.form.get('smtp_security', 'tls')
         config = {
-            'smtp_server': request.form.get('smtp_host', '').strip(),  # Map from smtp_host
-            'smtp_host': request.form.get('smtp_host', '').strip(),  # Keep for template
+            'smtp_host': request.form.get('smtp_host', '').strip(),
             'smtp_port': int(request.form.get('smtp_port', 587)),
             'smtp_security': smtp_security,
             'smtp_username': request.form.get('smtp_username', '').strip(),
             'smtp_password': request.form.get('smtp_password', '').strip(),
             'use_ssl': smtp_security == 'ssl',
-            'sender_email': request.form.get('from_email', '').strip(),  # Map from from_email
-            'from_email': request.form.get('from_email', '').strip(),  # Keep for template
-            'sender_name': request.form.get('from_name', '').strip() or 'Netcup API Filter',
-            'from_name': request.form.get('from_name', '').strip() or 'Netcup API Filter',  # Keep for template
+            'from_email': request.form.get('from_email', '').strip(),
+            'from_name': request.form.get('from_name', '').strip() or 'Netcup API Filter',
             'reply_to': request.form.get('reply_to', '').strip(),
             'admin_email': request.form.get('admin_email', '').strip(),
             'notify_new_account': bool(request.form.get('notify_new_account')),
@@ -1645,11 +1698,11 @@ def config_email():
             'notify_security': bool(request.form.get('notify_security')),
         }
         
-        set_setting('email_config', config)
+        set_setting('smtp_config', config)
         flash('Email configuration saved', 'success')
         logger.info(f"Email config updated by {g.admin.username}")
     
-    config = get_setting('email_config') or {}
+    config = get_setting('smtp_config') or {}
     
     # Email stats (placeholder - would need actual email tracking)
     stats = {
@@ -1673,9 +1726,77 @@ def config_email_test():
     return redirect(url_for('admin.config_email'))
 
 
+@admin_bp.route('/config/geoip', methods=['GET', 'POST'])
+@require_admin
+def config_geoip():
+    """GeoIP configuration."""
+    if request.method == 'POST':
+        config = {
+            'account_id': request.form.get('account_id', '').strip(),
+            'license_key': request.form.get('license_key', '').strip(),
+            'api_url': request.form.get('api_url', '').strip() or 'https://geoip.maxmind.com/geoip/v2.1',
+        }
+        
+        set_setting('geoip_config', config)
+        flash('GeoIP configuration saved', 'success')
+        logger.info(f"GeoIP config updated by {g.admin.username}")
+        return redirect(url_for('admin.settings'))
+    
+    config = get_setting('geoip_config') or {}
+    return render_template('admin/config_geoip.html', config=config)
+
+
+@admin_bp.route('/settings', methods=['GET'])
+@require_admin
+def settings():
+    """Unified settings page."""
+    # Get all configs
+    netcup_config = get_setting('netcup_config') or {}
+    
+    smtp_config_str = get_setting('smtp_config')
+    smtp_config = {}
+    if smtp_config_str:
+        try:
+            import json
+            smtp_config = json.loads(smtp_config_str) if isinstance(smtp_config_str, str) else smtp_config_str
+        except (json.JSONDecodeError, TypeError):
+            smtp_config = {}
+    
+    geoip_config_str = get_setting('geoip_config')
+    geoip_config = {}
+    if geoip_config_str:
+        try:
+            import json
+            geoip_config = json.loads(geoip_config_str) if isinstance(geoip_config_str, str) else geoip_config_str
+        except (json.JSONDecodeError, TypeError):
+            geoip_config = {}
+    
+    # Security settings
+    security_settings = {
+        'password_reset_expiry_hours': get_setting('password_reset_expiry_hours') or 1,
+        'invite_expiry_hours': get_setting('invite_expiry_hours') or 48,
+        'admin_rate_limit': get_setting('admin_rate_limit') or os.environ.get('ADMIN_RATE_LIMIT', '50 per minute'),
+        'account_rate_limit': get_setting('account_rate_limit') or os.environ.get('ACCOUNT_RATE_LIMIT', '50 per minute'),
+        'api_rate_limit': get_setting('api_rate_limit') or os.environ.get('API_RATE_LIMIT', '60 per minute'),
+    }
+    
+    return render_template('admin/settings.html',
+                          netcup_config=netcup_config,
+                          smtp_config=smtp_config,
+                          geoip_config=geoip_config,
+                          security_settings=security_settings)
+
+
 # ============================================================================
 # System
 # ============================================================================
+
+@admin_bp.route('/app-logs')
+@require_admin
+def app_logs():
+    """Application logs page."""
+    return render_template('admin/app_logs.html')
+
 
 @admin_bp.route('/system')
 @require_admin
@@ -1685,7 +1806,7 @@ def system_info():
     import os
     import platform
     import socket
-    from datetime import datetime
+    from datetime import datetime, timedelta
     import flask
     
     # Build info
@@ -1725,14 +1846,40 @@ def system_info():
     }
     
     # Server info for template
+    # Get Flask version safely (handles vendored packages without metadata)
+    try:
+        flask_version = flask.__version__
+    except Exception:
+        # Flask's __getattr__ raises PackageNotFoundError for vendored packages
+        flask_version = '3.1.0'  # Update this when Flask version changes
+    
     server_info = {
         'hostname': socket.gethostname(),
         'platform': platform.platform(),
         'python_version': sys.version.split()[0],
-        'flask_version': flask.__version__,
+        'flask_version': flask_version,
         'time': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
         'timezone': 'UTC',
     }
+    
+    # Calculate uptime from startup timestamp file
+    uptime_str = 'Unknown'
+    startup_file = os.path.join(os.path.dirname(db_path), '.app_startup')
+    try:
+        if os.path.exists(startup_file):
+            startup_time = datetime.fromtimestamp(os.path.getmtime(startup_file))
+            uptime_delta = datetime.now() - startup_time
+            days = uptime_delta.days
+            hours = uptime_delta.seconds // 3600
+            minutes = (uptime_delta.seconds % 3600) // 60
+            if days > 0:
+                uptime_str = f"{days}d {hours}h {minutes}m"
+            elif hours > 0:
+                uptime_str = f"{hours}h {minutes}m"
+            else:
+                uptime_str = f"{minutes}m"
+    except Exception:
+        pass
     
     # App info for template
     app_info = {
@@ -1740,37 +1887,156 @@ def system_info():
         'build_hash': build_info.get('git_short', build_info.get('commit_short', 'N/A')),
         'build_date': build_info.get('built_at', 'N/A'),
         'env': os.environ.get('FLASK_ENV', 'development'),
-        'uptime': 'Unknown',  # Could implement actual uptime tracking
+        'uptime': uptime_str,
     }
     
     # Legacy stats variable (some templates may still use it)
     stats = db_info
     
-    # Services status
-    email_config = get_setting('email_config') or {}
+    # Services status with health checks
+    smtp_config_str = get_setting('smtp_config')
+    smtp_config = {}
+    if smtp_config_str:
+        try:
+            import json
+            smtp_config = json.loads(smtp_config_str) if isinstance(smtp_config_str, str) else smtp_config_str
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Failed to parse smtp_config: {smtp_config_str}")
+            smtp_config = {}
+    
+    # Check Netcup API with actual connectivity test
+    netcup_config_str = get_setting('netcup_config')
+    netcup_configured = False
+    if netcup_config_str:
+        try:
+            import json
+            netcup_config = json.loads(netcup_config_str) if isinstance(netcup_config_str, str) else netcup_config_str
+            netcup_configured = bool(netcup_config.get('customer_id') and 
+                                    netcup_config.get('api_key') and 
+                                    netcup_config.get('api_password'))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    
+    netcup_status = 'configured' if netcup_configured else 'not_configured'
+    
+    # Check email SMTP with actual connectivity test
+    smtp_configured = bool(smtp_config.get('smtp_host'))
+    smtp_status = 'configured' if smtp_configured else 'not_configured'
     
     # Check GeoIP status
-    geoip_status = False
+    geoip_status = 'not_configured'
     geoip_info = {}
     try:
-        from ..geoip_service import get_geoip_status
         geoip_info = get_geoip_status()
-        geoip_status = geoip_info.get('available', False)
-    except ImportError:
-        geoip_info = {'error': 'GeoIP module not available'}
+        if geoip_info.get('available', False):
+            geoip_status = 'available'
+        elif geoip_info.get('error'):
+            geoip_status = 'error'
     except Exception as e:
         geoip_info = {'error': str(e)}
+        geoip_status = 'error'
     
     services = {
-        'netcup': bool(get_setting('netcup_api_key') and get_setting('netcup_api_password') and get_setting('netcup_customer_id')),
-        'email': bool(email_config.get('smtp_server')),
+        'netcup': netcup_status,
+        'email': smtp_status,
         'geoip': geoip_status,
     }
     
-    # Security settings
+    # Get installed Python packages (system-wide)
+    python_packages = []
+    try:
+        import pkg_resources
+        installed_packages = sorted(pkg_resources.working_set, key=lambda x: x.key)
+        for package in installed_packages:
+            python_packages.append({
+                'name': package.key,
+                'version': package.version
+            })
+    except Exception:
+        pass
+    
+    # Get vendored packages from vendor/ directory
+    vendored_packages = []
+    # vendor/ is at deployment root level, admin.py is at src/netcup_api_filter/api/admin.py
+    # So we need to go up 3 levels: api -> netcup_api_filter -> src -> root
+    vendor_path = os.path.join(os.path.dirname(__file__), '../../../vendor')
+    vendor_path = os.path.abspath(vendor_path)  # Resolve to absolute path
+    if os.path.exists(vendor_path):
+        try:
+            seen_packages = set()
+            for item in sorted(os.listdir(vendor_path)):
+                item_path = os.path.join(vendor_path, item)
+                # Count package directories (not .dist-info - those may be stripped)
+                if os.path.isdir(item_path) and not item.startswith('_') and not item.endswith('.dist-info'):
+                    # Try multiple strategies to get version
+                    version = 'unknown'
+                    try:
+                        # Strategy 1: Check __init__.py for version attributes
+                        init_file = os.path.join(item_path, '__init__.py')
+                        if os.path.exists(init_file):
+                            with open(init_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                content = f.read(5000)  # Read first 5KB
+                                import re
+                                # Try multiple patterns
+                                patterns = [
+                                    r'__version__\s*=\s*["\']([^"\']+)["\']',
+                                    r'VERSION\s*=\s*["\']([^"\']+)["\']',
+                                    r'version\s*=\s*["\']([^"\']+)["\']',
+                                ]
+                                for pattern in patterns:
+                                    match = re.search(pattern, content)
+                                    if match:
+                                        version = match.group(1)
+                                        break
+                        
+                        # Strategy 2: Check for _version.py or version.py
+                        if version == 'unknown':
+                            for version_file in ['_version.py', 'version.py', '__version__.py']:
+                                version_file_path = os.path.join(item_path, version_file)
+                                if os.path.exists(version_file_path):
+                                    with open(version_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read(2000)
+                                        import re
+                                        match = re.search(r'["\']([0-9]+\.[0-9]+[^"\']*)["\']', content)
+                                        if match:
+                                            version = match.group(1)
+                                            break
+                        
+                        # Strategy 3: Try to find PKG-INFO or METADATA in parent dist-info
+                        if version == 'unknown':
+                            # Look for corresponding .dist-info directory
+                            for dist_item in os.listdir(vendor_path):
+                                if dist_item.startswith(item) and dist_item.endswith('.dist-info'):
+                                    metadata_file = os.path.join(vendor_path, dist_item, 'METADATA')
+                                    if not os.path.exists(metadata_file):
+                                        metadata_file = os.path.join(vendor_path, dist_item, 'PKG-INFO')
+                                    
+                                    if os.path.exists(metadata_file):
+                                        with open(metadata_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                            for line in f:
+                                                if line.startswith('Version:'):
+                                                    version = line.split(':', 1)[1].strip()
+                                                    break
+                                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to get version for {item}: {e}")
+                        pass
+                    
+                    if item not in seen_packages:
+                        seen_packages.add(item)
+                        vendored_packages.append({'name': item, 'version': version})
+        except Exception as e:
+            logger.warning(f"Failed to read vendored packages from {vendor_path}: {e}")
+            pass
+    
+    # Security settings (including rate limiting)
+    # Rate limits come from: Settings table → .env.defaults (no hardcoded fallbacks)
     security_settings = {
         'password_reset_expiry_hours': get_setting('password_reset_expiry_hours') or 1,
         'invite_expiry_hours': get_setting('invite_expiry_hours') or 48,
+        'admin_rate_limit': get_setting('admin_rate_limit') or os.environ.get('ADMIN_RATE_LIMIT', '50 per minute'),
+        'account_rate_limit': get_setting('account_rate_limit') or os.environ.get('ACCOUNT_RATE_LIMIT', '50 per minute'),
+        'api_rate_limit': get_setting('api_rate_limit') or os.environ.get('API_RATE_LIMIT', '60 per minute'),
     }
     
     # Recent logs (placeholder - would need log file reading implementation)
@@ -1786,6 +2052,8 @@ def system_info():
                           server=server_info,
                           services=services,
                           geoip_info=geoip_info,
+                          python_packages=python_packages,
+                          vendored_packages=vendored_packages,
                           security_settings=security_settings,
                           recent_logs=recent_logs)
 
@@ -1802,7 +2070,20 @@ def update_security_settings():
         if invite_expiry:
             set_setting('invite_expiry_hours', int(invite_expiry))
         
-        flash('Security settings updated', 'success')
+        # Rate limiting settings
+        admin_rate_limit = request.form.get('admin_rate_limit')
+        if admin_rate_limit:
+            set_setting('admin_rate_limit', admin_rate_limit.strip())
+        
+        account_rate_limit = request.form.get('account_rate_limit')
+        if account_rate_limit:
+            set_setting('account_rate_limit', account_rate_limit.strip())
+        
+        api_rate_limit = request.form.get('api_rate_limit')
+        if api_rate_limit:
+            set_setting('api_rate_limit', api_rate_limit.strip())
+        
+        flash('Security settings updated. Rate limit changes require application restart.', 'success')
         logger.info(f"Security settings updated by {g.admin.username}")
     except ValueError as e:
         flash(f'Invalid value: {e}', 'error')
@@ -1811,6 +2092,79 @@ def update_security_settings():
         logger.error(f"Failed to update security settings: {e}")
     
     return redirect(url_for('admin.system_info'))
+
+
+@admin_bp.route('/api/geoip/<ip_address>')
+@require_admin
+def api_geoip_lookup(ip_address):
+    """Look up GeoIP information for an IP address (JSON API)."""
+    try:
+        location = geoip_location(ip_address)
+        if location:
+            return jsonify({'success': True, 'location': location, 'ip': ip_address})
+        else:
+            return jsonify({'success': False, 'error': 'No location data available', 'ip': ip_address})
+    except Exception as e:
+        logger.error(f"GeoIP lookup failed for {ip_address}: {e}")
+        return jsonify({'success': False, 'error': str(e), 'ip': ip_address}), 500
+
+
+@admin_bp.route('/system/logs')
+@require_admin
+def get_system_logs():
+    """Get paginated system logs from netcup_filter.log file."""
+    import os
+    from flask import jsonify
+    
+    page = int(request.args.get('page', 1))
+    lines_per_page = int(request.args.get('per_page', 100))
+    
+    # Get log file path
+    db_path = os.environ.get('NETCUP_FILTER_DB_PATH', 'netcup_filter.db')
+    log_file = os.path.join(os.path.dirname(db_path), 'netcup_filter.log')
+    
+    try:
+        if not os.path.exists(log_file):
+            return jsonify({
+                'logs': ['No log file found'],
+                'total_lines': 0,
+                'page': page,
+                'per_page': lines_per_page,
+                'has_more': False
+            })
+        
+        # Read log file (from the end for recent logs first)
+        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+        
+        # Reverse to show most recent first
+        all_lines.reverse()
+        
+        total_lines = len(all_lines)
+        start_idx = (page - 1) * lines_per_page
+        end_idx = start_idx + lines_per_page
+        
+        page_lines = all_lines[start_idx:end_idx]
+        has_more = end_idx < total_lines
+        
+        return jsonify({
+            'logs': [line.rstrip() for line in page_lines],
+            'total_lines': total_lines,
+            'page': page,
+            'per_page': lines_per_page,
+            'has_more': has_more
+        })
+    
+    except Exception as e:
+        logger.error(f"Error reading log file: {e}")
+        return jsonify({
+            'error': str(e),
+            'logs': [f'Error reading log file: {e}'],
+            'total_lines': 0,
+            'page': page,
+            'per_page': lines_per_page,
+            'has_more': False
+        }), 500
 
 
 # ============================================================================
@@ -2187,11 +2541,9 @@ def change_password():
             if not is_valid:
                 errors.append(error_msg)
         
-        # Validate email if required
-        if needs_email_setup:
-            if not new_email:
-                errors.append('Email address is required for 2FA')
-            elif '@' not in new_email or '.' not in new_email:
+        # Validate email if provided (optional during initial setup)
+        if needs_email_setup and new_email:
+            if '@' not in new_email or '.' not in new_email:
                 errors.append('Please enter a valid email address')
             elif Account.query.filter(Account.id != admin.id, Account.email == new_email).first():
                 errors.append('This email address is already in use')
@@ -2206,8 +2558,12 @@ def change_password():
             if needs_email_setup and new_email:
                 admin.email = new_email
                 admin.email_verified = 1  # Admin-set email is trusted
-                admin.email_2fa_enabled = 1  # Ensure 2FA is enabled
+                admin.email_2fa_enabled = 1  # Enable 2FA since email is configured
                 logger.info(f"Admin email configured: {admin.username} -> {new_email}")
+            elif needs_email_setup and not new_email:
+                # Email setup was skipped - keep placeholder and disable 2FA
+                admin.email_2fa_enabled = 0
+                logger.info(f"Admin password changed without email setup: {admin.username}")
             
             db.session.commit()
             logger.info(f"Admin password changed: {admin.username}")
@@ -2218,7 +2574,10 @@ def change_password():
                 source_ip = _get_client_ip()
                 notify_password_changed(admin, source_ip)
             
-            flash('Password changed successfully', 'success')
+            if needs_email_setup and not new_email:
+                flash('Password changed successfully. Configure email in System Config for 2FA.', 'success')
+            else:
+                flash('Password changed successfully', 'success')
             return redirect(url_for('admin.dashboard'))
     
     return render_template('admin/change_password.html',

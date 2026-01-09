@@ -1,7 +1,13 @@
 {# User Account: My Backends List (BYOD) #}
 {% extends "account/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}My DNS Backends{% endblock %}
+
+{% block extra_head %}
+<!-- List.js for client-side filtering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
@@ -52,11 +58,14 @@
     {# Backends Table #}
     {% if backends %}
     <div class="card">
-        <div class="card-header">
-            <h5 class="mb-0">Your Backends</h5>
-        </div>
+        {{ table_header(
+            title='Your Backends',
+            search_id='backendsFilter',
+            search_placeholder='Search backends...'
+        ) }}
+        
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0 table-sm">
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -161,7 +170,7 @@
             <div class="row g-3">
                 {% for provider in providers %}
                 <div class="col-md-4">
-                    <div class="card h-100 {% if not provider.is_enabled %}bg-light{% endif %}">
+                    <div class="card h-100 {% if not provider.is_enabled %}opacity-75{% endif %}">
                         <div class="card-body">
                             <h6>{{ provider.display_name }}</h6>
                             <p class="small text-muted mb-0">{{ provider.description or 'DNS provider' }}</p>

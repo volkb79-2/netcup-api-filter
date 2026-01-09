@@ -1,5 +1,6 @@
 {# Admin Audit Logs - Filterable activity log with auto-refresh #}
 {% extends "admin/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}Audit Logs - Admin - Netcup API Filter{% endblock %}
 
@@ -9,16 +10,9 @@
 
 {% block content %}
 <!-- Page Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-1">Audit Logs</h1>
-        <p class="text-muted mb-0">System activity and security events</p>
-    </div>
-    <div class="d-flex gap-2 align-items-center">
-        <button class="btn btn-outline-primary" onclick="exportLogs()">
-            <i class="bi bi-download me-1"></i>Export
-        </button>
-    </div>
+<div class="mb-4">
+    <h1 class="h3 mb-1">Audit Logs</h1>
+    <p class="text-muted mb-0">System activity and security events</p>
 </div>
 
 <!-- Stats Summary - ABOVE the table -->
@@ -61,7 +55,7 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="GET" class="row g-3 align-items-end">
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label small text-muted">Date Range</label>
                 <select name="range" class="form-select">
                     <option value="today" {% if range == 'today' %}selected{% endif %}>Today</option>
@@ -71,7 +65,7 @@
                 </select>
             </div>
             
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label small text-muted">Action Type</label>
                 <select name="action" class="form-select">
                     <option value="all">All Actions</option>
@@ -85,7 +79,7 @@
                 </select>
             </div>
             
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label small text-muted">Actor</label>
                 <select name="actor" class="form-select">
                     <option value="all">All Actors</option>
@@ -97,12 +91,6 @@
                     </option>
                     {% endfor %}
                 </select>
-            </div>
-            
-            <div class="col-md-3">
-                <label class="form-label small text-muted">Search</label>
-                <input type="text" name="search" class="form-control" 
-                       placeholder="Search details..." value="{{ search }}">
             </div>
             
             <div class="col-md-3">
@@ -119,26 +107,22 @@
     </div>
 </div>
 
-<!-- Logs Table with auto-refresh in header -->
+<!-- Logs Table with unified header -->
 <div class="card" id="logsTable">
-    <div class="card-header d-flex justify-content-between align-items-center py-2">
-        <span class="text-muted small">Log Entries</span>
-        <div class="d-flex gap-2 align-items-center">
-            <div class="form-check form-switch mb-0">
-                <input type="checkbox" class="form-check-input" id="autoRefresh" onchange="toggleAutoRefresh()" checked>
-                <label class="form-check-label small" for="autoRefresh">Auto-refresh</label>
-            </div>
-            <button class="btn btn-sm btn-outline-secondary" onclick="refreshLogs()" title="Refresh now">
-                <i class="bi bi-arrow-clockwise"></i>
-            </button>
-        </div>
-    </div>
+    {{ table_header(
+        title='Log Entries',
+        search_id='quickFilter',
+        search_placeholder='Real-time search...',
+        export_onclick='exportLogs()',
+        auto_refresh=True
+    ) }}
+    
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 table-sm audit-logs-table">
             <thead>
                 <tr>
                     <th width="140" class="sort" data-sort="timestamp">Timestamp</th>
-                    <th width="90" class="sort" data-sort="actor">Actor</th>
+                    <th width="120" class="sort" data-sort="actor">Actor</th>
                     <th width="110" class="sort" data-sort="action">Action</th>
                     <th width="70">Status</th>
                     <th width="130">Target</th>
@@ -315,9 +299,22 @@ function toggleAutoRefresh() {
 }
 
 function refreshLogs() {
-    // Reload the page to get fresh data
-    // In a real implementation, this would be an AJAX call
-    location.reload();
+    // Use AJAX to fetch fresh table data without full page reload
+    const params = new URLSearchParams(window.location.search);
+    
+    fetch('{{ url_for("admin.audit_logs_data") }}?' + params.toString())
+        .then(response => response.text())
+        .then(html => {
+            // Replace only the tbody content, preserving UI state (open menus, etc.)
+            const tbody = document.querySelector('#logsTable tbody');
+            if (tbody) {
+                tbody.innerHTML = html;
+            }
+        })
+        .catch(error => {
+            console.error('Failed to refresh logs:', error);
+            // Don't stop auto-refresh on error, just log it
+        });
 }
 
 function exportLogs() {
@@ -326,14 +323,131 @@ function exportLogs() {
     window.location.href = '{{ url_for("admin.audit_export") }}?' + params.toString();
 }
 
-// Initialize List.js for client-side sorting and auto-refresh enabled by default
+// Auto-refresh enabled by default
 document.addEventListener('DOMContentLoaded', function() {
-    new List('logsTable', {
-        valueNames: ['timestamp', 'actor', 'action', 'details']
-    });
-    
     // Start auto-refresh by default (checkbox is checked)
     refreshInterval = setInterval(refreshLogs, 5000);
+    
+    // Initialize tooltips for GeoIP links
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
 });
+
+// GeoIP Lookup Handler
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('geoip-lookup') || e.target.closest('.geoip-lookup')) {
+        e.preventDefault();
+        const link = e.target.classList.contains('geoip-lookup') ? e.target : e.target.closest('.geoip-lookup');
+        const ip = link.getAttribute('data-ip');
+        
+        if (!ip) return;
+        
+        // Show loading modal
+        const modalEl = document.getElementById('geoipModal');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        document.getElementById('geoipIP').textContent = ip;
+        document.getElementById('geoipLoading').classList.remove('d-none');
+        document.getElementById('geoipContent').classList.add('d-none');
+        document.getElementById('geoipError').classList.add('d-none');
+        modal.show();
+        
+        // Fetch GeoIP data
+        fetch(`{{ url_for('admin.api_geoip_lookup', ip_address='PLACEHOLDER') }}`.replace('PLACEHOLDER', ip))
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('geoipLoading').classList.add('d-none');
+                
+                if (data.success && data.location) {
+                    const loc = data.location;
+                    document.getElementById('geoipCountry').textContent = loc.country || 'Unknown';
+                    document.getElementById('geoipCity').textContent = loc.city || '—';
+                    document.getElementById('geoipRegion').textContent = loc.region || '—';
+                    document.getElementById('geoipCoords').textContent = 
+                        loc.latitude && loc.longitude ? `${loc.latitude}, ${loc.longitude}` : '—';
+                    document.getElementById('geoipTimezone').textContent = loc.timezone || '—';
+                    document.getElementById('geoipASN').textContent = 
+                        loc.asn ? `AS${loc.asn} (${loc.isp || 'Unknown ISP'})` : '—';
+                    document.getElementById('geoipContent').classList.remove('d-none');
+                } else {
+                    document.getElementById('geoipErrorMsg').textContent = 
+                        data.error || 'No location data available for this IP';
+                    document.getElementById('geoipError').classList.remove('d-none');
+                }
+            })
+            .catch(error => {
+                document.getElementById('geoipLoading').classList.add('d-none');
+                document.getElementById('geoipErrorMsg').textContent = 
+                    'Failed to fetch GeoIP data: ' + error.message;
+                document.getElementById('geoipError').classList.remove('d-none');
+            });
+    }
+});
+</script>
+
+<!-- GeoIP Modal -->
+<div class="modal fade" id="geoipModal" tabindex="-1" aria-labelledby="geoipModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="geoipModalLabel">
+                    <i class="bi bi-geo-alt me-2"></i>GeoIP Information
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="mb-3">
+                    IP Address: <span class="font-monospace" id="geoipIP"></span>
+                </h6>
+                
+                <!-- Loading State -->
+                <div id="geoipLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Looking up location...</p>
+                </div>
+                
+                <!-- Error State -->
+                <div id="geoipError" class="alert alert-warning d-none">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <span id="geoipErrorMsg"></span>
+                </div>
+                
+                <!-- Content -->
+                <div id="geoipContent" class="d-none">
+                    <table class="table table-sm">
+                        <tr>
+                            <th class="text-muted" style="width: 40%;">Country</th>
+                            <td id="geoipCountry">—</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">City</th>
+                            <td id="geoipCity">—</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Region</th>
+                            <td id="geoipRegion">—</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Coordinates</th>
+                            <td id="geoipCoords" class="font-monospace">—</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">Timezone</th>
+                            <td id="geoipTimezone">—</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted">ISP / ASN</th>
+                            <td id="geoipASN" class="small">—</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 </script>
 {% endblock %}

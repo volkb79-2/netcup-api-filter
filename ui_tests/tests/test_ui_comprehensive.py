@@ -270,17 +270,16 @@ async def test_admin_system_info_display(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         
-        # Try to navigate to system info page
-        try:
-            await workflows.open_admin_system_info(browser)
-            page_text = await browser.text('body')
-            
-            # Should show some system information (page structure may vary)
-            assert len(page_text) > 100, "System info page should have content"
-        except Exception:
-            # System info page might not be implemented - that's okay, skip
-            import pytest
-            pytest.skip("System info page not implemented or not accessible")
+        # Navigate to system info page - must succeed (no exceptions allowed)
+        await workflows.open_admin_system_info(browser)
+        page_text = await browser.text('body')
+        
+        # Should show some system information (page structure may vary)
+        assert len(page_text) > 100, "System info page should have content"
+        
+        # Verify no error messages displayed
+        assert "500" not in page_text, "Should not show 500 error"
+        assert "Internal Server Error" not in page_text, "Should not show server error"
 
 # ============================================================================
 # CLIENT PORTAL TESTS - DEPRECATED

@@ -1,0 +1,273 @@
+{# Admin Application Logs - Live system log viewer #}
+{% extends "admin/base.html" %}
+
+{% block title %}Application Logs - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<style>
+/* Override base template padding for full-height log viewer */
+#main-content > .container-fluid {
+    padding: 0 !important;
+    height: 100%;
+}
+
+/* Full-height layout */
+.logs-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px); /* Subtract navbar height */
+    padding: 0 1rem;
+}
+
+.logs-header {
+    flex-shrink: 0;
+    padding: 1rem 0;
+}
+
+.logs-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Allow flex child to shrink below content size */
+    margin-bottom: 1rem;
+}
+
+.logs-card .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#logContent {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 0.75rem;
+    margin: 0;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+/* Prevent selection of page chrome when selecting log content */
+.logs-container > :not(.logs-card) {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+.logs-footer {
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+}
+</style>
+
+<div class="logs-container">
+    <!-- Page Header -->
+    <div class="logs-header d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="h3 mb-1">Application Logs</h1>
+            <p class="text-muted mb-0">Real-time system logs and diagnostics</p>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="autoRefreshLogs" checked>
+                <label class="form-check-label small" for="autoRefreshLogs">Auto-refresh</label>
+            </div>
+            <button class="btn btn-outline-secondary" onclick="loadLogs(1)">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+            <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-journal-text me-1"></i>Audit Logs
+            </a>
+        </div>
+    </div>
+
+    <!-- Log Viewer Card -->
+    <div class="card logs-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>
+                <i class="bi bi-terminal me-1"></i>Recent Log Entries
+                <i class="bi bi-info-circle ms-2" 
+                   data-bs-toggle="tooltip" 
+                   data-bs-placement="right"
+                   data-bs-html="true"
+                   title="<strong>About Application Logs:</strong><br>These logs show real-time system activity including API requests, errors, configuration changes, and security events.<br><br>Logs are stored in <code>netcup_filter.log</code> and rotate automatically.<br><br>Use <strong>Audit Logs</strong> for user action history."
+                   style="cursor: help; opacity: 0.6;"></i>
+            </span>
+            <span class="badge bg-secondary" id="logCount">0</span>
+        </div>
+        <div class="card-body p-0">
+            <pre id="logContent" class="p-3">Loading logs...</pre>
+            <div class="logs-footer border-top">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small">Showing <span id="logCountText">0</span> lines</span>
+                        <span class="text-muted small ms-2" id="logInfo"></span>
+                    </div>
+                    <div class="btn-group btn-group-sm" id="pageNav">
+                        <button class="btn btn-outline-secondary" onclick="loadLogs(currentPage - 1)" id="prevPage" disabled>
+                            <i class="bi bi-chevron-left"></i> Previous
+                        </button>
+                        <button class="btn btn-outline-secondary" disabled>
+                            Page <span id="currentPageNum">1</span>
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="loadLogs(currentPage + 1)" id="nextPage" disabled>
+                            Next <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let currentPage = 1;
+let autoRefreshInterval = null;
+let lastScrollPosition = 0;
+let totalPages = 1;
+let linesPerPage = 50;
+
+function updatePagination() {
+    const prevBtn = document.getElementById('prevPage');
+    const nextBtn = document.getElementById('nextPage');
+    const pageNum = document.getElementById('currentPageNum');
+    
+    if (prevBtn && nextBtn && pageNum) {
+        prevBtn.disabled = currentPage <= 1;
+        nextBtn.disabled = currentPage >= totalPages;
+        pageNum.textContent = currentPage;
+    }
+}
+
+function calculateLinesPerPage() {
+    const logContent = document.getElementById('logContent');
+    if (!logContent) return 50;
+    
+    const availableHeight = logContent.clientHeight;
+    // Line height: 0.75rem * 16px = 12px base, + spacing ≈ 18px per line
+    const lineHeight = 18;
+    const lines = Math.max(50, Math.floor(availableHeight / lineHeight));
+    return lines;
+}
+
+function loadLogs(page = 1, preserveScroll = false) {
+    if (page < 1) return;
+    currentPage = page;
+    
+    // Save current scroll position if preserving
+    const logContent = document.getElementById('logContent');
+    if (preserveScroll && logContent) {
+        lastScrollPosition = logContent.scrollTop;
+    }
+    
+    // Calculate lines per page based on actual log content area height
+    linesPerPage = calculateLinesPerPage();
+    
+    fetch(`{{ url_for('admin.get_system_logs') }}?page=${page}&per_page=${linesPerPage}`)
+        .then(response => response.json())
+        .then(data => {
+            const logCount = document.getElementById('logCount');
+            const logCountText = document.getElementById('logCountText');
+            const logInfo = document.getElementById('logInfo');
+            
+            if (data.logs && data.logs.length > 0) {
+                logContent.textContent = data.logs.join('\n');
+                logCount.textContent = data.logs.length;
+                logCountText.textContent = `${data.logs.length} of ${data.total_lines}`;
+                
+                totalPages = Math.ceil(data.total_lines / linesPerPage);
+                logInfo.textContent = `(${totalPages} pages available)`;
+            } else {
+                logContent.textContent = 'No log entries found';
+                logCount.textContent = '0';
+                logCountText.textContent = '0';
+                logInfo.textContent = '';
+                totalPages = 1;
+            }
+            
+            updatePagination();
+            
+            // Restore scroll position if preserving (auto-refresh)
+            if (preserveScroll && lastScrollPosition > 0) {
+                logContent.scrollTop = lastScrollPosition;
+            } else {
+                // Reset to top for manual refresh or page navigation
+                logContent.scrollTop = 0;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading logs:', error);
+            document.getElementById('logContent').textContent = `Error loading logs: ${error}`;
+        });
+}
+
+// Handle Ctrl-A to select only log content
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        const logContent = document.getElementById('logContent');
+        const activeElement = document.activeElement;
+        
+        // If focus is on log content or body, select only log content
+        if (logContent && (activeElement === logContent || activeElement === document.body || logContent.contains(activeElement))) {
+            e.preventDefault();
+            const range = document.createRange();
+            range.selectNodeContents(logContent);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+    }
+});
+
+// Window resize handler - recalculate lines per page
+let resizeTimeout;
+window.addEventListener('resize', function() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(function() {
+        const newLinesPerPage = calculateLinesPerPage();
+        if (newLinesPerPage !== linesPerPage) {
+            // Reload current page with new page size
+            loadLogs(currentPage, false);
+        }
+    }, 250); // Debounce resize events
+});
+
+// Auto-refresh toggle
+document.getElementById('autoRefreshLogs').addEventListener('change', function(e) {
+    if (e.target.checked) {
+        // Refresh every 10 seconds, preserving scroll position
+        autoRefreshInterval = setInterval(() => loadLogs(currentPage, true), 10000);
+    } else {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+});
+
+// Initial load and start auto-refresh
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Bootstrap tooltips
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+    
+    loadLogs(1);
+    // Start auto-refresh (10 seconds interval), preserving scroll position
+    autoRefreshInterval = setInterval(() => loadLogs(currentPage, true), 10000);
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+});
+</script>
+{% endblock %}

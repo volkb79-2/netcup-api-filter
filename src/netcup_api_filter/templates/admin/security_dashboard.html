@@ -17,6 +17,19 @@
     </div>
 </div>
 
+<!-- Security Event Classification Info -->
+<div class="alert alert-info d-flex align-items-start mb-4" role="alert">
+    <i class="bi bi-info-circle-fill me-2 flex-shrink-0" style="margin-top: 2px;"></i>
+    <div>
+        <strong>Security Event Classification:</strong> Events are logged when API authentication/authorization fails. 
+        <strong>Critical &amp; High severity</strong> events include: token hash mismatches (brute force attempts), 
+        IP whitelist violations, revoked tokens still in use, and token prefix probing. 
+        <strong>Lower severity</strong> events like wrong credentials, expired tokens, or permission errors are tracked 
+        but not shown in the Critical section. 
+        <a href="#" class="alert-link" data-bs-toggle="modal" data-bs-target="#severityModal">View full classification</a>
+    </div>
+</div>
+
 <!-- Security Stats Cards -->
 <div class="row g-3 mb-4">
     <!-- Last Hour Stats -->
@@ -207,7 +220,7 @@
     <div class="card-body p-0">
         {% if recent_events %}
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0 table-sm">
                 <thead>
                     <tr>
                         <th>Time</th>
@@ -444,4 +457,56 @@ function refreshData() {
     location.reload();
 }
 </script>
+
+<!-- Severity Classification Modal -->
+<div class="modal fade" id="severityModal" tabindex="-1" aria-labelledby="severityModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="severityModalLabel"><i class="bi bi-shield-exclamation me-2"></i>Security Event Severity Classification</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">Security events are automatically classified based on the type of authentication/authorization failure. Only API token-based authentication failures generate security events.</p>
+                
+                <h6 class="mt-4 mb-3"><span class="badge bg-danger">Critical Severity</span></h6>
+                <ul>
+                    <li><strong>Token Hash Mismatch</strong> - Someone is trying different token values with a known prefix (brute force attack)</li>
+                    <li><strong>IP Denied</strong> - Access attempt from an IP address not in the token's whitelist (possible token compromise)</li>
+                </ul>
+
+                <h6 class="mt-4 mb-3"><span class="badge bg-warning text-dark">High Severity</span></h6>
+                <ul>
+                    <li><strong>Token Prefix Not Found</strong> - Probing for valid token prefixes (reconnaissance)</li>
+                    <li><strong>Token Revoked</strong> - A revoked token is still being used (possible stolen token)</li>
+                    <li><strong>Domain Denied</strong> - Attempt to access domains outside the token's scope (scope probing)</li>
+                </ul>
+
+                <h6 class="mt-4 mb-3"><span class="badge bg-info">Medium Severity</span></h6>
+                <ul>
+                    <li><strong>Alias Not Found</strong> - Unknown token alias (could be credential stuffing)</li>
+                    <li><strong>Account Disabled</strong> - Access attempt with disabled account token</li>
+                    <li><strong>Operation Denied</strong> - Unauthorized operation (may be user error or permission testing)</li>
+                </ul>
+
+                <h6 class="mt-4 mb-3"><span class="badge bg-secondary">Low Severity</span></h6>
+                <ul>
+                    <li><strong>Invalid Format</strong> - Malformed authentication header (likely API client error)</li>
+                    <li><strong>Missing Token</strong> - No authentication provided (likely API client error)</li>
+                    <li><strong>Token Expired</strong> - Expected behavior when tokens expire naturally</li>
+                    <li><strong>Realm Not Approved</strong> - Account realm awaiting admin approval</li>
+                    <li><strong>Record Type Denied</strong> - DNS record type outside allowed list (may be user error)</li>
+                </ul>
+
+                <div class="alert alert-warning mt-4">
+                    <i class="bi bi-exclamation-triangle me-2"></i><strong>Note:</strong> Admin portal login failures (wrong username/password) are logged separately in the audit log but do not generate security events in this dashboard. This dashboard focuses on API token-based authentication attempts.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

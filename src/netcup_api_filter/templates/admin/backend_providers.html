@@ -19,7 +19,7 @@
 <div class="row g-4">
     {% for provider in providers %}
     <div class="col-md-6 col-lg-4">
-        <div class="card h-100 {% if not provider.is_enabled %}bg-light{% endif %}">
+        <div class="card h-100 {% if not provider.is_enabled %}opacity-75{% endif %}">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span>
                     <i class="bi bi-plug me-1"></i>
@@ -70,7 +70,7 @@
                 <p class="small mb-1"><strong>Record Types:</strong></p>
                 <div class="d-flex flex-wrap gap-1">
                     {% for rtype in record_types %}
-                    <span class="badge bg-light text-dark">{{ rtype }}</span>
+                    <span class="badge bg-secondary">{{ rtype }}</span>
                     {% endfor %}
                 </div>
                 {% endif %}

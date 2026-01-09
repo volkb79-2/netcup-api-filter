@@ -1,0 +1,113 @@
+{# Table rows fragment for AJAX refresh - no layout, just <tr> elements #}
+{% for log in logs %}
+<tr>
+    <td class="timestamp">
+        <small class="font-monospace">{{ log.created_at.strftime('%m-%d %H:%M:%S') }}</small>
+    </td>
+    <td class="actor">
+        {% if log.account and log.account.is_admin %}
+        <span class="badge bg-danger">Admin</span>
+        {% elif log.token %}
+        <code class="small" title="Token: {{ log.token.token_prefix }}">{{ log.token.token_prefix }}...</code>
+        {% elif log.account %}
+        <a href="{{ url_for('admin.account_detail', account_id=log.account_id) }}" 
+           class="text-decoration-none font-monospace small">
+            {{ log.account.username }}
+        </a>
+        {% else %}
+        <span class="badge bg-secondary">System</span>
+        {% endif %}
+    </td>
+    <td class="action">
+        {% set action_class = {
+            'login': 'success',
+            'logout': 'secondary',
+            'login_failed': 'danger',
+            'account_created': 'primary',
+            'account_approved': 'success',
+            'account_disabled': 'warning',
+            'account_deleted': 'danger',
+            'realm_created': 'primary',
+            'realm_approved': 'success',
+            'realm_rejected': 'warning',
+            'token_created': 'primary',
+            'token_revoked': 'warning',
+            'config_updated': 'info',
+            'api_call': 'info',
+            'api_read': 'info',
+            'api_update': 'warning',
+            'api_create': 'primary',
+            'api_delete': 'danger',
+            'api_denied': 'danger'
+        } %}
+        <span class="badge bg-{{ action_class.get(log.action, 'info') }}">
+            {{ log.action | replace('_', ' ') | title }}
+        </span>
+    </td>
+    <td>
+        {# Status column with clear color coding #}
+        {% if log.status == 'success' %}
+        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>OK</span>
+        {% elif log.status == 'denied' %}
+        <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Denied</span>
+        {% elif log.status == 'error' %}
+        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Error</span>
+        {% else %}
+        <span class="badge bg-secondary">{{ log.status or '—' }}</span>
+        {% endif %}
+    </td>
+    <td>
+        {# Show realm/domain for API calls using format_realm filter if available #}
+        {% if log.token and log.token.realm %}
+        <code class="small">{{ log.token.realm|format_realm }}</code>
+        {% elif log.realm_value %}
+        <span class="font-monospace small">{{ log.realm_value }}</span>
+        {% else %}
+        <small class="text-muted">—</small>
+        {% endif %}
+    </td>
+    <td>
+        {# Show operation type for API calls #}
+        {% if log.operation %}
+        <span class="badge {% if log.operation == 'read' %}bg-info{% elif log.operation == 'update' %}bg-warning text-dark{% elif log.operation == 'create' %}bg-primary{% else %}bg-danger{% endif %}">
+            {{ log.operation }}
+        </span>
+        {% else %}
+        <small class="text-muted">—</small>
+        {% endif %}
+    </td>
+    <td class="details">
+        {% if log.status_reason %}
+        <span class="text-wrap small text-danger">{{ log.status_reason }}</span>
+        {% elif log.record_type and log.record_name %}
+        <span class="text-wrap small">{{ log.record_type }}: {{ log.record_name }}</span>
+        {% elif log.record_type %}
+        <span class="text-wrap small">{{ log.record_type }}</span>
+        {% else %}
+        <small class="text-muted">—</small>
+        {% endif %}
+    </td>
+    <td>
+        {% if log.source_ip %}
+        <a href="#" class="font-monospace small text-decoration-none geoip-lookup" 
+           data-ip="{{ log.source_ip }}" 
+           data-bs-toggle="tooltip" 
+           title="Click to view location">
+            {{ log.source_ip }}
+        </a>
+        {% else %}
+        <small class="text-muted">—</small>
+        {% endif %}
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="8" class="text-center py-5 text-muted">
+        <i class="bi bi-journal display-6 d-block mb-2"></i>
+        No logs found
+        {% if search or action_filter != 'all' or actor_filter != 'all' %}
+        <br><small>Try adjusting your filters</small>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}

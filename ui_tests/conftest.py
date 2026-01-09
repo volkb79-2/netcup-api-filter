@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -274,3 +275,9 @@ async def client_page_fullcontrol(browser_session, admin_page):
     # 2. Log in with the new client's token
     await test_client_login_with_token(browser_session, token, should_succeed=True, expected_client_id=client_data.client_id)
     return browser_session._page
+
+
+@pytest.fixture(scope="session")
+def base_url():
+    """Provide base URL for tests."""
+    return os.getenv("UI_BASE_URL", settings.base_url)

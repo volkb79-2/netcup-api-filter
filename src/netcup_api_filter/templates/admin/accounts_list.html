@@ -1,11 +1,11 @@
 {# Admin Accounts List - All accounts with filtering and bulk actions #}
 {% extends "admin/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}Accounts - Admin - Netcup API Filter{% endblock %}
 
 {% block extra_head %}
-<!-- List.js for client-side filtering -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<!-- Client-side search handled by table_header macro -->
 {% endblock %}
 
 {% block content %}
@@ -26,40 +26,29 @@
     </div>
 </div>
 
-<!-- Filters Card -->
+<!-- Status Filter (simplified - search provided by table_header macro) -->
 <div class="card mb-4">
-    <div class="card-body py-3">
-        <form method="GET" class="row g-3 align-items-end">
-            <!-- Client-side filter -->
-            <div class="col-md-4">
-                <label class="form-label small text-muted">
-                    <i class="bi bi-funnel me-1"></i>Quick Filter
-                    <span class="badge bg-secondary ms-1" title="Filters visible rows only">Client-side</span>
-                </label>
-                <input type="text" class="form-control search" placeholder="Type to filter..." id="quickFilter">
+    <div class="card-body py-2 px-3">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label small text-muted mb-0">Filter by status:</label>
             </div>
-            
-            <!-- Server-side filters -->
-            <div class="col-md-3">
-                <label class="form-label small text-muted">Status</label>
-                <select name="status" class="form-select">
+            <div class="col-auto">
+                <select name="status" class="form-select form-select-sm">
                     <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Statuses</option>
                     <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
                     <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
                 </select>
             </div>
-            
-            <div class="col-md-3">
-                <label class="form-label small text-muted">Search</label>
-                <input type="text" name="search" class="form-control" 
-                       placeholder="Username or email..." 
-                       value="{{ search }}">
-            </div>
-            
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-secondary w-100">
-                    <i class="bi bi-search me-1"></i>Search
+            <div class="col-auto">
+                <button type="submit" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-filter me-1"></i>Apply
                 </button>
+                {% if status_filter != 'all' %}
+                <a href="{{ url_for('admin.accounts_list') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-x"></i> Clear
+                </a>
+                {% endif %}
             </div>
         </form>
     </div>
@@ -90,8 +79,14 @@
 
 <!-- Accounts Table -->
 <div class="card" id="accountsList">
+    {{ table_header(
+        title='Accounts',
+        search_id='quickFilter',
+        search_placeholder='Search accounts...'
+    ) }}
+    
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 table-sm">
             <thead>
                 <tr>
                     <th width="40">
@@ -265,13 +260,6 @@
 
 {% block extra_scripts %}
 <script>
-// Initialize List.js for client-side filtering
-document.addEventListener('DOMContentLoaded', function() {
-    new List('accountsList', {
-        valueNames: ['status', 'username', 'email', 'realms', 'tokens', 'last_login']
-    });
-});
-
 // Bulk action functions
 function toggleSelectAll() {
     const selectAll = document.getElementById('selectAll');

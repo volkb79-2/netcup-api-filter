@@ -134,6 +134,17 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     
     init_db(app)
     
+    # Create startup timestamp file for uptime tracking
+    try:
+        db_path = os.environ.get('NETCUP_FILTER_DB_PATH', 'netcup_filter.db')
+        startup_file = os.path.join(os.path.dirname(os.path.abspath(db_path)), '.app_startup')
+        # Touch the file to update its modification time
+        with open(startup_file, 'w') as f:
+            from datetime import datetime
+            f.write(datetime.now().isoformat())
+    except Exception:
+        pass  # Non-critical feature, don't fail startup
+    
     # =========================================================================
     # CSRF Protection
     # =========================================================================
@@ -153,6 +164,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     try:
         from flask_limiter import Limiter
         from flask_limiter.util import get_remote_address
+        from .settings import get_setting
         
         # Disable rate limiting for local testing
         if flask_env == 'local_test':
@@ -171,12 +183,16 @@ def create_app(config_path: str = "config.yaml") -> Flask:
                 storage_uri="memory://",
             )
             
-            # Apply stricter limits to auth endpoints
-            limiter.limit("10 per minute")(admin_bp)
-            limiter.limit("10 per minute")(account_bp)
+        # Apply rate limiting to admin and account routes
+        # Priority: 1. Database settings, 2. Environment variables, 3. Hardcoded defaults
+        admin_rate_limit = get_setting('admin_rate_limit') or os.environ.get('ADMIN_RATE_LIMIT', '50 per minute')
+        account_rate_limit = get_setting('account_rate_limit') or os.environ.get('ACCOUNT_RATE_LIMIT', '50 per minute')
+        limiter.limit(admin_rate_limit)(admin_bp)
+        limiter.limit(account_rate_limit)(account_bp)
         
+        logger.info(f"Rate limiting enabled: admin={admin_rate_limit}, account={account_rate_limit}")
     except ImportError:
-        logger.warning("flask-limiter not installed, rate limiting disabled")
+        logger.warning("Flask-Limiter not available - rate limiting disabled")
     
     # =========================================================================
     # Register Blueprints

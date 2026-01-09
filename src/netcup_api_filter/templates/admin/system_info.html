@@ -17,10 +17,9 @@
     </div>
 </div>
 
-<div class="row g-4">
+<div class="card-info">
     <!-- Application Info -->
-    <div class="col-lg-6">
-        <div class="card mb-4">
+    <div class="card">
             <div class="card-header">
                 <i class="bi bi-app-indicator me-1"></i>Application
             </div>
@@ -54,7 +53,8 @@
             </div>
         </div>
 
-        <div class="card mb-4">
+    <!-- Database Info -->
+    <div class="card">
             <div class="card-header">
                 <i class="bi bi-database me-1"></i>Database
             </div>
@@ -91,11 +91,9 @@
                 </table>
             </div>
         </div>
-    </div>
 
     <!-- Server Info -->
-    <div class="col-lg-6">
-        <div class="card mb-4">
+    <div class="card">
             <div class="card-header">
                 <i class="bi bi-hdd-stack me-1"></i>Server
             </div>
@@ -129,35 +127,48 @@
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="bi bi-cloud me-1"></i>External Services
-            </div>
+    <!-- External Services -->
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-cloud me-1"></i>External Services
+        </div>
             <div class="card-body">
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <span>Netcup API</span>
-                    <span class="badge {% if services.netcup %}bg-success{% else %}bg-danger{% endif %}">
-                        {% if services.netcup %}<i class="bi bi-check-circle me-1"></i>Connected{% else %}<i class="bi bi-x-circle me-1"></i>Not configured{% endif %}
-                    </span>
+                    {% if services.netcup == 'configured' or services.netcup == 'available' %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+                    {% elif services.netcup == 'error' %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>
+                    {% else %}
+                    <span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>Not configured</span>
+                    {% endif %}
                 </div>
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <span>Email (SMTP)</span>
-                    <span class="badge {% if services.email %}bg-success{% else %}bg-warning{% endif %}">
-                        {% if services.email %}<i class="bi bi-check-circle me-1"></i>Configured{% else %}<i class="bi bi-exclamation-triangle me-1"></i>Not configured{% endif %}
-                    </span>
+                    {% if services.email == 'configured' or services.email == 'available' %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+                    {% elif services.email == 'error' %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>
+                    {% else %}
+                    <span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>Not configured</span>
+                    {% endif %}
                 </div>
                 <div class="d-flex align-items-center justify-content-between">
                     <span>GeoIP (MaxMind)</span>
-                    <span class="badge {% if services.geoip %}bg-success{% else %}bg-secondary{% endif %}">
-                        {% if services.geoip %}<i class="bi bi-check-circle me-1"></i>Available{% else %}<i class="bi bi-dash-circle me-1"></i>Not configured{% endif %}
-                    </span>
+                    {% if services.geoip == 'available' %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Available</span>
+                    {% elif services.geoip == 'error' %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Error</span>
+                    {% else %}
+                    <span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>Not configured</span>
+                    {% endif %}
                 </div>
-            </div>
         </div>
+    </div>
         
-        <!-- GeoIP Details (if configured) -->
-        {% if geoip_info %}
-        <div class="card mb-4">
+    <!-- GeoIP Details (if configured) -->
+    {% if geoip_info %}
+    <div class="card">
             <div class="card-header">
                 <i class="bi bi-geo-alt me-1"></i>GeoIP Configuration
             </div>
@@ -197,130 +208,54 @@
                     </tr>
                     {% endif %}
                 </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Python Packages -->
+<div class="card-info mt-4">
+    <!-- System-wide Packages -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-box-seam me-1"></i>Python Packages (system-wide)</span>
+            <span class="badge bg-secondary">{{ python_packages|length }} installed</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">Packages installed globally by hosting provider</p>
+            <div class="row">
+                {% for package in python_packages %}
+                <div class="col-md-6 col-sm-6 col-12 mb-2">
+                    <small class="font-monospace">
+                        <span class="text-muted">{{ package.name }}</span>
+                        <span class="text-secondary">{{ package.version }}</span>
+                    </small>
+                </div>
+                {% endfor %}
             </div>
         </div>
-        {% endif %}
     </div>
-</div>
-
-<!-- Recent Logs -->
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-terminal me-1"></i>Recent Application Logs</span>
-        <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-sm btn-outline-secondary">
-            View Full Logs
-        </a>
-    </div>
-    <div class="card-body p-0">
-        <pre class="mb-0 p-3 bg-dark text-light" style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;">{% for line in recent_logs %}{{ line }}
-{% else %}No recent log entries{% endfor %}</pre>
-    </div>
-</div>
-
-<!-- Security Settings -->
-<div class="card mt-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-shield-lock me-1"></i>Security Settings</span>
-    </div>
-    <div class="card-body">
-        <form method="POST" action="{{ url_for('admin.update_security_settings') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label for="password_reset_expiry" class="form-label">Password Reset Link Expiry</label>
-                    <select class="form-select" id="password_reset_expiry" name="password_reset_expiry_hours">
-                        <option value="1" {% if security_settings.password_reset_expiry_hours == 1 %}selected{% endif %}>1 hour</option>
-                        <option value="2" {% if security_settings.password_reset_expiry_hours == 2 %}selected{% endif %}>2 hours</option>
-                        <option value="4" {% if security_settings.password_reset_expiry_hours == 4 %}selected{% endif %}>4 hours</option>
-                        <option value="8" {% if security_settings.password_reset_expiry_hours == 8 %}selected{% endif %}>8 hours</option>
-                        <option value="24" {% if security_settings.password_reset_expiry_hours == 24 %}selected{% endif %}>24 hours</option>
-                        <option value="48" {% if security_settings.password_reset_expiry_hours == 48 %}selected{% endif %}>48 hours</option>
-                        <option value="72" {% if security_settings.password_reset_expiry_hours == 72 %}selected{% endif %}>72 hours (3 days)</option>
-                    </select>
-                    <div class="form-text">How long password reset links remain valid</div>
+    
+    <!-- Vendored Packages -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-boxes me-1"></i>Python Packages (vendored)</span>
+            <span class="badge bg-primary">{{ vendored_packages|length }} bundled</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">Application dependencies in <code>vendor/</code> directory</p>
+            <div class="row">
+                {% for package in vendored_packages %}
+                <div class="col-md-6 col-sm-6 col-12 mb-2">
+                    <small class="font-monospace">
+                        <span class="text-muted">{{ package.name }}</span>
+                        <span class="text-secondary">{{ package.version }}</span>
+                    </small>
                 </div>
-                <div class="col-md-6">
-                    <label for="invite_expiry" class="form-label">Account Invite Link Expiry</label>
-                    <select class="form-select" id="invite_expiry" name="invite_expiry_hours">
-                        <option value="24" {% if security_settings.invite_expiry_hours == 24 %}selected{% endif %}>24 hours</option>
-                        <option value="48" {% if security_settings.invite_expiry_hours == 48 %}selected{% endif %}>48 hours</option>
-                        <option value="72" {% if security_settings.invite_expiry_hours == 72 %}selected{% endif %}>72 hours (3 days)</option>
-                        <option value="168" {% if security_settings.invite_expiry_hours == 168 %}selected{% endif %}>168 hours (7 days)</option>
-                    </select>
-                    <div class="form-text">How long account invitation links remain valid</div>
-                </div>
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-save me-1"></i>Save Security Settings
-                    </button>
-                </div>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Danger Zone -->
-<div class="card border-danger mt-4">
-    <div class="card-header bg-danger text-white">
-        <i class="bi bi-exclamation-triangle me-1"></i>Danger Zone
-    </div>
-    <div class="card-body">
-        <div class="row g-4">
-            <div class="col-md-4">
-                <h6>Clear Activity Logs</h6>
-                <p class="text-muted small mb-2">Delete all audit log entries older than 30 days.</p>
-                <button type="button" class="btn btn-outline-warning btn-sm" onclick="clearOldLogs()">
-                    <i class="bi bi-trash me-1"></i>Clear Old Logs
-                </button>
-            </div>
-            <div class="col-md-4">
-                <h6>Revoke All Tokens</h6>
-                <p class="text-muted small mb-2">Immediately revoke all active API tokens.</p>
-                <button type="button" class="btn btn-outline-danger btn-sm" onclick="revokeAllTokens()">
-                    <i class="bi bi-x-circle me-1"></i>Revoke All
-                </button>
-            </div>
-            <div class="col-md-4">
-                <h6>Reset Database</h6>
-                <p class="text-muted small mb-2">
-                    Delete ALL data and start fresh. This creates a new admin account 
-                    with the <strong>default credentials</strong> from configuration. 
-                    <span class="text-danger fw-medium">Irreversible!</span>
-                </p>
-                <button type="button" class="btn btn-danger btn-sm" onclick="resetDatabase()">
-                    <i class="bi bi-exclamation-octagon me-1"></i>Reset
-                </button>
+                {% endfor %}
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_scripts %}
-<script>
-function clearOldLogs() {
-    if (confirm('Delete all audit logs older than 30 days? This cannot be undone.')) {
-        // TODO: Implement API call
-        alert('Feature not yet implemented');
-    }
-}
-
-function revokeAllTokens() {
-    if (confirm('DANGER: This will immediately revoke ALL API tokens for ALL users. They will need to generate new tokens. Continue?')) {
-        if (confirm('Are you absolutely sure? This affects ALL users.')) {
-            // TODO: Implement API call
-            alert('Feature not yet implemented');
-        }
-    }
-}
-
-function resetDatabase() {
-    if (confirm('DANGER: This will DELETE ALL DATA including accounts, realms, tokens, and logs. This is IRREVERSIBLE. Are you sure?')) {
-        if (prompt('Type "RESET" to confirm:') === 'RESET') {
-            // TODO: Implement API call
-            alert('Feature not yet implemented');
-        }
-    }
-}
-</script>
 {% endblock %}

@@ -49,5 +49,9 @@ def _parse_env_file(env_path: Path) -> Dict[str, str]:
             if "=" not in line:
                 continue
             key, value = line.split("=", 1)
-            defaults[key.strip()] = value.strip()
+            value = value.strip()
+            # Strip surrounding quotes (single or double)
+            if len(value) >= 2 and value[0] in ('"', "'") and value[-1] == value[0]:
+                value = value[1:-1]
+            defaults[key.strip()] = value
     return defaults

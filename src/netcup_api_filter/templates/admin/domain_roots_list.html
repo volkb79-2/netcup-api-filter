@@ -1,5 +1,6 @@
 {# Admin Domain Roots List - Manage DNS zones available for realms #}
 {% extends "admin/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}Domain Roots - Admin - Netcup API Filter{% endblock %}
 
@@ -65,13 +66,6 @@
     <div class="card-body py-3">
         <form method="GET" class="row g-3 align-items-end">
             <div class="col-md-4">
-                <label class="form-label small text-muted">
-                    <i class="bi bi-funnel me-1"></i>Quick Filter
-                </label>
-                <input type="text" class="form-control search" placeholder="Type to filter..." id="quickFilter">
-            </div>
-            
-            <div class="col-md-3">
                 <label class="form-label small text-muted">Visibility</label>
                 <select name="visibility" class="form-select">
                     <option value="all" {% if visibility_filter == 'all' %}selected{% endif %}>All</option>
@@ -81,7 +75,7 @@
                 </select>
             </div>
             
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label class="form-label small text-muted">Backend</label>
                 <select name="backend" class="form-select">
                     <option value="all" {% if backend_filter == 'all' %}selected{% endif %}>All Backends</option>
@@ -93,10 +87,13 @@
                 </select>
             </div>
             
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-secondary w-100">
-                    <i class="bi bi-search me-1"></i>Filter
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-secondary">
+                    <i class="bi bi-filter me-1"></i>Filter
                 </button>
+                <a href="{{ url_for('admin.domain_roots') }}" class="btn btn-outline-secondary ms-2">
+                    Clear
+                </a>
             </div>
         </form>
     </div>
@@ -104,10 +101,16 @@
 
 <!-- Domain Roots Table -->
 <div class="card" id="rootsTable">
+    {{ table_header(
+        title='Domain Roots',
+        search_id='quickFilter',
+        search_placeholder='Search domains...'
+    ) }}
+    
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
+            <table class="table table-hover mb-0 table-sm">
+                <thead>
                     <tr>
                         <th>Domain Root</th>
                         <th>Backend</th>
@@ -196,13 +199,6 @@
 
 {% block extra_scripts %}
 <script>
-var options = {
-    valueNames: ['root_domain', 'dns_zone', 'backend_name', 'visibility']
-};
-var rootList = new List('rootsTable', options);
-
-document.getElementById('quickFilter').addEventListener('input', function() {
-    rootList.search(this.value);
-});
+// Table filtering handled by table_header macro's built-in search
 </script>
 {% endblock %}

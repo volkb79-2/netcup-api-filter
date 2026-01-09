@@ -501,6 +501,66 @@ html.theme-cobalt-2 {
     --color-text-muted: #8fa3c0;
 }
 
+/* THEME 18: Pearl Light - Soft light theme with blue accents */
+body.theme-pearl-light,
+html.theme-pearl-light {
+    color-scheme: light;
+    --color-bg-primary: #d8e0e8;
+    --color-bg-primary-solid: #d8e0e8;
+    --color-bg-secondary: rgba(255, 255, 255, 1.0);
+    --color-bg-elevated: rgba(255, 255, 255, 1.0);
+    --color-bg-surface: rgba(255, 255, 255, 1.0);
+    --color-accent: #1e40af;
+    --color-accent-hover: #1e3a8a;
+    --color-accent-rgb: 30, 64, 175;
+    --color-accent-glow: rgba(30, 64, 175, 0.25);
+    --gradient-primary: linear-gradient(180deg, #e8ecf1 0%, #d1d9e6 100%);
+    --gradient-accent: linear-gradient(135deg, #2563eb 0%, #1e40af 60%, #1e3a8a 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(30, 64, 175, 0.05) 0%, transparent 50%);
+    --color-border: rgba(30, 64, 175, 0.2);
+    --color-border-subtle: rgba(71, 85, 105, 0.2);
+    --color-border-card: rgba(30, 64, 175, 0.25);
+    --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), 0 0 20px rgba(30, 64, 175, 0.08);
+    --glossy-overlay: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, transparent 40%);
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #334155;
+    --color-text-muted: #475569;
+    --color-success: #047857;
+    --color-warning: #b45309;
+    --color-danger: #b91c1c;
+    --color-info: #0e7490;
+}
+
+/* THEME 19: Ivory Warm - Warm beige light theme with amber accents */
+body.theme-ivory-warm,
+html.theme-ivory-warm {
+    color-scheme: light;
+    --color-bg-primary: #e0d9cc;
+    --color-bg-primary-solid: #e0d9cc;
+    --color-bg-secondary: rgba(255, 255, 255, 1.0);
+    --color-bg-elevated: rgba(255, 255, 255, 1.0);
+    --color-bg-surface: rgba(255, 255, 255, 1.0);
+    --color-accent: #b45309;
+    --color-accent-hover: #92400e;
+    --color-accent-rgb: 180, 83, 9;
+    --color-accent-glow: rgba(180, 83, 9, 0.25);
+    --gradient-primary: linear-gradient(180deg, #f0ebe3 0%, #e5ddd1 100%);
+    --gradient-accent: linear-gradient(135deg, #d97706 0%, #b45309 60%, #92400e 100%);
+    --gradient-bg: linear-gradient(145deg, rgba(180, 83, 9, 0.05) 0%, transparent 50%);
+    --color-border: rgba(180, 83, 9, 0.2);
+    --color-border-subtle: rgba(87, 83, 78, 0.2);
+    --color-border-card: rgba(180, 83, 9, 0.25);
+    --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 20px rgba(180, 83, 9, 0.06);
+    --glossy-overlay: linear-gradient(180deg, rgba(255, 253, 250, 0.3) 0%, transparent 40%);
+    --color-text-primary: #1c1917;
+    --color-text-secondary: #44403c;
+    --color-text-muted: #57534e;
+    --color-success: #047857;
+    --color-warning: #c2410c;
+    --color-danger: #b91c1c;
+    --color-info: #0e7490;
+}
+
 /* ===================================================================
    UI DENSITY MODES
    =================================================================== */
@@ -689,7 +749,7 @@ code {
     font-family: 'Monaco', 'Courier New', monospace;
     font-size: 0.875em;
     padding: 0.125rem 0.375rem;
-    background: rgba(59, 130, 246, 0.1);
+    background: var(--color-bg-elevated); /* Use theme variable */
     border-radius: var(--radius-sm);
     color: var(--color-accent);
 }
@@ -699,6 +759,12 @@ code {
    =================================================================== */
 
 .app-container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-layout {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -720,11 +786,12 @@ code {
 }
 
 .app-footer {
-    padding: var(--space-lg) var(--space-md);
+    margin-top: auto;
+    padding: var(--space-md) var(--space-md);
     text-align: center;
     color: var(--color-text-muted);
     font-size: 0.875rem;
-    border-top: 1px solid var(--color-border-subtle);
+    /* border-top removed - no divider line */
 }
 
 .container {
@@ -790,7 +857,7 @@ code {
 }
 
 .filter-panel {
-    background: rgba(59, 130, 246, 0.08);
+    background: var(--color-bg-elevated); /* Use theme variable */
     border: 1px dashed var(--color-border);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
@@ -828,6 +895,11 @@ code {
     gap: var(--space-sm);
 }
 
+.navbar-brand:hover {
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
 .navbar-brand-subtitle {
     color: var(--color-text-muted);
     font-weight: 400;
@@ -847,15 +919,88 @@ code {
     color: var(--color-text-secondary);
     padding: var(--space-sm) var(--space-md);
     border-radius: var(--radius-md);
-    transition: all var(--transition-fast);
     font-weight: 500;
 }
 
-.nav-link:hover,
-.nav-link.active {
+/* ===================================================================
+   NAVBAR ACTIVE & HOVER STATES - TEST SOLUTIONS
+   Comment/uncomment to test each approach
+   Each solution handles BOTH active page and hover states
+   =================================================================== */
+
+/* SOLUTION 1: Accent Color Emphasis (current)
+   - Active: Accent text + subtle background
+   - Hover: Elevated background
+   - Issue: May be too light on light themes
+*/
+.nav-link:hover {
     color: var(--color-text-primary);
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--color-accent-rgb), 0.1);
 }
+
+.nav-link.active {
+    color: var(--color-accent);
+    background: rgba(var(--color-accent-rgb), 0.15);
+    font-weight: 600;
+}
+
+/* SOLUTION 2: Strong Accent Backgrounds
+   - Active: Solid accent background + white text
+   - Hover: Medium accent background + white text
+   - Works on all themes (accent is designed for contrast)
+*/
+/* UNCOMMENT TO TEST:
+.nav-link:hover {
+    color: #ffffff;
+    background: rgba(var(--color-accent-rgb), 0.6);
+}
+
+.nav-link.active {
+    color: #ffffff;
+    background: var(--color-accent);
+    font-weight: 600;
+}
+*/
+
+/* SOLUTION 3: Underline + Background Tint
+   - Active: Thick underline + tinted background + accent text
+   - Hover: Thin underline + subtle background
+   - Clean, unobtrusive indicator
+*/
+/* UNCOMMENT TO TEST:
+.nav-link:hover {
+    color: var(--color-text-primary);
+    background: rgba(var(--color-accent-rgb), 0.08);
+    border-bottom: 2px solid rgba(var(--color-accent-rgb), 0.4);
+}
+
+.nav-link.active {
+    color: var(--color-accent);
+    background: rgba(var(--color-accent-rgb), 0.12);
+    border-bottom: 3px solid var(--color-accent);
+    font-weight: 600;
+}
+*/
+
+/* SOLUTION 4: Inverse Contrast (best for light/dark theme support)
+   - Active: Inverted colors for maximum visibility
+   - Hover: Semi-inverted
+   - Uses CSS filters for automatic theme adaptation
+*/
+/* UNCOMMENT TO TEST:
+.nav-link:hover {
+    color: var(--color-text-primary);
+    background: rgba(var(--color-accent-rgb), 0.15);
+    filter: brightness(1.1);
+}
+
+.nav-link.active {
+    color: var(--color-bg-primary);
+    background: var(--color-text-primary);
+    font-weight: 600;
+    filter: saturate(0.9);
+}
+*/
 
 .navbar-user {
     display: flex;
@@ -884,7 +1029,6 @@ code {
 .dropdown-item {
     color: var(--color-text-secondary);
     padding: 0.5rem 1rem;
-    transition: all var(--transition-fast);
     border-radius: 0;
 }
 
@@ -948,6 +1092,13 @@ code {
     opacity: 1;
 }
 
+/* Nav dropdown when open - ensure visibility on light themes */
+.nav-link.dropdown-toggle.show {
+    color: var(--color-accent);
+    background: rgba(var(--color-accent-rgb), 0.15);
+    font-weight: 600;
+}
+
 /* ===================================================================
    MODALS (Bootstrap 5 override for dark theme)
    =================================================================== */
@@ -1003,7 +1154,6 @@ code {
     box-shadow: var(--card-shadow, var(--shadow-lg));
     overflow: hidden;
     position: relative;
-    transition: transform var(--transition-base), box-shadow var(--transition-base);
 }
 
 /* Glossy overlay effect like demo2 */
@@ -1020,12 +1170,11 @@ code {
 }
 
 .card:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-xl);
 }
 
 .card-header {
-    padding: var(--space-lg);
+    padding: 0.75rem 1rem; /* Reduced from var(--space-lg) for better appearance */
     border-bottom: 1px solid var(--color-border-subtle);
     font-weight: 600;
     color: var(--color-text-primary);
@@ -1086,7 +1235,7 @@ code {
     font-weight: 500;
     font-size: 0.875rem;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
     text-decoration: none;
     line-height: 1.5;
 }
@@ -1094,6 +1243,12 @@ code {
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Safe hover effect - brightness filter and shadow, no transition needed */
+.btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* Button size variants - MUST come after base .btn */
@@ -1121,12 +1276,6 @@ code {
     box-shadow: 0 4px 6px -1px rgba(var(--color-accent-rgb), 0.3);
 }
 
-.btn-primary:hover:not(:disabled) {
-    background: var(--color-accent-hover) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 6px 8px -1px rgba(var(--color-accent-rgb), 0.4);
-}
-
 .btn-important {
     background: var(--color-warning);
     color: #000;
@@ -1134,21 +1283,10 @@ code {
     box-shadow: 0 4px 6px -1px rgba(245, 158, 11, 0.3);
 }
 
-.btn-important:hover:not(:disabled) {
-    background: #d97706;
-    transform: translateY(-1px);
-    box-shadow: 0 6px 8px -1px rgba(245, 158, 11, 0.4);
-}
-
 .btn-secondary {
     background: var(--color-bg-elevated);
     color: var(--color-text-primary);
     border: 1px solid var(--color-border);
-}
-
-.btn-secondary:hover:not(:disabled) {
-    background: var(--color-bg-surface);
-    border-color: var(--color-accent);
 }
 
 .btn-success {
@@ -1167,11 +1305,6 @@ code {
     border: 1px solid var(--color-border);
 }
 
-.btn-outline:hover:not(:disabled) {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: var(--color-accent);
-}
-
 .btn-lg {
     padding: var(--space-md) var(--space-xl);
     font-size: 1rem;
@@ -1183,22 +1316,10 @@ code {
     border: 1px solid var(--color-border);
 }
 
-.btn-outline-secondary:hover:not(:disabled) {
-    color: var(--color-text-primary);
-    border-color: var(--color-accent);
-    background: rgba(var(--color-accent-rgb), 0.1);
-}
-
 .btn-outline-light {
     background: transparent;
     color: var(--color-text-primary);
     border: 1px solid rgba(243, 244, 246, 0.4);
-}
-
-.btn-outline-light:hover:not(:disabled) {
-    border-color: var(--color-accent);
-    color: var(--color-text-primary);
-    background: rgba(var(--color-accent-rgb), 0.1);
 }
 
 /* ===================================================================
@@ -1224,7 +1345,6 @@ code {
     border-radius: var(--radius-md);
     color: var(--color-text-primary);
     font-size: 0.875rem;
-    transition: all var(--transition-fast);
 }
 
 .form-control:focus {
@@ -1235,6 +1355,7 @@ code {
 
 .form-control::placeholder {
     color: var(--color-text-muted);
+    opacity: 0.5; /* Subdued to differentiate from actual input */
 }
 
 .form-text {
@@ -1293,7 +1414,7 @@ textarea.form-control {
     color: var(--color-text-primary); /* Ensure text is visible */
     --bs-table-bg: transparent;
     --bs-table-color: var(--color-text-secondary);
-    --bs-table-hover-bg: rgba(59, 130, 246, 0.05);
+    --bs-table-hover-bg: var(--color-bg-elevated); /* Use theme variable */
     --bs-table-hover-color: var(--color-text-primary);
     --bs-table-striped-bg: rgba(0, 0, 0, 0.1);
     background: transparent;
@@ -1306,11 +1427,11 @@ textarea.form-control {
 }
 
 .table-modern thead {
-    background: rgba(59, 130, 246, 0.12);
+    background: var(--color-bg-elevated);
 }
 
 .table-modern tbody tr:hover {
-    background: rgba(59, 130, 246, 0.05);
+    background: var(--color-bg-elevated);
 }
 
 .list-checkbox-column {
@@ -1323,16 +1444,29 @@ textarea.form-control {
 }
 
 .table thead {
-    background: rgba(59, 130, 246, 0.1);
+    background: var(--color-bg-elevated);
 }
 
 .table th {
-    padding: var(--space-md);
+    padding: 0.4rem 0.75rem; /* Compact default padding */
     text-align: left;
     font-weight: 600;
     color: var(--color-text-primary);
     border-bottom: 1px solid var(--color-border);
     user-select: none;
+    vertical-align: middle; /* Center content vertically in table headers */
+}
+
+/* Condensed padding for table-sm variant */
+.table-sm th {
+    padding: 0.3rem 0.5rem;
+}
+
+/* Center form controls in table headers */
+.table th > .form-check-input,
+.table th > input[type="checkbox"] {
+    display: block;
+    margin: 0 auto;
 }
 
 .table th.sortable {
@@ -1342,7 +1476,7 @@ textarea.form-control {
 }
 
 .table th.sortable:hover {
-    background: rgba(59, 130, 246, 0.15);
+    background: var(--color-bg-elevated);
 }
 
 .table th.sortable::after {
@@ -1364,21 +1498,22 @@ textarea.form-control {
 
 .table th.sortable.asc,
 .table th.sortable.desc {
-    background: rgba(59, 130, 246, 0.2);
+    background: var(--color-bg-elevated);
 }
 
 .table td {
     padding: var(--space-md);
     border-bottom: 1px solid var(--color-border-subtle);
     color: var(--color-text-secondary);
+    vertical-align: middle; /* Center content vertically in table cells */
 }
 
 .table tbody tr {
-    transition: background var(--transition-fast);
+    /* No transition */
 }
 
 .table tbody tr:hover {
-    background: rgba(59, 130, 246, 0.05);
+    background: var(--color-bg-elevated);
 }
 
 .table tbody tr:last-child td {
@@ -1433,9 +1568,8 @@ textarea.form-control {
     padding: var(--space-md) var(--space-lg);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-lg);
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-md);
+    /* Removed display: flex to allow normal block layout for multi-line alerts */
+    /* Use Bootstrap's default block display for vertical stacking */
 }
 
 .alert-success {
@@ -1462,64 +1596,75 @@ textarea.form-control {
     color: var(--color-info);
 }
 
+.alert-sm {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+/* Button visibility fixes inside matching-color alerts */
+.alert-warning .btn-warning,
+.alert-warning .btn-outline-warning {
+    background: rgba(245, 158, 11, 0.3);
+    border-color: var(--color-warning);
+    color: var(--color-text-primary);
+}
+
+.alert-warning .btn-warning:hover,
+.alert-warning .btn-outline-warning:hover {
+    background: rgba(245, 158, 11, 0.5);
+    border-color: var(--color-warning);
+    color: var(--color-text-primary);
+}
+
+.alert-danger .btn-danger,
+.alert-danger .btn-outline-danger {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: var(--color-danger);
+    color: var(--color-text-primary);
+}
+
+.alert-danger .btn-danger:hover,
+.alert-danger .btn-outline-danger:hover {
+    background: rgba(239, 68, 68, 0.5);
+    border-color: var(--color-danger);
+    color: var(--color-text-primary);
+}
+
+.alert-success .btn-success,
+.alert-success .btn-outline-success {
+    background: rgba(16, 185, 129, 0.3);
+    border-color: var(--color-success);
+    color: var(--color-text-primary);
+}
+
+.alert-success .btn-success:hover,
+.alert-success .btn-outline-success:hover {
+    background: rgba(16, 185, 129, 0.5);
+    border-color: var(--color-success);
+    color: var(--color-text-primary);
+}
+
+.alert-info .btn-info,
+.alert-info .btn-outline-info {
+    background: rgba(6, 182, 212, 0.3);
+    border-color: var(--color-info);
+    color: var(--color-text-primary);
+}
+
+.alert-info .btn-info:hover,
+.alert-info .btn-outline-info:hover {
+    background: rgba(6, 182, 212, 0.5);
+    border-color: var(--color-info);
+    color: var(--color-text-primary);
+}
+
 /* ===================================================================
    UTILITIES
+   Note: Most utilities removed - Bootstrap 5 already provides them.
+   Only custom utilities that BS5 doesn't have are kept below.
    =================================================================== */
 
-/* Spacing */
-.mt-0 { margin-top: 0; }
-.mt-1 { margin-top: var(--space-xs); }
-.mt-2 { margin-top: var(--space-sm); }
-.mt-3 { margin-top: var(--space-md); }
-.mt-4 { margin-top: var(--space-lg); }
-.mt-5 { margin-top: var(--space-xl); }
-
-.mb-0 { margin-bottom: 0; }
-.mb-1 { margin-bottom: var(--space-xs); }
-.mb-2 { margin-bottom: var(--space-sm); }
-.mb-3 { margin-bottom: var(--space-md); }
-.mb-4 { margin-bottom: var(--space-lg); }
-.mb-5 { margin-bottom: var(--space-xl); }
-
-.p-0 { padding: 0; }
-.p-1 { padding: var(--space-xs); }
-.p-2 { padding: var(--space-sm); }
-.p-3 { padding: var(--space-md); }
-.p-4 { padding: var(--space-lg); }
-.p-5 { padding: var(--space-xl); }
-
-/* Display */
-.d-flex { display: flex; }
-.d-grid { display: grid; }
-.d-none { display: none; }
-.d-block { display: block; }
-.d-inline { display: inline; }
-.d-inline-block { display: inline-block; }
-
-/* Flex */
-.flex-column { flex-direction: column; }
-.flex-wrap { flex-wrap: wrap; }
-.align-items-center { align-items: center; }
-.align-items-start { align-items: flex-start; }
-.justify-content-between { justify-content: space-between; }
-.justify-content-center { justify-content: center; }
-.justify-content-end { justify-content: flex-end; }
-.gap-1 { gap: var(--space-xs); }
-.gap-2 { gap: var(--space-sm); }
-.gap-3 { gap: var(--space-md); }
-.gap-4 { gap: var(--space-lg); }
-
-/* Grid */
-.grid { display: grid; }
-.grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
-.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-
-/* Text */
-.text-left { text-align: left; }
-.text-center { text-align: center; }
-.text-right { text-align: right; }
+/* Text - Dark theme color overrides only (BS5 has alignment/sizing) */
 /* Bootstrap 5.3 uses !important on .text-muted, so we must too */
 .text-muted { color: var(--color-text-muted) !important; }
 .text-secondary { color: var(--color-text-secondary); }
@@ -1527,14 +1672,6 @@ textarea.form-control {
 .text-success { color: var(--color-success); }
 .text-info { color: var(--color-info); }
 .text-danger { color: var(--color-danger); }
-.text-sm { font-size: 0.875rem; }
-.text-xs { font-size: 0.75rem; }
-.font-weight-bold { font-weight: 600; }
-
-/* Width */
-.w-full { width: 100%; }
-.w-auto { width: auto; }
-.grid-span-2 { grid-column: span 2; }
 
 /* Search Input */
 .search-input {
@@ -1579,60 +1716,17 @@ textarea.form-control {
 }
 
 /* ===================================================================
-   FLASK-ADMIN / BOOTSTRAP 3→5 COMPATIBILITY LAYER
+   FORM ENHANCEMENTS
    =================================================================== */
 
-/* Legacy BS3 classes that may still appear from Flask-Admin vendor assets */
-.control-label {
-    color: var(--color-text-primary);
-    font-weight: 500;
-    margin-bottom: var(--space-xs);
-    display: block;
-    text-align: left !important;
-}
-
-.help-block {
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
-    margin-top: var(--space-xs);
-    display: block;
-}
-
-.checkbox label {
-    color: var(--color-text-primary);
-}
-
-/* Fix card text visibility */
-.card-body {
-    color: var(--color-text-primary);
-}
-
-/* BS3 form-group → BS5 mb-3 compatibility */
+/* Form group spacing */
 .form-group {
     margin-bottom: var(--space-lg);
 }
 
-/* BS3 has-error → BS5 validation styles */
-.has-error .form-control,
-.has-error .form-select {
-    border-color: var(--color-danger);
-}
-
-.has-error .help-block {
-    color: var(--color-danger);
-}
-
-/* BS3 form-horizontal compatibility (now using stacked forms) */
-.form-horizontal .form-group {
-    display: block;
-}
-
-.form-horizontal .col-md-2,
-.form-horizontal .col-md-10,
-.form-horizontal .col-md-offset-2 {
-    width: 100%;
-    margin-left: 0;
-    padding: 0;
+/* Card text visibility fix */
+.card-body {
+    color: var(--color-text-primary);
 }
 
 /* BS5 Pagination dark theme */
@@ -1697,6 +1791,7 @@ textarea.form-control {
 
 .form-control::placeholder {
     color: var(--color-text-muted);
+    opacity: 0.5; /* Subdued to differentiate from actual input */
 }
 
 .form-control:disabled,
@@ -1744,27 +1839,6 @@ textarea.form-control {
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
 }
 
-/* Select2 dark theme overrides (Flask-Admin uses select2) */
-.select2-container .select2-choice,
-.select2-container .select2-choices {
-    background: var(--color-bg-secondary) !important;
-    border-color: var(--color-border) !important;
-    color: var(--color-text-primary) !important;
-}
-
-.select2-drop {
-    background: var(--color-bg-secondary) !important;
-    border-color: var(--color-border) !important;
-}
-
-.select2-results .select2-result-label {
-    color: var(--color-text-primary) !important;
-}
-
-.select2-results .select2-highlighted {
-    background: var(--color-accent) !important;
-}
-
 /* Admin form specific styles */
 .admin-form {
     max-width: 600px;
@@ -1806,7 +1880,6 @@ textarea.form-control {
     border-radius: var(--radius-md);
     color: var(--color-text-secondary);
     cursor: pointer;
-    transition: all var(--transition-fast);
     font-size: 0.875rem;
 }
 
@@ -1867,7 +1940,6 @@ textarea.form-control {
     padding: 0.5rem 0.625rem;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all var(--transition-fast);
 }
 
 .theme-option:hover,
@@ -2010,20 +2082,135 @@ textarea.form-control {
     display: none;
 }
 
-/* Make Save button prominent (yellowish/warning style) */
-.submit-row .btn-primary,
-.btn-important {
-    background-color: #f0ad4e;
-    border-color: #eea236;
-    color: #fff;
-    font-weight: 600;
-    padding: 0.5rem 1.5rem;
-    transition: all 0.2s ease;
+
+/* ===================================================================
+   LOGIN/STANDALONE PAGES (from standalone_base.html)
+   =================================================================== */
+
+/* Login page layout */
+body.login-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    background: linear-gradient(135deg, 
+        var(--color-bg-primary, #0a0e1a) 0%, 
+        var(--color-bg-secondary, #0f1420) 100%
+    );
 }
 
-.submit-row .btn-primary:hover,
-.btn-important:hover {
-    background-color: #ec971f;
-    border-color: #d58512;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+.login-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0rem 1rem;
 }
+
+.login-container {
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+.login-icon {
+    color: var(--color-primary, #4a9eff);
+}
+
+.login-card {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-card, rgba(75, 85, 99, 0.3));
+    border-radius: 0.75rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+.login-header {
+    padding: 2rem 2rem 1.5rem;
+    border-bottom: 1px solid var(--color-border, rgba(75, 85, 99, 0.2));
+    text-align: center;
+}
+
+.login-header h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--color-text-primary, #f8fafc);
+}
+
+.login-card .card-body {
+    padding: 2rem;
+}
+
+/* ===================================================================
+   PUBLIC INDEX PAGE (from index.html)
+   =================================================================== */
+
+.hero {
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+}
+
+.feature-icon {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ===================================================================
+   TABLE IMPROVEMENTS (condensed rows, wider columns)
+   =================================================================== */
+
+/* Condensed table rows - reduce padding */
+.table-sm td {
+    padding: 0.35rem 0.5rem;
+    vertical-align: middle;
+}
+
+/* Default table cells */
+.table td {
+    padding: 0.5rem 0.75rem;
+    vertical-align: middle;
+}
+
+/* Specific column widths for audit logs */
+.audit-logs-table th[width="90"],
+.audit-logs-table td:nth-child(2) {
+    width: 120px !important; /* Wider Actor column */
+}
+
+/* Better monospace font for codes/tokens */
+code, .font-monospace {
+    font-size: 0.9em;
+}
+
+/* List.js search input styling */
+.search {
+    transition: box-shadow 0.2s;
+}
+
+.search:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--color-accent-rgb), 0.25);
+}
+
+/* List.js search container - vertical centering */
+.list-search-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.list-search-container .search {
+    flex: 0 0 auto;
+}
+
+.list-search-container small {
+    margin: 0;
+    line-height: 1;
+}
+

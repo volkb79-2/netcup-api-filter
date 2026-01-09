@@ -148,6 +148,8 @@ venv.bak/
 
 # Application configuration (contains secrets)
 config.yaml
+app-config.toml
+geoIP.conf
 
 # Database and logs (contains sensitive data)
 netcup_filter.db
@@ -163,6 +165,8 @@ deploy-local/
 deploy-webhosting/
 deploy.zip
 deploy.zip.sha256
+deploy-local.zip
+deploy-local.zip.sha256
 
 # Local proxy runtime assets (legacy - replaced by reverse-proxy)
 tooling/local_proxy/proxy.env

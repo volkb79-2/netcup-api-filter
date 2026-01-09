@@ -58,7 +58,7 @@ def download_and_extract_dependencies(vendor_dir, requirements_file):
              "-d", temp_dir, 
              "-r", requirements_file,
              "--only-binary", ":all:",
-             "--python-version", "39",  # Target Python 3.9+ for compatibility
+             "--python-version", "3.11",  # Match webhosting Python 3.11
              "--platform", "manylinux2014_x86_64",
              "--platform", "any"],
             capture_output=True,
@@ -406,6 +406,13 @@ def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = Fa
             # Create all tables
             database.db.create_all()
             logger.info("Database tables created")
+            
+            # Seed Settings table from .env.defaults (BEFORE seeding accounts)
+            # This ensures rate limits and security settings are available immediately
+            from netcup_api_filter.bootstrap.seeding import seed_settings_from_env
+            seeded_count = seed_settings_from_env()
+            if seeded_count > 0:
+                logger.info(f"Seeded {seeded_count} settings from .env.defaults")
 
             # Seed with defaults - enable demo clients for comprehensive local testing
             # Demo clients provide multiple permission configurations for E2E tests
@@ -682,6 +689,8 @@ def main():
                         help="Deployment target (local or webhosting). --local sets this to 'local'")
     parser.add_argument("--seed-demo", action="store_true", 
                         help="Seed comprehensive demo data for UI screenshots")
+    parser.add_argument("--bundle-app-config", action="store_true",
+                        help="Include app-config.toml in deployment if it exists (WARNING: contains secrets)")
     args = parser.parse_args()
     
     # Determine deployment target
@@ -746,6 +755,16 @@ def main():
         if env_defaults_in_deploy.exists():
             env_defaults_in_deploy.unlink()
             logger.info("Removed .env.defaults from deployment (database pre-seeded, config from env vars)")
+        
+        # Optionally bundle app-config.toml (contains secrets - opt-in only)
+        if args.bundle_app_config:
+            app_config_source = Path("app-config.toml")
+            if app_config_source.exists():
+                app_config_dest = Path(deploy_dir) / "app-config.toml"
+                shutil.copy2(app_config_source, app_config_dest)
+                logger.warning("⚠️  Bundled app-config.toml (contains secrets - handle carefully!)")
+            else:
+                logger.warning("--bundle-app-config specified but app-config.toml not found")
         
         # Create zip package
         zip_path, hash_file = create_zip_package(deploy_dir, args.output)

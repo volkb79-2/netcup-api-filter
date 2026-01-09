@@ -1,7 +1,13 @@
 {# Account Tokens List - All user tokens #}
 {% extends "account/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}My Tokens - Client Portal - Netcup API Filter{% endblock %}
+
+{% block extra_head %}
+<!-- List.js for client-side filtering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
@@ -25,8 +31,14 @@
 
 <!-- Tokens Table -->
 <div class="card">
+    {{ table_header(
+        title='Tokens',
+        search_id='tokensFilter',
+        search_placeholder='Search tokens...'
+    ) }}
+    
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 table-sm">
             <thead>
                 <tr>
                     <th>Token Prefix</th>

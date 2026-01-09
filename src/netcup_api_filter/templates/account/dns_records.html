@@ -1,7 +1,13 @@
 {# Account DNS Records View - List and manage DNS records for a realm #}
 {% extends "account/base.html" %}
+{% from 'components/table_macros.html' import table_header %}
 
 {% block title %}DNS Records - {{ realm.realm_value }} - Account Portal - Netcup API Filter{% endblock %}
+
+{% block extra_head %}
+<!-- List.js for client-side filtering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <!-- Page Header -->
@@ -60,11 +66,15 @@
 
 <!-- DNS Records Table -->
 <div class="card">
-    <div class="card-header">
-        <i class="bi bi-list-ul me-1"></i>Records ({{ records | length }})
-    </div>
+    {{ table_header(
+        title='DNS Records',
+        subtitle='Total: ' + (records|length)|string,
+        search_id='recordsFilter',
+        search_placeholder='Search records...'
+    ) }}
+    
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 table-sm">
             <thead>
                 <tr>
                     <th>Hostname</th>

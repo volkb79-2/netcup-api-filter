@@ -270,3 +270,70 @@
     </a>
 </th>
 {% endmacro %}
+
+
+{# Table header with integrated search and export button #}
+{% macro table_header(title, subtitle=None, search_id="quickFilter", search_placeholder="Real-time search...", export_onclick=None, export_label="Export", auto_refresh=False, extra_buttons=[]) %}
+<div class="d-flex justify-content-between align-items-center px-3 py-2">
+    <div class="ps-1">
+        <h5 class="mb-1">{{ title }}</h5>
+        {% if subtitle %}<p class="text-muted small mb-0">{{ subtitle }}</p>{% endif %}
+    </div>
+    <div class="d-flex gap-2 align-items-center pe-1">
+        <!-- Real-time search input (reduced height with form-control-sm) -->
+        <div class="input-group input-group-sm" style="width: 280px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" 
+                   class="form-control search" 
+                   id="{{ search_id }}"
+                   placeholder="{{ search_placeholder }}">
+        </div>
+        
+        <!-- Export button -->
+        {% if export_onclick %}
+        <button class="btn btn-sm btn-outline-primary" onclick="{{ export_onclick }}">
+            <i class="bi bi-download me-1"></i>{{ export_label }}
+        </button>
+        {% endif %}
+        
+        <!-- Auto-refresh toggle -->
+        {% if auto_refresh %}
+        <div class="form-check form-switch mb-0">
+            <input type="checkbox" class="form-check-input" id="autoRefresh" onchange="toggleAutoRefresh()" checked>
+            <label class="form-check-label small" for="autoRefresh">Auto</label>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary px-2 py-1" onclick="refreshLogs()" title="Refresh now" style="width: 32px; height: 32px;">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+        {% endif %}
+        
+        <!-- Extra buttons from caller -->
+        {% for btn in extra_buttons %}
+        <button class="btn btn-sm btn-{{ btn.style|default('outline-secondary') }}" 
+                {% if btn.onclick %}onclick="{{ btn.onclick }}"{% endif %}
+                {% if btn.href %}onclick="window.location='{{ btn.href }}'"{% endif %}>
+            {% if btn.icon %}<i class="bi bi-{{ btn.icon }} me-1"></i>{% endif %}
+            {{ btn.label }}
+        </button>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+// ESC key handler to clear search field
+(function() {
+    const searchField = document.getElementById('{{ search_id }}');
+    if (searchField) {
+        searchField.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                this.value = '';
+                // Trigger input event to update List.js filtering
+                this.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+    }
+})();
+</script>
+{% endmacro %}
+

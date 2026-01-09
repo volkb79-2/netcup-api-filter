@@ -1,6 +1,6 @@
 <!-- 2FA Setup Warning Banner -->
 <!-- Show this when admin account doesn't have 2FA enabled -->
-{% if current_user.requires_2fa_setup() %}
+{% if g.admin and g.admin.requires_2fa_setup() %}
 <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
     <div class="d-flex align-items-start">
         <span class="me-3" style="font-size: 1.5rem;">🔒</span>
@@ -19,9 +19,6 @@
                 </a>
                 <a href="{{ url_for('admin.config_email') }}" class="btn btn-outline-warning btn-sm">
                     <i class="bi bi-envelope"></i> Configure Email 2FA
-                </a>
-                <a href="https://docs.example.com/security/2fa" target="_blank" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-question-circle"></i> Learn More
                 </a>
             </div>
         </div>

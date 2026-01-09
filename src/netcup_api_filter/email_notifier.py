@@ -350,18 +350,19 @@ def get_email_notifier_from_config(config: Dict[str, Any]) -> Optional[EmailNoti
     if not config:
         return None
     
-    required_fields = ['smtp_server', 'smtp_port', 'smtp_username', 'smtp_password', 'sender_email']
+    # Use TOML field names (smtp_host and from_email)
+    required_fields = ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'from_email']
     if not all(field in config for field in required_fields):
         logger.warning("Email configuration incomplete")
         return None
     
     try:
         return EmailNotifier(
-            smtp_server=config['smtp_server'],
+            smtp_server=config['smtp_host'],  # TOML field name
             smtp_port=int(config['smtp_port']),
             smtp_username=config['smtp_username'],
             smtp_password=config['smtp_password'],
-            sender_email=config['sender_email'],
+            sender_email=config['from_email'],  # TOML field name
             use_ssl=config.get('use_ssl', True)
         )
     except Exception as e:

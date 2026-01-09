@@ -1,0 +1,275 @@
+{# Admin Settings - Unified configuration page #}
+{% extends "admin/base.html" %}
+
+{% block title %}Settings - Admin - Netcup API Filter{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Settings</h1>
+        <p class="text-muted mb-0">System configuration and management</p>
+    </div>
+</div>
+
+<div class="card-form">
+    <!-- Netcup API Configuration -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-cloud me-1"></i>Netcup API</span>
+            {% if netcup_config %}
+            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+            {% else %}
+            <span class="badge bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Not configured</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.config_netcup') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label for="customer_id" class="form-label">Customer ID</label>
+                    <input type="text" class="form-control" id="customer_id" name="customer_id" 
+                           value="{{ netcup_config.customer_id if netcup_config else '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="api_key" class="form-label">API Key</label>
+                    <input type="text" class="form-control" id="api_key" name="api_key" 
+                           value="{{ netcup_config.api_key if netcup_config else '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="api_password" class="form-label">API Password</label>
+                    <input type="password" class="form-control" id="api_password" name="api_password" 
+                           value="{{ netcup_config.api_password if netcup_config else '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="api_url" class="form-label">API URL</label>
+                    <input type="url" class="form-control" id="api_url" name="api_url" 
+                           value="{{ netcup_config.api_url if netcup_config else 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="timeout" class="form-label">Timeout (seconds)</label>
+                    <input type="number" class="form-control" id="timeout" name="timeout" 
+                           value="{{ netcup_config.timeout if netcup_config else 30 }}" required>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Save Netcup API Config
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Email/SMTP Configuration -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-envelope me-1"></i>Email (SMTP)</span>
+            {% if email_config and email_config.smtp_server %}
+            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+            {% else %}
+            <span class="badge bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Not configured</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.config_email') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label for="smtp_host" class="form-label">SMTP Server</label>
+                        <input type="text" class="form-control" id="smtp_host" name="smtp_host" 
+                               value="{{ email_config.smtp_host if email_config else '' }}" placeholder="smtp.example.com">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="smtp_port" class="form-label">Port</label>
+                        <input type="number" class="form-control" id="smtp_port" name="smtp_port" 
+                               value="{{ email_config.smtp_port if email_config else 587 }}">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="smtp_security" class="form-label">Security</label>
+                    <select class="form-select" id="smtp_security" name="smtp_security">
+                        <option value="tls" {% if not email_config or email_config.smtp_security == 'tls' %}selected{% endif %}>STARTTLS (587)</option>
+                        <option value="ssl" {% if email_config and email_config.smtp_security == 'ssl' %}selected{% endif %}>SSL/TLS (465)</option>
+                        <option value="none" {% if email_config and email_config.smtp_security == 'none' %}selected{% endif %}>None (25)</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="smtp_username" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="smtp_username" name="smtp_username" 
+                           value="{{ email_config.smtp_username if email_config else '' }}">
+                </div>
+                <div class="mb-3">
+                    <label for="smtp_password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="smtp_password" name="smtp_password" 
+                           value="{{ email_config.smtp_password if email_config else '' }}">
+                </div>
+                <div class="mb-3">
+                    <label for="from_email" class="form-label">From Email</label>
+                    <input type="email" class="form-control" id="from_email" name="from_email" 
+                           value="{{ email_config.from_email if email_config else '' }}" placeholder="noreply@example.com">
+                </div>
+                <div class="mb-3">
+                    <label for="from_name" class="form-label">From Name</label>
+                    <input type="text" class="form-control" id="from_name" name="from_name" 
+                           value="{{ email_config.from_name if email_config else 'Netcup API Filter' }}" placeholder="Netcup API Filter">
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Save Email Config
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- GeoIP Configuration -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-geo-alt me-1"></i>GeoIP (MaxMind)</span>
+            {% if geoip_config and geoip_config.account_id %}
+            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
+            {% else %}
+            <span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>Optional</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.config_geoip') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label for="geoip_account_id" class="form-label">MaxMind Account ID</label>
+                    <input type="text" class="form-control" id="geoip_account_id" name="account_id" 
+                           value="{{ geoip_config.account_id if geoip_config else '' }}" placeholder="Optional">
+                    <small class="form-text text-muted">For IP geolocation lookups</small>
+                </div>
+                <div class="mb-3">
+                    <label for="geoip_license_key" class="form-label">License Key</label>
+                    <input type="password" class="form-control" id="geoip_license_key" name="license_key" 
+                           value="{{ geoip_config.license_key if geoip_config else '' }}" placeholder="Optional">
+                </div>
+                <div class="mb-3">
+                    <label for="geoip_api_url" class="form-label">API URL</label>
+                    <input type="url" class="form-control" id="geoip_api_url" name="api_url" 
+                           value="{{ geoip_config.api_url if geoip_config else 'https://geoip.maxmind.com/geoip/v2.1' }}">
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Save GeoIP Config
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Security Settings -->
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-shield-lock me-1"></i>Security Settings
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('admin.update_security_settings') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label for="password_reset_expiry" class="form-label">Password Reset Link Expiry</label>
+                    <select class="form-select" id="password_reset_expiry" name="password_reset_expiry_hours">
+                        <option value="1" {% if security_settings.password_reset_expiry_hours == 1 %}selected{% endif %}>1 hour</option>
+                        <option value="2" {% if security_settings.password_reset_expiry_hours == 2 %}selected{% endif %}>2 hours</option>
+                        <option value="4" {% if security_settings.password_reset_expiry_hours == 4 %}selected{% endif %}>4 hours</option>
+                        <option value="8" {% if security_settings.password_reset_expiry_hours == 8 %}selected{% endif %}>8 hours</option>
+                        <option value="24" {% if security_settings.password_reset_expiry_hours == 24 %}selected{% endif %}>24 hours</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="invite_expiry" class="form-label">Account Invite Link Expiry</label>
+                    <select class="form-select" id="invite_expiry" name="invite_expiry_hours">
+                        <option value="24" {% if security_settings.invite_expiry_hours == 24 %}selected{% endif %}>24 hours</option>
+                        <option value="48" {% if security_settings.invite_expiry_hours == 48 %}selected{% endif %}>48 hours</option>
+                        <option value="72" {% if security_settings.invite_expiry_hours == 72 %}selected{% endif %}>72 hours</option>
+                        <option value="168" {% if security_settings.invite_expiry_hours == 168 %}selected{% endif %}>168 hours (7 days)</option>
+                    </select>
+                </div>
+                <h6 class="mb-3">Rate Limiting</h6>
+                <div class="mb-3">
+                    <label for="admin_rate_limit" class="form-label">Admin Portal</label>
+                    <input type="text" class="form-control font-monospace" 
+                           id="admin_rate_limit" name="admin_rate_limit" 
+                           value="{{ security_settings.admin_rate_limit }}" placeholder="50 per minute">
+                    <small class="form-text text-muted">Format: "X per minute/hour/day"</small>
+                </div>
+                <div class="mb-3">
+                    <label for="account_rate_limit" class="form-label">Account Portal</label>
+                    <input type="text" class="form-control font-monospace" 
+                           id="account_rate_limit" name="account_rate_limit" 
+                           value="{{ security_settings.account_rate_limit }}" placeholder="50 per minute">
+                </div>
+                <div class="mb-3">
+                    <label for="api_rate_limit" class="form-label">API Endpoints</label>
+                    <input type="text" class="form-control font-monospace" 
+                           id="api_rate_limit" name="api_rate_limit" 
+                           value="{{ security_settings.api_rate_limit }}" placeholder="60 per minute">
+                </div>
+                <div class="alert alert-info small mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>Note:</strong> Rate limit changes require application restart to take effect.
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Save Security Settings
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <i class="bi bi-exclamation-triangle me-1"></i>Danger Zone
+        </div>
+        <div class="card-body">
+            <div class="mb-4">
+                <h6>Clear Activity Logs</h6>
+                <p class="text-muted small mb-2">Delete all audit log entries older than 30 days.</p>
+                <button type="button" class="btn btn-warning btn-sm" onclick="clearOldLogs()">
+                    <i class="bi bi-trash me-1"></i>Clear Old Logs
+                </button>
+            </div>
+            <div class="mb-4">
+                <h6>Revoke All Tokens</h6>
+                <p class="text-muted small mb-2">Immediately revoke all active API tokens.</p>
+                <button type="button" class="btn btn-danger btn-sm" onclick="revokeAllTokens()">
+                    <i class="bi bi-x-circle me-1"></i>Revoke All Tokens
+                </button>
+            </div>
+            <div>
+                <h6>Reset Database</h6>
+                <p class="text-muted small mb-2">
+                    Delete ALL data and start fresh. Creates new admin account with default credentials.
+                    <span class="text-danger fw-medium">Irreversible!</span>
+                </p>
+                <button type="button" class="btn btn-danger btn-sm" onclick="resetDatabase()">
+                    <i class="bi bi-exclamation-octagon me-1"></i>Reset Database
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function clearOldLogs() {
+    if (confirm('Delete all audit logs older than 30 days? This cannot be undone.')) {
+        alert('Feature not yet implemented');
+    }
+}
+
+function revokeAllTokens() {
+    if (confirm('DANGER: This will immediately revoke ALL API tokens for ALL users. They will need to generate new tokens. Continue?')) {
+        if (confirm('Are you absolutely sure? This affects ALL users.')) {
+            alert('Feature not yet implemented');
+        }
+    }
+}
+
+function resetDatabase() {
+    if (confirm('DANGER: This will DELETE ALL DATA including accounts, realms, tokens, and logs. This is IRREVERSIBLE. Are you sure?')) {
+        if (prompt('Type "RESET" to confirm:') === 'RESET') {
+            alert('Feature not yet implemented');
+        }
+    }
+}
+</script>
+{% endblock %}

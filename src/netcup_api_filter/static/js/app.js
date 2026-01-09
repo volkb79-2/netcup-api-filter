@@ -111,8 +111,16 @@ function copyToClipboard(text, element) {
 
 // Initialize real-time table search with List.js
 document.addEventListener('DOMContentLoaded', function() {
-    // Find all Flask-Admin tables
-    const tables = document.querySelectorAll('table.table');
+    // Find only tables that explicitly request search functionality
+    const tables = document.querySelectorAll('table.searchable-table');
+    
+    // Guard: Skip if List.js library is not loaded
+    if (typeof List === 'undefined') {
+        if (tables.length > 0) {
+            console.warn('List.js not loaded - searchable-table features disabled');
+        }
+        return;
+    }
     
     tables.forEach((table, index) => {
         const tableId = `list-table-${index}`;

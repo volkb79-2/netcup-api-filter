@@ -3,6 +3,38 @@
 
 {% block brand_link %}{{ url_for('admin.dashboard') }}{% endblock %}
 
+{% block extra_head %}
+<style>
+/* Flexible card grid layout - use card-info for info display cards */
+.card-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    justify-content: center; /* Center cards when fewer than full row */
+}
+.card-info > .card {
+    flex: 1 1 320px;
+    min-width: 280px;
+    max-width: 450px;
+    margin-bottom: 0;
+}
+
+/* Form card layout - use card-form for settings/config forms */
+.card-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    justify-content: center; /* Center forms when fewer than full row */
+}
+.card-form > .card {
+    flex: 1 1 420px;
+    min-width: 360px;
+    max-width: 600px;
+    margin-bottom: 0;
+}
+</style>
+{% endblock %}
+
 {% block nav_items %}
 <ul class="navbar-nav me-auto">
     <li class="nav-item">
@@ -63,25 +95,25 @@
         </ul>
     </li>
     <li class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle {% if 'config' in (request.endpoint or '') or 'system' in (request.endpoint or '') %}active{% endif %}" 
+        <a class="nav-link dropdown-toggle {% if 'config' in (request.endpoint or '') or 'system' in (request.endpoint or '') or 'settings' in (request.endpoint or '') %}active{% endif %}" 
            href="#" data-bs-toggle="dropdown">
             Config
         </a>
         <ul class="dropdown-menu">
             <li>
-                <a class="dropdown-item" href="{{ url_for('admin.config_netcup') }}">
-                    Netcup API
-                </a>
-            </li>
-            <li>
-                <a class="dropdown-item" href="{{ url_for('admin.config_email') }}">
-                    Email
+                <a class="dropdown-item" href="{{ url_for('admin.settings') }}">
+                    Settings
                 </a>
             </li>
             <li><hr class="dropdown-divider"></li>
             <li>
                 <a class="dropdown-item" href="{{ url_for('admin.system_info') }}">
                     System Info
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item" href="{{ url_for('admin.app_logs') }}">
+                    Application Logs
                 </a>
             </li>
         </ul>
@@ -91,7 +123,7 @@
 
 {% block user_menu %}
 <div class="dropdown">
-    <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
         {{ g.admin.username if g.admin else 'Admin' }}
     </button>
     <ul class="dropdown-menu dropdown-menu-end">

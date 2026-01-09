@@ -84,6 +84,8 @@ OPTIONS:
     --skip-infra       Skip infrastructure setup (Playwright, mock services)
     --tests-only       Skip build/deploy, run tests only (implies --skip-build)
     --http             Disable TLS proxy, use plain HTTP (default: HTTPS via TLS proxy)
+    --preserve-secret-key  Extract SECRET_KEY before deploy, restore after (webhosting only)
+    --bundle-app-config    Include app-config.toml in deployment (if exists)
     --stop             Stop all deployment services and clean up containers
     -h, --help         Show this help message
 
@@ -95,8 +97,10 @@ EXAMPLES:
     ./deploy.sh local --tests-only       # Run tests only (no rebuild)
     ./deploy.sh local --http             # Local with plain HTTP (no TLS proxy)
     ./deploy.sh --stop                   # Stop all services and clean up
-    ./deploy.sh webhosting               # Deploy to production webhosting
+    ./deploy.sh webhosting               # Deploy to production webhosting (fresh DB)
     ./deploy.sh webhosting --skip-tests  # Deploy to production without tests
+    ./deploy.sh webhosting --preserve-secret-key  # Deploy but keep existing SECRET_KEY (sessions survive)
+    ./deploy.sh webhosting --bundle-app-config  # Include app-config.toml in deployment (manual config)
 
 DEPLOYMENT PHASES:
     0. Infrastructure  Start Playwright container, TLS proxy (default), mock services (if mock mode)
@@ -138,6 +142,8 @@ TESTS_ONLY=false
 SKIP_INFRA=false
 USE_HTTPS=true  # HTTPS is default for local deployments
 DEPLOYMENT_MODE=""
+PRESERVE_SECRET_KEY=false
+BUNDLE_APP_CONFIG=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -160,6 +166,14 @@ while [[ $# -gt 0 ]]; do
         --tests-only)
             TESTS_ONLY=true
             SKIP_BUILD=true
+            shift
+            ;;
+        --preserve-secret-key)
+            PRESERVE_SECRET_KEY=true
+            shift
+            ;;
+        --bundle-app-config)
+            BUNDLE_APP_CONFIG=true
             shift
             ;;
         --mode)
@@ -284,17 +298,22 @@ case "$DEPLOYMENT_TARGET" in
         fi
         
         # Same deploy.zip for both targets - reduces drift
-        BUILD_ARGS="--local --build-dir deploy --output deploy.zip"
-        ZIP_FILE="${REPO_ROOT}/deploy.zip"
+        BUILD_ARGS="--target local --build-dir deploy-local --output deploy-local.zip --seed-demo"
+        if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
+            BUILD_ARGS="${BUILD_ARGS} --bundle-app-config"
+        fi
+        ZIP_FILE="${REPO_ROOT}/deploy-local.zip"
         ;;
     webhosting)
         DEPLOY_DIR="${REPO_ROOT}/deploy-webhosting"
         STATE_FILE="${REPO_ROOT}/deployment_state_webhosting.json"
-        SCREENSHOT_DIR="${REPO_ROOT}/deploy-webhosting/screenshots"
+        SCREENSHOT_DIR="${DEPLOY_DIR}/screenshots"
         LOG_DIR="${REPO_ROOT}/tmp"
         UI_BASE_URL="${WEBHOSTING_URL}"
-        # Same deploy.zip for both targets - reduces drift
-        BUILD_ARGS="--target webhosting --build-dir deploy-webhosting --output deploy.zip"
+        BUILD_ARGS="--target webhosting --build-dir deploy-webhosting --output deploy.zip --seed-demo"
+        if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
+            BUILD_ARGS="${BUILD_ARGS} --bundle-app-config"
+        fi
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         
         # Webhosting connection details (must be set in .env.defaults)
@@ -836,6 +855,41 @@ phase_deploy() {
             ;;
             
         webhosting)
+            # ================================================================
+            # Webhosting Deployment Strategy:
+            # ================================================================
+            # By default, deployment replaces EVERYTHING (fresh install):
+            #   - Old directory contents wiped (rm -rf)
+            #   - New deployment extracted (fresh database with admin/admin)
+            #   - App restarts with pristine state
+            #
+            # With --preserve-secret-key:
+            #   - Extract SECRET_KEY from existing DB before wipe
+            #   - Deploy fresh database (new admin credentials, etc.)
+            #   - Restore ONLY the SECRET_KEY to new DB
+            #   - Result: Fresh deployment + stable sessions (no re-login)
+            # ================================================================
+            
+            # Extract SECRET_KEY from existing database if requested
+            SAVED_SECRET_KEY=""
+            if [[ "$PRESERVE_SECRET_KEY" == "true" ]]; then
+                log_step "Extracting SECRET_KEY from existing database..."
+                SAVED_SECRET_KEY=$(ssh "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}" \
+                    "python3 -c \"import sqlite3; \
+                     conn = sqlite3.connect('${WEBHOSTING_REMOTE_DIR}/netcup_filter.db'); \
+                     cursor = conn.cursor(); \
+                     cursor.execute('SELECT value FROM settings WHERE key=\\\"secret_key\\\"'); \
+                     result = cursor.fetchone(); \
+                     print(result[0] if result else ''); \
+                     conn.close()\" 2>/dev/null || echo ''")
+                
+                if [[ -n "$SAVED_SECRET_KEY" ]]; then
+                    log_success "Extracted SECRET_KEY (${#SAVED_SECRET_KEY} chars)"
+                else
+                    log_warning "No existing SECRET_KEY found (will generate new one)"
+                fi
+            fi
+            
             log_step "Uploading to ${WEBHOSTING_SSH_SERVER}..."
             scp "$ZIP_FILE" "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}:/"
             
@@ -845,6 +899,22 @@ phase_deploy() {
                  mkdir -p ${WEBHOSTING_REMOTE_DIR}/tmp/ && \
                  unzip -o -u deploy.zip -d ${WEBHOSTING_REMOTE_DIR}/ && \
                  touch ${WEBHOSTING_REMOTE_DIR}/tmp/restart.txt"
+            
+            # Restore SECRET_KEY to new database if it was extracted
+            if [[ "$PRESERVE_SECRET_KEY" == "true" && -n "$SAVED_SECRET_KEY" ]]; then
+                log_step "Restoring SECRET_KEY to new database..."
+                ssh "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}" \
+                    "python3 -c \"import sqlite3; \
+                     from datetime import datetime; \
+                     conn = sqlite3.connect('${WEBHOSTING_REMOTE_DIR}/netcup_filter.db'); \
+                     cursor = conn.cursor(); \
+                     cursor.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)', \
+                                    ('secret_key', '${SAVED_SECRET_KEY}', datetime.now().isoformat())); \
+                     conn.commit(); \
+                     conn.close()\" 2>/dev/null"
+                
+                log_success "Restored SECRET_KEY to new database"
+            fi
             
             # State file is already created in REPO_ROOT by build_deployment.py
             # (deployment_state_webhosting.json - not deployed, contains secrets)

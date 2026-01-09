@@ -50,6 +50,58 @@ def _get_env_defaults():
     return _ENV_DEFAULTS
 
 
+def seed_settings_from_env():
+    """Seed Settings table from .env.defaults if not already set.
+    
+    This is called during database creation (build_deployment.py) to populate
+    the Settings table with default values from .env.defaults.
+    
+    Hierarchy:
+    1. Environment variables (runtime overrides)
+    2. Settings table (admin UI changes) ← We populate this
+    3. .env.defaults (defaults) ← We read from this
+    
+    Settings that should be seeded:
+    - Rate limits (admin, account, API)
+    - Password reset expiry
+    - Invite link expiry
+    - Session settings (already handled by Flask config)
+    
+    Settings that should NOT be seeded (must be configured per deployment):
+    - Email (SMTP credentials)
+    - Netcup API (API keys)
+    - GeoIP (MaxMind credentials)
+    - SECRET_KEY (generated per deployment)
+    """
+    from ..database import set_setting, get_setting
+    
+    defaults = _get_env_defaults()
+    
+    # Map of Settings table keys to .env.defaults keys
+    settings_map = {
+        'admin_rate_limit': defaults.get('ADMIN_RATE_LIMIT', '50 per minute'),
+        'account_rate_limit': defaults.get('ACCOUNT_RATE_LIMIT', '50 per minute'),
+        'api_rate_limit': defaults.get('API_RATE_LIMIT', '60 per minute'),
+        'password_reset_expiry_hours': '1',  # Conservative default
+        'invite_expiry_hours': '48',  # 2 days
+    }
+    
+    seeded_count = 0
+    for setting_key, default_value in settings_map.items():
+        if not get_setting(setting_key):
+            set_setting(setting_key, default_value)
+            seeded_count += 1
+            logger.info(f"Seeded setting '{setting_key}' = '{default_value}'")
+    
+    if seeded_count > 0:
+        db.session.commit()
+        logger.info(f"Seeded {seeded_count} settings from .env.defaults")
+    else:
+        logger.info("Settings table already populated, skipping seeding")
+    
+    return seeded_count
+
+
 @dataclass
 class AdminSeedOptions:
     """Options for seeding admin account."""
