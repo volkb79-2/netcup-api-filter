@@ -31,35 +31,110 @@ api = "60 per minute"         # API endpoints rate limit
 password_reset_expiry_hours = 1   # Password reset link validity (hours)
 invite_expiry_hours = 48           # Account invite link validity (hours)
 
-# Email Configuration (SMTP)
+# SMTP Configuration (Email Settings)
 # Leave commented for initial setup via admin UI
 # Uncomment and configure for automated deployment
-# [email]
-# smtp_server = "mail.example.com"
-# smtp_port = 587
-# smtp_use_tls = true
-# smtp_username = "noreply@example.com"
-# smtp_password = "your-smtp-password"
-# from_address = "noreply@example.com"
-# from_name = "Netcup API Filter"
-
-# Netcup API Configuration
-# Leave commented for initial setup via admin UI
-# Uncomment and configure for automated deployment
-# [netcup]
-# customer_id = "123456"
-# api_key = "your-api-key"
-# api_password = "your-api-password"
+[smtp]
+smtp_host = "mxe98f.netcup.net"
+smtp_port = 465
+smtp_security = "ssl"           # "ssl" (465), "tls" (587), or "none" (25)
+smtp_username = "dstdns@vxxu.de"
+smtp_password = ""
+from_email = "dstdns@vxxu.de"
+from_name = "Netcup API Filter"
 
 # GeoIP Configuration (MaxMind)
 # Leave commented to disable GeoIP lookups
 # Uncomment and configure to enable
-# [geoip]
-# account_id = "your-maxmind-account-id"
-# license_key = "your-maxmind-license-key"
-# api_url = "https://geoip.maxmind.com"  # Optional, uses default if not set
-# edition_ids = "GeoLite2-ASN GeoLite2-City GeoLite2-Country"
+[geoip]
+account_id = "1262143"
+license_key = ""
+api_url = "https://geoip.maxmind.com"  # Optional, uses default if not set
+edition_ids = "GeoLite2-ASN GeoLite2-City GeoLite2-Country"
 
+# =============================================================================
+# BACKEND SERVICES - DNS Provider Credentials
+# =============================================================================
+# Define multiple backend services (admin can have multiple Netcup accounts, PowerDNS instances)
+# Each backend is created as a BackendService in the database
+
+# Platform-owned Netcup account (example - primary account)
+[[backends]]
+service_name = "platform-netcup-primary"
+provider = "netcup"
+owner = "platform"  # "platform" or username for user-owned
+display_name = "Platform Netcup (Primary)"
+config = { customer_id = "221368", api_key = "ZzMzZ21oNTg3NFRINTU4OTExM3IyR1N1NklCNDl2N2JhbWZNUW", api_password = "your-api-password", api_url = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON", timeout = 30 }
+
+# Platform-owned Netcup account (example - secondary account for different zones)
+# [[backends]]
+# service_name = "platform-netcup-secondary"
+# provider = "netcup"
+# owner = "platform"
+# display_name = "Platform Netcup (Secondary)"
+# config = { customer_id = "...", api_key = "...", api_password = "..." }
+
+# Platform-owned PowerDNS instance
+[[backends]]
+service_name = "platform-powerdns"
+provider = "powerdns"
+owner = "platform"
+display_name = "Platform PowerDNS"
+# Special value "auto" for api_url triggers auto-detection (PUBLIC_FQDN or container hostname)
+# Use "${POWERDNS_API_KEY}" to reference environment variable
+config = { api_url = "auto", api_key = "${POWERDNS_API_KEY}", server_id = "localhost" }
+
+# User-owned backend example (requires user to exist - see [[users]] section)
+# [[backends]]
+# service_name = "user-alice-netcup"
+# provider = "netcup"
+# owner = "alice"  # Username (must be defined in [[users]] section)
+# display_name = "Alice's Netcup Account"
+# config = { customer_id = "...", api_key = "...", api_password = "..." }
+
+# =============================================================================
+# DOMAIN ROOTS - DNS Zones Managed by Backends
+# =============================================================================
+# Define which DNS zones are managed by which backends
+# Each domain root is created as a ManagedDomainRoot in the database
+
+# Free DDNS domain on PowerDNS
+[[domain_roots]]
+backend = "platform-powerdns"  # References backends.service_name
+domain = "powerhosts.vxxu.de"
+dns_zone = "powerhosts.vxxu.de"  # Actual zone name in backend (usually same as domain)
+visibility = "public"  # "public" (free DDNS), "private" (admin only), "invite" (invite-only)
+display_name = "Free PowerDNS DDNS"
+description = "Public DDNS domain - users can create hosts without approval"
+allow_apex_access = false  # Can users request access to apex (powerhosts.vxxu.de itself)?
+min_subdomain_depth = 1    # Minimum depth: 1 = host.powerhosts.vxxu.de
+max_subdomain_depth = 3    # Maximum depth: 3 = a.b.c.powerhosts.vxxu.de
+allowed_record_types = ["A", "AAAA", "CNAME", "TXT"]  # Null = all allowed
+allowed_operations = ["read", "create", "update", "delete"]  # Null = all allowed
+max_hosts_per_user = 5     # Quota for public domains
+require_email_verification = true
+
+# Private domain on Netcup (admin-controlled)
+# [[domain_roots]]
+# backend = "platform-netcup-primary"
+# domain = "internal.example.com"
+# visibility = "private"
+# display_name = "Internal Zone"
+# description = "Admin-only DNS zone for internal services"
+
+# =============================================================================
+# USER PRESEEDING (Optional)
+# =============================================================================
+# Define users to create on first deployment (useful for user-owned backends)
+# Each user is created as an Account in the database
+
+# [[users]]
+# username = "alice"
+# email = "alice@example.com"
+# # password = "generate"  # Special value "generate" creates random password (shown once in logs)
+# # password = "SetMe123!"  # Or set explicit password (must meet security requirements)
+# is_approved = true  # Auto-approve (skip admin approval)
+# must_change_password = false  # Require password change on first login?
 
 # =============================================================================
 # TESTING CONFIGURATION
@@ -67,11 +142,11 @@ invite_expiry_hours = 48           # Account invite link validity (hours)
 # For local development/testing with mock services
 # Uncomment to override service endpoints
 #
-# [email]
-# smtp_server = "naf-mailpit"     # Mailpit container (see tooling/mailpit/)
+# [smtp]
+# smtp_host = "naf-mailpit"        # Mailpit container (see tooling/mailpit/)
 # smtp_port = 1025                 # Mailpit SMTP port (no auth)
-# smtp_use_tls = false
-# from_address = "test@localhost"
+# smtp_security = "none"
+# from_email = "test@localhost"
 #
 # [geoip]
 # api_url = "http://naf-mock-geoip:5556"  # Mock GeoIP (see tooling/geoip-mock/)
