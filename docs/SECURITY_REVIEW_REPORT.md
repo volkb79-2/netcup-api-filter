@@ -13,11 +13,14 @@
 | **Security Posture** | ✅ **Strong** |
 | **Critical Vulnerabilities** | 0 |
 | **High Severity Issues** | 0 |
-| **Medium Severity Issues** | 2 |
+| **Medium Severity Issues** | 1 (was 2, 1 fixed in this PR) |
 | **Low Severity Issues** | 4 |
 | **Informational** | 3 |
 
 The application demonstrates a well-architected security model with defense-in-depth. All authentication mechanisms use industry-standard practices (bcrypt, CSRF tokens, timing-safe operations). No critical or high-severity vulnerabilities were identified during this review.
+
+**Fixes Applied in This PR:**
+- ✅ Added security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
 
 ---
 
@@ -293,33 +296,24 @@ def hash_token(token: str) -> str:
     return bcrypt.hashpw(token_sha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 ```
 
-### 14. Security Headers ⚠️ **PARTIAL**
+### 14. Security Headers ✅ **PASS** (Fixed in this PR)
 
 | Control | Status | Evidence |
 |---------|--------|----------|
-| X-Frame-Options | ❌ | Not set in application |
-| X-Content-Type-Options | ❌ | Not set in application |
-| X-XSS-Protection | ❌ | Not set in application |
-| Strict-Transport-Security | ❌ | Not set in application |
-| Content-Security-Policy | ❌ | Not set in application |
-| Referrer-Policy | ❌ | Not set in application |
+| X-Frame-Options | ✅ | `SAMEORIGIN` (app.py:370) |
+| X-Content-Type-Options | ✅ | `nosniff` (app.py:373) |
+| X-XSS-Protection | ✅ | `1; mode=block` (app.py:376) - Legacy browser support |
+| Strict-Transport-Security | ⚠️ | Recommended via reverse proxy (nginx) |
+| Content-Security-Policy | ⚠️ | Future enhancement (complex due to inline scripts) |
+| Referrer-Policy | ✅ | `strict-origin-when-cross-origin` (app.py:379) |
+| Permissions-Policy | ✅ | Restricts geolocation, microphone, camera (app.py:382) |
 
-**Finding:** Security headers are not explicitly set by the application.
-- **Severity:** Medium (P2)
-- **Impact:** Potential clickjacking, MIME sniffing, and other browser-based attacks
-- **Recommendation:** Add security headers via middleware or reverse proxy configuration
+**Status:** Core security headers are now implemented in this PR via `add_security_headers()` middleware.
 
-**Proposed Fix:**
-```python
-# app.py - add after_request handler
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    return response
-```
+**Notes:**
+- `X-XSS-Protection` is included for legacy browser support; modern browsers rely on CSP
+- `Strict-Transport-Security` (HSTS) should be configured at the reverse proxy level (nginx) for HTTPS enforcement
+- `Content-Security-Policy` is a future enhancement that requires auditing inline scripts
 
 ### 15. Production Hardening ✅ **PASS**
 
@@ -342,12 +336,12 @@ def add_security_headers(response):
 
 ### Medium (P2 - Fix Within 30 Days)
 
-#### 1. Missing Security Headers
+#### 1. Missing Security Headers (FIXED)
 - **Location:** `src/netcup_api_filter/app.py`
-- **Description:** Application does not set security headers (X-Frame-Options, X-Content-Type-Options, CSP, etc.)
+- **Description:** Application did not set security headers (X-Frame-Options, X-Content-Type-Options, CSP, etc.)
 - **Impact:** Potential clickjacking, MIME-sniffing attacks
 - **CVSS:** 4.3 (Medium)
-- **Recommendation:** Add security headers via middleware
+- **Status:** ✅ **FIXED** - Security headers now added via `add_security_headers()` middleware
 
 #### 2. LIKE Pattern SQL Injection (False Positive - Verified Safe)
 - **Location:** `src/netcup_api_filter/api/admin.py:718-719`
