@@ -6,9 +6,18 @@ are actually propagated to DNS servers. This provides end-to-end verification
 that the Netcup API integration is working correctly.
 
 Prerequisites:
-- Netcup API credentials configured
-- A domain under your control for testing
-- DNS_TEST_SUBDOMAIN_PREFIX configured in .env
+- DEPLOYMENT_MODE=live
+- A domain under your control for testing (DNS_TEST_DOMAIN)
+
+Backend options:
+- PowerDNS (recommended for local/self-hosted authoritative DNS):
+    - POWERDNS_API_URL (usually comes from .env.services)
+    - POWERDNS_API_KEY
+    - Zone DNS_TEST_DOMAIN must exist in PowerDNS
+
+Note: Netcup CCP API integration may also work, but these tests currently
+implement record lifecycle via PowerDNS HTTP API because it is deterministic
+and works in local dev setups.
 
 Usage:
     pytest ui_tests/tests/test_live_dns_verification.py -v --mode live
@@ -33,6 +42,8 @@ from typing import Optional, List
 
 import pytest
 
+from netcup_api_filter.backends.powerdns import PowerDNSBackend
+
 # Skip entire module if dnspython not available or not in live mode
 pytestmark = [
     pytest.mark.skipif(not HAS_DNSPYTHON, reason="dnspython not installed"),
@@ -48,8 +59,10 @@ logger = logging.getLogger(__name__)
 def get_dns_config() -> dict:
     """Get DNS test configuration from environment variables."""
     return {
+        'test_domain': os.environ.get('DNS_TEST_DOMAIN', '').strip().rstrip('.'),
         'test_subdomain_prefix': os.environ.get('DNS_TEST_SUBDOMAIN_PREFIX', '_naftest'),
         'propagation_timeout': int(os.environ.get('DNS_PROPAGATION_TIMEOUT', '300')),
+        'propagation_poll_interval': int(os.environ.get('DNS_PROPAGATION_POLL_INTERVAL', '10')),
         'check_servers': os.environ.get('DNS_CHECK_SERVERS', '8.8.8.8,1.1.1.1').split(','),
     }
 
@@ -109,7 +122,7 @@ def wait_for_dns_propagation(
     record_type: str = 'A',
     nameservers: Optional[List[str]] = None,
     timeout: int = 300,
-    poll_interval: int = 10,
+    poll_interval: Optional[int] = None,
 ) -> bool:
     """
     Wait for DNS record to propagate.
@@ -128,6 +141,10 @@ def wait_for_dns_propagation(
     if nameservers is None:
         config = get_dns_config()
         nameservers = config['check_servers']
+
+    if poll_interval is None:
+        config = get_dns_config()
+        poll_interval = int(config.get('propagation_poll_interval') or 10)
     
     start_time = time.time()
     
@@ -162,7 +179,7 @@ def wait_for_dns_removal(
     record_type: str = 'A',
     nameservers: Optional[List[str]] = None,
     timeout: int = 300,
-    poll_interval: int = 10,
+    poll_interval: Optional[int] = None,
 ) -> bool:
     """
     Wait for DNS record to be removed (NXDOMAIN or empty).
@@ -180,6 +197,10 @@ def wait_for_dns_removal(
     if nameservers is None:
         config = get_dns_config()
         nameservers = config['check_servers']
+
+    if poll_interval is None:
+        config = get_dns_config()
+        poll_interval = int(config.get('propagation_poll_interval') or 10)
     
     start_time = time.time()
     
@@ -213,6 +234,52 @@ def generate_test_hostname(domain: str) -> str:
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
     random_suffix = ''.join(random.choices(string.ascii_lowercase, k=4))
     return f"{prefix}-{timestamp}-{random_suffix}.{domain}"
+
+
+def generate_test_label() -> str:
+    """Generate a unique DNS label suitable for creating records within a zone."""
+    config = get_dns_config()
+    prefix = config['test_subdomain_prefix']
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    random_suffix = ''.join(random.choices(string.ascii_lowercase, k=6))
+    return f"{prefix}-{timestamp}-{random_suffix}"
+
+
+def _ensure_live_dns_domain(dns_config: dict) -> str:
+    domain = (dns_config.get('test_domain') or '').strip().rstrip('.')
+    if not domain:
+        pytest.skip("DNS_TEST_DOMAIN not set (configure live DNS domain to run lifecycle tests)")
+    return domain
+
+
+@pytest.fixture
+def powerdns_backend(skip_unless_live):
+    """Construct a PowerDNS backend if configured; otherwise skip."""
+    api_url = (os.environ.get('POWERDNS_API_URL') or '').strip()
+    api_key = (os.environ.get('POWERDNS_API_KEY') or '').strip()
+    if not api_url:
+        pytest.skip("POWERDNS_API_URL not set (source .env.services or set explicitly)")
+    if not api_key:
+        pytest.skip("POWERDNS_API_KEY not set")
+
+    backend = PowerDNSBackend({'api_url': api_url, 'api_key': api_key})
+    ok, msg = backend.test_connection()
+    if not ok:
+        pytest.skip(f"PowerDNS API not reachable: {msg}")
+    return backend
+
+
+@pytest.fixture
+def dns_test_domain(skip_unless_live, dns_config, powerdns_backend):
+    """Validate DNS_TEST_DOMAIN exists in PowerDNS and return it."""
+    domain = _ensure_live_dns_domain(dns_config)
+    ok, msg = powerdns_backend.validate_zone_access(domain)
+    if not ok:
+        pytest.skip(
+            f"DNS_TEST_DOMAIN zone not accessible in PowerDNS: {domain} ({msg}). "
+            "Create the zone in PowerDNS (tooling/backend-powerdns) and retry."
+        )
+    return domain
 
 
 # =============================================================================
@@ -272,28 +339,43 @@ class TestDNSRecordLifecycle:
         3. Delete test record
         4. Verify record no longer resolves
         """
-        pytest.skip("Skeleton test - implement API record creation")
-        
-        # Example implementation:
-        # test_domain = os.environ.get('TEST_DOMAIN', 'example.com')
-        # hostname = generate_test_hostname(test_domain)
-        # test_ip = '192.0.2.1'  # TEST-NET-1 IP
-        
-        # Create record via API
-        # response = api_client.create_record(hostname, 'A', test_ip)
-        # assert response.success
-        
-        # Wait for propagation
-        # assert wait_for_dns_propagation(hostname, test_ip, 'A')
-        
-        # Delete record
-        # response = api_client.delete_record(hostname, 'A')
-        # assert response.success
-        
-        # Verify removal
-        # assert wait_for_dns_removal(hostname, 'A')
+        # Implemented via PowerDNS HTTP API
+        api_url = (os.environ.get('POWERDNS_API_URL') or '').strip()
+        api_key = (os.environ.get('POWERDNS_API_KEY') or '').strip()
+        if not api_url or not api_key:
+            pytest.skip("PowerDNS not configured (need POWERDNS_API_URL and POWERDNS_API_KEY)")
+
+        backend = PowerDNSBackend({'api_url': api_url, 'api_key': api_key})
+        test_domain = _ensure_live_dns_domain(dns_config)
+        ok, msg = backend.validate_zone_access(test_domain)
+        if not ok:
+            pytest.skip(f"DNS_TEST_DOMAIN not accessible in PowerDNS: {msg}")
+
+        label = generate_test_label()
+        hostname = f"{label}.{test_domain}"
+        test_ip = '192.0.2.1'  # TEST-NET-1 IP
+
+        record = {'hostname': label, 'type': 'A', 'destination': test_ip, 'ttl': 60}
+        created = backend.create_record(test_domain, record)
+        assert created['destination'] == test_ip
+
+        assert wait_for_dns_propagation(
+            hostname,
+            test_ip,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+        ), f"A record did not propagate for {hostname}"
+
+        record_id = f"{hostname}.:A"
+        assert backend.delete_record(test_domain, record_id) is True
+
+        assert wait_for_dns_removal(
+            hostname,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+        ), f"A record did not get removed for {hostname}"
     
-    def test_create_txt_record(self, skip_unless_live, dns_config):
+    def test_create_txt_record(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
         """
         Test creating a TXT record (common for DNS-01 challenges).
         
@@ -302,9 +384,31 @@ class TestDNSRecordLifecycle:
         3. Delete test record
         4. Verify removal
         """
-        pytest.skip("Skeleton test - implement TXT record lifecycle")
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+        txt_value = f"naf-live-{label}"
+
+        record = {'hostname': label, 'type': 'TXT', 'destination': f'"{txt_value}"', 'ttl': 60}
+        created = powerdns_backend.create_record(dns_test_domain, record)
+        assert txt_value in created['destination']
+
+        assert wait_for_dns_propagation(
+            hostname,
+            txt_value,
+            'TXT',
+            timeout=dns_config['propagation_timeout'],
+        ), f"TXT record did not propagate for {hostname}"
+
+        record_id = f"{hostname}.:TXT"
+        assert powerdns_backend.delete_record(dns_test_domain, record_id) is True
+
+        assert wait_for_dns_removal(
+            hostname,
+            'TXT',
+            timeout=dns_config['propagation_timeout'],
+        ), f"TXT record did not get removed for {hostname}"
     
-    def test_update_existing_record(self, skip_unless_live, dns_config):
+    def test_update_existing_record(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
         """
         Test updating an existing DNS record.
         
@@ -313,50 +417,231 @@ class TestDNSRecordLifecycle:
         3. Verify new value propagates
         4. Cleanup
         """
-        pytest.skip("Skeleton test - implement record update")
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+        ip1 = '192.0.2.1'
+        ip2 = '192.0.2.2'
+
+        powerdns_backend.create_record(dns_test_domain, {'hostname': label, 'type': 'A', 'destination': ip1, 'ttl': 60})
+        assert wait_for_dns_propagation(
+            hostname,
+            ip1,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+        ), f"Initial A record did not propagate for {hostname}"
+
+        powerdns_backend.update_record(dns_test_domain, f"{hostname}.:A", {'hostname': label, 'type': 'A', 'destination': ip2, 'ttl': 60})
+        assert wait_for_dns_propagation(
+            hostname,
+            ip2,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+        ), f"Updated A record did not propagate for {hostname}"
+
+        assert powerdns_backend.delete_record(dns_test_domain, f"{hostname}.:A") is True
+        assert wait_for_dns_removal(
+            hostname,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+        ), f"A record did not get removed for {hostname}"
 
 
 @pytest.mark.live
 class TestDNSPropagation:
     """Test DNS propagation across multiple nameservers."""
     
-    def test_propagation_to_google_dns(self, skip_unless_live):
+    def test_propagation_to_google_dns(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
         """Verify record propagates to Google DNS (8.8.8.8)."""
-        pytest.skip("Skeleton test - implement propagation check")
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+        test_ip = '192.0.2.10'  # TEST-NET-1 IP
+
+        record = {'hostname': label, 'type': 'A', 'destination': test_ip, 'ttl': 60}
+        powerdns_backend.create_record(dns_test_domain, record)
+
+        assert wait_for_dns_propagation(
+            hostname,
+            test_ip,
+            'A',
+            nameservers=['8.8.8.8'],
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"A record did not propagate to 8.8.8.8 for {hostname}"
+
+        assert powerdns_backend.delete_record(dns_test_domain, f"{hostname}.:A") is True
+        assert wait_for_dns_removal(
+            hostname,
+            'A',
+            nameservers=['8.8.8.8'],
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"A record was not removed from 8.8.8.8 for {hostname}"
     
-    def test_propagation_to_cloudflare_dns(self, skip_unless_live):
+    def test_propagation_to_cloudflare_dns(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
         """Verify record propagates to Cloudflare DNS (1.1.1.1)."""
-        pytest.skip("Skeleton test - implement propagation check")
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+        test_ip = '192.0.2.11'  # TEST-NET-1 IP
+
+        record = {'hostname': label, 'type': 'A', 'destination': test_ip, 'ttl': 60}
+        powerdns_backend.create_record(dns_test_domain, record)
+
+        assert wait_for_dns_propagation(
+            hostname,
+            test_ip,
+            'A',
+            nameservers=['1.1.1.1'],
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"A record did not propagate to 1.1.1.1 for {hostname}"
+
+        assert powerdns_backend.delete_record(dns_test_domain, f"{hostname}.:A") is True
+        assert wait_for_dns_removal(
+            hostname,
+            'A',
+            nameservers=['1.1.1.1'],
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"A record was not removed from 1.1.1.1 for {hostname}"
     
-    def test_propagation_timing(self, skip_unless_live):
-        """Measure propagation time across nameservers."""
-        pytest.skip("Skeleton test - implement timing measurement")
+    def test_propagation_timing(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
+        """Measure propagation time across configured nameservers."""
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+        test_ip = '192.0.2.12'  # TEST-NET-1 IP
+
+        record = {'hostname': label, 'type': 'A', 'destination': test_ip, 'ttl': 60}
+        powerdns_backend.create_record(dns_test_domain, record)
+
+        timings: dict[str, float] = {}
+        deadline = time.monotonic() + dns_config['propagation_timeout']
+        poll_interval = dns_config['propagation_poll_interval']
+
+        for ns in [s.strip() for s in dns_config['check_servers'] if s.strip()]:
+            start = time.monotonic()
+            while time.monotonic() < deadline:
+                values = query_dns(hostname, 'A', nameserver=ns)
+                if test_ip in values:
+                    timings[ns] = time.monotonic() - start
+                    break
+                time.sleep(poll_interval)
+
+        try:
+            missing = [ns for ns in [s.strip() for s in dns_config['check_servers'] if s.strip()] if ns not in timings]
+            assert not missing, (
+                f"Record did not propagate to all resolvers within {dns_config['propagation_timeout']}s: {missing}. "
+                f"timings={timings}"
+            )
+        finally:
+            # Best-effort cleanup
+            try:
+                powerdns_backend.delete_record(dns_test_domain, f"{hostname}.:A")
+            except Exception:
+                pass
+
+        logger.info(f"Propagation timing (seconds) for {hostname}: {timings}")
 
 
 @pytest.mark.live
 class TestDDNSFlow:
     """Test Dynamic DNS update flow end-to-end."""
     
-    def test_ddns_update_from_ui(self, page, skip_unless_live):
+    def test_ddns_update_from_ui(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
+        """DDNS-style update using the DynDNS2 protocol endpoint.
+
+        This is a live integration test:
+        - Calls /api/ddns/dyndns2/update with Bearer token
+        - Verifies the resulting A record resolves via public resolvers
         """
-        Test DDNS update triggered from client portal.
-        
-        1. Login to client portal
-        2. Navigate to DDNS update page
-        3. Trigger update
-        4. Verify DNS record updated
-        """
-        pytest.skip("Skeleton test - implement DDNS UI flow")
+        import httpx
+        import re
+
+        from ui_tests.config import settings
+
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+
+        ip1 = '192.0.2.20'
+        ip2 = '192.0.2.21'
+
+        url = settings.url("/api/ddns/dyndns2/update")
+        headers = {"Authorization": f"Bearer {settings.client_token}"}
+
+        def _call(ip: str) -> tuple[int, str]:
+            with httpx.Client(verify=False, timeout=30.0) as client:
+                resp = client.get(url, headers=headers, params={"hostname": hostname, "myip": ip})
+                return resp.status_code, resp.text.strip()
+
+        status, text = _call(ip1)
+        assert status == 200, f"Expected 200 from DDNS endpoint, got {status}: {text}"
+        assert re.match(r"^(good|nochg)\s+", text), f"Unexpected DDNS response: {text!r}"
+        assert ip1 in text, f"DDNS response should contain IP {ip1}: {text!r}"
+
+        assert wait_for_dns_propagation(
+            hostname,
+            ip1,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"DDNS update did not propagate for {hostname}"
+
+        # Update to a new IP and verify propagation
+        status, text = _call(ip2)
+        assert status == 200, f"Expected 200 from DDNS endpoint, got {status}: {text}"
+        assert re.match(r"^(good|nochg)\s+", text), f"Unexpected DDNS response: {text!r}"
+        assert ip2 in text, f"DDNS response should contain IP {ip2}: {text!r}"
+
+        assert wait_for_dns_propagation(
+            hostname,
+            ip2,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"DDNS updated IP did not propagate for {hostname}"
+
+        # Cleanup via authoritative backend (best-effort)
+        assert powerdns_backend.delete_record(dns_test_domain, f"{hostname}.:A") is True
+        assert wait_for_dns_removal(
+            hostname,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"DDNS record did not get removed for {hostname}"
     
-    def test_ddns_update_via_api(self, skip_unless_live):
-        """
-        Test DDNS update via API token.
-        
-        1. Get API token
-        2. Call DDNS update endpoint
-        3. Verify DNS record updated
-        """
-        pytest.skip("Skeleton test - implement DDNS API flow")
+    def test_ddns_update_via_api(self, skip_unless_live, dns_config, powerdns_backend, dns_test_domain):
+        """DDNS update endpoint supports plain-text protocol responses and changes DNS."""
+        import httpx
+        import re
+
+        from ui_tests.config import settings
+
+        label = generate_test_label()
+        hostname = f"{label}.{dns_test_domain}"
+        test_ip = '192.0.2.22'
+
+        url = settings.url("/api/ddns/dyndns2/update")
+        headers = {"Authorization": f"Bearer {settings.client_token}"}
+
+        with httpx.Client(verify=False, timeout=30.0) as client:
+            resp = client.get(url, headers=headers, params={"hostname": hostname, "myip": test_ip})
+
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        text = resp.text.strip()
+        assert re.match(r"^(good|nochg)\s+", text), f"Unexpected DDNS response: {text!r}"
+        assert test_ip in text, f"DDNS response should contain IP {test_ip}: {text!r}"
+        assert 'text/plain' in resp.headers.get('content-type', ''), (
+            f"Expected text/plain, got {resp.headers.get('content-type')}"
+        )
+
+        assert wait_for_dns_propagation(
+            hostname,
+            test_ip,
+            'A',
+            timeout=dns_config['propagation_timeout'],
+            poll_interval=dns_config['propagation_poll_interval'],
+        ), f"DDNS A record did not propagate for {hostname}"
+
+        assert powerdns_backend.delete_record(dns_test_domain, f"{hostname}.:A") is True
 
 
 # =============================================================================

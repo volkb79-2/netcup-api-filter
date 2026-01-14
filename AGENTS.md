@@ -285,6 +285,53 @@ All passwords MUST come from:
 2. Environment variable `UI_ADMIN_PASSWORD` (for explicit overrides)
 3. Fresh deployment default: `admin` (from `.env.defaults`)
 
+### Finding the Current Admin Password (Manual Debugging)
+
+When manually debugging or testing, you need to know what the **current** admin password is:
+
+**Quick lookup:**
+```bash
+# For local deployments
+cat deployment_state_local.json | jq -r '.admin.password'
+
+# For webhosting deployments
+cat deployment_state_webhosting.json | jq -r '.admin.password'
+
+# Check if password has been changed
+cat deployment_state_local.json | jq -r '.admin.password_changed_at'
+```
+
+**Password states:**
+- `"admin"` + `password_changed_at: null` → Fresh deployment, use `admin`/`admin` (will be forced to change)
+- `"admin"` + `password_changed_at: <timestamp>` → **STALE STATE** - password in DB differs from state file! (manual change not tracked)
+- `<random-string>` + `password_changed_at: <timestamp>` → Tests changed password, use the value shown
+
+**Common scenarios:**
+
+| Scenario | State File Shows | What to Use | Notes |
+|----------|------------------|-------------|-------|
+| Fresh `./build-and-deploy-local.sh` | `password: "admin"` | Login with `admin`/`admin` | Will be forced to change password |
+| After test run | `password: "naf_..."` | Use the generated password | Tests persisted new password |
+| Manual password change | `password: "admin"` | **STATE FILE IS STALE!** | Tests update state, manual changes don't |
+| Can't login | Check `password_changed_at` | If null → use `admin`, else check DB directly | State file may be out of sync |
+
+**When state file is out of sync:**
+```bash
+# Rebuild deployment (resets to admin/admin)
+./build-and-deploy-local.sh
+
+# OR query database directly
+sqlite3 deploy-local/netcup_filter.db "SELECT username, must_change_password FROM accounts WHERE is_admin=1;"
+
+# If must_change_password=1 → use 'admin' and change it
+# If must_change_password=0 → password was changed, check state file or ask who changed it
+```
+
+**Best practice for agents:**
+- Before attempting admin login, ALWAYS check `deployment_state_{target}.json` first
+- If debugging fails, rebuild deployment to reset to known state: `./build-and-deploy-local.sh`
+- Document any manual password changes in task notes (or avoid manual changes entirely)
+
 ## Deployment State Files (CRITICAL)
 
 **ALWAYS keep deployment state files in sync with actual database state.**
@@ -307,17 +354,43 @@ All passwords MUST come from:
   "admin": {
     "username": "admin",
     "password": "current-actual-password",
-    "must_change_password": false
+    "password_changed_at": "2026-01-09T17:18:08Z"
   },
   "last_updated_at": "ISO-8601-timestamp",
   "updated_by": "agent|ui_test|manual"
 }
 ```
 
+**Quick password lookup (for manual debugging):**
+```bash
+# What's the current password?
+jq -r '.admin.password' deployment_state_local.json
+
+# When was it last changed?
+jq -r '.admin.password_changed_at' deployment_state_local.json
+
+# Full admin state
+jq '.admin' deployment_state_local.json
+```
+
 **Verification before login attempts:**
 ```bash
 # Check database matches state file
 sqlite3 deploy-local/netcup_filter.db "SELECT must_change_password FROM accounts WHERE username='admin';"
+
+# If out of sync, rebuild deployment:
+./build-and-deploy-local.sh
+```
+
+**Common debugging workflow:**
+```bash
+# 1. Check current password
+cat deployment_state_local.json | jq -r '.admin.password'
+
+# 2. If "admin" and password_changed_at is null → use admin/admin (will force change)
+# 3. If random string → use that password
+# 4. If unsure → rebuild deployment:
+./build-and-deploy-local.sh
 ```
 
 ## Use-Case-Driven Exploratory Testing

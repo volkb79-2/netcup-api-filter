@@ -98,7 +98,7 @@ async def test_admin_backend_create_validation(active_profile):
         await browser.click("a.btn:has-text('Add Backend')")
         
         # Try to submit empty form (should be blocked by HTML5 validation)
-        submit_btn = await browser.page.query_selector("button[type='submit']")
+        submit_btn = await browser.query_selector("button[type='submit']")
         assert submit_btn is not None, "Submit button should exist"
         
         # Take screenshot of validation state
@@ -163,8 +163,8 @@ async def test_user_backends_list_page_loads(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_user_dashboard(browser)
         
-        # Navigate to user backends via "My Backends" in nav
-        await browser.click("a.nav-link:has-text('My Backends')")
+        # Navigate directly (more reliable than clicking responsive navbar)
+        await browser.goto(settings.url("/account/backends"))
         
         # Verify page loaded
         await browser.verify_status(200)
@@ -185,9 +185,8 @@ async def test_user_backend_create_page_loads(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_user_dashboard(browser)
         
-        # Navigate to backend create
-        await browser.click("a.nav-link:has-text('My Backends')")
-        await browser.click("a.btn:has-text('Add Backend')")
+        # Navigate directly (more reliable than clicking responsive navbar)
+        await browser.goto(settings.url("/account/backends/new"))
         
         # Verify page loaded
         await browser.verify_status(200)
@@ -209,8 +208,8 @@ async def test_user_backends_providers_info(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_user_dashboard(browser)
         
-        # Navigate to user backends
-        await browser.click("a.nav-link:has-text('My Backends')")
+        # Navigate directly (more reliable than clicking responsive navbar)
+        await browser.goto(settings.url("/account/backends"))
         
         # Verify page loaded
         await browser.verify_status(200)
@@ -258,8 +257,8 @@ async def test_user_backends_navigation(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_user_dashboard(browser)
         
-        # Navigate to My Backends
-        await browser.click("a.nav-link:has-text('My Backends')")
+        # Navigate directly (more reliable than clicking responsive navbar)
+        await browser.goto(settings.url("/account/backends"))
         
         # Verify page loaded
         await browser.verify_status(200)
@@ -322,8 +321,8 @@ async def test_user_backends_stats_display(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_user_dashboard(browser)
         
-        # Navigate to user backends
-        await browser.click("a.nav-link:has-text('My Backends')")
+        # Navigate directly (more reliable than clicking responsive navbar)
+        await browser.goto(settings.url("/account/backends"))
         
         # Verify stats cards exist
         page_content = await browser.text("main")

@@ -288,6 +288,7 @@ def send_password_reset_email(
     from flask import url_for, current_app
     from .email_notifier import get_email_notifier_from_config
     from .database import get_system_config
+    import json
     
     # Check if account has an email
     if not account.email:
@@ -311,12 +312,23 @@ def send_password_reset_email(
         reset_url = f"{base_url}/account/reset-password/{raw_token}"
     
     # Get email configuration
-    email_config = get_system_config('email_config')
-    if not email_config:
-        logger.warning("Email configuration not set - cannot send password reset email")
+    smtp_config = get_system_config('smtp_config') or get_system_config('email_config')
+    if not smtp_config:
+        logger.warning("SMTP configuration not set - cannot send password reset email")
         return False
-    
-    notifier = get_email_notifier_from_config(email_config)
+
+    if isinstance(smtp_config, str):
+        try:
+            smtp_config = json.loads(smtp_config)
+        except json.JSONDecodeError:
+            logger.warning("SMTP configuration invalid JSON")
+            return False
+
+    if not isinstance(smtp_config, dict):
+        logger.warning("SMTP configuration has unexpected type")
+        return False
+
+    notifier = get_email_notifier_from_config(smtp_config)
     if not notifier:
         logger.warning("Failed to create email notifier from config")
         return False

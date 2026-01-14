@@ -23,7 +23,7 @@ from .models import Account, db
 logger = logging.getLogger(__name__)
 
 # Configuration
-RECOVERY_CODE_COUNT = 10
+RECOVERY_CODE_COUNT = 3  # Limited to 3 codes for security (prevents brute force)
 RECOVERY_CODE_LENGTH = 8  # Characters per code (e.g., "ABCD-1234")
 RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # Excludes confusables: I,O,0,1
 

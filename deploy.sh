@@ -14,6 +14,7 @@ set -euo pipefail
 #   ./deploy.sh local --skip-tests # Deploy without running tests
 #   ./deploy.sh local --tests-only # Skip build, just run tests
 #   ./deploy.sh local --https      # Use TLS proxy for HTTPS testing
+#   ./deploy.sh local --failfast   # Stop immediately on first error
 #
 # Modes:
 #   mock  - Use mocked services (Netcup API, SMTP, GeoIP) - default for local
@@ -37,12 +38,16 @@ set -euo pipefail
 # Source workspace environment
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/.env.workspace" ]]; then
+    set -a
     source "${SCRIPT_DIR}/.env.workspace"
+    set +a
 fi
 
 # Source service names (central configuration)
 if [[ -f "${SCRIPT_DIR}/.env.services" ]]; then
+    set -a
     source "${SCRIPT_DIR}/.env.services"
+    set +a
 fi
 
 : "${REPO_ROOT:=${SCRIPT_DIR}}"
@@ -83,6 +88,11 @@ OPTIONS:
     --skip-build       Skip build phase (use existing deploy.zip)
     --skip-infra       Skip infrastructure setup (Playwright, mock services)
     --tests-only       Skip build/deploy, run tests only (implies --skip-build)
+    --skip-journey-tests Skip Phase 4 Journey tests (recommended for --tests-only iteration after first successful run)
+    --failfast         Stop on first error (do not continue after test/journey/screenshot failures)
+    --profile          Print timing information per phase/suite
+    --pytest-workers N Enable pytest-xdist parallelism (e.g. "auto" or "4")
+    --pytest-durations N  Show N slowest tests (pytest --durations)
     --http             Disable TLS proxy, use plain HTTP (default: HTTPS via TLS proxy)
     --preserve-secret-key  Extract SECRET_KEY before deploy, restore after (webhosting only)
     --bundle-app-config    Include app-config.toml in deployment (if exists)
@@ -95,6 +105,7 @@ EXAMPLES:
     ./deploy.sh local --mode live        # Local deployment using real services
     ./deploy.sh local --skip-tests       # Deploy locally without tests
     ./deploy.sh local --tests-only       # Run tests only (no rebuild)
+    ./deploy.sh local --tests-only --skip-journey-tests  # Faster iteration (skip Phase 4)
     ./deploy.sh local --http             # Local with plain HTTP (no TLS proxy)
     ./deploy.sh --stop                   # Stop all services and clean up
     ./deploy.sh webhosting               # Deploy to production webhosting (fresh DB)
@@ -113,7 +124,7 @@ DEPLOYMENT PHASES:
 
 CONFIGURATION:
     State files:       deployment_state_local.json, deployment_state_webhosting.json
-    Environment:       .env.defaults (defaults), .env.workspace (workspace config)
+    Environment:       .env (secrets/overrides), .env.defaults (defaults skeleton), .env.workspace (workspace config)
     TLS Proxy:         tooling/reverse-proxy/.env (for --https mode, sourced from .env.workspace)
 
 MOCK SERVICES (local mock mode):
@@ -140,10 +151,15 @@ SKIP_TESTS=false
 SKIP_SCREENSHOTS=false
 TESTS_ONLY=false
 SKIP_INFRA=false
+SKIP_JOURNEY_TESTS=false
 USE_HTTPS=true  # HTTPS is default for local deployments
 DEPLOYMENT_MODE=""
 PRESERVE_SECRET_KEY=false
 BUNDLE_APP_CONFIG=false
+FAILFAST=false
+PROFILE=false
+PYTEST_WORKERS=""
+PYTEST_DURATIONS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -168,6 +184,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_BUILD=true
             shift
             ;;
+        --skip-journey-tests)
+            SKIP_JOURNEY_TESTS=true
+            shift
+            ;;
         --preserve-secret-key)
             PRESERVE_SECRET_KEY=true
             shift
@@ -175,6 +195,22 @@ while [[ $# -gt 0 ]]; do
         --bundle-app-config)
             BUNDLE_APP_CONFIG=true
             shift
+            ;;
+        --failfast)
+            FAILFAST=true
+            shift
+            ;;
+        --profile)
+            PROFILE=true
+            shift
+            ;;
+        --pytest-workers)
+            PYTEST_WORKERS="$2"
+            shift 2
+            ;;
+        --pytest-durations)
+            PYTEST_DURATIONS="$2"
+            shift 2
             ;;
         --mode)
             DEPLOYMENT_MODE="$2"
@@ -190,6 +226,8 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+export DEPLOY_FAILFAST="$FAILFAST"
 
 # Validate target (skip if --stop mode)
 if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
@@ -220,31 +258,50 @@ export DEPLOYMENT_TARGET
 export DEPLOYMENT_MODE
 
 # ============================================================================
-# Load Configuration from .env.defaults (Single Source of Truth)
+# Load Configuration from .env + .env.defaults (Config-Driven)
 # ============================================================================
 
-load_env_defaults() {
-    local env_file="${REPO_ROOT}/.env.defaults"
-    if [[ -f "$env_file" ]]; then
-        # Export only variable assignments, skip functions and control structures
-        # Use a temp file to avoid process substitution EOF issues
-        local temp_env=$(mktemp)
-        grep -v '^#' "$env_file" | \
-            grep -v '^$' | \
-            grep '=' | \
-            grep -vE '^\s*(if|then|else|fi|function|\{|\}|\()' > "$temp_env" || true
-        if [[ -s "$temp_env" ]]; then
-            set -a
-            source "$temp_env"
-            set +a
-        fi
-        rm -f "$temp_env"
+load_env_files() {
+    local defaults_file="${REPO_ROOT}/.env.defaults"
+    local env_file="${REPO_ROOT}/.env"
+
+    # Environment must override both .env.defaults and .env.
+    # Snapshot current exported environment so we can restore it after sourcing.
+    # This preserves explicit overrides like PYTEST_PROFILE_*.
+    declare -A _env_snapshot=()
+    local _var
+    while IFS= read -r _var; do
+        # Indirect expansion is safe here; variable names come from compgen -e
+        _env_snapshot["${_var}"]="${!_var}"
+    done < <(compgen -e)
+
+    # Load defaults first (committed skeleton, no secrets)
+    if [[ -f "${defaults_file}" ]]; then
+        set -a
+        source "${defaults_file}"
+        set +a
     fi
+
+    # Load secrets/overrides (gitignored, required for local/live)
+    if [[ ! -f "${env_file}" ]]; then
+        echo -e "${RED}ERROR: .env not found at ${env_file}${NC}" >&2
+        echo "Create it by copying .env.defaults and adding secrets/overrides." >&2
+        exit 1
+    fi
+
+    set -a
+    source "${env_file}"
+    set +a
+
+    # Restore original environment (explicit caller overrides win)
+    for _var in "${!_env_snapshot[@]}"; do
+        export "${_var}=${_env_snapshot[${_var}]}"
+    done
 }
 
 # Only load env if not in --stop mode
 if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
-    load_env_defaults
+    load_env_files
 fi
 
 # Load TLS proxy config if available
@@ -270,9 +327,9 @@ load_proxy_config() {
 # Skip all configuration for --stop mode
 if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
 
-# Default ports from .env.defaults (must be set there)
-LOCAL_FLASK_PORT="${LOCAL_FLASK_PORT:?LOCAL_FLASK_PORT not set - check .env.defaults}"
-WEBHOSTING_URL="${WEBHOSTING_URL:?WEBHOSTING_URL not set - check .env.defaults}"
+# Default ports from .env/.env.defaults (must be set)
+LOCAL_FLASK_PORT="${LOCAL_FLASK_PORT:?LOCAL_FLASK_PORT not set - check .env or .env.defaults}"
+WEBHOSTING_URL="${WEBHOSTING_URL:?WEBHOSTING_URL not set - check .env or .env.defaults}"
 
 case "$DEPLOYMENT_TARGET" in
     local)
@@ -286,7 +343,7 @@ case "$DEPLOYMENT_TARGET" in
         DEVCONTAINER_HOSTNAME=$(hostname)
         
         # Determine URL based on --https flag (explicit only)
-        # Note: LOCAL_USE_HTTPS from .env.defaults is IGNORED unless --https flag used
+        # Note: LOCAL_USE_HTTPS from .env/.env.defaults is IGNORED unless --https flag used
         if [[ "$USE_HTTPS" == "true" ]]; then
             load_proxy_config
             LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:?LOCAL_TLS_DOMAIN not set - check tooling/reverse-proxy/.env}"
@@ -316,10 +373,10 @@ case "$DEPLOYMENT_TARGET" in
         fi
         ZIP_FILE="${REPO_ROOT}/deploy.zip"
         
-        # Webhosting connection details (must be set in .env.defaults)
-        WEBHOSTING_SSH_USER="${WEBHOSTING_SSH_USER:?WEBHOSTING_SSH_USER not set - check .env.defaults}"
-        WEBHOSTING_SSH_SERVER="${WEBHOSTING_SSH_HOST:?WEBHOSTING_SSH_HOST not set - check .env.defaults}"
-        WEBHOSTING_REMOTE_DIR="${WEBHOSTING_REMOTE_DIR:?WEBHOSTING_REMOTE_DIR not set - check .env.defaults}"
+        # Webhosting connection details (must be set in .env)
+        WEBHOSTING_SSH_USER="${WEBHOSTING_SSH_USER:?WEBHOSTING_SSH_USER not set - check .env}"
+        WEBHOSTING_SSH_SERVER="${WEBHOSTING_SSH_HOST:?WEBHOSTING_SSH_HOST not set - check .env}"
+        WEBHOSTING_REMOTE_DIR="${WEBHOSTING_REMOTE_DIR:?WEBHOSTING_REMOTE_DIR not set - check .env}"
         SSHFS_MOUNT="/home/vscode/sshfs-${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}"
         ;;
 esac
@@ -355,6 +412,39 @@ log_warning() {
 
 log_error() {
     echo -e "${RED}✗ $1${NC}" >&2
+}
+
+format_duration_seconds() {
+    local seconds="$1"
+    if [[ "$seconds" -lt 60 ]]; then
+        echo "${seconds}s"
+        return 0
+    fi
+    local minutes=$((seconds / 60))
+    local remaining=$((seconds % 60))
+    echo "${minutes}m${remaining}s"
+}
+
+log_timing() {
+    local label="$1"
+    local seconds="$2"
+    if [[ "${PROFILE}" == "true" ]]; then
+        log_step "[TIMING] ${label}: $(format_duration_seconds "${seconds}")"
+    fi
+}
+
+build_pytest_extra_args() {
+    local extra=()
+
+    if [[ -n "${PYTEST_WORKERS}" ]]; then
+        extra+=("-n" "${PYTEST_WORKERS}")
+    fi
+
+    if [[ -n "${PYTEST_DURATIONS}" ]]; then
+        extra+=("--durations=${PYTEST_DURATIONS}" "--durations-min=1.0")
+    fi
+
+    echo "${extra[@]}"
 }
 
 check_playwright_container() {
@@ -434,6 +524,9 @@ start_flask_local() {
     
     log_step "Starting Flask (local deployment, ${flask_env_desc})..."
     cd "$DEPLOY_DIR"
+
+    # Fail-fast for critical config (config-driven; set in .env)
+    : "${SECRET_KEY:?SECRET_KEY not set - check .env}"
     
     # Copy gunicorn config if available
     if [[ -f "${SCRIPT_DIR}/gunicorn.conf.py" ]]; then
@@ -444,20 +537,13 @@ start_flask_local() {
     FLASK_ENV=local_test \
     TEMPLATES_AUTO_RELOAD=true \
     SEND_FILE_MAX_AGE_DEFAULT=0 \
-    SECRET_KEY="local-test-secret-key-for-session-persistence" \
     MOCK_NETCUP_API="${mock_api}" \
     DEPLOYMENT_MODE="${DEPLOYMENT_MODE}" \
     SEED_DEMO_CLIENTS=true \
-    GUNICORN_WORKERS=2 \
-    GUNICORN_THREADS=4 \
-    GUNICORN_RELOAD=true \
-    GUNICORN_LOGLEVEL=debug \
-    gunicorn -c gunicorn.conf.py \
-        --daemon \
-        --log-file "$LOG_FILE" \
-        --error-logfile "$LOG_FILE" \
-        --access-logfile "$LOG_FILE" \
-        passenger_wsgi:application
+    GUNICORN_DAEMON=true \
+    GUNICORN_ACCESS_LOG="$LOG_FILE" \
+    GUNICORN_ERROR_LOG="$LOG_FILE" \
+    gunicorn -c gunicorn.conf.py passenger_wsgi:application
     
     # Wait for Flask
     log_step "Waiting for Flask to start..."
@@ -615,10 +701,9 @@ start_powerdns_backend() {
         return 0
     fi
     
-    # Check if API key is set
-    source "${REPO_ROOT}/.env.defaults"
+    # Check if API key is set (loaded from .env at script start)
     if [[ -z "${POWERDNS_API_KEY:-}" ]]; then
-        log_warning "PowerDNS API key not set (POWERDNS_API_KEY in .env.defaults)"
+        log_warning "PowerDNS API key not set (POWERDNS_API_KEY in .env)"
         log_step "Generate key: openssl rand -hex 32"
         return 0
     fi
@@ -818,7 +903,11 @@ phase_build() {
     
     log_step "Running build_deployment.py $BUILD_ARGS..."
     cd "$REPO_ROOT"
-    python3 build_deployment.py $BUILD_ARGS 2>&1 | tail -20
+    if [[ "$FAILFAST" == "true" ]]; then
+        python3 build_deployment.py $BUILD_ARGS
+    else
+        python3 build_deployment.py $BUILD_ARGS 2>&1 | tail -20
+    fi
     
     log_success "Build complete: $ZIP_FILE"
 }
@@ -983,6 +1072,19 @@ JOURNEY_TESTS_RESULT=""
 
 phase_journey() {
     log_phase "4" "Journey Tests (Fresh Deployment)"
+
+    if [[ "$SKIP_JOURNEY_TESTS" == "true" ]]; then
+        # Journey tests are primarily for first-run documentation + initial password change.
+        # For iterative runs (especially --tests-only), skipping saves several minutes.
+        if [[ ! -f "$STATE_FILE" ]]; then
+            log_error "--skip-journey-tests requires an existing state file: $STATE_FILE"
+            log_step "Run once without --skip-journey-tests to generate credentials."
+            return 1
+        fi
+        log_warning "Skipping journey tests (--skip-journey-tests)"
+        JOURNEY_TESTS_RESULT="SKIPPED"
+        return 0
+    fi
     
     if [[ "$SKIP_TESTS" == "true" ]]; then
         log_warning "Skipping journey tests (--skip-tests)"
@@ -1003,24 +1105,45 @@ phase_journey() {
     echo -e "${CYAN}  JOURNEY TESTS: Fresh deployment documentation${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
     
-    if run_in_playwright pytest ui_tests/tests/test_journey_master.py -v --timeout=300 2>&1 | tail -20; then
+    local phase_start=$SECONDS
+    local pytest_extra_args
+    pytest_extra_args=$(build_pytest_extra_args)
+
+    if [[ "$FAILFAST" == "true" ]]; then
+        if run_in_playwright pytest ui_tests/tests/test_journey_master.py ${pytest_extra_args} -v --timeout=300; then
+            log_success "Journey tests passed - admin authenticated"
+            JOURNEY_TESTS_RESULT="PASSED"
+            if [[ -f "$STATE_FILE" ]]; then
+                log_step "Admin password saved to $STATE_FILE"
+            fi
+            log_timing "Journey tests" $((SECONDS - phase_start))
+            return 0
+        fi
+        local exit_code=$?
+        JOURNEY_TESTS_RESULT="FAILED"
+        log_error "Journey tests failed (exit code $exit_code) --failfast enabled"
+        log_timing "Journey tests" $((SECONDS - phase_start))
+        return 1
+    fi
+
+    if run_in_playwright pytest ui_tests/tests/test_journey_master.py ${pytest_extra_args} -v --timeout=300 2>&1 | tail -20; then
         log_success "Journey tests passed - admin authenticated"
         JOURNEY_TESTS_RESULT="PASSED"
-        
-        # Refresh credentials from state file (journey tests update it)
         if [[ -f "$STATE_FILE" ]]; then
             log_step "Admin password saved to $STATE_FILE"
         fi
-    else
-        local exit_code=$?
-        JOURNEY_TESTS_RESULT="FAILED"
-        if [[ $exit_code -eq 2 ]] || [[ $exit_code -eq 4 ]]; then
-            log_error "FATAL: Test infrastructure broken (exit code $exit_code)"
-            return 1
-        else
-            log_warning "Journey tests failed (exit code $exit_code) - continuing"
-        fi
+        log_timing "Journey tests" $((SECONDS - phase_start))
+        return 0
     fi
+
+    local exit_code=$?
+    JOURNEY_TESTS_RESULT="FAILED"
+    if [[ $exit_code -eq 2 ]] || [[ $exit_code -eq 4 ]]; then
+        log_error "FATAL: Test infrastructure broken (exit code $exit_code)"
+        return 1
+    fi
+    log_warning "Journey tests failed (exit code $exit_code) - continuing"
+    log_timing "Journey tests" $((SECONDS - phase_start))
 }
 
 # ============================================================================
@@ -1037,6 +1160,9 @@ phase_tests() {
     
     local test_results=()
     local failed_suites=()
+    local pytest_extra_args
+    pytest_extra_args=$(build_pytest_extra_args)
+    local phase_start=$SECONDS
     
     # Include Journey Tests result from Phase 4
     if [[ "$JOURNEY_TESTS_RESULT" == "PASSED" ]]; then
@@ -1092,7 +1218,7 @@ phase_tests() {
         
         # Live API tests (require real Netcup API configured)
         "UI Flow E2E|ui_tests/tests/test_ui_flow_e2e.py|live"
-        "API Security|ui_tests/tests/test_api_security.py|live"
+        "API Security|ui_tests/tests/test_api_security.py|all"
         "Live DNS Verification|ui_tests/tests/test_live_dns_verification.py|live"
         "Live Email Verification|ui_tests/tests/test_live_email_verification.py|live"
     )
@@ -1132,16 +1258,33 @@ phase_tests() {
         fi
         
         log_step "Running $name..."
+        local suite_start=$SECONDS
         
-        if run_in_playwright pytest $pattern -v --timeout=120 2>&1 | tail -5; then
+        if [[ "$FAILFAST" == "true" ]]; then
+            if run_in_playwright pytest $pattern ${pytest_extra_args} -v --timeout=120; then
+                test_results+=("$name: PASSED")
+                log_success "$name passed"
+                log_timing "$name" $((SECONDS - suite_start))
+            else
+                test_results+=("$name: FAILED")
+                failed_suites+=("$name")
+                log_error "$name failed --failfast enabled"
+                log_timing "$name" $((SECONDS - suite_start))
+                return 1
+            fi
+        elif run_in_playwright pytest $pattern ${pytest_extra_args} -v --timeout=120 2>&1 | tail -5; then
             test_results+=("$name: PASSED")
             log_success "$name passed"
+            log_timing "$name" $((SECONDS - suite_start))
         else
             test_results+=("$name: FAILED")
             failed_suites+=("$name")
             log_warning "$name failed"
+            log_timing "$name" $((SECONDS - suite_start))
         fi
     done
+
+    log_timing "Phase 5 (validation tests)" $((SECONDS - phase_start))
     
     # Summary
     echo ""
@@ -1194,6 +1337,10 @@ phase_screenshots() {
             log_step "Journey report available: $SCREENSHOT_DIR/journey_report.json"
         fi
     else
+        if [[ "$FAILFAST" == "true" ]]; then
+            log_error "Screenshot capture failed --failfast enabled"
+            return 1
+        fi
         log_warning "Screenshot capture failed (non-critical)"
     fi
 }
@@ -1255,14 +1402,52 @@ stop_all_services() {
     
     # 6. Stop PowerDNS backend
     log_step "Stopping PowerDNS backend..."
-    if [[ -f "${REPO_ROOT}/.env.defaults" ]]; then
-        source "${REPO_ROOT}/.env.defaults"
+    local powerdns_dir="${REPO_ROOT}/tooling/backend-powerdns"
+    if [[ -d "${powerdns_dir}" && -f "${powerdns_dir}/docker-compose.yml" ]]; then
+        # Load environment variables needed by docker-compose
+        if [[ -f "${REPO_ROOT}/.env" ]]; then
+            set -a
+            source "${REPO_ROOT}/.env"
+            set +a
+        fi
+        if [[ -f "${REPO_ROOT}/.env.services" ]]; then
+            set -a
+            source "${REPO_ROOT}/.env.services"
+            set +a
+        fi
+        if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
+            set -a
+            source "${REPO_ROOT}/.env.workspace"
+            set +a
+        fi
+        
+        # Export required variables for docker-compose
+        export POWERDNS_API_KEY SERVICE_POWERDNS DOCKER_NETWORK_INTERNAL PHYSICAL_REPO_ROOT
+        export POWERDNS_CONTAINER_NAME="${SERVICE_POWERDNS}"
+        export DOCKER_GID ENV_TAG
+        export PDNS_AUTH_API PDNS_AUTH_WEBSERVER PDNS_AUTH_WEBSERVER_ADDRESS
+        export PDNS_AUTH_WEBSERVER_PORT="${PDNS_AUTH_WEBSERVER_PORT:-8081}"
+        export PDNS_AUTH_WEBSERVER_ALLOW_FROM PDNS_LAUNCH PDNS_GSQLITE3_DATABASE
+        export PDNS_LOGLEVEL PDNS_LOG_DNS_QUERIES PDNS_LOG_DNS_DETAILS
+        export PDNS_DISABLE_AXFR PDNS_ALLOW_AXFR_IPS
+        export PDNS_DEFAULT_SOA_NAME PDNS_DEFAULT_SOA_MAIL
+        
+        # Stop containers (both PowerDNS and init container)
+        if (cd "${powerdns_dir}" && docker compose down 2>/dev/null); then
+            log_success "PowerDNS stopped"
+        else
+            # Fallback: stop containers directly
+            if docker stop "${SERVICE_POWERDNS}" 2>/dev/null && docker rm "${SERVICE_POWERDNS}" 2>/dev/null; then
+                log_success "PowerDNS stopped (direct)"
+            else
+                log_step "PowerDNS not running"
+            fi
+            # Stop init container if exists
+            docker stop "${SERVICE_POWERDNS}-init" 2>/dev/null && docker rm "${SERVICE_POWERDNS}-init" 2>/dev/null || true
+        fi
+    else
+        log_step "PowerDNS not configured (${powerdns_dir} not found)"
     fi
-    if [[ -f "${REPO_ROOT}/.env.services" ]]; then
-        source "${REPO_ROOT}/.env.services"
-    fi
-    export POWERDNS_API_KEY SERVICE_POWERDNS DOCKER_NETWORK_INTERNAL PHYSICAL_REPO_ROOT
-    (cd "${REPO_ROOT}/tooling/backend-powerdns" && docker compose down 2>/dev/null) && log_success "PowerDNS stopped" || log_step "PowerDNS not running"
     
     # 7. Stop Playwright container
     log_step "Stopping Playwright container..."
@@ -1307,17 +1492,61 @@ main() {
     echo -e "  State File:  ${CYAN}$STATE_FILE${NC}"
     echo -e "  Screenshots: ${CYAN}$SCREENSHOT_DIR${NC}"
     echo -e "  Base URL:    ${CYAN}$UI_BASE_URL${NC}"
+    if [[ "${PROFILE}" == "true" ]]; then
+        echo -e "  Profile:     ${CYAN}enabled${NC}"
+    fi
+    if [[ -n "${PYTEST_WORKERS}" ]]; then
+        echo -e "  Pytest -n:   ${CYAN}${PYTEST_WORKERS}${NC}"
+    fi
+    if [[ -n "${PYTEST_DURATIONS}" ]]; then
+        echo -e "  Pytest durations: ${CYAN}${PYTEST_DURATIONS}${NC}"
+    fi
     
     local start_time=$SECONDS
     
     # Run phases (Phase 0 first!)
+    local phase_timer_start
+    phase_timer_start=$SECONDS
     phase_infrastructure || exit 1
+    log_timing "Phase 0 (infrastructure)" $((SECONDS - phase_timer_start))
+
+    phase_timer_start=$SECONDS
     phase_build || exit 1
+    log_timing "Phase 1 (build)" $((SECONDS - phase_timer_start))
+
+    phase_timer_start=$SECONDS
     phase_deploy || exit 1
+    log_timing "Phase 2 (deploy)" $((SECONDS - phase_timer_start))
+
+    phase_timer_start=$SECONDS
     phase_start || exit 1
-    phase_journey || true  # Continue on journey test failure
-    phase_tests || true  # Continue on test failure
-    phase_screenshots || true  # Continue on screenshot failure
+    log_timing "Phase 3 (start)" $((SECONDS - phase_timer_start))
+
+    if [[ "$FAILFAST" == "true" ]]; then
+        phase_timer_start=$SECONDS
+        phase_journey || exit 1
+        log_timing "Phase 4 (journey)" $((SECONDS - phase_timer_start))
+
+        phase_timer_start=$SECONDS
+        phase_tests || exit 1
+        log_timing "Phase 5 (tests)" $((SECONDS - phase_timer_start))
+
+        phase_timer_start=$SECONDS
+        phase_screenshots || exit 1
+        log_timing "Phase 6 (screenshots)" $((SECONDS - phase_timer_start))
+    else
+        phase_timer_start=$SECONDS
+        phase_journey || true  # Continue on journey test failure
+        log_timing "Phase 4 (journey)" $((SECONDS - phase_timer_start))
+
+        phase_timer_start=$SECONDS
+        phase_tests || true  # Continue on test failure
+        log_timing "Phase 5 (tests)" $((SECONDS - phase_timer_start))
+
+        phase_timer_start=$SECONDS
+        phase_screenshots || true  # Continue on screenshot failure
+        log_timing "Phase 6 (screenshots)" $((SECONDS - phase_timer_start))
+    fi
     
     local elapsed=$((SECONDS - start_time))
     

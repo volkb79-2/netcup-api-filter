@@ -220,7 +220,7 @@ cd tooling/reverse-proxy
 docker compose up -d
 
 # Run HTTPS tests
-UI_BASE_URL="https://gstammtisch.dchive.de" ./run-local-tests.sh
+UI_BASE_URL="https://${PUBLIC_FQDN}" ./run-local-tests.sh
 ```
 
 ## Troubleshooting

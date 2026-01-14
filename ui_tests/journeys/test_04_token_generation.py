@@ -16,7 +16,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import secrets
 import re
 from typing import Optional
@@ -73,7 +72,7 @@ class TestTokenGeneration:
         
         # Go to realms list
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('realms-list-for-token', 'Realms list before token creation')
         
@@ -84,7 +83,7 @@ class TestTokenGeneration:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('realm-detail-for-token', 'Realm detail for token creation')
             
@@ -96,7 +95,7 @@ class TestTokenGeneration:
             
             if create_token_btn:
                 await create_token_btn.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('token-creation-form', 'Token creation form')
         else:
@@ -113,7 +112,7 @@ class TestTokenGeneration:
         
         # Navigate to realm and create token
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -121,7 +120,7 @@ class TestTokenGeneration:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token_btn = await browser.query_selector(
                 'a[href*="/tokens/new"], a:has-text("Create Token"), a:has-text("Generate")'
@@ -129,7 +128,7 @@ class TestTokenGeneration:
             
             if create_token_btn:
                 await create_token_btn.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Fill token form
                 desc_field = await browser.query_selector('#description, input[name="description"]')
@@ -170,7 +169,7 @@ class TestTokenGeneration:
                 await ss.capture('readonly-token-form', 'Read-only token form filled')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 await ss.capture('readonly-token-created', 'Read-only token created')
                 
@@ -188,7 +187,7 @@ class TestTokenGeneration:
         
         # Create a new token and check the display
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -196,7 +195,7 @@ class TestTokenGeneration:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token_btn = await browser.query_selector(
                 'a[href*="/tokens/new"], a:has-text("Create Token")'
@@ -204,14 +203,14 @@ class TestTokenGeneration:
             
             if create_token_btn:
                 await create_token_btn.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 desc_field = await browser.query_selector('#description, input[name="description"]')
                 if desc_field:
                     await desc_field.fill(f"Test token {secrets.token_hex(4)}")
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 # Check for token in success message
                 body_html = await browser.html('body')
@@ -248,7 +247,7 @@ class TestTokenPermissions:
         token = token_data["letsencrypt_token"]
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -256,12 +255,12 @@ class TestTokenPermissions:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token = await browser.query_selector('a[href*="/tokens/new"]')
             if create_token:
                 await create_token.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Fill for LetsEncrypt (TXT only)
                 desc_field = await browser.query_selector('#description')
@@ -284,7 +283,7 @@ class TestTokenPermissions:
                 await ss.capture('letsencrypt-token-form', 'LetsEncrypt token form')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 await ss.capture('letsencrypt-token-created', 'LetsEncrypt token created')
     
@@ -298,7 +297,7 @@ class TestTokenPermissions:
         token = token_data["full_token"]
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -306,12 +305,12 @@ class TestTokenPermissions:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token = await browser.query_selector('a[href*="/tokens/new"]')
             if create_token:
                 await create_token.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 desc_field = await browser.query_selector('#description')
                 if desc_field:
@@ -346,7 +345,7 @@ class TestTokenPermissions:
                 await ss.capture('full-token-form', 'Full control token form')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 await ss.capture('full-token-created', 'Full control token created')
 
@@ -367,7 +366,7 @@ class TestTokenSecurity:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -375,12 +374,12 @@ class TestTokenSecurity:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token = await browser.query_selector('a[href*="/tokens/new"]')
             if create_token:
                 await create_token.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 desc_field = await browser.query_selector('#description')
                 if desc_field:
@@ -396,7 +395,7 @@ class TestTokenSecurity:
                     await ss.capture('token-ip-whitelist', 'Token with IP whitelist')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 await ss.capture('token-ip-restricted-created', 'IP-restricted token created')
     
@@ -409,7 +408,7 @@ class TestTokenSecurity:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -417,12 +416,12 @@ class TestTokenSecurity:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token = await browser.query_selector('a[href*="/tokens/new"]')
             if create_token:
                 await create_token.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 desc_field = await browser.query_selector('#description')
                 if desc_field:
@@ -447,7 +446,7 @@ class TestTokenSecurity:
                     await ss.capture('token-with-expiry', 'Token with expiry set')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 await ss.capture('token-expiry-created', 'Expiring token created')
 
@@ -468,7 +467,7 @@ class TestTokenManagement:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -476,7 +475,7 @@ class TestTokenManagement:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('realm-tokens-list', 'Realm with tokens list')
             
@@ -493,7 +492,7 @@ class TestTokenManagement:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Get all realm links and try each one until we find one with tokens
         # Note: List may be sorted by created_at DESC, so older realms (with tokens) 
@@ -510,7 +509,7 @@ class TestTokenManagement:
         # Try all realms (may need to check older ones at the bottom)
         for i in range(len(realm_links)):
             await browser.goto(settings.url('/admin/realms'))
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             # Re-query links after page navigation
             realm_links_fresh = await browser.query_selector_all(
@@ -520,14 +519,14 @@ class TestTokenManagement:
                 break
                 
             await realm_links_fresh[i].click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             # Check if this realm has a token link
             token_link = await browser.query_selector('a[href*="/admin/tokens/"]')
             
             if token_link:
                 await token_link.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('token-detail', 'Token detail page')
                 
@@ -561,7 +560,7 @@ class TestTokenRevocation:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -569,13 +568,13 @@ class TestTokenRevocation:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             token_link = await browser.query_selector('a[href*="/admin/tokens/"]')
             
             if token_link:
                 await token_link.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('token-before-revoke', 'Token before revocation')
                 
@@ -586,7 +585,7 @@ class TestTokenRevocation:
                 
                 if revoke_btn:
                     await revoke_btn.click()
-                    await asyncio.sleep(0.5)
+                    await browser.wait_for_load_state('domcontentloaded')
                     
                     # Confirm if modal
                     confirm_btn = await browser.query_selector(
@@ -594,7 +593,7 @@ class TestTokenRevocation:
                     )
                     if confirm_btn:
                         await confirm_btn.click()
-                        await asyncio.sleep(1.0)
+                        await browser.wait_for_timeout(1000)
                     
                     await ss.capture('token-revoked', 'Token revoked')
     
@@ -607,7 +606,7 @@ class TestTokenRevocation:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -615,13 +614,13 @@ class TestTokenRevocation:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             token_link = await browser.query_selector('a[href*="/admin/tokens/"]')
             
             if token_link:
                 await token_link.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('token-before-regenerate', 'Token before regeneration')
                 
@@ -633,7 +632,7 @@ class TestTokenRevocation:
                 
                 if regen_btn:
                     await regen_btn.click()
-                    await asyncio.sleep(0.5)
+                    await browser.wait_for_load_state('domcontentloaded')
                     
                     # Confirm if modal
                     confirm_btn = await browser.query_selector(
@@ -641,7 +640,7 @@ class TestTokenRevocation:
                     )
                     if confirm_btn:
                         await confirm_btn.click()
-                        await asyncio.sleep(1.0)
+                        await browser.wait_for_timeout(1000)
                     
                     await ss.capture('token-regenerated', 'Token secret regenerated')
                     
@@ -666,7 +665,7 @@ class TestTokenErrorHandling:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         realm_link = await browser.query_selector(
             'a[href*="/admin/realms/"]:not([href*="/pending"])'
@@ -674,12 +673,12 @@ class TestTokenErrorHandling:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             create_token = await browser.query_selector('a[href*="/tokens/new"]')
             if create_token:
                 await create_token.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Try to submit without selecting operations
                 desc_field = await browser.query_selector('#description')
@@ -702,7 +701,7 @@ class TestTokenErrorHandling:
                 await ss.capture('token-no-operations', 'Token without operations')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('token-no-operations-error', 'No operations error')
                 

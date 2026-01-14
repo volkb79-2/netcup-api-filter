@@ -10,7 +10,6 @@ Unlike the httpx-based audit script (admin_ux_audit.py), these tests:
 See AGENTS.md section "Use-Case-Driven Exploratory Testing" for context.
 """
 
-import asyncio
 import pytest
 import re
 from ui_tests import workflows
@@ -62,7 +61,7 @@ class TestThemeAndCSS:
             if theme_btn:
                 await theme_btn.click()
                 # Wait for Alpine.js to show the dropdown
-                await asyncio.sleep(0.2)
+                await browser._page.wait_for_timeout(100)
                 
                 # Try to find and click a different theme option
                 theme_options = await browser.query_selector_all('[onclick*="setTheme"]')

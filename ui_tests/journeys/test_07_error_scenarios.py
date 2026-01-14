@@ -15,7 +15,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import httpx
 
 from ui_tests.config import settings
@@ -38,7 +37,7 @@ class Test404ErrorPages:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/nonexistent-page-12345'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-404-page', 'Admin 404 error page')
         
@@ -55,7 +54,7 @@ class Test404ErrorPages:
         ss = screenshot_helper('07-error')
         
         await browser.goto(settings.url('/nonexistent-page-12345'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('public-404-page', 'Public 404 error page')
         
@@ -90,11 +89,11 @@ class TestFormValidationErrors:
         ss = screenshot_helper('07-error')
         
         await browser.goto(settings.url('/admin/login'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Submit empty form
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('login-validation-error', 'Login validation error')
         
@@ -111,12 +110,12 @@ class TestFormValidationErrors:
         ss = screenshot_helper('07-error')
         
         await browser.goto(settings.url('/admin/login'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await browser.fill('#username', 'wronguser')
         await browser.fill('#password', 'wrongpassword')
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('login-wrong-credentials', 'Login wrong credentials error')
         
@@ -132,7 +131,7 @@ class TestFormValidationErrors:
         ss = screenshot_helper('07-error')
         
         await browser.goto(settings.url('/account/register'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Submit with invalid email
         await browser.fill('#username', 'testuser')
@@ -142,7 +141,7 @@ class TestFormValidationErrors:
         await ss.capture('registration-invalid-input', 'Registration with invalid input')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('registration-validation-error', 'Registration validation error')
 
@@ -163,11 +162,11 @@ class TestAuthenticationErrors:
         
         # Clear any existing session
         await browser.goto(settings.url('/admin/logout'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Try to access protected page
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('session-required-redirect', 'Session required redirect')
         
@@ -220,7 +219,7 @@ class TestRateLimiting:
             await browser.fill('#username', f'wronguser{i}')
             await browser.fill('#password', f'wrongpassword{i}')
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
         
         await ss.capture('login-rate-limited', 'Login rate limiting')
         
@@ -246,7 +245,7 @@ class TestEdgeCases:
         
         # Note: May not be empty in sequential test run
         await browser.goto(settings.url('/admin/accounts/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('pending-accounts-state', 'Pending accounts state')
         
@@ -262,7 +261,7 @@ class TestEdgeCases:
         ss = screenshot_helper('07-error')
         
         await browser.goto(settings.url('/account/register'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Try special characters
         await browser.fill('#username', "user<script>alert('xss')</script>")
@@ -272,7 +271,7 @@ class TestEdgeCases:
         await ss.capture('special-chars-input', 'Special characters in input')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('special-chars-result', 'Special characters result')
         
@@ -288,7 +287,7 @@ class TestEdgeCases:
         ss = screenshot_helper('07-error')
         
         await browser.goto(settings.url('/account/register'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Try very long username
         long_username = 'a' * 500

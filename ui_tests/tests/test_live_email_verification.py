@@ -336,7 +336,7 @@ class TestIMAPConnection:
 class TestEmailVerification:
     """Test email delivery verification."""
     
-    def test_verification_email_received(self, imap_client, page, skip_unless_live):
+    def test_verification_email_received(self, imap_client, skip_unless_live):
         """
         Test that verification email is received during registration.
         
@@ -367,7 +367,7 @@ class TestEmailVerification:
         # assert code is not None
         # assert len(code) == 6
     
-    def test_2fa_email_received(self, imap_client, page, skip_unless_live):
+    def test_2fa_email_received(self, imap_client, skip_unless_live):
         """
         Test that 2FA email is received during login.
         
@@ -378,7 +378,7 @@ class TestEmailVerification:
         """
         pytest.skip("Skeleton test - implement 2FA flow")
     
-    def test_password_reset_email_received(self, imap_client, page, skip_unless_live):
+    def test_password_reset_email_received(self, imap_client, skip_unless_live):
         """
         Test that password reset email is received.
         

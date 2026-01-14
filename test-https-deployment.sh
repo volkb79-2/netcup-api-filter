@@ -5,6 +5,16 @@ echo "========================================="
 echo "Testing HTTPS Deployment with Fixed Nginx"
 echo "========================================="
 
+if [[ ! -f .env.workspace ]]; then
+    echo "✗ FAILED: .env.workspace not found (run post-create.sh / devcontainer rebuild)" >&2
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source .env.workspace
+
+: "${PUBLIC_FQDN:?PUBLIC_FQDN must be set (source .env.workspace)}"
+
 # Stop everything first
 echo "→ Stopping all services..."
 ./deploy.sh --stop > /dev/null 2>&1 || true
@@ -34,7 +44,7 @@ fi
 # Test HTTPS endpoint
 echo ""
 echo "→ Testing HTTPS endpoint..."
-if curl -sk https://gstammtisch.dchive.de/admin/login | grep -q "Admin Login"; then
+if curl -sk "https://${PUBLIC_FQDN}/admin/login" | grep -q "Admin Login"; then
     echo "✓ SUCCESS: HTTPS endpoint responding correctly"
 else
     echo "✗ FAILED: HTTPS endpoint not responding"

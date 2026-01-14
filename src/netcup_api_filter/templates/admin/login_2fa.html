@@ -25,6 +25,10 @@
     {% else %}
     A verification code has been sent to<br>
     <strong>{{ masked_email }}</strong>
+    {% if email_ref_token %}
+    <br>
+    <small class="text-muted">Ref: <span id="twofa-email-ref" class="font-monospace">{{ email_ref_token }}</span></small>
+    {% endif %}
     {% endif %}
 </p>
 

@@ -5,7 +5,6 @@ These tests verify that UI pages don't have broken layouts, missing content,
 error messages, or other fundamental issues that should never make it to production.
 """
 import pytest
-import asyncio
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
 from ui_tests import workflows
@@ -31,12 +30,14 @@ async def test_ui_no_error_messages_on_pages(active_profile):
         ]
         
         for path in admin_pages:
-            await browser.goto(settings.url(path))
-            await asyncio.sleep(0.5)
+            nav = await browser.goto(settings.url(path), wait_until="domcontentloaded")
+            await browser._page.wait_for_load_state('domcontentloaded')
             page_text = await browser.text("body")
+
+            # Prefer real HTTP status over brittle substring checks
+            assert nav.get("status") == 200, f"Page {path} returned HTTP {nav.get('status')}"
             
             # Check for common error indicators
-            assert "404" not in page_text, f"Page {path} shows 404 error"
             assert "Not Found" not in page_text, f"Page {path} shows 'Not Found'"
             assert "Internal Server Error" not in page_text, f"Page {path} shows 500 error"
             assert "Exception" not in page_text, f"Page {path} shows exception"
@@ -52,7 +53,7 @@ async def test_audit_logs_not_empty_on_fresh_install(active_profile):
         await workflows.ensure_admin_dashboard(browser)
         
         await browser.goto(settings.url("/admin/audit"))
-        await asyncio.sleep(1)
+        await browser._page.wait_for_load_state('networkidle')
         
         page_text = await browser.text("body")
         
@@ -75,7 +76,7 @@ async def test_viewport_shows_full_content(active_profile):
         
         # Dashboard should be fully visible
         await browser.goto(settings.url("/admin/"))
-        await asyncio.sleep(0.5)
+        await browser._page.wait_for_load_state('domcontentloaded')
         
         # Check we can see header and footer
         header = await browser.query_selector("nav") or await browser.query_selector("header")
@@ -94,7 +95,7 @@ async def test_system_info_filesystem_tests_present(active_profile):
         await workflows.ensure_admin_dashboard(browser)
         
         await browser.goto(settings.url("/admin/system"))
-        await asyncio.sleep(0.5)
+        await browser._page.wait_for_load_state('domcontentloaded')
         page_text = await browser.text("body")
         
         # Should have system info content
@@ -107,12 +108,13 @@ async def test_audit_logs_page_accessible(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         
-        await browser.goto(settings.url("/admin/audit"))
-        await asyncio.sleep(1)
+        nav = await browser.goto(settings.url("/admin/audit"), wait_until="domcontentloaded")
+        await browser._page.wait_for_load_state('networkidle')
         
         page_text = await browser.text("body")
+
+        assert nav.get("status") == 200, f"/admin/audit returned HTTP {nav.get('status')}"
         
         # Should not show 'not found' error
         assert "not found" not in page_text.lower() or "No audit logs" in page_text, \
             "Audit logs page shows 'not found' error"
-        assert "404" not in page_text, "Audit logs page shows 404"

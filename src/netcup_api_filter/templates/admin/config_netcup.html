@@ -20,11 +20,11 @@
                 </div>
                 <div class="card-body">
                     <div class="mb-4">
-                        <label class="form-label" for="customer_number">Customer Number <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control font-monospace" id="customer_number" name="customer_number"
-                               value="{{ config.customer_number or '' }}" required
+                           <label class="form-label" for="customer_id">Customer ID <span class="text-danger">*</span></label>
+                           <input type="text" class="form-control font-monospace" id="customer_id" name="customer_id"
+                               value="{{ config.customer_id or config.customer_number or '' }}" required
                                placeholder="e.g., 12345678">
-                        <div class="form-text">Your Netcup customer number (Kundennummer)</div>
+                           <div class="form-text">Your Netcup customer ID (Kundennummer)</div>
                     </div>
                     
                     <div class="mb-4">
@@ -56,9 +56,9 @@
                     <hr>
 
                     <div class="mb-4">
-                        <label class="form-label" for="api_endpoint">API Endpoint</label>
-                        <input type="url" class="form-control font-monospace" id="api_endpoint" name="api_endpoint"
-                               value="{{ config.api_endpoint or 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON' }}"
+                           <label class="form-label" for="api_url">API URL</label>
+                           <input type="url" class="form-control font-monospace" id="api_url" name="api_url"
+                               value="{{ config.api_url or config.api_endpoint or 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON' }}"
                                placeholder="https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON">
                         <div class="form-text">Leave default unless using a custom endpoint</div>
                     </div>

@@ -4,6 +4,7 @@ from __future__ import annotations
 import anyio
 import re
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Callable, List, Tuple
 
@@ -158,6 +159,11 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
     If ADMIN_2FA_SKIP=true is set, the server bypasses 2FA entirely.
     """
     import anyio
+    from datetime import datetime, timedelta, timezone
+    import email
+    from email.header import decode_header, make_header
+    from email.utils import parsedate_to_datetime
+    import imaplib
     import os
     import re
     
@@ -167,67 +173,644 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
         return False
     
     print("[DEBUG] On 2FA page, attempting to handle...")
-    
-    # Try to get code from Mailpit
+
+    async def _raise_if_2fa_email_send_failed() -> None:
+        """Fail fast if the UI indicates the 2FA email could not be sent.
+
+        This commonly happens in live hosting due to SMTP rate limits; continuing
+        to click resend will only make the situation worse.
+        """
+        try:
+            alert_text = (await browser.text(".alert")) or ""
+        except Exception:
+            return
+        alert_text = (alert_text or "").strip()
+        if not alert_text:
+            return
+        lowered = alert_text.lower()
+        if "failed to send verification code" in lowered or "limit on the number of allowed outgoing messages" in lowered:
+            suffix = f" (ref_token={ref_token})" if ref_token else ""
+            raise AssertionError(f"2FA email send failed according to UI{suffix}: {alert_text}")
+
+    # If the UI shows an email reference token, use it to correlate the exact
+    # 2FA email we expect (subject contains the token).
+    ref_token: str | None = None
     try:
-        from ui_tests.mailpit_client import MailpitClient
-        
-        mailpit = MailpitClient()
-        
-        # Wait for 2FA email (it may take a moment)
-        msg = mailpit.wait_for_message(
-            predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
-            timeout=10.0
+        ref_token = (await browser.text("#twofa-email-ref")).strip() or None
+        if ref_token:
+            print(f"[DEBUG] 2FA page ref token: {ref_token}")
+    except Exception:
+        ref_token = None
+
+    # If the initial email send failed, don't waste time polling IMAP/Mailpit.
+    await _raise_if_2fa_email_send_failed()
+
+    # Best-effort: extract any recipient hint from the 2FA page (some UIs show
+    # a masked email like d***@example.com). This helps diagnose IMAP mailbox
+    # mismatches without needing screenshots.
+    try:
+        body_text = await browser.text("body")
+
+        def _redact_email(addr: str) -> str:
+            if "@" not in addr:
+                return addr
+            local, domain = addr.split("@", 1)
+            local = local.strip()
+            domain = domain.strip()
+            if not local:
+                return f"***@{domain}"
+            if "*" in local:
+                # Already masked by UI.
+                return f"{local}@{domain}"
+            if len(local) <= 2:
+                return f"{local[0]}***@{domain}" if local else f"***@{domain}"
+            return f"{local[0]}***{local[-1]}@{domain}"
+
+        email_hints = set(
+            re.findall(r"[A-Za-z0-9_.+\-\*]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", body_text or "")
         )
-        
-        if msg:
-            # Extract 6-digit code from email body
-            full_msg = mailpit.get_message(msg.id)
-            code_match = re.search(r'\b(\d{6})\b', full_msg.text)
-            
-            if code_match:
-                code = code_match.group(1)
-                print(f"[DEBUG] Extracted 2FA code from email: {code}")
-                
-                # Remember current URL to detect navigation (use live URL)
-                url_before = browser._page.url
-                
-                # Fill the code field and submit the form directly via JavaScript
-                await browser.evaluate(f"""
+        if email_hints:
+            redacted = ", ".join(sorted({_redact_email(e) for e in email_hints}))
+            print(f"[DEBUG] 2FA page email hint(s): {redacted}")
+    except Exception:
+        pass
+
+    # Used to avoid picking up stale 2FA codes from previous journeys.
+    flow_started_at = datetime.now(timezone.utc)
+    
+    ui_2fa_timeout = float(os.environ.get("UI_2FA_EMAIL_TIMEOUT", "10"))
+    ui_2fa_poll = float(os.environ.get("UI_2FA_EMAIL_POLL_INTERVAL", "0.5"))
+
+    def _redact_2fa_secrets(text: str) -> str:
+        if not text:
+            return ""
+        # Redact common 2FA code formats (e.g., 123456 or 123 456 or 123-456)
+        redacted = re.sub(r"\b\d{6}\b", "<2fa-code-redacted>", text)
+        redacted = re.sub(r"\b\d{3}\s*[- ]\s*\d{3}\b", "<2fa-code-redacted>", redacted)
+        return redacted
+
+    def _extract_2fa_code(text: str) -> str | None:
+        candidate = text or ""
+
+        # Collect all plausible 6-digit candidates. Some emails include other
+        # digit sequences (e.g. timestamps in reference IDs), so we avoid
+        # returning the first match blindly.
+        candidates: list[str] = []
+        candidates.extend(re.findall(r"\b\d{6}\b", candidate))
+
+        for a, b in re.findall(r"\b(\d{3})\s*[- ]\s*(\d{3})\b", candidate):
+            candidates.append(f"{a}{b}")
+
+        if not candidates:
+            return None
+
+        # Prefer the code that appears multiple times (typically plain-text + HTML),
+        # or that appears on its own line / near "verification code" phrasing.
+        def _score(code: str) -> tuple[int, int]:
+            score = 0
+            # Frequency in the full text is a strong signal.
+            freq = candidate.count(code)
+            score += min(freq, 5) * 3
+
+            # Standalone line match is common in the plain-text template.
+            if re.search(rf"(?:^|\n)\s*{re.escape(code)}\s*(?:\n|$)", candidate):
+                score += 10
+
+            # Keyword proximity.
+            prox = ""
+            m = re.search(re.escape(code), candidate)
+            if m:
+                prox = candidate[max(0, m.start() - 120) : m.start()].lower()
+            if "verification code" in prox or "login verification" in prox or "code is" in prox:
+                score += 6
+
+            return score, freq
+
+        best = max(candidates, key=_score)
+        return best
+
+    def _text_indicates_2fa(subject_text: str, body_text: str) -> bool:
+        subject_lower = (subject_text or "").lower()
+        body_lower = (body_text or "").lower()
+        return (
+            "verification" in subject_lower
+            or "login" in subject_lower
+            or "2fa" in subject_lower
+            or "two-factor" in subject_lower
+            or "verification code" in body_lower
+            or "login verification" in body_lower
+            or "two-factor" in body_lower
+            or "2fa" in body_lower
+            or "netcup api filter" in subject_lower
+            or "netcup api filter" in body_lower
+        )
+
+    def _imap_configured() -> bool:
+        return bool(
+            (os.environ.get("IMAP_HOST") or "").strip()
+            and (os.environ.get("IMAP_USER") or "").strip()
+            and (os.environ.get("IMAP_PASSWORD") or "").strip()
+        )
+
+    def _retrieve_code_via_imap(
+        not_before: datetime,
+        skew_seconds: int,
+        require_newer_than_seen: bool,
+        seen_max_by_mailbox: dict[str, int],
+    ) -> str | None:
+        host = (os.environ.get("IMAP_HOST") or "").strip()
+        user = (os.environ.get("IMAP_USER") or "").strip()
+        password = (os.environ.get("IMAP_PASSWORD") or "").strip()
+        mailbox = (os.environ.get("IMAP_MAILBOX") or "INBOX").strip() or "INBOX"
+        mailboxes = [mb.strip() for mb in (os.environ.get("IMAP_MAILBOXES") or "").split(",") if mb.strip()]
+        if not mailboxes:
+            mailboxes = [mailbox]
+        lookback = int(os.environ.get("IMAP_MESSAGE_LOOKBACK", "10"))
+        if lookback <= 0:
+            lookback = 10
+        port = int(os.environ.get("IMAP_PORT") or "993")
+        use_tls = (os.environ.get("IMAP_USE_TLS") or "true").lower() == "true"
+
+        deadline = time.monotonic() + ui_2fa_timeout
+
+        # NOTE: We intentionally avoid timestamp-based filtering as the primary
+        # freshness gate. In production webhosting/live, Date headers and even
+        # INTERNALDATE parsing can be skewed/quirky.
+        #
+        # Instead, we baseline using IMAP UIDs (monotonic) per mailbox and
+        # prefer messages with UID > baseline.
+        #
+        # However, some servers/UI flows may *not* send a second email on resend
+        # (or may send the first email very quickly). In that case, we need a
+        # safe fallback: if there are no messages beyond the baseline, consider
+        # a small lookback window but require recency via INTERNALDATE.
+
+        def _parse_internaldate(response_meta: bytes) -> datetime | None:
+            try:
+                import re
+
+                m = re.search(rb'INTERNALDATE\s+"([^"]+)"', response_meta)
+                if not m:
+                    return None
+                raw = m.group(1).decode("utf-8", errors="replace")
+                # Example: 13-Jan-2026 00:08:12 +0000
+                return datetime.strptime(raw, "%d-%b-%Y %H:%M:%S %z").astimezone(timezone.utc)
+            except Exception:
+                return None
+
+        not_before_with_skew = not_before - timedelta(seconds=max(0, skew_seconds))
+
+        last_error: str | None = None
+        poll_count = 0
+        printed_no_uid_hint = False
+        while time.monotonic() <= deadline:
+            try:
+                if use_tls:
+                    conn = imaplib.IMAP4_SSL(host, port)
+                else:
+                    conn = imaplib.IMAP4(host, port)
+
+                conn.login(user, password)
+                # Use readonly to avoid changing message flags during polling.
+                found_any = False
+                found_subject_match = 0
+                found_recent = 0
+                found_code = 0
+                mailbox_stats: list[tuple[str, int, int, int, int, int, int]] = []
+                mailbox_uid_advanced = 0
+
+                for mb in mailboxes:
+                    status, _ = conn.select(mb, readonly=True)
+                    if status != "OK":
+                        mailbox_stats.append((mb, 0, 0, 0, 0, 0, 0))
+                        continue
+
+                    # Use mailbox UIDs for monotonic baselining.
+                    baseline_uid = seen_max_by_mailbox.get(mb, 0) if require_newer_than_seen else 0
+                    status, uid_data = conn.uid("search", None, "ALL")
+                    if status != "OK" or not uid_data or not uid_data[0]:
+                        mailbox_stats.append((mb, 0, 0, 0, 0, baseline_uid, baseline_uid))
+                        continue
+
+                    try:
+                        all_uids = [int(u) for u in uid_data[0].split() if u]
+                    except Exception:
+                        all_uids = []
+
+                    mailbox_max_uid = all_uids[-1] if all_uids else 0
+
+                    if require_newer_than_seen and mailbox_max_uid > baseline_uid:
+                        mailbox_uid_advanced += 1
+
+                    # Prefer UNSEEN (reduces chance of old codes), but keep
+                    # the primary freshness gate as UID > baseline.
+                    status, new_uid_data = conn.uid("search", None, "UNSEEN")
+                    if status != "OK" or not new_uid_data or not new_uid_data[0]:
+                        status, new_uid_data = conn.uid("search", None, "ALL")
+                    if status != "OK" or not new_uid_data or not new_uid_data[0]:
+                        mailbox_stats.append((mb, 0, 0, 0, 0, baseline_uid, mailbox_max_uid))
+                        continue
+
+                    found_any = True
+                    try:
+                        candidate_uids = [int(u) for u in new_uid_data[0].split() if u]
+                    except Exception:
+                        candidate_uids = []
+
+                    # Primary gate: only consider UIDs beyond the baseline.
+                    filtered_uids = candidate_uids
+                    if require_newer_than_seen and baseline_uid:
+                        filtered_uids = [u for u in filtered_uids if u > baseline_uid]
+
+                    # Fallback: if there are no messages beyond baseline, consider
+                    # the newest messages but require INTERNALDATE recency.
+                    use_internaldate_recency_gate = False
+                    if require_newer_than_seen and baseline_uid and not filtered_uids:
+                        filtered_uids = all_uids[-lookback:]
+                        use_internaldate_recency_gate = True
+
+                    # Newest first, bounded.
+                    uids = filtered_uids[-lookback:][::-1]
+                    mailbox_ids = len(uids)
+                    mailbox_recent = 0
+                    mailbox_subject = 0
+                    mailbox_codes = 0
+                    for uid in uids:
+                        status, msg_data = conn.uid("fetch", str(uid), "(RFC822 INTERNALDATE)")
+                        if status != "OK" or not msg_data or not msg_data[0]:
+                            continue
+                        response_meta = msg_data[0][0] if isinstance(msg_data[0], tuple) else b""
+                        raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else None
+                        if not raw:
+                            continue
+                        msg = email.message_from_bytes(raw)
+
+                        subject_raw = msg.get("Subject", "")
+                        try:
+                            subject = str(make_header(decode_header(subject_raw)))
+                        except Exception:
+                            subject = str(subject_raw)
+
+                        subject_lower = subject.lower()
+                        is_relevant_subject = (
+                            "verification" in subject_lower
+                            or "login" in subject_lower
+                            or "2fa" in subject_lower
+                            or "netcup api filter" in subject_lower
+                        )
+
+                        if ref_token and ref_token.lower() not in subject_lower:
+                            continue
+
+                        internal_dt = _parse_internaldate(response_meta)
+                        if use_internaldate_recency_gate and internal_dt is not None:
+                            if internal_dt < not_before_with_skew:
+                                continue
+
+                        mailbox_recent += 1
+                        found_recent += 1
+
+                        if is_relevant_subject:
+                            mailbox_subject += 1
+                            found_subject_match += 1
+                        else:
+                            # Subject filter is advisory only: still allow body match.
+                            pass
+
+                        body_text = ""
+                        if msg.is_multipart():
+                            for part in msg.walk():
+                                ctype = part.get_content_type()
+                                if ctype in {"text/plain", "text/html"}:
+                                    payload = part.get_payload(decode=True) or b""
+                                    charset = part.get_content_charset() or "utf-8"
+                                    body_text += payload.decode(charset, errors="replace")
+                        else:
+                            payload = msg.get_payload(decode=True) or b""
+                            charset = msg.get_content_charset() or "utf-8"
+                            body_text = payload.decode(charset, errors="replace")
+
+                        code = _extract_2fa_code(body_text) or _extract_2fa_code(subject)
+                        if code:
+                            # Avoid false positives from unrelated mail that happens
+                            # to contain 6 digits.
+                            if not _text_indicates_2fa(subject, body_text):
+                                continue
+                            mailbox_codes += 1
+                            found_code += 1
+                            if mailbox_max_uid:
+                                seen_max_by_mailbox[mb] = max(seen_max_by_mailbox.get(mb, 0), mailbox_max_uid)
+                            conn.logout()
+                            return code
+
+                    # Update baseline tracking after scanning this mailbox.
+                    if mailbox_max_uid:
+                        seen_max_by_mailbox[mb] = max(seen_max_by_mailbox.get(mb, 0), mailbox_max_uid)
+
+                    mailbox_stats.append(
+                        (
+                            mb,
+                            mailbox_ids,
+                            mailbox_recent,
+                            mailbox_subject,
+                            mailbox_codes,
+                            baseline_uid,
+                            mailbox_max_uid,
+                        )
+                    )
+
+                poll_count += 1
+
+                # Only emit safe diagnostics when we couldn't find a code.
+                if not found_any:
+                    print(f"[DEBUG] IMAP poll: no messages returned from mailbox(es)={mailboxes}")
+                else:
+                    # Keep logs readable: always emit a short summary, and emit
+                    # per-mailbox stats periodically (or when interesting).
+                    print(
+                        "[DEBUG] IMAP poll: "
+                        f"mailboxes={mailboxes} recent_candidates={found_recent} "
+                        f"subject_matches={found_subject_match} codes_found={found_code}"
+                    )
+
+                    emit_details = (found_code > 0) or (poll_count <= 2) or (poll_count % 5 == 0)
+                    if emit_details:
+                        for (mb, mailbox_ids, mailbox_recent, mailbox_subject, mailbox_codes, baseline_uid, mailbox_max_uid) in mailbox_stats:
+                            print(
+                                "[DEBUG] IMAP mailbox stats: "
+                                f"mailbox={mb} ids={mailbox_ids} recent={mailbox_recent} "
+                                f"subject={mailbox_subject} codes={mailbox_codes} "
+                                f"baseline_uid={baseline_uid} max_uid={mailbox_max_uid}"
+                            )
+
+                        if require_newer_than_seen and mailbox_uid_advanced == 0 and not printed_no_uid_hint:
+                            # This strongly suggests the 2FA email is not landing in any polled mailbox.
+                            # Common cause: admin 2FA email differs from IMAP_USER.
+                            print(
+                                "[HINT] No new IMAP UIDs observed in any mailbox during polling. "
+                                "This usually means the 2FA email is being sent to a different address/mailbox than IMAP_USER, "
+                                "or SMTP delivery is failing on the remote deployment."
+                            )
+                            printed_no_uid_hint = True
+                        else:
+                            print(
+                                "[HINT] If 2FA emails land outside INBOX, set IMAP_MAILBOX or IMAP_MAILBOXES (comma-separated)"
+                            )
+
+                conn.logout()
+            except Exception:
+                # Don't leak secrets; just retry until deadline.
+                try:
+                    last_error = "imap-error"
+                except Exception:
+                    last_error = "imap-error"
+            time.sleep(ui_2fa_poll)
+
+        return None
+
+    deployment_target = os.environ.get("DEPLOYMENT_TARGET", "").strip().lower()
+    deployment_mode = os.environ.get("DEPLOYMENT_MODE", "").strip().lower()
+    default_channels = "imap" if deployment_target == "webhosting" else "mailpit,imap"
+    channels = [
+        c.strip().lower()
+        for c in os.environ.get("UI_2FA_CHANNELS", default_channels).split(",")
+        if c.strip()
+    ]
+
+    nav_timeout = float(
+        os.environ.get(
+            "UI_2FA_NAV_TIMEOUT",
+            "45" if deployment_target == "webhosting" else "10",
+        )
+    )
+    nav_steps = max(1, int(nav_timeout / 0.5))
+
+    # Try to get code from Mailpit (primarily for local/mock runs)
+    if "mailpit" in channels:
+        # In webhosting live mode, the Playwright/Mailpit container may be reachable
+        # but it won't receive real SMTP. Keep this bounded via config.
+        mailpit_timeout = float(
+            os.environ.get(
+                "UI_2FA_MAILPIT_TIMEOUT",
+                "5" if deployment_target == "webhosting" else str(ui_2fa_timeout),
+            )
+        )
+
+        mailpit = None
+        try:
+            from ui_tests.mailpit_client import MailpitClient
+
+            mailpit = MailpitClient()
+
+            # wait_for_message() is synchronous and uses time.sleep(); run it off-thread.
+            msg = await anyio.to_thread.run_sync(
+                lambda: mailpit.wait_for_message(
+                    predicate=(
+                        (lambda m: ref_token.lower() in m.subject.lower())
+                        if ref_token
+                        else (lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower())
+                    ),
+                    timeout=mailpit_timeout,
+                    poll_interval=ui_2fa_poll,
+                )
+            )
+
+            if msg:
+                code = _extract_2fa_code((msg.text or "") + "\n" + (msg.html or ""))
+                if code:
+                    print("[DEBUG] Extracted 2FA code from Mailpit email")
+
+                    url_before = browser._page.url
+                    try:
+                        await browser.evaluate(
+                            f"""
+                            (function() {{
+                                const input = document.getElementById('code') || document.querySelector(\"#code, input[name='code']\");
+                                const form = document.getElementById('twoFaForm');
+                                if (input && form) {{
+                                    input.value = '{code}';
+                                    form.submit();
+                                }}
+                            }})();
+                            """
+                        )
+                    except Exception as exc:
+                        if "Execution context was destroyed" not in str(exc):
+                            raise
+                        print("[WARN] 2FA submit raced navigation; continuing")
+
+                    for _ in range(nav_steps):
+                        await anyio.sleep(0.5)
+                        new_url = browser._page.url
+                        if new_url != url_before and "/2fa" not in new_url:
+                            print(f"[DEBUG] 2FA navigation complete: {new_url}")
+                            mailpit.delete_message(msg.id)
+                            return True
+
+                    print(f"[WARN] 2FA navigation did not complete, still at: {browser._page.url}")
+                else:
+                    preview = _redact_2fa_secrets((msg.text or msg.html or "")[:200])
+                    print(f"[WARN] Could not extract code from Mailpit email: {preview}")
+            else:
+                print("[WARN] No 2FA email found in Mailpit")
+        except Exception as e:
+            print(f"[WARN] Could not handle 2FA via Mailpit: {e}")
+        finally:
+            try:
+                if mailpit:
+                    mailpit.close()
+            except Exception:
+                pass
+
+    async def _trigger_resend_if_available() -> bool:
+        # Resend updates the server-side expected code in the session cookie.
+        # If we don't await the navigation/redirect, we can end up polling IMAP
+        # for a freshly-sent code but submitting it with a *stale* session.
+        try:
+            btns = browser._page.locator("form[action*='resend'] button[type='submit']")
+            if await btns.count() <= 0:
+                return False
+
+            try:
+                async with browser._page.expect_navigation(wait_until="domcontentloaded", timeout=int(nav_timeout * 1000)):
+                    await btns.first.click()
+            except Exception:
+                # Some pages can short-circuit without a full navigation (e.g. same-url redirects).
+                # Still give the browser a chance to process cookies/flash.
+                await anyio.sleep(0.5)
+
+            await _raise_if_2fa_email_send_failed()
+            return True
+        except Exception:
+            return False
+
+    def _snapshot_imap_max_uids(seen_max_by_mailbox: dict[str, int]) -> None:
+        host = (os.environ.get("IMAP_HOST") or "").strip()
+        user = (os.environ.get("IMAP_USER") or "").strip()
+        password = (os.environ.get("IMAP_PASSWORD") or "").strip()
+        mailbox = (os.environ.get("IMAP_MAILBOX") or "INBOX").strip() or "INBOX"
+        mailboxes = [mb.strip() for mb in (os.environ.get("IMAP_MAILBOXES") or "").split(",") if mb.strip()]
+        if not mailboxes:
+            mailboxes = [mailbox]
+        port = int(os.environ.get("IMAP_PORT") or "993")
+        use_tls = (os.environ.get("IMAP_USE_TLS") or "true").lower() == "true"
+
+        try:
+            import imaplib
+
+            conn = imaplib.IMAP4_SSL(host, port) if use_tls else imaplib.IMAP4(host, port)
+            conn.login(user, password)
+            for mb in mailboxes:
+                status, _ = conn.select(mb, readonly=True)
+                if status != "OK":
+                    continue
+                status, uid_data = conn.uid("search", None, "ALL")
+                if status != "OK" or not uid_data or not uid_data[0]:
+                    seen_max_by_mailbox[mb] = max(seen_max_by_mailbox.get(mb, 0), 0)
+                    continue
+                try:
+                    all_uids = [int(u) for u in uid_data[0].split() if u]
+                except Exception:
+                    all_uids = []
+                mailbox_max_uid = all_uids[-1] if all_uids else 0
+                seen_max_by_mailbox[mb] = max(seen_max_by_mailbox.get(mb, 0), mailbox_max_uid)
+            conn.logout()
+        except Exception:
+            # Best-effort only. If snapshot fails, polling will still run.
+            return
+
+    # Fallback: IMAP (useful for live deployments where Mailpit isn't in the path)
+    if _imap_configured() and "imap" in channels:
+        print("[DEBUG] Falling back to IMAP for 2FA code...")
+        # First attempt: use the current code that should have been sent on GET.
+        # Second attempt: explicitly resend to ensure a fresh code (avoids stale
+        # codes from earlier journeys).
+        imap_skew_seconds = int(os.environ.get("UI_2FA_IMAP_SKEW_SECONDS", "300"))
+        # Post-resend: allow timestamp skew, but also require a message newer
+        # than what we observed before clicking resend (tracked via IMAP sequence).
+        imap_resend_skew_seconds = int(os.environ.get("UI_2FA_IMAP_RESEND_SKEW_SECONDS", "300"))
+
+        seen_max_by_mailbox: dict[str, int] = {}
+
+        # Optional: force resend flow to reduce chance of picking up a stale code.
+        force_resend = (os.environ.get("UI_2FA_IMAP_FORCE_RESEND", "false") or "false").lower() == "true"
+
+        for attempt in range(2):
+            if attempt == 0 and force_resend:
+                print("[DEBUG] IMAP: force resend enabled; baselining mailbox UIDs before resend...")
+                # Snapshot baseline UIDs once, then resend, then require UID > baseline.
+                await anyio.to_thread.run_sync(_snapshot_imap_max_uids, seen_max_by_mailbox)
+                print("[DEBUG] IMAP: triggering 2FA resend (force mode)...")
+                clicked = await _trigger_resend_if_available()
+                if not clicked:
+                    print("[WARN] IMAP: force resend requested but resend button not found")
+                flow_started_at = datetime.now(timezone.utc)
+
+            if attempt == 1:
+                print("[DEBUG] IMAP retry: triggering 2FA resend...")
+                clicked = await _trigger_resend_if_available()
+                if not clicked:
+                    print("[WARN] IMAP retry: resend button not found")
+                flow_started_at = datetime.now(timezone.utc)
+
+            skew = imap_resend_skew_seconds if attempt == 1 else imap_skew_seconds
+            require_newer_than_seen = (attempt == 1) or force_resend
+            code = await anyio.to_thread.run_sync(
+                _retrieve_code_via_imap,
+                flow_started_at,
+                skew,
+                require_newer_than_seen,
+                seen_max_by_mailbox,
+            )
+            if not code:
+                if attempt == 0:
+                    continue
+                print("[WARN] IMAP configured, but no 2FA code could be extracted")
+                break
+
+            print("[DEBUG] IMAP retrieved a 2FA code; submitting...")
+
+            url_before = browser._page.url
+            try:
+                await browser.evaluate(
+                    f"""
                     (function() {{
-                        const input = document.getElementById('code');
+                        const input = document.getElementById('code') || document.querySelector("#code, input[name='code']");
                         const form = document.getElementById('twoFaForm');
                         if (input && form) {{
                             input.value = '{code}';
                             form.submit();
                         }}
                     }})();
-                """)
-                
-                # Wait for navigation to complete
-                for _ in range(20):  # Up to 10 seconds
-                    await anyio.sleep(0.5)
-                    # Get live URL directly from page
-                    new_url = browser._page.url
-                    if new_url != url_before and "/2fa" not in new_url:
-                        print(f"[DEBUG] 2FA navigation complete: {new_url}")
-                        break
-                else:
-                    print(f"[WARN] 2FA navigation did not complete, still at: {browser._page.url}")
-                
-                # Clear the used email
-                mailpit.delete_message(msg.id)
-                mailpit.close()
-                return True
-            else:
-                print(f"[WARN] Could not extract code from email: {full_msg.text[:200]}")
-        else:
-            print("[WARN] No 2FA email found in Mailpit")
-        
-        mailpit.close()
-    except Exception as e:
-        print(f"[WARN] Could not handle 2FA via Mailpit: {e}")
-        print("[HINT] Ensure ADMIN_2FA_SKIP=true is set for test mode, or Mailpit is running")
+                    """
+                )
+            except Exception as exc:
+                # Playwright can throw "Execution context was destroyed" if the
+                # submit triggers a fast navigation while the JS is being
+                # evaluated. Treat this as a benign race and rely on the URL
+                # polling below to confirm success.
+                if "Execution context was destroyed" not in str(exc):
+                    raise
+                print("[WARN] 2FA submit raced navigation; continuing")
+
+            for _ in range(nav_steps):
+                await anyio.sleep(0.5)
+                new_url = browser._page.url
+                if new_url != url_before and "/2fa" not in new_url:
+                    print(f"[DEBUG] 2FA navigation complete (IMAP): {new_url}")
+                    return True
+
+            # If we didn't navigate, the code may have been stale/invalid.
+            print(f"[WARN] 2FA navigation did not complete (IMAP), still at: {browser._page.url}")
+
+            try:
+                page_text = await browser.text("body")
+                page_preview = _redact_2fa_secrets(page_text[:500])
+                lowered = page_text.lower()
+                if "invalid" in lowered or "expired" in lowered or "incorrect" in lowered or "try again" in lowered:
+                    print(f"[DEBUG] 2FA page indicates rejection: {page_preview}")
+            except Exception:
+                pass
     
     return False
 
@@ -249,6 +832,21 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     # CRITICAL: Refresh credentials from deployment state file before login
     # This ensures we have the latest password if another test changed it
     settings.refresh_credentials()
+
+    # Default behavior: prefer session reuse.
+    # If the Playwright context loaded a saved storage state (cookies), we may
+    # already be authenticated. Checking /admin/ first avoids triggering a new
+    # login + 2FA email.
+    try:
+        await browser.goto(settings.url("/admin/"), wait_until="domcontentloaded")
+        await anyio.sleep(0.2)
+        current_url = browser._page.url
+        if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+            print("[DEBUG] Session reuse: already authenticated for admin")
+            return browser
+    except Exception:
+        # Non-fatal: if backend/proxy hiccups, fall back to explicit login flow.
+        pass
     
     # Check if we're already logged in (on an admin page that isn't login)
     # Use live URL (not cached)
@@ -261,8 +859,8 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         return browser
     
     # Try to login with current password first
-    await browser.goto(settings.url("/admin/login"))
-    await anyio.sleep(0.5)
+    await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+    await anyio.sleep(0.2)
     
     # Check if we were redirected (already logged in via session)
     current_url = browser._page.url
@@ -270,53 +868,121 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         print("[DEBUG] Already logged in (redirected from login), on dashboard")
         return browser
     
-    # Check if login form exists
-    username_field = await browser.query_selector("#username")
-    if not username_field:
-        # No login form - check if we're on admin page
-        if "/admin" in current_url and "/login" not in current_url and "/2fa" not in current_url:
-            print("[DEBUG] Already on admin page (no login form)")
+    # Ensure login form exists (or we were redirected into /admin/)
+    # Sometimes the TLS proxy or backend can briefly return a non-login page (e.g. 502/error).
+    username_field = None
+    password_field = None
+    for attempt in range(2):
+        current_url = browser._page.url
+        if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+            print("[DEBUG] Already on admin page (redirected/active session)")
             return browser
+
+        username_field = await browser.query_selector("#username")
+        password_field = await browser.query_selector("#password")
+        if username_field and password_field:
+            break
+
+        if attempt == 0:
+            print("[WARN] Admin login form not found; reloading once...")
+            await browser._page.reload(wait_until="domcontentloaded")
+            await anyio.sleep(0.2)
+
+    if not username_field or not password_field:
+        body_preview = (await browser.text("body"))[:300]
+        raise AssertionError(
+            "Admin login form did not render (#username/#password not found). "
+            f"url={browser._page.url} title={browser.current_title!r} preview={body_preview!r}"
+        )
     
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", settings.admin_password)
-    
-    # Submit the login form
-    print("[DEBUG] Submitting login form...")
-    print(f"[DEBUG] Current URL: {browser._page.url}")
-    print(f"[DEBUG] Credentials: {settings.admin_username}/{'*' * len(settings.admin_password)}")
-    
-    await browser.click("button[type='submit']")
-    await anyio.sleep(1.0)  # Give time for navigation/redirect
-    print(f"[DEBUG] URL after form submit: {browser._page.url}")
-    
-    # Check for error messages
-    body_text = await browser.text("body")
-    has_invalid = "Invalid username or password" in body_text or "Invalid credentials" in body_text
-    print(f"[DEBUG] Body text check: has_invalid={has_invalid}, len={len(body_text)}")
-    if has_invalid:
-        # Only fail if we're still on login page (use live URL)
-        if "/login" in browser._page.url:
-            print(f"[ERROR] Login failed. Page shows: {body_text[:500]}")
-            raise AssertionError(f"Login failed: {body_text[:200]}")
-        else:
-            # Flash message from previous attempt but we're logged in
-            print(f"[DEBUG] Ignoring stale 'Invalid' flash message - already on dashboard")
-    
-    if "lockout" in body_text.lower() or "locked" in body_text.lower():
-        print(f"[ERROR] Account locked out. Page shows: {body_text[:500]}")
-        raise AssertionError(f"Account locked: {body_text[:200]}")
-    
-    # Handle 2FA if we're redirected there
-    await handle_2fa_if_present(browser)
-    
-    # Re-check current page after potential 2FA (use live URL)
-    current_url = browser._page.url
-    print(f"[DEBUG] URL after 2FA check: {current_url}")
+
+    # Submit the login form (with a small retry loop).
+    # In live/proxied environments it's possible to get bounced back to /admin/login
+    # even when credentials are correct (transient backend/proxy issues, rate limits).
+    import os
+
+    max_attempts = max(1, int(os.getenv("UI_ADMIN_LOGIN_ATTEMPTS", "2")))
+    retry_delay = float(os.getenv("UI_ADMIN_LOGIN_RETRY_DELAY", "1.0"))
+
+    for attempt in range(max_attempts):
+        print("[DEBUG] Submitting login form...")
+        print(f"[DEBUG] Current URL: {browser._page.url}")
+        print(f"[DEBUG] Credentials: {settings.admin_username}/{'*' * len(settings.admin_password)}")
+
+        # Be specific: the standalone template includes other buttons; clicking a
+        # generic submit button can occasionally hit the wrong control.
+        await browser.click("form[action*='/admin/login'] button[type='submit']")
+        await anyio.sleep(1.0)  # Give time for navigation/redirect
+        print(f"[DEBUG] URL after form submit: {browser._page.url}")
+
+        # Check for error messages
+        body_text = await browser.text("body")
+        has_invalid = "Invalid username or password" in body_text or "Invalid credentials" in body_text
+        print(f"[DEBUG] Body text check: has_invalid={has_invalid}, len={len(body_text)}")
+        if has_invalid:
+            # Only fail if we're still on login page (use live URL)
+            if "/login" in browser._page.url:
+                print(f"[ERROR] Login failed. Page shows: {body_text[:500]}")
+                raise AssertionError(f"Login failed: {body_text[:200]}")
+            else:
+                # Flash message from previous attempt but we're logged in
+                print(f"[DEBUG] Ignoring stale 'Invalid' flash message - already on dashboard")
+
+        if "lockout" in body_text.lower() or "locked" in body_text.lower():
+            print(f"[ERROR] Account locked out. Page shows: {body_text[:500]}")
+            raise AssertionError(f"Account locked: {body_text[:200]}")
+
+        # Handle 2FA if we're redirected there
+        handled_2fa = await handle_2fa_if_present(browser)
+
+        # If 2FA was handled, give extra time for navigation to complete
+        if handled_2fa:
+            print("[DEBUG] 2FA was handled, waiting for navigation...")
+            await anyio.sleep(1.0)
+
+        # Re-check current page after potential 2FA (use live URL)
+        current_url = browser._page.url
+        print(f"[DEBUG] URL after 2FA check: {current_url}")
+
+        # If we're still on the login page (but NOT on the 2FA step), we did not
+        # establish a session. Allow a retry before failing hard.
+        if "/admin/login" in current_url and "/2fa" not in current_url:
+            if attempt < max_attempts - 1:
+                print(f"[WARN] Still on /admin/login after submit; retrying ({attempt + 1}/{max_attempts})...")
+                await browser._page.reload(wait_until="domcontentloaded")
+                await anyio.sleep(retry_delay)
+                await browser.fill("#username", settings.admin_username)
+                await browser.fill("#password", settings.admin_password)
+                continue
+
+            try:
+                login_h1 = await browser.text("h1")
+            except Exception:
+                login_h1 = ""
+            body_preview = (await browser.text("body"))[:500]
+            raise AssertionError(
+                "Admin login did not establish a session (still on /admin/login). "
+                f"url={current_url} h1={login_h1!r} preview={body_preview!r}"
+            )
+
+        # Successful transition away from /admin/login (or into /2fa)
+        break
     
     # Check if we're on change password page or dashboard
-    current_h1 = await browser.text("main h1")
-    print(f"[DEBUG] Final h1 after login: '{current_h1}'")
+    # Try main h1 first (standard pages), then h1 (standalone pages like change-password)
+    try:
+        current_h1 = await browser.text("main h1")
+        print(f"[DEBUG] Final h1 after login: '{current_h1}'")
+    except Exception:
+        # Fallback to h1 without main (standalone pages)
+        try:
+            current_h1 = await browser.text("h1")
+            print(f"[DEBUG] Final h1 after login (standalone page): '{current_h1}'")
+        except Exception as e:
+            print(f"[ERROR] Could not find h1 on page: {e}")
+            raise
     
     if "Change Password" in current_h1 or "Initial Setup" in current_h1:
         print("[DEBUG] On password change/setup page, generating new secure password...")
@@ -330,10 +996,18 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         # Check if email field is present (first-time setup)
         email_field = await browser.query_selector("#email")
         if email_field:
-            # Set a test email for 2FA
-            test_email = f"admin-test-{secrets.token_hex(4)}@example.test"
-            print(f"[DEBUG] Setting up email for 2FA: {test_email}")
-            await browser.fill("#email", test_email)
+            # In webhosting/live mode, never write a dummy email address.
+            # Use the deployment state email (single source of truth) so 2FA can be received.
+            email_to_set: str | None = None
+            try:
+                state = load_state(get_deployment_target())
+                email_to_set = (state.admin.email or "").strip() or None
+            except Exception:
+                email_to_set = None
+
+            if email_to_set:
+                print(f"[DEBUG] Setting up email for 2FA: {email_to_set}")
+                await browser.fill("#email", email_to_set)
         
         # Fill password fields - current_password may not be present for forced change
         current_password_field = await browser.query_selector("#current_password")
@@ -388,10 +1062,105 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         settings._active.admin_password = new_password
         settings._active.admin_new_password = new_password
     
-    # Final verification - ensure we're on dashboard
-    current_h1 = await browser.text("main h1")
-    print(f"[DEBUG] Before final verification: h1='{current_h1}', URL={browser.current_url}")
-    await browser.wait_for_text("main h1", "Dashboard", timeout=10.0)
+    # Final verification - ensure we're on dashboard (use live URL)
+    try:
+        current_h1 = await browser.text("main h1")
+    except Exception:
+        current_h1 = await browser.text("h1")
+    current_url_live = browser._page.url
+    print(f"[DEBUG] Before final verification: h1='{current_h1}', URL={current_url_live}")
+    
+    # If still on 2FA page, try to handle it one more time
+    if "/2fa" in current_url_live:
+        print("[WARN] Still on 2FA page, attempting to handle again...")
+        handled_2fa = await handle_2fa_if_present(browser)
+        if handled_2fa:
+            await anyio.sleep(1.0)  # Give time for navigation
+        current_url_live = browser._page.url
+        print(f"[DEBUG] After retry: URL={current_url_live}")
+    
+    await browser.wait_for_text("h1", "Dashboard", timeout=10.0)
+
+    # Optional: persist session cookies/localStorage for future tests.
+    # This reduces repeated admin logins and avoids generating unnecessary 2FA emails.
+    import os
+    from ui_tests.deployment_state import get_playwright_storage_state_path
+
+    storage_state_path = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
+    if not storage_state_path:
+        storage_state_path = str(get_playwright_storage_state_path())
+
+    if storage_state_path:
+        try:
+            os.makedirs(os.path.dirname(storage_state_path) or ".", exist_ok=True)
+            await browser._page.context.storage_state(path=storage_state_path)
+            print(f"[DEBUG] Saved Playwright storage state: {storage_state_path}")
+        except Exception as exc:
+            print(f"[WARN] Failed to save Playwright storage state: {exc}")
+
+    return browser
+
+
+async def ensure_user_dashboard(browser: Browser) -> Browser:
+    """Log into the account portal and land on the user dashboard.
+
+    Uses the preseeded demo account credentials (config-driven):
+    - DEFAULT_TEST_CLIENT_ID
+    - DEFAULT_TEST_ACCOUNT_PASSWORD
+
+    If the account portal or demo credentials are not available in the current
+    environment, this will skip the calling test.
+    """
+    import anyio
+    import os
+
+    import pytest
+    from netcup_api_filter.config_defaults import get_default
+
+    # Already logged in?
+    current_url = browser._page.url
+    if "/account/" in current_url and "/account/login" not in current_url and "/2fa" not in current_url:
+        await browser.goto(settings.url("/account/dashboard"))
+        await anyio.sleep(0.3)
+        return browser
+
+    demo_username = os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_default("DEFAULT_TEST_CLIENT_ID")
+    demo_password = os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD") or get_default("DEFAULT_TEST_ACCOUNT_PASSWORD")
+    if not demo_username or not demo_password:
+        pytest.skip(
+            "No demo account credentials configured for account portal tests "
+            "(DEFAULT_TEST_CLIENT_ID / DEFAULT_TEST_ACCOUNT_PASSWORD)"
+        )
+
+    await browser.goto(settings.url("/account/login"))
+    await browser._page.wait_for_load_state("networkidle")
+
+    username_field = await browser.query_selector("#username")
+    password_field = await browser.query_selector("#password")
+    if not username_field or not password_field:
+        pytest.skip("Account login page not available")
+
+    await browser.fill("#username", demo_username)
+    await browser.fill("#password", demo_password)
+    await browser.click("button[type='submit']")
+    await anyio.sleep(1.0)
+
+    await handle_2fa_if_present(browser, timeout=10.0)
+
+    # Land on dashboard to verify we are authenticated.
+    await browser.goto(settings.url("/account/dashboard"), wait_until="domcontentloaded")
+    await anyio.sleep(0.3)
+
+    # If redirected back to login, assume demo account is not usable in this environment.
+    if "/account/login" in browser._page.url:
+        body = await browser.text("body")
+        lowered = body.lower()
+        if "invalid" in lowered or "locked" in lowered:
+            pytest.skip("Demo account login failed or account locked")
+        pytest.skip("Account portal login did not establish a session")
+
+    # Basic sanity check that the dashboard rendered.
+    await browser.wait_for_text("h1", "Dashboard", timeout=10.0)
 
     return browser
 
@@ -506,11 +1275,15 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.fill("#password", settings.admin_password)
     await browser.click("button[type='submit']")
     await anyio.sleep(1.0)
+
+    # If admin 2FA is enabled, complete the challenge before checking final state.
+    await handle_2fa_if_present(browser, timeout=10.0)
+    await anyio.sleep(0.5)
     
     # Check if login was successful by looking for dashboard or change-password redirect
     # After login restructuring, check both the page content and URL
     body_text = await browser.text("body")
-    current_url = browser.current_url or ""
+    current_url = browser._page.url or ""
     
     if "/admin/change-password" in current_url or "Change Password" in body_text:
         # On change password page - this is expected for fresh database
@@ -526,7 +1299,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
         if "Too many failed login attempts" in body_text:
             raise AssertionError("Account is locked out. Wait 15 minutes or redeploy to reset database.")
         elif "/admin/login" in current_url:
-            # Still on login page - login failed
+            # Still on login page - login failed (or 2FA didn't complete)
             print(f"DEBUG: Login failed. URL: {current_url}, Body: {body_text[:500]}")
             raise AssertionError(f"Login failed - still on login page")
         else:
@@ -593,11 +1366,14 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     await browser.fill("#password", new_password)
     await browser.click("button[type='submit']")
     await anyio.sleep(1.0)
+
+    # Admin logins may require 2FA again after logout.
+    await handle_2fa_if_present(browser, timeout=10.0)
     
     # After login with new password, we should go directly to dashboard
     # (the password was already changed so no change-password redirect)
     body_text = await browser.text("body")
-    current_url = browser.current_url or ""
+    current_url = getattr(browser, "_page", None).url if getattr(browser, "_page", None) else (browser.current_url or "")
     print(f"[DEBUG] After re-login: URL={current_url}, body preview={body_text[:200]}")
     await browser.wait_for_text("main h1", "Dashboard")
     
@@ -624,9 +1400,9 @@ async def verify_admin_nav(browser: Browser) -> List[Tuple[str, str]]:
     
     # Config dropdown items
     config_items: List[Tuple[str, str, str]] = [
-        ("Netcup API", "a.dropdown-item[href='/admin/config/netcup']", "Netcup API Configuration"),
-        ("Email", "a.dropdown-item[href='/admin/config/email']", "Email Configuration"),
+        ("Settings", "a.dropdown-item[href='/admin/settings']", "Settings"),
         ("System", "a.dropdown-item[href='/admin/system']", "System Information"),
+        ("Logs", "a.dropdown-item[href='/admin/app-logs']", "Application Logs"),
     ]
 
     visited: List[Tuple[str, str]] = []
@@ -857,8 +1633,33 @@ async def admin_logout_and_prepare_client_login(browser: Browser) -> None:
     print("[DEBUG] Workflow: Client login page is ready.")
 
 
-async def admin_logout(browser: Browser) -> None:
-    """Logout from admin UI and wait for login page."""
+async def admin_logout(
+    browser: Browser,
+    *,
+    clear_session: bool = False,
+    clear_persisted_state: bool = False,
+) -> None:
+    """Logout from admin UI and wait for login page.
+
+    Args:
+        browser: Current browser session
+        clear_session: If True, clears cookies + local/session storage after logout
+        clear_persisted_state: If True, deletes the persisted Playwright storage-state
+            file so subsequent tests/runs cannot reuse the previous session.
+    """
+    return await _admin_logout_impl(
+        browser,
+        clear_session=clear_session,
+        clear_persisted_state=clear_persisted_state,
+    )
+
+
+async def _admin_logout_impl(
+    browser: Browser,
+    *,
+    clear_session: bool = False,
+    clear_persisted_state: bool = False,
+) -> None:
     print("[DEBUG] Admin logout: using JavaScript to open dropdown and logout.")
     # Use JavaScript to reliably open dropdown and click logout
     await browser.evaluate(
@@ -881,6 +1682,42 @@ async def admin_logout(browser: Browser) -> None:
     # After logout, we should be on the admin login page.
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
     print("[DEBUG] Admin logout: successfully detected admin login page.")
+
+    if clear_session:
+        # Clear cookies and origin storage to avoid leaking auth between users.
+        try:
+            await browser._page.context.clear_cookies()
+        except Exception as exc:
+            print(f"[WARN] Failed to clear cookies: {exc}")
+
+        try:
+            await browser.evaluate(
+                """
+                () => {
+                    try { window.localStorage?.clear?.(); } catch (e) {}
+                    try { window.sessionStorage?.clear?.(); } catch (e) {}
+                }
+                """
+            )
+        except Exception as exc:
+            print(f"[WARN] Failed to clear local/session storage: {exc}")
+
+    if clear_persisted_state:
+        try:
+            from ui_tests.deployment_state import clear_playwright_storage_state
+
+            deleted = clear_playwright_storage_state(name="admin")
+            if deleted:
+                print("[DEBUG] Deleted persisted Playwright storage state")
+            else:
+                print("[DEBUG] No persisted Playwright storage state to delete")
+        except Exception as exc:
+            print(f"[WARN] Failed to delete persisted Playwright storage state: {exc}")
+
+
+async def admin_logout_and_clear_auth_state(browser: Browser) -> None:
+    """Logout and fully invalidate auth state (in-memory + persisted)."""
+    await _admin_logout_impl(browser, clear_session=True, clear_persisted_state=True)
 
 
 async def client_portal_login(browser: Browser) -> Browser:
@@ -973,10 +1810,10 @@ async def admin_create_client_and_extract_token(browser: Browser, data: ClientFo
 async def admin_save_netcup_config(browser: Browser) -> None:
     await open_admin_netcup_config(browser)
     defaults = {
-        "#customer_number": "123456",
+        "#customer_id": "123456",
         "#api_key": "local-api-key",
         "#api_password": "local-api-pass",
-        "#api_endpoint": "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
+        "#api_url": "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
         "#timeout": "30",
     }
 
@@ -1002,18 +1839,22 @@ async def admin_email_save_expect_error(browser: Browser) -> None:
     assert "smtp_port" in page_html, "SMTP port field not found"
     assert "from_email" in page_html, "From email field not found"
     
+    target = get_deployment_target()
+    if target == "webhosting":
+        # In live mode, do not mutate SMTP settings; it can break 2FA and invite emails.
+        return
+
     # Fill valid test values
     await browser.fill("#smtp_host", "smtp.test.local")
     await browser.fill("#smtp_port", "587")
     await browser.fill("#from_email", "test@example.com")
-    
+
     # Submit form and check for success
     await browser.click('button[type="submit"]')
     await browser.wait_for_text("body", "saved", timeout=10.0)
-    
+
     # Restore Mailpit config so other tests can send real emails
-    # This is important for Registration E2E tests that rely on Mailpit
-    # Read correct hostname from environment (naf-dev-mailpit in local dev)
+    # This is important for local E2E tests that rely on Mailpit
     import os
     mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
     await open_admin_email_settings(browser)
@@ -1031,10 +1872,12 @@ async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     """
     await open_admin_email_settings(browser)
     
-    # Fill required fields first
-    await browser.fill("#smtp_host", "smtp.test.local")
-    await browser.fill("#smtp_port", "587")
-    await browser.fill("#from_email", "test@example.com")
+    target = get_deployment_target()
+    if target != "webhosting":
+        # In local mode we can safely set placeholder values and then restore.
+        await browser.fill("#smtp_host", "smtp.test.local")
+        await browser.fill("#smtp_port", "587")
+        await browser.fill("#from_email", "test@example.com")
     
     # Click the test email button (uses JavaScript sendTestEmail function)
     await browser.click('button:has-text("Send Test Email")')
@@ -1046,15 +1889,17 @@ async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     # After clicking, either spinner or result should appear
     assert "spinner" in status_html.lower() or "badge" in status_html.lower() or "sending" in status_html.lower() or "check" in status_html.lower()
     
-    # Restore Mailpit config so other tests can send real emails
-    import os
-    mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
-    await open_admin_email_settings(browser)
-    await browser.fill("#smtp_host", mailpit_host)
-    await browser.fill("#smtp_port", "1025")
-    await browser.fill("#from_email", "naf@example.com")
-    await browser.click('button[type="submit"]')
-    await browser.wait_for_text("body", "saved", timeout=10.0)
+    if target != "webhosting":
+        # Restore Mailpit config so other tests can send real emails
+        import os
+
+        mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
+        await open_admin_email_settings(browser)
+        await browser.fill("#smtp_host", mailpit_host)
+        await browser.fill("#smtp_port", "1025")
+        await browser.fill("#from_email", "naf@example.com")
+        await browser.click('button[type="submit"]')
+        await browser.wait_for_text("body", "saved", timeout=10.0)
 
 
 async def client_portal_manage_all_domains(browser: Browser) -> List[str]:

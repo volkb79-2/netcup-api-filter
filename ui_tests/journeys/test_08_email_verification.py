@@ -14,7 +14,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import re
 from typing import Optional
 
@@ -78,7 +77,7 @@ class TestPasswordResetEmailFlow:
         
         # Navigate to accounts list
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Find a non-admin account to reset
         # Look for account links
@@ -89,7 +88,7 @@ class TestPasswordResetEmailFlow:
         
         # Click on second account (first is usually admin)
         await account_links[1].click()
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         await ss.capture('account-detail', 'Account detail before reset')
         
         # Click password reset button
@@ -98,14 +97,14 @@ class TestPasswordResetEmailFlow:
             pytest.skip("Password reset button not found")
         
         await reset_btn.click()
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await ss.capture('reset-modal-open', 'Password reset modal open')
         
         # Submit the reset
         submit_btn = await browser.query_selector('.modal button[type="submit"], .modal .btn-primary')
         if submit_btn:
             await submit_btn.click()
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
         
         await ss.capture('reset-submitted', 'Password reset submitted')
         
@@ -162,7 +161,7 @@ class TestPasswordResetEmailFlow:
         
         # Follow the reset link
         await browser.goto(reset_link)
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         await ss.capture('reset-link-page', 'Password reset page from email link')
         
         # Verify we're on password reset page
@@ -201,7 +200,7 @@ class TestRegistrationVerificationEmail:
         
         # Submit
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         await ss.capture('register-submitted', 'After registration submit')
         
@@ -248,7 +247,7 @@ class TestRegistrationVerificationEmail:
             await browser.fill('#password_confirm', 'TestPassword123+Secure24')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Wait for verification email
         msg = mailpit.wait_for_message(
@@ -279,7 +278,7 @@ class TestRegistrationVerificationEmail:
             await ss.capture('verification-code-entered', 'Verification code entered')
             
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('verification-complete', 'After verification')
 
@@ -305,7 +304,7 @@ class TestInviteLinkEmail:
             pytest.skip("Invite functionality not found")
         
         await invite_link.click()
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         await ss.capture('invite-form', 'Invite form')
         
         # Fill invite form
@@ -315,7 +314,7 @@ class TestInviteLinkEmail:
             await ss.capture('invite-filled', 'Invite form filled')
             
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             
             await ss.capture('invite-sent', 'Invite sent')
         
@@ -356,7 +355,7 @@ class TestEmailNotifications:
             pytest.skip("Test email button not found")
         
         await test_btn.click()
-        await asyncio.sleep(2.0)
+        await browser.wait_for_timeout(2000)
         
         await ss.capture('email-config-after-test', 'After test email sent')
         

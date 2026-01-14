@@ -76,18 +76,33 @@ get_flask_pid() {
 start_flask() {
     local port="${PORT:-5100}"
     local deploy_dir="${DEPLOY_DIR}"
+    local flask_env="${FLASK_ENV:-local_test}"
     
     log_info "Starting Flask backend..."
     log_info "  Deploy dir: ${deploy_dir}"
     log_info "  Port: ${port}"
     log_info "  Database: ${DATABASE_PATH}"
+    log_info "  FLASK_ENV: ${flask_env}"
     
+    # Fail-fast: if port is already in use, do not accidentally "start" against a stale server.
+    local port_pids
+    port_pids=$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)
+
     # Check if already running
     local existing_pid
     existing_pid=$(get_flask_pid)
     if [[ -n "${existing_pid}" ]]; then
         log_warn "Flask already running (PID: ${existing_pid})"
         return 0
+    fi
+
+    if [[ -n "${port_pids}" ]]; then
+        log_error "Port ${port} is already in use (listener PID(s): ${port_pids//$'\n'/, })."
+        for pid in ${port_pids}; do
+            log_error "  PID ${pid}: $(ps -p "${pid}" -o cmd= 2>/dev/null || echo 'unknown')"
+        done
+        log_error "Stop the existing listener or choose a different port via --port."
+        return 1
     fi
     
     # Ensure directories exist
@@ -109,6 +124,7 @@ start_flask() {
     
     # Start Flask
     cd "${deploy_dir}"
+    FLASK_ENV="${flask_env}" \
     DATABASE_PATH="${DATABASE_PATH}" \
         nohup python3 -m flask --app passenger_wsgi:application \
         run --host=0.0.0.0 --port="${port}" \
@@ -120,13 +136,23 @@ start_flask() {
     # Wait for Flask to be ready
     log_info "Waiting for Flask to start (PID: ${pid})..."
     for i in {1..30}; do
-        if curl -s "http://localhost:${port}/admin/login" > /dev/null 2>&1; then
-            log_success "Flask started successfully"
-            log_info "  URL: http://localhost:${port}"
-            log_info "  Logs: ${LOG_DIR}/flask.log"
-            log_info "  PID: ${pid}"
-            return 0
+        if ! ps -p "${pid}" > /dev/null 2>&1; then
+            log_error "Flask process exited unexpectedly (PID: ${pid})"
+            log_error "Check logs: ${LOG_DIR}/flask.log"
+            return 1
         fi
+
+        # Ensure the PID we spawned is actually the listener for the port.
+        if lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | grep -q "^${pid}$"; then
+            if curl -s "http://localhost:${port}/admin/login" > /dev/null 2>&1; then
+                log_success "Flask started successfully"
+                log_info "  URL: http://localhost:${port}"
+                log_info "  Logs: ${LOG_DIR}/flask.log"
+                log_info "  PID: ${pid}"
+                return 0
+            fi
+        fi
+
         sleep 1
     done
     
@@ -137,12 +163,29 @@ start_flask() {
 
 stop_flask() {
     log_info "Stopping Flask backend..."
+
+    local port="${PORT:-5100}"
     
     local pid
     pid=$(get_flask_pid)
     
     if [[ -z "${pid}" ]]; then
-        log_warn "Flask not running"
+        # Fallback: if the port is still bound, stop the listener(s).
+        local port_pids
+        port_pids=$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)
+        if [[ -z "${port_pids}" ]]; then
+            log_warn "Flask not running"
+            return 0
+        fi
+
+        log_warn "PID file not found, but port ${port} is in use; killing listener PID(s): ${port_pids//$'\n'/, }"
+        for p in ${port_pids}; do
+            log_info "Killing PID ${p}..."
+            kill -9 "${p}" 2>/dev/null || true
+        done
+        rm -f "${PID_FILE}"
+        sleep 1
+        log_success "Flask stopped"
         return 0
     fi
     

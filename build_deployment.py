@@ -5,7 +5,7 @@ Build deployment package for netcup webhosting FTP-only deployment.
 This script creates a ready-to-deploy package containing:
 - All application files
 - Vendored dependencies (no pip install needed)
-- Pre-initialized SQLite database with default credentials from .env.defaults
+- Pre-initialized SQLite database with default credentials from .env/.env.defaults
 - DEPLOY_README.md with upload instructions
 - .env.webhosting with initial deployment state
 
@@ -21,6 +21,7 @@ import zipfile
 import hashlib
 import logging
 import json
+import re
 from datetime import datetime
 from typing import Tuple
 from pathlib import Path
@@ -31,6 +32,41 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+_APP_CONFIG_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _render_app_config_toml(raw_text: str) -> str:
+    """Render ${VAR} placeholders using the current process environment.
+
+    This is intentionally strict and fail-fast:
+    - If app-config.toml contains ${VAR} and VAR is missing/empty in env, build fails.
+    - This ensures the deployed app-config.toml is self-contained on webhosting
+      (where devcontainer-only env vars like PUBLIC_FQDN are not present).
+    """
+
+    missing: set[str] = set()
+
+    def repl(match: re.Match[str]) -> str:
+        var_name = match.group(1)
+        value = os.environ.get(var_name)
+        if not value:
+            missing.add(var_name)
+            return match.group(0)
+        return value
+
+    rendered = _APP_CONFIG_ENV_PATTERN.sub(repl, raw_text)
+
+    if missing:
+        # Do not echo secrets; just names.
+        raise RuntimeError(
+            "app-config.toml contains unresolved placeholders: "
+            + ", ".join(sorted(missing))
+            + ". Ensure these are set in your environment (.env.workspace/.env/.env.defaults) before building."
+        )
+
+    return rendered
 
 
 def create_directory_structure(deploy_dir):
@@ -116,8 +152,10 @@ def copy_application_files(deploy_dir):
     # Files to copy
     files_to_copy = [
         ("src/netcup_api_filter/passenger_wsgi.py", "passenger_wsgi.py"),
-        # .env.defaults copied temporarily for database seeding during build, then removed
-        ".env.defaults",  # Temporary: needed for seeding during build, removed before packaging
+        # Env files copied temporarily for database seeding during build, then removed.
+        # .env may contain secrets and must NEVER ship in deploy.zip.
+        ".env.defaults",  # Defaults skeleton (may be used as fallback during seeding)
+        ".env",  # Preferred env file (if present)
         "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
         "DEBUG_QUICK_START.md",  # Quick debugging reference
         "READY_TO_DEPLOY.md",  # Instructions based on working hello world
@@ -190,24 +228,31 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
 
 
 def _load_env_defaults() -> dict:
-    """Load defaults from .env.defaults file."""
-    defaults = {}
-    env_defaults_path = Path(".env.defaults")
-    if env_defaults_path.exists():
-        with open(env_defaults_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    defaults[key.strip()] = value.strip()
-    else:
-        logger.warning(".env.defaults not found, using hardcoded fallbacks")
-        defaults = {
-            "DEFAULT_ADMIN_USERNAME": "admin",
-            "DEFAULT_ADMIN_PASSWORD": "admin",
-        }
+    """Load defaults from .env (preferred) or .env.defaults (fallback).
+
+    This is used only for non-secret defaults needed at build time (e.g.,
+    DEFAULT_ADMIN_USERNAME / DEFAULT_ADMIN_PASSWORD for fresh DB seeding).
+    """
+    defaults: dict[str, str] = {}
+
+    candidate_paths = [Path(".env"), Path(".env.defaults")]
+    env_path = next((p for p in candidate_paths if p.exists()), None)
+    if env_path is None:
+        raise RuntimeError(
+            "Neither .env nor .env.defaults found. "
+            "Create .env by copying .env.defaults and adding secrets/overrides."
+        )
+
+    with env_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            defaults[key.strip()] = value.strip()
+
     return defaults
 
 
@@ -251,6 +296,14 @@ def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients,
         except Exception:
             return default
     
+    admin_username = defaults.get('DEFAULT_ADMIN_USERNAME')
+    admin_password = defaults.get('DEFAULT_ADMIN_PASSWORD')
+    if not admin_username or not admin_password:
+        raise RuntimeError(
+            "DEFAULT_ADMIN_USERNAME/DEFAULT_ADMIN_PASSWORD not found in .env/.env.defaults. "
+            "Check your env files before building a deployment."
+        )
+
     # Build unified state structure
     state = {
         "target": target,
@@ -263,8 +316,8 @@ def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients,
             "source": "build_deployment.py",
         },
         "admin": {
-            "username": defaults.get('DEFAULT_ADMIN_USERNAME', 'admin'),
-            "password": defaults.get('DEFAULT_ADMIN_PASSWORD', 'admin'),
+            "username": admin_username,
+            "password": admin_password,
             "password_changed_at": None,  # Set when password is changed
         },
         "clients": [
@@ -288,7 +341,7 @@ def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients,
 
 
 def create_initial_env_webhosting(deploy_dir):
-    """Create .env.webhosting with initial deployment state from .env.defaults.
+    """Create .env.webhosting with initial deployment state from .env/.env.defaults.
     
     DEPRECATED: Use deployment_state.json instead.
     This file is kept for backward compatibility with existing test infrastructure.
@@ -308,8 +361,8 @@ def create_initial_env_webhosting(deploy_dir):
         f.write("# Deployment state - updated by tests when passwords change\n\n")
         f.write(f"# Flask Secret Key (generated at build time)\n")
         f.write(f"SECRET_KEY={secret_key}\n\n")
-        f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', 'admin')}\n")
-        f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', 'admin')}\n")
+        f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', '')}\n")
+        f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', '')}\n")
         f.write(f"DEPLOYED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z\n")
     
     logger.info(f"Created {env_webhosting_path} with initial deployment state (including SECRET_KEY)")
@@ -407,12 +460,12 @@ def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = Fa
             database.db.create_all()
             logger.info("Database tables created")
             
-            # Seed Settings table from .env.defaults (BEFORE seeding accounts)
+            # Seed Settings table from env defaults (BEFORE seeding accounts)
             # This ensures rate limits and security settings are available immediately
             from netcup_api_filter.bootstrap.seeding import seed_settings_from_env
             seeded_count = seed_settings_from_env()
             if seeded_count > 0:
-                logger.info(f"Seeded {seeded_count} settings from .env.defaults")
+                logger.info(f"Seeded {seeded_count} settings from env defaults")
 
             # Seed with defaults - enable demo clients for comprehensive local testing
             # Demo clients provide multiple permission configurations for E2E tests
@@ -619,7 +672,7 @@ This package was built with `build_deployment.py` and includes:
 - Application version: Latest from repository
 - Python dependencies: From requirements.txt
 - Database: Pre-initialized SQLite with default admin account
-- Configuration: Config-driven defaults from .env.defaults
+- Configuration: Config-driven defaults from .env/.env.defaults
 
 Enjoy using Netcup API Filter! 🚀
 """
@@ -749,19 +802,24 @@ def main():
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
-        # Remove .env.defaults from production package (not needed - database already seeded)
-        # Code now lazy-loads defaults and gracefully handles missing file
-        env_defaults_in_deploy = Path(deploy_dir) / ".env.defaults"
-        if env_defaults_in_deploy.exists():
-            env_defaults_in_deploy.unlink()
-            logger.info("Removed .env.defaults from deployment (database pre-seeded, config from env vars)")
+        # Remove env files from deployment package (database already seeded)
+        # IMPORTANT: .env may contain secrets and must NEVER ship in deploy.zip.
+        for env_name in (".env", ".env.defaults"):
+            env_path = Path(deploy_dir) / env_name
+            if env_path.exists():
+                env_path.unlink()
+                logger.info("Removed %s from deployment (database pre-seeded, config from env vars)", env_name)
         
         # Optionally bundle app-config.toml (contains secrets - opt-in only)
         if args.bundle_app_config:
             app_config_source = Path("app-config.toml")
             if app_config_source.exists():
                 app_config_dest = Path(deploy_dir) / "app-config.toml"
-                shutil.copy2(app_config_source, app_config_dest)
+
+                raw_text = app_config_source.read_text(encoding="utf-8")
+                rendered = _render_app_config_toml(raw_text)
+                app_config_dest.write_text(rendered, encoding="utf-8")
+
                 logger.warning("⚠️  Bundled app-config.toml (contains secrets - handle carefully!)")
             else:
                 logger.warning("--bundle-app-config specified but app-config.toml not found")
@@ -779,7 +837,7 @@ def main():
         logger.info("Next steps:")
         logger.info(f"1. Download {zip_path}")
         logger.info("2. Extract and upload contents via FTP to your webhosting")
-        logger.info("3. Access /admin and login with credentials from .env.defaults")
+        logger.info("3. Access /admin and login with your seeded admin credentials")
         logger.info("4. Read DEPLOY_README.md for detailed instructions")
         logger.info("=" * 60)
         

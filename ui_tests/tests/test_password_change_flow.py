@@ -9,7 +9,6 @@ Critical test case: After password change, the redirect to dashboard
 must complete successfully and the dashboard must render without errors.
 """
 
-import asyncio
 import secrets
 import string
 
@@ -17,7 +16,8 @@ import pytest
 
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
-from ui_tests.deployment_state import load_state, get_deployment_target
+from ui_tests.deployment_state import load_state, get_deployment_target, update_admin_password
+from ui_tests import workflows
 
 
 def generate_secure_password(length: int = 24) -> str:
@@ -60,25 +60,51 @@ async def test_password_change_redirects_to_dashboard_successfully():
         
         # 1. Login with current credentials
         await browser.goto(settings.url("/admin/login"))
-        await asyncio.sleep(0.3)
+        await browser._page.wait_for_load_state('domcontentloaded')
         
         await browser.fill("#username", username)
         await browser.fill("#password", current_password)
-        await browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        
+        # Wait for login submission to complete
+        async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+            await browser.click("button[type='submit']")
+
+        # If admin 2FA is enabled, we may now be on /admin/login/2fa.
+        # Complete the challenge so subsequent navigation is authenticated.
+        await workflows.handle_2fa_if_present(browser, timeout=10.0)
         
         # Check if we're redirected to change password (fresh deployment)
         current_url = browser._page.url
+
+        # If we're still on login, the auth flow didn't complete (likely 2FA/email issue).
+        if "/admin/login" in current_url:
+            body_preview = (await browser.text("body"))[:300]
+            raise AssertionError(f"Login did not complete; still at {current_url}. Body preview: {body_preview!r}")
         
         if "/change-password" not in current_url:
             # Already on dashboard - navigate to change password manually
             await browser.goto(settings.url("/admin/change-password"))
-            await asyncio.sleep(0.5)
+            await browser._page.wait_for_load_state('domcontentloaded')
         
         # 2. Verify we're on password change page
-        h1_text = await browser.text("h1")
-        assert "password" in h1_text.lower() or "setup" in h1_text.lower(), \
-            f"Expected password change page, got: {h1_text}"
+        # Prefer main h1, but fall back to any h1 for standalone pages.
+        try:
+            h1_text = await browser.text("main h1")
+        except Exception:
+            h1_text = await browser.text("h1")
+
+        if "password" not in h1_text.lower() and "setup" not in h1_text.lower():
+            # Sometimes we may have been redirected back to the dashboard; try one more explicit navigation.
+            await browser.goto(settings.url("/admin/change-password"))
+            await browser._page.wait_for_load_state('domcontentloaded')
+            try:
+                h1_text = await browser.text("main h1")
+            except Exception:
+                h1_text = await browser.text("h1")
+
+        assert "password" in h1_text.lower() or "setup" in h1_text.lower(), (
+            f"Expected password change page, got: {h1_text} (url={browser._page.url})"
+        )
         
         # 3. Fill password form
         new_password = generate_secure_password()
@@ -99,8 +125,11 @@ async def test_password_change_redirects_to_dashboard_successfully():
         # Trigger input event to run checkPasswordMatch() and updateSubmitButton()
         await browser.evaluate("document.getElementById('confirm_password').dispatchEvent(new Event('input', { bubbles: true }))")
         
-        # Wait for client-side validation
-        await asyncio.sleep(0.5)
+        # Wait for client-side validation to complete (button should become enabled)
+        await browser._page.wait_for_function(
+            "document.getElementById('submitBtn') && !document.getElementById('submitBtn').disabled",
+            timeout=5000
+        )
         
         # Verify submit button is enabled
         try:
@@ -121,16 +150,19 @@ async def test_password_change_redirects_to_dashboard_successfully():
         # This is what we were missing! We must verify the redirect succeeds
         print(f"Waiting for redirect from {url_before}...")
         
-        # Wait up to 10 seconds for navigation
-        for i in range(20):
-            await asyncio.sleep(0.5)
+        # Wait for navigation to complete (up to 10 seconds)
+        try:
+            await browser._page.wait_for_url(
+                lambda url: url != url_before and "/change-password" not in url,
+                timeout=10000
+            )
             current_url = browser._page.url
-            
-            if current_url != url_before and "/change-password" not in current_url:
-                print(f"✓ Redirect completed to: {current_url}")
-                break
-        else:
-            raise AssertionError(f"Redirect did not complete after 10 seconds, still at: {browser._page.url}")
+            print(f"✓ Redirect completed to: {current_url}")
+        except Exception as e:
+            raise AssertionError(f"Redirect did not complete after 10 seconds, still at: {browser._page.url}") from e
+        
+        # Wait for dashboard to fully load
+        await browser._page.wait_for_load_state('networkidle')
         
         # 6. ✅ Verify dashboard rendered successfully (no 500 error)
         h1_text = await browser.text("h1")
@@ -138,7 +170,8 @@ async def test_password_change_redirects_to_dashboard_successfully():
         
         # 7. ✅ Verify no error messages
         body_text = await browser.text("body")
-        assert "500" not in body_text, "Found 500 error on dashboard"
+        # Avoid brittle substring checks (e.g. Bootstrap may contain "fw-500").
+        assert "500 Internal Server Error" not in body_text, "Found 500 Internal Server Error"
         assert "Internal Server Error" not in body_text, "Found Internal Server Error"
         assert "UndefinedError" not in body_text, "Found UndefinedError (template issue)"
         assert "jinja2.exceptions" not in body_text, "Found Jinja2 exception"
@@ -149,6 +182,9 @@ async def test_password_change_redirects_to_dashboard_successfully():
         
         footer = await browser.query_selector("footer")
         assert footer is not None, "Footer not found"
+
+        # Persist the new password for subsequent tests in the same run.
+        update_admin_password(new_password, updated_by="ui_tests/test_password_change_flow")
         
         print(f"✓ Password change redirect test PASSED")
 
@@ -212,11 +248,11 @@ async def test_all_admin_pages_accessible_after_password_change():
         
         for route, page_name in admin_routes:
             await browser.goto(settings.url(route))
-            await asyncio.sleep(0.3)
+            await browser._page.wait_for_load_state('domcontentloaded')
             
             # Verify no 500 error
             body_text = await browser.text("body")
-            assert "500" not in body_text, f"500 error on {route}"
+            assert "500 Internal Server Error" not in body_text, f"500 Internal Server Error on {route}"
             assert "Internal Server Error" not in body_text, f"Internal Server Error on {route}"
             
             # Verify not redirected to login (session still valid)
@@ -237,12 +273,14 @@ async def test_password_change_with_email_setup_optional():
     async with browser_session() as browser:
         # Login with fresh credentials
         await browser.goto(settings.url("/admin/login"))
-        await asyncio.sleep(0.3)
+        await browser._page.wait_for_load_state('domcontentloaded')
         
         await browser.fill("#username", "admin")
         await browser.fill("#password", "admin")
-        await browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        
+        # Wait for login navigation to complete
+        async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+            await browser.click("button[type='submit']")
         
         current_url = browser._page.url
         if "/change-password" in current_url:
@@ -272,9 +310,14 @@ async def test_password_change_with_email_setup_optional():
             await browser.fill("#confirm_password", new_password)
             await browser.evaluate("document.getElementById('confirm_password').dispatchEvent(new Event('input'))")
             
-            await asyncio.sleep(0.5)
-            await browser.click("#submitBtn")
-            await asyncio.sleep(1.5)
+            # Wait for validation to complete
+            await browser._page.wait_for_function(
+                "document.getElementById('submitBtn') && !document.getElementById('submitBtn').disabled",
+                timeout=5000
+            )
+            # Wait for form submission and redirect
+            async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+                await browser.click("#submitBtn")
             
             # Should succeed and redirect to dashboard
             h1 = await browser.text("h1")

@@ -9,6 +9,7 @@ Called after app-config.toml is imported and settings are in database.
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Optional
 
 from netcup_api_filter.database import db, get_setting
@@ -56,26 +57,45 @@ def get_powerdns_api_url() -> str:
         except (json.JSONDecodeError, TypeError):
             pass
     
-    # Try internal container hostname (works in Docker network)
-    powerdns_hostname = os.environ.get('HOSTNAME_POWERDNS', 'naf-dev-powerdns')
-    internal_url = f"http://{powerdns_hostname}:8081"
-    
-    # Check if we can reach internal hostname (Docker network check)
-    # For now, just return internal URL if HOSTNAME_POWERDNS is set
-    if os.environ.get('HOSTNAME_POWERDNS'):
+    # Explicit env override (preferred; config-driven)
+    powerdns_api_url = os.environ.get('POWERDNS_API_URL')
+    if powerdns_api_url:
+        logger.info("Using PowerDNS API URL from env (POWERDNS_API_URL)")
+        return powerdns_api_url
+
+    # Internal container hostname (Docker network)
+    powerdns_hostname = os.environ.get('HOSTNAME_POWERDNS')
+    if powerdns_hostname:
+        scheme = os.environ.get('POWERDNS_INTERNAL_SCHEME')
+        port = os.environ.get('POWERDNS_INTERNAL_API_PORT')
+        if not scheme or not port:
+            raise RuntimeError(
+                "HOSTNAME_POWERDNS is set but POWERDNS_INTERNAL_SCHEME/POWERDNS_INTERNAL_API_PORT are missing. "
+                "Set them in .env.defaults or .env."
+            )
+        internal_url = f"{scheme}://{powerdns_hostname}:{port}"
         logger.info(f"Using internal PowerDNS URL: {internal_url}")
         return internal_url
-    
-    # Fall back to PUBLIC_FQDN-based HTTPS URL
+
+    # PUBLIC_FQDN-based URL (reverse proxy route)
     public_fqdn = get_public_fqdn()
     if public_fqdn:
-        https_url = f"https://{public_fqdn}/backend-powerdns"
+        scheme = os.environ.get('POWERDNS_PROXY_SCHEME')
+        path = os.environ.get('POWERDNS_PROXY_PATH')
+        if not scheme or not path:
+            raise RuntimeError(
+                "PUBLIC_FQDN is set but POWERDNS_PROXY_SCHEME/POWERDNS_PROXY_PATH are missing. "
+                "Set them in .env.defaults or .env."
+            )
+        https_url = f"{scheme}://{public_fqdn}{path}"
         logger.info(f"Using public PowerDNS URL: {https_url}")
         return https_url
-    
-    # Last resort - localhost (probably won't work in production)
-    logger.warning("Could not detect PowerDNS URL, using localhost")
-    return "http://localhost:8081"
+
+    raise RuntimeError(
+        "Could not determine PowerDNS API URL. Set POWERDNS_API_URL explicitly, "
+        "or provide HOSTNAME_POWERDNS+POWERDNS_INTERNAL_API_PORT, "
+        "or set PUBLIC_FQDN+POWERDNS_PROXY_SCHEME+POWERDNS_PROXY_PATH."
+    )
 
 
 def setup_platform_powerdns() -> Optional[BackendService]:
@@ -307,11 +327,17 @@ def initialize_platform_backends():
                     password = user_data.get('password', 'generate')
                     is_approved = user_data.get('is_approved', True)
                     must_change_password = user_data.get('must_change_password', False)
+                    is_admin = user_data.get('is_admin', False)
                     
                     # Check if user already exists
                     existing = Account.query.filter_by(username=username).first()
                     if existing:
                         logger.info(f"User {username} already exists")
+                        # Allow upgrading an existing preseeded user into an admin.
+                        # (We intentionally avoid password resets here.)
+                        if is_admin and not existing.is_admin:
+                            existing.is_admin = 1
+                            logger.info(f"Upgraded existing account to admin: {username}")
                         users_created[username] = existing
                         continue
                     
@@ -331,11 +357,13 @@ def initialize_platform_backends():
                         password_hash=hash_password(password),
                         is_active=1 if is_approved else 0,  # is_approved maps to is_active
                         must_change_password=1 if must_change_password else 0,
+                        is_admin=1 if is_admin else 0,
+                        approved_at=datetime.utcnow() if is_approved else None,
                     )
                     db.session.add(account)
                     db.session.flush()  # Get ID before commit
                     users_created[username] = account
-                    logger.info(f"Created preseeded user: {username} ({email})")
+                    logger.info(f"Created preseeded user: {username} ({email}){' [admin]' if is_admin else ''}")
                 
                 db.session.commit()
             except (json.JSONDecodeError, TypeError) as e:

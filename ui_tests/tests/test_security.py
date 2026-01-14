@@ -22,6 +22,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 class TestSecurityHeaders:
     """Test security-related HTTP headers."""
+
+    @staticmethod
+    def _split_header_values(header_value: str) -> list[str]:
+        # Playwright may return multiple header instances joined by newlines.
+        # Also tolerate comma-joined values.
+        values: list[str] = []
+        for line in (header_value or "").splitlines():
+            for part in line.split(","):
+                value = part.strip()
+                if value:
+                    values.append(value)
+        return values
     
     @pytest.mark.asyncio
     async def test_content_type_header(self, browser):
@@ -43,7 +55,12 @@ class TestSecurityHeaders:
         xcto = response.headers.get('x-content-type-options', '')
         # Flask doesn't set this by default, but good practice to check
         if xcto:
-            assert xcto == 'nosniff', f"X-Content-Type-Options should be 'nosniff', got '{xcto}'"
+            values = self._split_header_values(xcto)
+            assert values, f"X-Content-Type-Options present but empty: '{xcto}'"
+            assert all(v.lower() == 'nosniff' for v in values), (
+                "X-Content-Type-Options should be 'nosniff' (tolerating duplicates), "
+                f"got values={values!r} from raw={xcto!r}"
+            )
         else:
             pytest.skip("X-Content-Type-Options header not set (recommended)")
 

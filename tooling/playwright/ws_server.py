@@ -206,7 +206,7 @@ class PlaywrightWebSocketServer:
         """Periodically cleanup expired sessions."""
         while True:
             try:
-                await asyncio.sleep(60)  # Check every minute
+                await asyncio.sleep(60)  # Periodic cleanup interval (legitimate)
                 
                 expired = [
                     sid for sid, session in self.sessions.items()

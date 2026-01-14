@@ -10,19 +10,29 @@
 # ============================================================================
 
 load_defaults() {
-    local defaults_file="${REPO_ROOT:?REPO_ROOT must be set}/.env.defaults"
-    
-    if [[ ! -f "$defaults_file" ]]; then
-        echo "ERROR: .env.defaults not found at $defaults_file" >&2
+    local repo_root="${REPO_ROOT:?REPO_ROOT must be set}"
+    local defaults_file="${repo_root}/.env.defaults"
+    local env_file="${repo_root}/.env"
+
+    # Load committed defaults skeleton first (no secrets)
+    if [[ -f "${defaults_file}" ]]; then
+        set -a
+        source "${defaults_file}"
+        set +a
+        echo "[CONFIG] Loaded defaults from ${defaults_file}"
+    fi
+
+    # Load secrets/overrides (required for local build/deploy)
+    if [[ ! -f "${env_file}" ]]; then
+        echo "ERROR: .env not found at ${env_file}" >&2
+        echo "Create it by copying .env.defaults and adding secrets/overrides." >&2
         return 1
     fi
-    
-    # Source defaults (use set -a to export all variables)
+
     set -a
-    source "$defaults_file"
+    source "${env_file}"
     set +a
-    
-    echo "[CONFIG] Loaded defaults from $defaults_file"
+    echo "[CONFIG] Loaded env overrides from ${env_file}"
 }
 
 load_deployment_state() {

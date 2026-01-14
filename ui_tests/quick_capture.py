@@ -18,7 +18,7 @@ async def capture():
         await page.fill("#username", "admin")
         await page.fill("#password", "admin")
         await page.click("button[type='submit']")
-        await asyncio.sleep(1)
+        await browser.wait_for_timeout(1000)
         
         h1 = await page.locator("h1").text_content()
         if "Change Password" in h1:
@@ -29,7 +29,7 @@ async def capture():
             await page.fill("#new_password", "TestPassword123+Secure24")
             await page.fill("#confirm_password", "TestPassword123+Secure24")
             await page.click("button[type='submit']")
-            await asyncio.sleep(2)
+            await browser.wait_for_timeout(2000)
         
         # Capture pages
         pages = [
@@ -41,7 +41,7 @@ async def capture():
         for url, name in pages:
             print(f"📸 Capturing {name}...")
             await page.goto(f"http://localhost:5100{url}")
-            await asyncio.sleep(1)
+            await browser.wait_for_timeout(1000)
             await page.screenshot(path=str(OUTPUT_DIR / f"{name}.png"))
         
         print(f"\n✅ Captured {len(pages) + 1} screenshots in {OUTPUT_DIR}")

@@ -30,11 +30,11 @@ Implementation Notes:
 - Token creation via account portal after user login
 """
 
-import asyncio
 import re
 import secrets
 import string
 import httpx
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -119,7 +119,7 @@ class AccountCreator:
         
         # Navigate to account creation
         await self.browser.goto(settings.url("/admin/accounts/new"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         # Fill form (invite-based flow - no password field)
         await self.browser.fill("#username, input[name='username']", username)
@@ -137,7 +137,7 @@ class AccountCreator:
         # If no skip_approval option, use default behavior
         
         # Wait for form validation to enable submit button
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         # Check if submit button is disabled
         submit_disabled = await self.browser.query_selector("#submitBtn:disabled")
@@ -146,7 +146,7 @@ class AccountCreator:
             return {}
         
         await self.browser.click("#submitBtn")
-        await asyncio.sleep(1.5)
+        await self.browser.wait_for_timeout(1500)
         
         
         # Check for success
@@ -208,7 +208,7 @@ class AccountCreator:
         """Accept invite link and set password."""
         # Navigate to invite link (this logs out admin if logged in)
         await self.browser.goto(invite_link)
-        await asyncio.sleep(0.5)
+        await self.browser.wait_for_load_state('domcontentloaded')
         
         # Check if we're on the invite page (has password fields)
         password_field = await self.browser.query_selector("#new_password, input[name='new_password']")
@@ -227,7 +227,7 @@ class AccountCreator:
         await self.browser.fill("#confirm_password, input[name='confirm_password']", password)
         
         await self.browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await self.browser.wait_for_timeout(1000)
         
         # Verify success (should redirect to login with success message)
         page_text = await self.browser.text("body")
@@ -239,13 +239,13 @@ class AccountCreator:
         # Navigate back to admin login to re-establish admin session
         # The ensure_admin_logged_in will handle the actual login
         await self.browser.goto(settings.url("/admin/login"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
     
     async def _approve_account(self, account_id: int, username: str):
         """Approve an account."""
         await self.ensure_admin_logged_in()
         await self.browser.goto(settings.url(f"/admin/accounts/{account_id}/approve"))
-        await asyncio.sleep(0.5)
+        await self.browser.wait_for_load_state('domcontentloaded')
         print(f"  ✓ Approved account: {username}")
     
     async def _reject_account(self, account_id: int, username: str):
@@ -253,7 +253,7 @@ class AccountCreator:
         await self.ensure_admin_logged_in()
         # Find reject endpoint or button
         await self.browser.goto(settings.url(f"/admin/accounts/{account_id}"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         reject_btn = await self.browser.query_selector(
             "button:has-text('Reject'), a:has-text('Reject'), "
@@ -261,7 +261,7 @@ class AccountCreator:
         )
         if reject_btn:
             await reject_btn.click()
-            await asyncio.sleep(0.5)
+            await self.browser.wait_for_load_state('domcontentloaded')
             print(f"  ✓ Rejected/disabled account: {username}")
 
 
@@ -301,7 +301,7 @@ class RealmCreator:
         
         # Navigate to admin realm creation for this account
         await self.browser.goto(settings.url(f"/admin/accounts/{account_id}/realms/new"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         # Check if form exists
         form = await self.browser.query_selector("form")
@@ -355,7 +355,7 @@ class RealmCreator:
                     await checkbox.click()
         
         await self.browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await self.browser.wait_for_timeout(1000)
         
         # Check for success
         page_text = await self.browser.text("body")
@@ -428,17 +428,17 @@ class TokenCreator:
         
         # Logout first if logged in as different user
         await self.browser.goto(settings.url("/account/logout"))
-        await asyncio.sleep(0.5)
+        await self.browser.wait_for_load_state('domcontentloaded')
         
         # Navigate to account login
         await self.browser.goto(settings.url("/account/login"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         # Fill login form
         await self.browser.fill("#username, input[name='username']", username)
         await self.browser.fill("#password, input[name='password']", password)
         await self.browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await self.browser.wait_for_timeout(1000)
         
         # Check if login succeeded (should redirect to dashboard)
         current_url = self.browser.current_url or ""
@@ -458,7 +458,7 @@ class TokenCreator:
             # Fill 2FA form
             await self.browser.fill("#code, input[name='code']", code)
             await self.browser.click("button[type='submit']")
-            await asyncio.sleep(1.0)
+            await self.browser.wait_for_timeout(1000)
             
             # Check if 2FA succeeded
             current_url = self.browser.current_url or ""
@@ -471,19 +471,26 @@ class TokenCreator:
                 return False
         
         page_text = await self.browser.text("body")
-        if "invalid" in page_text.lower() or "error" in page_text.lower():
+        page_text_lower = page_text.lower()
+        if "invalid" in page_text_lower or "error" in page_text_lower:
             print(f"⚠️  Login failed for {username}")
             return False
-        
-        self._current_account_session = username
-        return True
+
+        # If we didn't land on a logged-in page, treat this as a failed login.
+        # (Avoid false positives that can cascade into confusing redirects.)
+        if "/account/login" in current_url:
+            print(f"⚠️  Login did not complete for {username} (still on login)")
+            return False
+
+        print(f"⚠️  Login status unclear for {username}; treating as failed")
+        return False
     
     async def _get_2fa_code_from_email(self, email: str) -> str | None:
         """Get the 2FA code from the most recent verification email."""
         mailpit = MailpitClient()
         
         # Wait a bit for email to arrive
-        await asyncio.sleep(1.0)
+        await self.browser.wait_for_timeout(1000)
         
         message_list = mailpit.list_messages(limit=20)
         
@@ -525,7 +532,7 @@ class TokenCreator:
         self._current_account_session = None  # Admin is logged in now
         
         await self.browser.goto(settings.url(f"/admin/accounts/{account_id}"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         # Find realm link that contains the FQDN
         # Look for href with realm ID
@@ -536,7 +543,7 @@ class TokenCreator:
         # For each realm link, check if it matches our FQDN
         for realm_id in realm_links:
             await self.browser.goto(settings.url(f"/admin/realms/{realm_id}"))
-            await asyncio.sleep(0.2)
+            await self.browser.wait_for_timeout(200)
             page_text = await self.browser.text("body")
             if fqdn.lower() in page_text.lower():
                 return int(realm_id)
@@ -595,7 +602,7 @@ class TokenCreator:
         
         # Navigate to token creation
         await self.browser.goto(settings.url(f"/account/realms/{realm_id}/tokens/new"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         # Check if form exists
         form = await self.browser.query_selector("form")
@@ -661,7 +668,7 @@ class TokenCreator:
         
         # Submit form
         await self.browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await self.browser.wait_for_timeout(1000)
         
         # Extract token value from success page
         # Token is in input#tokenValue on token_created.html
@@ -732,7 +739,7 @@ class TokenCreator:
         """Revoke a token after creation."""
         # Navigate to realm tokens and find revoke button
         await self.browser.goto(settings.url(f"/account/realms/{realm_id}"))
-        await asyncio.sleep(0.3)
+        await self.browser.wait_for_timeout(300)
         
         revoke_btn = await self.browser.query_selector(
             f'tr:has-text("{token_name}") button:has-text("Revoke"), '
@@ -740,14 +747,14 @@ class TokenCreator:
         )
         if revoke_btn:
             await revoke_btn.click()
-            await asyncio.sleep(0.5)
+            await self.browser.wait_for_load_state('domcontentloaded')
             # Confirm if modal
             confirm_btn = await self.browser.query_selector(
                 "button:has-text('Confirm'), button:has-text('Yes')"
             )
             if confirm_btn:
                 await confirm_btn.click()
-                await asyncio.sleep(0.5)
+                await self.browser.wait_for_load_state('domcontentloaded')
             print(f"  ✓ Revoked token: {token_name}")
 
 
@@ -838,12 +845,12 @@ class TestJourney3ComprehensiveStates:
         
         # Screenshot: All accounts list
         await browser.goto(settings.url("/admin/accounts"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await capture(browser, "accounts-all-states")
         
         # Screenshot: Pending accounts
         await browser.goto(settings.url("/admin/accounts/pending"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await capture(browser, "accounts-pending-list")
         
         print(f"\n✓ Created {len(creator.created_accounts)} accounts")
@@ -870,12 +877,12 @@ class TestJourney3ComprehensiveStates:
         
         # Screenshot: All realms list
         await browser.goto(settings.url("/admin/realms"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await capture(browser, "realms-all-types")
         
         # Screenshot: Pending realms
         await browser.goto(settings.url("/admin/realms/pending"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await capture(browser, "realms-pending-list")
         
         print(f"\n✓ Created {len(creator.created_realms)} realms")
@@ -890,6 +897,23 @@ class TestJourney3ComprehensiveStates:
         if not realm_creator:
             print("⚠️  No realm creator found, skipping token creation")
             return
+
+        # Webhosting/live runs typically cannot complete per-account token creation
+        # because J3 creates synthetic accounts with non-deliverable emails.
+        # Keep this config-driven so it can be enabled explicitly when desired.
+        from ui_tests.deployment_state import get_deployment_target
+
+        if get_deployment_target() == "webhosting":
+            allow = os.getenv("UI_J3_CREATE_TOKENS_WEBHOSTING", "0").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            if not allow:
+                print(
+                    "ℹ️  Skipping token creation on webhosting (set UI_J3_CREATE_TOKENS_WEBHOSTING=1 to enable)"
+                )
+                return
         
         creator = TokenCreator(browser, realm_creator)
         
@@ -936,12 +960,12 @@ class TestJourney3ComprehensiveStates:
         
         # Admin dashboard should show counts
         await browser.goto(settings.url("/admin/"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await capture(browser, "dashboard-with-data")
         
         # Audit log should have entries
         await browser.goto(settings.url("/admin/audit"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         await capture(browser, "audit-log-populated")
         
         print("\n✓ UI validation screenshots captured")

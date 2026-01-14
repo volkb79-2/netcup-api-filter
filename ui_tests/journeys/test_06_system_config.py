@@ -13,7 +13,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 
 from ui_tests.config import settings
 from ui_tests.workflows import ensure_admin_dashboard
@@ -35,7 +34,7 @@ class TestNetcupApiConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/netcup'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('netcup-config-page', 'Netcup API configuration page')
         
@@ -51,7 +50,7 @@ class TestNetcupApiConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/netcup'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body_html = await browser.html('body')
         
@@ -71,7 +70,7 @@ class TestNetcupApiConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/netcup'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for test button
         test_btn = await browser.query_selector(
@@ -80,7 +79,7 @@ class TestNetcupApiConfig:
         
         if test_btn:
             await test_btn.click()
-            await asyncio.sleep(2.0)
+            await browser.wait_for_timeout(2000)
             
             await ss.capture('netcup-connection-test', 'Netcup connection test result')
             
@@ -98,11 +97,11 @@ class TestNetcupApiConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/netcup'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Just click save without changing values
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         await ss.capture('netcup-config-saved', 'Netcup config after save')
         
@@ -127,7 +126,7 @@ class TestEmailConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/email'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('email-config-page', 'Email configuration page')
         
@@ -143,7 +142,7 @@ class TestEmailConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/email'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body_html = await browser.html('body')
         
@@ -165,7 +164,7 @@ class TestEmailConfig:
         mailpit.clear()
         
         await browser.goto(settings.url('/admin/config/email'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for test button
         test_btn = await browser.query_selector(
@@ -174,7 +173,7 @@ class TestEmailConfig:
         
         if test_btn:
             await test_btn.click()
-            await asyncio.sleep(2.0)
+            await browser.wait_for_timeout(2000)
             
             await ss.capture('email-test-sent', 'Email test sent')
             
@@ -198,7 +197,7 @@ class TestEmailConfig:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/config/email'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Verify page loaded (but don't click Save to avoid overwriting config)
         submit_btn = await browser.query_selector('button[type="submit"]')
@@ -223,7 +222,7 @@ class TestSystemInfo:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/system'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('system-info-page', 'System information page')
         
@@ -239,7 +238,7 @@ class TestSystemInfo:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/system'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body = await browser.text('body')
         
@@ -257,7 +256,7 @@ class TestSystemInfo:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/system'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body = await browser.text('body')
         
@@ -276,7 +275,7 @@ class TestSystemInfo:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/system'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body = await browser.text('body')
         
@@ -301,7 +300,7 @@ class TestAdminPasswordChange:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/change-password'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('password-change-page', 'Admin password change page')
         
@@ -317,7 +316,7 @@ class TestAdminPasswordChange:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/change-password'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body_html = await browser.html('body')
         
@@ -334,7 +333,7 @@ class TestAdminPasswordChange:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/change-password'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Fill with mismatched passwords
         current_field = await browser.query_selector('#current_password')
@@ -349,7 +348,7 @@ class TestAdminPasswordChange:
         if confirm_field:
             await confirm_field.fill('DifferentPassword123!')
         
-        await asyncio.sleep(0.3)  # Let JS validation run
+        await browser.wait_for_timeout(300)  # Let JS validation run
         
         await ss.capture('password-mismatch-filled', 'Password mismatch test')
         
@@ -365,7 +364,7 @@ class TestAdminPasswordChange:
         # If button not disabled, try clicking and check for error
         try:
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('password-mismatch-error', 'Password mismatch error')
             
@@ -393,7 +392,7 @@ class TestConfigNavigation:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Click config dropdown
         config_dropdown = await browser.query_selector(
@@ -402,7 +401,7 @@ class TestConfigNavigation:
         
         if config_dropdown:
             await config_dropdown.click()
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             await ss.capture('config-dropdown-open', 'Config dropdown open')
             
@@ -427,7 +426,7 @@ class TestConfigNavigation:
         
         for page in config_pages:
             await browser.goto(settings.url(page))
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             # Check navbar exists
             navbar = await browser.query_selector('nav.navbar, .navbar')

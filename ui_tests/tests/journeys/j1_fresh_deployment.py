@@ -23,7 +23,6 @@ Verifications:
 - State file updated with new password
 """
 
-import asyncio
 import os
 import secrets
 import string
@@ -32,7 +31,41 @@ from pathlib import Path
 from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
-from ui_tests.deployment_state import load_state, get_deployment_target
+from ui_tests.deployment_state import load_state, get_deployment_target, update_admin_email
+
+
+def _imap_configured() -> bool:
+    return bool(
+        (os.environ.get("IMAP_HOST") or "").strip()
+        and (os.environ.get("IMAP_USER") or "").strip()
+        and (os.environ.get("IMAP_PASSWORD") or "").strip()
+    )
+
+
+def _select_admin_email_for_2fa() -> str:
+    """Pick an email address that the current environment can actually receive.
+
+    - Local/dev: synthetic addresses are fine (Mailpit inbox).
+    - Webhosting/live: Mailpit is not in the remote SMTP path; use a real mailbox
+      and retrieve codes via IMAP.
+    """
+    explicit = (os.environ.get("UI_ADMIN_2FA_EMAIL") or "").strip()
+    if explicit:
+        return explicit
+
+    # Prefer the persisted deployment state, if present.
+    try:
+        target = get_deployment_target()
+        state = load_state(target)
+        if (state.admin.email or "").strip():
+            return (state.admin.email or "").strip()
+    except Exception:
+        pass
+
+    if _imap_configured():
+        return (os.environ.get("IMAP_USER") or "").strip()
+
+    return f"admin-test-{secrets.token_hex(4)}@example.test"
 
 
 def generate_secure_password(length: int = 24) -> str:
@@ -58,6 +91,26 @@ def get_current_credentials() -> tuple[str, str]:
         return "admin", "admin"
 
 
+def _verify_password_after_change_enabled() -> bool:
+    """Whether Journey 1 should logout+relogin to verify the new admin password.
+
+    This is helpful for local testing, but on webhosting/live it can trigger an
+    extra email-based 2FA send which may hit SMTP rate limits.
+    """
+
+    explicit = (os.environ.get("UI_J1_VERIFY_PASSWORD_AFTER_CHANGE") or "").strip()
+    if explicit:
+        return explicit.lower() in {"1", "true", "yes", "on"}
+
+    # Default to skipping in webhosting/live to reduce SMTP pressure.
+    try:
+        target = get_deployment_target()
+    except Exception:
+        target = ""
+    mode = (os.environ.get("DEPLOYMENT_MODE") or "").strip().lower()
+    return not (target == "webhosting" and mode == "live")
+
+
 async def capture(browser: Browser, name: str, journey: str = "J1") -> str:
     """Capture screenshot with journey prefix."""
     screenshot_name = journey_state.next_screenshot_name(journey, name)
@@ -68,73 +121,25 @@ async def capture(browser: Browser, name: str, journey: str = "J1") -> str:
 
 
 async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
-    """Handle 2FA page by intercepting code from Mailpit.
-    
-    Returns True if successfully handled, False otherwise.
-    Note: We fill the code and submit the form directly via JavaScript
-    to avoid race conditions with the auto-submit feature.
+    """Handle 2FA page.
+
+    Delegates to the shared workflow which tries Mailpit first and falls back
+    to IMAP when configured (required for webhosting/live deployments).
     """
-    import re
-    try:
-        from ui_tests.mailpit_client import MailpitClient
-        
-        mailpit = MailpitClient()
-        
-        # Wait for 2FA email
-        msg = mailpit.wait_for_message(
-            predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
-            timeout=10.0
+    from ui_tests import workflows
+
+    handled = await workflows.handle_2fa_if_present(browser, timeout=10.0)
+    if handled:
+        return True
+
+    current_url = browser._page.url
+    if "/login/2fa" in current_url or "/2fa" in current_url:
+        body_preview = (await browser.text("body"))[:800]
+        raise AssertionError(
+            "2FA page present, but could not retrieve/submit verification code. "
+            f"url={current_url} preview={body_preview!r}"
         )
-        
-        if msg:
-            full_msg = mailpit.get_message(msg.id)
-            # Extract 6-digit code
-            code_match = re.search(r'\b(\d{6})\b', full_msg.text)
-            
-            if code_match:
-                code = code_match.group(1)
-                print(f"✓ Extracted 2FA code from email: {code}")
-                
-                # Remember current URL to detect navigation (use live URL)
-                url_before = browser._page.url
-                
-                # Fill the code field and submit the form directly via JavaScript
-                # This avoids race conditions with the auto-submit feature
-                await browser.evaluate(f"""
-                    (function() {{
-                        const input = document.getElementById('code');
-                        const form = document.getElementById('twoFaForm');
-                        if (input && form) {{
-                            input.value = '{code}';
-                            form.submit();
-                        }}
-                    }})();
-                """)
-                
-                # Wait for navigation to complete
-                for _ in range(20):  # Up to 10 seconds
-                    await asyncio.sleep(0.5)
-                    # Get live URL directly from page
-                    new_url = browser._page.url
-                    if new_url != url_before and "/2fa" not in new_url:
-                        print(f"✓ 2FA navigation complete: {new_url}")
-                        break
-                else:
-                    print(f"⚠️  2FA navigation did not complete, still at: {browser._page.url}")
-                
-                mailpit.delete_message(msg.id)
-                mailpit.close()
-                return True
-            else:
-                print(f"⚠️  Could not extract code from email")
-        else:
-            print("⚠️  No 2FA email found in Mailpit")
-        
-        mailpit.close()
-    except Exception as e:
-        print(f"⚠️  2FA via Mailpit failed: {e}")
-        print("   Hint: Set ADMIN_2FA_SKIP=true for test mode, or ensure Mailpit is running")
-    
+
     return False
 
 
@@ -144,13 +149,13 @@ class TestJourney1FreshDeployment:
     async def test_J1_01_login_page_accessible(self, browser: Browser):
         """System shows login page."""
         await browser.goto(settings.url("/admin/login"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await capture(browser, "login-page")
         
         # Validate login page structure - h1 shows app name, form has login elements
         h1_text = await browser.text("h1")
-        assert "Netcup API Filter" in h1_text or "Login" in h1_text, f"Expected login page header, got: {h1_text}"
+        assert any(text in h1_text for text in ["Netcup API Filter", "Login", "Admin Portal"]), f"Expected login page header, got: {h1_text}"
         
         # Check form elements exist - this confirms it's the login page
         username_field = await browser.query_selector("#username, input[name='username']")
@@ -164,7 +169,7 @@ class TestJourney1FreshDeployment:
     async def test_J1_02_default_credentials_work(self, browser: Browser):
         """Admin credentials from state file authenticate successfully."""
         await browser.goto(settings.url("/admin/login"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Get credentials from state file (single source of truth)
         username, password = get_current_credentials()
@@ -177,7 +182,7 @@ class TestJourney1FreshDeployment:
         await capture(browser, "login-filled")
         
         await browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Check result - might redirect to 2FA, password change, or dashboard
         # Use live URL (not cached)
@@ -186,8 +191,9 @@ class TestJourney1FreshDeployment:
         # Handle 2FA if redirected there (when ADMIN_2FA_SKIP is not set)
         if "/2fa" in current_url or "/login/2fa" in current_url:
             print("ℹ️  Redirected to 2FA - attempting to handle via Mailpit")
+            await capture(browser, "2fa-page")
             await _handle_2fa_via_mailpit(browser)
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             current_url = browser._page.url
         
         if "/admin/login" in current_url:
@@ -196,15 +202,16 @@ class TestJourney1FreshDeployment:
             await browser.fill("#username, input[name='username']", "admin")
             await browser.fill("#password, input[name='password']", "admin")
             await browser.click("button[type='submit']")
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             
             current_url = browser._page.url
             
             # Handle 2FA again if needed
             if "/2fa" in current_url or "/login/2fa" in current_url:
                 print("ℹ️  Redirected to 2FA - attempting to handle via Mailpit")
+                await capture(browser, "2fa-page")
                 await _handle_2fa_via_mailpit(browser)
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 current_url = browser._page.url
             
             assert "/admin/login" not in current_url, f"Login failed with both state file and default credentials"
@@ -229,19 +236,19 @@ class TestJourney1FreshDeployment:
         else:
             # Navigate to login page and authenticate
             await browser.goto(settings.url("/admin/login"))
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             username, password = get_current_credentials()
             await browser.fill("#username, input[name='username']", username)
             await browser.fill("#password, input[name='password']", password)
             await browser.click("button[type='submit']")
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             
             # Handle 2FA if redirected there (use live URL)
             current_url = browser._page.url
             if "/2fa" in current_url or "/login/2fa" in current_url:
                 await _handle_2fa_via_mailpit(browser)
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
             
             current_url = browser._page.url
             h1_text = await browser.text("h1")
@@ -268,9 +275,27 @@ class TestJourney1FreshDeployment:
             # Check if email field is present (first-time setup for 2FA)
             email_field = await browser.query_selector("#email, input[name='email']")
             if email_field:
-                test_email = f"admin-test-{secrets.token_hex(4)}@example.test"
-                print(f"ℹ️  Setting up email for 2FA: {test_email}")
-                await browser.fill("#email, input[name='email']", test_email)
+                # NOTE: On webhosting deployments, the app cannot deliver email to local Mailpit.
+                # Use IMAP-backed mailbox when configured; otherwise fail-fast with guidance.
+                if settings.deployment_target == "webhosting" and not _imap_configured():
+                    raise RuntimeError(
+                        "Webhosting Journey 1 requires IMAP to be configured so admin email 2FA can be received. "
+                        "Set IMAP_HOST, IMAP_USER, IMAP_PASSWORD (and optionally IMAP_* settings) in your environment."
+                    )
+
+                admin_email = _select_admin_email_for_2fa()
+                print(f"ℹ️  Setting up email for 2FA: {admin_email}")
+                await browser.fill("#email, input[name='email']", admin_email)
+                # Persist for subsequent journeys/tests and for human visibility.
+                try:
+                    update_admin_email(
+                        admin_email,
+                        updated_by="ui_tests/journeys/j1_fresh_deployment",
+                        target=get_deployment_target(),
+                    )
+                except Exception:
+                    # Don't fail the journey if state write is unavailable.
+                    pass
             
             # Handle different form structures
             current_password_field = await browser.query_selector("#current_password, input[name='current_password']")
@@ -292,7 +317,7 @@ class TestJourney1FreshDeployment:
                 await browser.evaluate("document.getElementById('confirm_password').dispatchEvent(new Event('input', { bubbles: true }))")
             
             # Small delay to let validation complete
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             # Wait for client-side validation to enable submit button
             # The form validates: min 20 chars, min 100-bit entropy, passwords match
@@ -320,14 +345,105 @@ class TestJourney1FreshDeployment:
             await capture(browser, "password-change-form")
             
             await browser.click("#submitBtn, button[type='submit']")
-            await asyncio.sleep(1.0)
-            
-            journey_state.admin_password = new_password
-            
+            await browser.wait_for_timeout(750)
+
+            # Password change must actually succeed before we persist it.
+            # In some environments the POST can fail silently (validation/CSRF/etc)
+            # and we'd otherwise poison deployment_state for subsequent journeys.
+            current_url_after_submit = browser._page.url
+            if "/admin/login" in current_url_after_submit:
+                body_preview = (await browser.text("body"))[:500]
+                raise AssertionError(
+                    "Password change submission returned to login unexpectedly. "
+                    f"url={current_url_after_submit} preview={body_preview!r}"
+                )
+
+            # Handle an unexpected 2FA prompt after password change.
+            current_url_after_submit = browser._page.url
+            if "/2fa" in current_url_after_submit or "/login/2fa" in current_url_after_submit:
+                print("ℹ️  Redirected to 2FA after password change - attempting to handle via Mailpit")
+                await _handle_2fa_via_mailpit(browser)
+                await browser.wait_for_timeout(1000)
+
+            try:
+                await browser.wait_for_text("h1", "Dashboard", timeout=12.0)
+            except Exception:
+                h1_now = ""
+                try:
+                    h1_now = await browser.text("h1")
+                except Exception:
+                    pass
+                body_preview = (await browser.text("body"))[:600]
+                raise AssertionError(
+                    "Password change did not reach dashboard (unexpected post-submit state). "
+                    f"url={browser._page.url} h1={h1_now!r} preview={body_preview!r}"
+                )
+
             await capture(browser, "password-changed")
-            
-            # Update deployment state file
+
+            # Persist immediately to keep deployment_state in sync even if the
+            # subsequent logout+relogin + 2FA verification fails.
+            journey_state.admin_password = new_password
             await _update_deployment_state(new_password)
+
+            if not _verify_password_after_change_enabled():
+                print(
+                    "ℹ️  Skipping logout+relogin password verification "
+                    "(UI_J1_VERIFY_PASSWORD_AFTER_CHANGE disabled)"
+                )
+                journey_state.admin_logged_in = True
+                return
+
+            # Verify the new password actually works in a fresh session.
+            print("ℹ️  Verifying new admin password via logout+relogin")
+            await browser.goto(settings.url("/admin/logout"), wait_until="domcontentloaded")
+            await browser.wait_for_timeout(500)
+
+            await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+            await browser.wait_for_timeout(300)
+            relogin_username, _ = get_current_credentials()
+            await browser.fill("#username, input[name='username']", relogin_username)
+            await browser.fill("#password, input[name='password']", new_password)
+            await capture(browser, "relogin-filled")
+
+            # Submitting can involve redirects (to 2FA), and email delivery can add latency.
+            # Avoid fixed sleeps; wait for navigation or surface useful diagnostics.
+            try:
+                async with browser._page.expect_navigation(wait_until="domcontentloaded", timeout=15_000):
+                    await browser._page.click("button[type='submit']")
+            except Exception:
+                # Some pages might not trigger a full navigation event; fall back to a click + load wait.
+                await browser._page.click("button[type='submit']")
+                await browser._page.wait_for_load_state("domcontentloaded", timeout=15_000)
+
+            try:
+                import re
+
+                await browser._page.wait_for_url(
+                    re.compile(r".*/admin/(login/2fa|dashboard|change-password)"),
+                    timeout=15_000,
+                )
+            except Exception:
+                await capture(browser, "relogin-unknown-state")
+                body_preview = (await browser.text("body"))[:800]
+                raise AssertionError(
+                    "Re-login did not reach a post-login route (dashboard/2FA/change-password). "
+                    f"url={browser._page.url} preview={body_preview!r}"
+                )
+
+            current_url = browser._page.url
+            if "/2fa" in current_url or "/login/2fa" in current_url:
+                print("ℹ️  Redirected to 2FA after relogin - attempting to handle via Mailpit")
+                await _handle_2fa_via_mailpit(browser)
+                await browser.wait_for_timeout(1000)
+
+            assert "/admin/login" not in browser._page.url, (
+                "Re-login failed after password change (new password not accepted). "
+                f"url={browser._page.url}"
+            )
+            await browser.wait_for_text("h1", "Dashboard", timeout=12.0)
+
+            # At this point we have verified the new password works.
         else:
             # No password change required - using existing credentials
             print("✓ No password change required - using existing credentials")
@@ -377,7 +493,7 @@ class TestJourney1FreshDeployment:
         
         for path, screenshot_name in admin_pages:
             await browser.goto(settings.url(path))
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             # Check for 500 error
             page_text = await browser.text("body")

@@ -2,40 +2,194 @@
 
 ## Repository State Analysis & Multi-Backend Proposal
 
-### Current State Assessment
+### Current State Assessment (Updated: 2026-01-10)
 
 #### ✅ Strong Foundations
 1. **Account → Realms → Tokens Architecture**: Well-designed 3-tier permission system
 2. **Config-Driven Design**: .env.defaults + environment + database Settings model
 3. **PowerDNS Infrastructure**: Init container pattern, Docker integration, API ready
 4. **Comprehensive Testing**: 90+ tests (UI, E2E, journey contracts)
-5. **Security**: CSRF, 2FA, bcrypt, input validation, XSS protection
+5. **Security**: ✅ **AUDITED** (Security Review Report complete - see `docs/SECURITY_REVIEW_REPORT.md`)
+   - CSRF, 2FA, bcrypt, input validation, XSS protection
+   - Security headers implemented (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+   - 0 critical/high vulnerabilities
+   - 1 medium (fixed), 4 low, 3 informational findings
+   - OWASP Top 10 2021: 9/10 coverage (A05 security headers fixed in review)
 
-#### ⚠️ Areas Needing Improvement
+#### ✅ Completed Reviews (6/7)
 
-**1. Backend Abstraction (MISSING - CRITICAL)**
-   - ❌ No `backends/` module exists
-   - ❌ Hardcoded Netcup API calls throughout codebase
-   - ❌ No interface for pluggable DNS providers
-   - ❌ Realm → Backend mapping not implemented
+1. **Configuration & Environment** (`docs/CONFIG_ENVIRONMENT_REVIEW.md`)
+   - Status: ✅ 100% config-driven, fail-fast compliant (95% compliance score)
+   - Action needed: None (excellent state)
 
-**2. Database Schema Gaps**
-   - ❌ No `backend_services` table for service configuration
-   - ❌ No `backend_type` column in `account_realms` for routing
-   - ❌ No per-realm credential override support
+2. **Admin UI & UX** (`docs/ADMIN_UI_UX_REVIEW.md`)
+   - Status: ✅ Production-ready (9/10 consistency, 86 templates, 19 themes)
+   - Action needed: None
 
-**3. Admin UI Gaps**
-   - ❌ No backend selection in realm creation
-   - ❌ No backend service management page
-   - ❌ No per-realm credential configuration
+3. **Database Models** (`docs/DATABASE_MODELS_REVIEW.md`)
+   - Status: ✅ Excellent schema design (0 critical issues, 3NF+, proper indexes)
+   - Action needed: None
 
-**4. Code Duplication**
-   - ⚠️ Netcup client instantiation repeated in multiple files
-   - ⚠️ DNS operation logic not abstracted
+4. **Deployment & Operations** (`docs/DEPLOYMENT_OPS_REVIEW.md`)
+   - Status: ✅ Fully automated (100% production parity, single-command deployment)
+   - Action needed: None
+
+5. **Testing Coverage** (`docs/TESTING_COVERAGE_REVIEW.md`)
+   - Status: ✅ Comprehensive strategy (90+ tests, multi-layer approach)
+   - Gap: Route coverage only 27% (21/77 routes)
+   - Gap: Account portal authenticated pages not tested
+   - Action: P2 - Expand test coverage (non-blocking)
+
+6. **Authentication & Security** (`docs/SECURITY_REVIEW_REPORT.md`) ✅ **NEW**
+   - Status: ✅ Strong security posture
+   - Findings: 0 critical, 0 high, 1 medium (fixed), 4 low, 3 informational
+   - Security headers: ✅ Implemented (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+   - OWASP Top 10: 9/10 coverage (A05 security misconfiguration fixed)
+   - Action needed: Low-priority improvements (password history, 2FA lockout, session regeneration)
+
+#### ⚠️ Remaining Review (1/7)
+
+**Multi-Backend TOML Configuration** (REVIEW_PROMPT_MULTI_BACKEND_TOML.md)
+   - Status: ❌ No audit report found
+   - Priority: **P1 (High)** - Recently implemented feature (app-config.example.toml refactoring)
+   - Scope: TOML parsing, environment substitution, bootstrap logic, idempotency
+   - Action: Complete end-to-end review with integration tests
+
+#### ⚠️ Areas Needing Improvement (Post-Security Review)
+
+**1. Test Coverage Expansion (P2 - Medium)**
+   - ⚠️ Only 27% route coverage (21/77 routes)
+   - ⚠️ Account portal authenticated pages untested
+   - ⚠️ Admin token management routes untested
+   - Target: Increase coverage from 27% to 60%+
+   - Add pytest-cov configuration
+   - Set coverage threshold (80%+)
+
+**2. Backend Abstraction (COMPLETE - Multi-Backend Architecture)**
+   - ✅ `backends/` module exists
+   - ✅ Abstract `DNSBackend` interface
+   - ✅ Netcup and PowerDNS implementations
+   - ✅ Backend registry with provider discovery
+   - ✅ 9 new database tables (BackendProvider, BackendService, ManagedDomainRoot, etc.)
+   - ✅ Admin UI for backend management (10+ templates)
+   - ✅ User backend management (BYOD)
+   - ✅ 28 tests (14 journey, 14 UI)
+   - 🔲 Cloudflare/Route53 backends (future)
+
+**3. Security Enhancements (P3 - Low Priority)**
+   - From Security Review Report:
+     - ⚠️ Password history not implemented (users can reuse old passwords)
+     - ⚠️ Session not regenerated on login (minor session fixation risk)
+     - ⚠️ Recovery code rate limiting (potential brute force)
+     - ⚠️ 2FA code rate limiting (account lockout after X failures)
+   - These are low-priority improvements, not blockers
+
+**4. Additional Documentation Needed**
+   - ⚠️ Multi-Backend TOML review report (see Remaining Review above)
+   - ⚠️ User guides for BYOD (Bring Your Own DNS)
+   - ⚠️ Migration guide from single-backend to multi-backend
+
+---
+
+## Updated Recommended Action Plan (January 10, 2026)
+
+### ✅ Completed Since Last Review
+
+1. **Security Review** (`copilot/review-authentication-security` branch)
+   - Full authentication/authorization audit completed
+   - Security headers implemented
+   - 3 new documentation files:
+     - `docs/SECURITY_REVIEW_REPORT.md` - Comprehensive security audit
+     - `docs/SECURITY.md` - Security hardening guide
+     - `docs/SECURITY_ERROR_TAXONOMY.md` - Error classification system
+   - Result: 0 critical/high vulnerabilities, ready for production
+
+### 🎯 Immediate Priorities
+
+#### Priority 1: Multi-Backend TOML Review (P1 - High) - 2-3 hours
+
+**Why this is critical:**
+- Recent major refactoring: `app-config.toml.example` → `app-config.example.toml`
+- TOML import logic in `passenger_wsgi.py` is complex (environment substitution, auto-detection)
+- Bootstrap logic (`platform_backends.py`) has many integration points
+- No end-to-end validation since refactoring
+
+**Specific tasks:**
+1. Read REVIEW_PROMPT_MULTI_BACKEND_TOML.md checklist
+2. Trace code path: TOML → passenger_wsgi.py → database → platform_backends.py
+3. Write end-to-end integration test:
+   - Create test TOML with backends, domain_roots, users
+   - Verify database state after import
+   - Test environment variable substitution edge cases
+   - Test idempotency (double import should be safe)
+   - Test error paths (missing user, invalid backend ref)
+4. Document findings in `docs/MULTI_BACKEND_TOML_REVIEW.md`
+
+**Expected outcome:** Confidence in TOML configuration system before production deployment.
+
+#### Priority 2: Test Coverage Expansion (P2 - Medium) - 4-6 hours
+
+**Current state:** 27% route coverage (21/77 routes)
+
+**Focus areas:**
+1. Account portal authenticated routes:
+   - Dashboard (`/account/dashboard`)
+   - Realms management (`/account/realms/*`)
+   - Tokens management (`/account/tokens/*`)
+   - DNS records (`/account/dns/*`)
+   - 2FA setup (`/account/2fa/*`)
+2. Admin token management routes (`/admin/tokens/*`)
+3. Admin API routes (`/admin/api/*`)
+
+**Target:** Increase coverage from 27% to 60%+
+
+**Implementation:**
+- Add pytest-cov configuration to `pytest.ini`
+- Set coverage threshold (80%+)
+- Write Playwright tests for missing routes
+- Focus on authenticated journeys (avoid duplicating login tests)
+
+#### Priority 3: Security Enhancements (P3 - Low) - 3-4 hours
+
+**From Security Review Report (non-blocking improvements):**
+
+1. **Password History** (1 hour)
+   - Store hash of last 5 passwords
+   - Prevent reuse during password change
+   - Database: Add `password_history` table
+
+2. **2FA Attempt Lockout** (1.5 hours)
+   - Lock account after 5 failed 2FA attempts
+   - Require email notification to unlock
+   - Add to existing `_track_failed_login()` pattern
+
+3. **Session Regeneration** (0.5 hour)
+   - Explicitly regenerate session ID after login
+   - Implement absolute session timeout
+
+4. **Recovery Code Rate Limiting** (1 hour)
+   - Add rate limiting to recovery code attempts
+   - Leverage existing Flask-Limiter configuration
+
+**Note:** These are quality-of-life improvements, not security blockers.
 
 ---
 
 ## Complete Multi-Backend Implementation Proposal
+
+**STATUS UPDATE:** This entire proposal has been ✅ **IMPLEMENTED**. See "Implementation Status Summary" section at the end for details.
+
+The multi-backend architecture is production-ready with:
+- 9 new database tables
+- Backend abstraction layer (Netcup + PowerDNS)
+- Admin UI (10+ templates)
+- User BYOD support
+- 28 comprehensive tests
+
+**Remaining work:**
+- 🔲 Additional provider implementations (Cloudflare, Route53)
+- 🔲 Encryption at rest for credentials (requires external KMS)
+- 🔲 User documentation for BYOD workflows
 
 ### Phase 1: Database Schema (1 day)
 

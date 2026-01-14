@@ -12,8 +12,8 @@
 - Current FQDN: `gstammtisch.dchive.de`
 
 ### 3. ✅ Update .env.defaults to use PUBLIC_FQDN
-- Added `get_local_base_url()` function
-- Dynamic URL construction based on HTTPS/HTTP mode
+- Documented `.env` (gitignored secrets/overrides) alongside `.env.defaults`
+- URL construction handled by deploy/test harness (`UI_BASE_URL`)
 - No hardcoded hostnames
 
 ### 4. ✅ Update documentation to use $PUBLIC_FQDN placeholder

@@ -16,7 +16,13 @@
 <p class="text-center text-muted mb-4">
     {% if method == 'totp' %}Enter the code from your authenticator app
     {% elif method == 'telegram' %}Enter the code sent to your Telegram
-    {% elif method == 'email' %}Enter the code sent to your email
+    {% elif method == 'email' %}
+    Enter the code sent to<br>
+    <strong>{{ masked_email }}</strong>
+    {% if email_ref_token %}
+    <br>
+    <small class="text-muted">Ref: <span id="twofa-email-ref" class="font-monospace">{{ email_ref_token }}</span></small>
+    {% endif %}
     {% else %}Enter your verification code{% endif %}
 </p>
 

@@ -17,7 +17,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import secrets
 from typing import Optional
 
@@ -158,7 +157,7 @@ class TestSetupPendingRealms:
         
         # Verify pending realms now exist
         await browser.goto(settings.url('/admin/realms/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('realm-pending-after-setup', 'Pending realms after setup')
         
@@ -207,7 +206,7 @@ class TestUserRealmRequest:
         
         # First, go to accounts and find one
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Click on first account
         account_link = await browser.query_selector(
@@ -218,7 +217,7 @@ class TestUserRealmRequest:
             pytest.skip("No accounts available to add realm to")
         
         await account_link.click()
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-account-detail-before-realm', 'Account detail before adding realm')
         
@@ -229,7 +228,7 @@ class TestUserRealmRequest:
         
         if add_realm_btn:
             await add_realm_btn.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('admin-add-realm-form', 'Add realm form')
             
@@ -247,7 +246,7 @@ class TestUserRealmRequest:
             await ss.capture('admin-realm-form-filled', 'Realm form filled')
             
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             
             await ss.capture('admin-realm-created', 'Realm created')
         else:
@@ -270,7 +269,7 @@ class TestAdminRealmManagement:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-realms-list', 'Admin realms list')
         
@@ -286,7 +285,7 @@ class TestAdminRealmManagement:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-realms-pending', 'Admin pending realms')
         
@@ -302,7 +301,7 @@ class TestAdminRealmManagement:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Click on first realm if exists
         realm_link = await browser.query_selector(
@@ -311,7 +310,7 @@ class TestAdminRealmManagement:
         
         if realm_link:
             await realm_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('admin-realm-detail', 'Admin realm detail')
             
@@ -339,7 +338,7 @@ class TestRealmApprovalFlow:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body = await browser.text('body')
         
@@ -359,7 +358,7 @@ class TestRealmApprovalFlow:
             await ss.capture('realm-before-approve', 'Realm before approval')
             
             await approve_btn.click()
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             
             await ss.capture('realm-after-approve', 'Realm after approval')
             
@@ -379,7 +378,7 @@ class TestRealmApprovalFlow:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/realms/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         body = await browser.text('body')
         
@@ -399,7 +398,7 @@ class TestRealmApprovalFlow:
             await ss.capture('realm-before-reject', 'Realm before rejection')
             
             await reject_btn.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             # Look for reason field in modal
             reason_field = await browser.query_selector('textarea[name="reason"]')
@@ -414,7 +413,7 @@ class TestRealmApprovalFlow:
             )
             if confirm_btn:
                 await confirm_btn.click()
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
             
             await ss.capture('realm-after-reject', 'Realm after rejection')
         else:
@@ -440,7 +439,7 @@ class TestRealmTypes:
         
         # Navigate to account detail and try to add realm
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         account_link = await browser.query_selector(
             'a[href*="/admin/accounts/"]:not([href="/admin/accounts/new"])'
@@ -448,12 +447,12 @@ class TestRealmTypes:
         
         if account_link:
             await account_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             add_realm = await browser.query_selector('a[href*="/realms/new"]')
             if add_realm:
                 await add_realm.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Select host type
                 type_select = await browser.query_selector('#realm_type, select[name="realm_type"]')
@@ -466,7 +465,7 @@ class TestRealmTypes:
                 await browser.fill('#realm_value, input[name="realm_value"]', '*.invalid.example.com')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('realm-invalid-host', 'Invalid host realm rejected')
     
@@ -480,7 +479,7 @@ class TestRealmTypes:
         realm = realm_data["realm_domain"]
         
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         account_link = await browser.query_selector(
             'a[href*="/admin/accounts/"]:not([href="/admin/accounts/new"])'
@@ -488,12 +487,12 @@ class TestRealmTypes:
         
         if account_link:
             await account_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             add_realm = await browser.query_selector('a[href*="/realms/new"]')
             if add_realm:
                 await add_realm.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Select domain type
                 type_select = await browser.query_selector('#realm_type, select[name="realm_type"]')
@@ -509,7 +508,7 @@ class TestRealmTypes:
                     await desc_field.fill(realm["description"])
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
                 
                 await ss.capture('realm-domain-created', 'Domain realm created')
 
@@ -530,7 +529,7 @@ class TestMultiRealmAccount:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Click on first account
         account_link = await browser.query_selector(
@@ -539,7 +538,7 @@ class TestMultiRealmAccount:
         
         if account_link:
             await account_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('account-with-realms', 'Account with multiple realms')
             
@@ -564,7 +563,7 @@ class TestRealmErrorHandling:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         account_link = await browser.query_selector(
             'a[href*="/admin/accounts/"]:not([href="/admin/accounts/new"])'
@@ -572,12 +571,12 @@ class TestRealmErrorHandling:
         
         if account_link:
             await account_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             add_realm = await browser.query_selector('a[href*="/realms/new"]')
             if add_realm:
                 await add_realm.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Invalid realm value
                 await browser.fill('#realm_value, input[name="realm_value"]', 'invalid with spaces')
@@ -585,7 +584,7 @@ class TestRealmErrorHandling:
                 await ss.capture('realm-invalid-value', 'Invalid realm value entered')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('realm-invalid-rejected', 'Invalid realm rejected')
                 
@@ -604,7 +603,7 @@ class TestRealmErrorHandling:
         realm = realm_data["realm_approved"]
         
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         account_link = await browser.query_selector(
             'a[href*="/admin/accounts/"]:not([href="/admin/accounts/new"])'
@@ -612,12 +611,12 @@ class TestRealmErrorHandling:
         
         if account_link:
             await account_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             add_realm = await browser.query_selector('a[href*="/realms/new"]')
             if add_realm:
                 await add_realm.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 # Try to add same realm again
                 await browser.fill('#realm_value, input[name="realm_value"]', realm["value"])
@@ -625,7 +624,7 @@ class TestRealmErrorHandling:
                 await ss.capture('realm-duplicate-attempt', 'Duplicate realm attempt')
                 
                 await browser.click('button[type="submit"]')
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 
                 await ss.capture('realm-duplicate-rejected', 'Duplicate realm rejected')
                 

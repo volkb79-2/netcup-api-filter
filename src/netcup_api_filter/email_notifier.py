@@ -48,38 +48,34 @@ class EmailNotifier:
             body: Plain text body
             html_body: Optional HTML body
         """
-        try:
-            # Create message
-            msg = MIMEMultipart('alternative')
-            msg['From'] = self.sender_email
-            msg['To'] = to_email
-            msg['Subject'] = subject
-            
-            # Attach plain text
-            msg.attach(MIMEText(body, 'plain'))
-            
-            # Attach HTML if provided
-            if html_body:
-                msg.attach(MIMEText(html_body, 'html'))
-            
-            # Connect and send
-            if self.use_ssl:
-                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=30) as server:
-                    if self.smtp_username and self.smtp_password:
-                        server.login(self.smtp_username, self.smtp_password)
-                    server.send_message(msg)
-            else:
-                with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30) as server:
-                    # Only use STARTTLS and login if credentials are provided
-                    if self.smtp_username and self.smtp_password:
-                        server.starttls()
-                        server.login(self.smtp_username, self.smtp_password)
-                    server.send_message(msg)
-            
-            logger.info(f"Email sent successfully to {to_email}")
-            
-        except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = self.sender_email
+        msg['To'] = to_email
+        msg['Subject'] = subject
+
+        # Attach plain text
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach HTML if provided
+        if html_body:
+            msg.attach(MIMEText(html_body, 'html'))
+
+        # Connect and send
+        if self.use_ssl:
+            with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=30) as server:
+                if self.smtp_username and self.smtp_password:
+                    server.login(self.smtp_username, self.smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30) as server:
+                # Only use STARTTLS and login if credentials are provided
+                if self.smtp_username and self.smtp_password:
+                    server.starttls()
+                    server.login(self.smtp_username, self.smtp_password)
+                server.send_message(msg)
+
+        logger.info(f"Email sent successfully to {to_email}")
     
     def send_email_async(self, to_email: str, subject: str, body: str,
                         html_body: Optional[str] = None, delay: int = 5):
@@ -95,7 +91,10 @@ class EmailNotifier:
         """
         def delayed_send():
             time.sleep(delay)
-            self._send_email_sync(to_email, subject, body, html_body)
+            try:
+                self._send_email_sync(to_email, subject, body, html_body)
+            except Exception as e:
+                logger.error(f"Failed to send email to {to_email}: {e}")
         
         thread = threading.Thread(target=delayed_send, daemon=True)
         thread.start()
@@ -351,8 +350,9 @@ def get_email_notifier_from_config(config: Dict[str, Any]) -> Optional[EmailNoti
         return None
     
     # Use TOML field names (smtp_host and from_email)
-    required_fields = ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'from_email']
-    if not all(field in config for field in required_fields):
+    # Username/password are optional (some relays like Mailpit can run without auth).
+    required_fields = ['smtp_host', 'smtp_port', 'from_email']
+    if not all(config.get(field) for field in required_fields):
         logger.warning("Email configuration incomplete")
         return None
     
@@ -360,8 +360,8 @@ def get_email_notifier_from_config(config: Dict[str, Any]) -> Optional[EmailNoti
         return EmailNotifier(
             smtp_server=config['smtp_host'],  # TOML field name
             smtp_port=int(config['smtp_port']),
-            smtp_username=config['smtp_username'],
-            smtp_password=config['smtp_password'],
+            smtp_username=config.get('smtp_username', ''),
+            smtp_password=config.get('smtp_password', ''),
             sender_email=config['from_email'],  # TOML field name
             use_ssl=config.get('use_ssl', True)
         )

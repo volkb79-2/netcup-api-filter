@@ -24,7 +24,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import secrets
 from typing import Optional
 

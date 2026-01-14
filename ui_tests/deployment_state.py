@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import json
 import os
+import logging
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Literal, Optional
+
+logger = logging.getLogger(__name__)
 
 # Type alias for deployment targets
 DeploymentTarget = Literal["local", "webhosting"]
@@ -30,6 +33,57 @@ STATE_FILE_PATHS = {
     "local": WORKSPACE_ROOT / "deployment_state_local.json",
     "webhosting": WORKSPACE_ROOT / "deployment_state_webhosting.json",
 }
+
+
+def get_playwright_storage_state_path(
+    target: Optional[DeploymentTarget] = None,
+    name: str = "admin",
+) -> Path:
+    """Default path for Playwright storage state (cookies/localStorage).
+
+    This is derived from DEPLOYMENT_TARGET (same axis as deployment_state_*.json),
+    so a webhosting run reuses a webhosting session and local runs reuse local.
+
+    The file lives under WORKSPACE_ROOT/tmp/auth-states/ and is safe to delete.
+    """
+    if target is None:
+        target = get_deployment_target()
+
+    auth_dir = WORKSPACE_ROOT / "tmp" / "auth-states"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    return auth_dir / f"{target}_{name}_auth_state.json"
+
+
+def get_effective_playwright_storage_state_path(
+    target: Optional[DeploymentTarget] = None,
+    name: str = "admin",
+) -> Path:
+    """Return the storage-state path used by UI tests.
+
+    Env override:
+      - UI_PLAYWRIGHT_STORAGE_STATE_PATH
+    Default:
+      - tmp/auth-states/{target}_{name}_auth_state.json
+    """
+    override = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
+    if override:
+        return Path(override)
+    return get_playwright_storage_state_path(target=target, name=name)
+
+
+def clear_playwright_storage_state(
+    target: Optional[DeploymentTarget] = None,
+    name: str = "admin",
+) -> bool:
+    """Delete the saved Playwright storage state file (if it exists)."""
+    path = get_effective_playwright_storage_state_path(target=target, name=name)
+    try:
+        if path.exists():
+            path.unlink()
+            return True
+    except Exception:
+        logger.warning(f"Failed to delete Playwright storage state: {path}", exc_info=True)
+    return False
 
 
 @dataclass
@@ -52,6 +106,10 @@ class AdminCredentials:
     username: str
     password: str
     password_changed_at: Optional[str] = None
+    # Optional but important for production-parity 2FA flows.
+    # This is the email address the application will send 2FA codes to.
+    email: Optional[str] = None
+    email_changed_at: Optional[str] = None
 
 
 @dataclass
@@ -232,6 +290,22 @@ def update_admin_password(
     state = load_state(target)
     state.admin.password = new_password
     state.admin.password_changed_at = datetime.now(timezone.utc).isoformat()
+    save_state(state, updated_by, target)
+
+
+def update_admin_email(
+    new_email: str,
+    updated_by: str = "unknown",
+    target: Optional[DeploymentTarget] = None,
+) -> None:
+    """Update the admin email in the state file.
+
+    This is called after tests (or manual setup flows) change the admin email
+    address used for email-based 2FA.
+    """
+    state = load_state(target)
+    state.admin.email = new_email
+    state.admin.email_changed_at = datetime.now(timezone.utc).isoformat()
     save_state(state, updated_by, target)
 
 

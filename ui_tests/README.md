@@ -307,3 +307,129 @@ ui_tests/
 │   └── test_holistic_coverage.py     # Integration smoke test
 └── requirements.txt                  # Test dependencies
 ```
+
+## asyncio.sleep - Replacement Patterns
+
+### Pattern 1: Navigation Waits
+
+**❌ Before:**
+```python
+await browser.goto(url)
+await asyncio.sleep(0.3)
+await browser.fill("#field", "value")
+```
+
+**✅ After:**
+```python
+await browser.goto(url)
+await browser._page.wait_for_load_state('domcontentloaded')
+await browser.fill("#field", "value")
+```
+
+### Pattern 2: Form Submission Waits
+
+**❌ Before:**
+```python
+await browser.click("button[type='submit']")
+await asyncio.sleep(1.0)
+# Check result
+```
+
+**✅ After:**
+```python
+async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+    await browser.click("button[type='submit']")
+# Check result
+```
+
+### Pattern 3: Client-Side Validation Waits
+
+**❌ Before:**
+```python
+await browser.fill("#password", password)
+await browser.evaluate("document.getElementById('password').dispatchEvent(new Event('input'))")
+await asyncio.sleep(0.5)
+await browser.click("#submit")
+```
+
+**✅ After:**
+```python
+await browser.fill("#password", password)
+await browser.evaluate("document.getElementById('password').dispatchEvent(new Event('input'))")
+await browser._page.wait_for_function(
+    "document.getElementById('submit') && !document.getElementById('submit').disabled",
+    timeout=5000
+)
+await browser.click("#submit")
+```
+
+### Pattern 4: Polling for URL Change
+
+**❌ Before:**
+```python
+for _ in range(20):
+    await asyncio.sleep(0.5)
+    if browser._page.url != original_url:
+        break
+else:
+    raise AssertionError("Navigation timeout")
+```
+
+**✅ After:**
+```python
+try:
+    await browser._page.wait_for_url(
+        lambda url: url != original_url,
+        timeout=10000
+    )
+except Exception as e:
+    raise AssertionError("Navigation timeout") from e
+```
+
+### Pattern 5: Dropdown/Menu Opens
+
+**❌ Before:**
+```python
+await dropdown.click()
+await asyncio.sleep(0.3)
+# Check dropdown is open
+```
+
+**✅ After:**
+```python
+await dropdown.click()
+await browser._page.wait_for_selector('.dropdown-menu.show', timeout=5000)
+# Dropdown is now open
+```
+
+### Pattern 6: Element Appears After Action
+
+**❌ Before:**
+```python
+await browser.click("#trigger")
+await asyncio.sleep(0.5)
+element = await browser.query_selector("#result")
+```
+
+**✅ After:**
+```python
+await browser.click("#trigger")
+element = await browser._page.wait_for_selector("#result", timeout=5000)
+```
+
+## Why This Matters
+
+### Benefits of Proper Waits
+
+1. **Speed**: Tests run faster (no arbitrary waits)
+2. **Reliability**: No race conditions or flakiness
+3. **Clarity**: Intent is explicit (waiting for specific condition)
+4. **Debugging**: Failures provide actionable information
+
+### Problems with asyncio.sleep()
+
+1. **Arbitrary**: 0.5 seconds might be too short on slow systems, too long on fast ones
+2. **Masks Issues**: Hides race conditions and timing bugs
+3. **Slow**: Wastes time waiting even when condition is already met
+4. **Flaky**: Tests pass/fail randomly based on system load
+

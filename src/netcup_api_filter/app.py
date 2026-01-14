@@ -22,6 +22,23 @@ logger = logging.getLogger(__name__)
 csrf = CSRFProtect()
 
 
+def _safe_getcwd(fallback: str = None) -> str:
+    """Get current working directory, handling deletion gracefully.
+    
+    When gunicorn workers reload or the cwd is deleted, os.getcwd() raises OSError.
+    This helper catches that and returns a fallback (typically __file__ parent).
+    """
+    try:
+        return os.getcwd()
+    except (OSError, FileNotFoundError):
+        # Working directory was deleted or became inaccessible
+        if fallback:
+            return fallback
+        # Use the location of this file as fallback
+        # This file is in src/netcup_api_filter/app.py, so go up 3 levels to get to deploy root
+        return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def create_app(config_path: str = "config.yaml") -> Flask:
     """
     Create and configure the Flask application.
@@ -93,6 +110,37 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         get_default('FLASK_SESSION_LIFETIME', '3600')
     ))
     
+    # Session cookie domain - for TLS proxy scenarios
+    # When using reverse proxy with public FQDN, cookies must use the public domain
+    # so browsers send them through the proxy (not just to internal hostname)
+    domain_setting = os.environ.get(
+        'FLASK_SESSION_COOKIE_DOMAIN',
+        get_default('FLASK_SESSION_COOKIE_DOMAIN', 'auto')
+    )
+    
+    if domain_setting == 'auto':
+        # In local test mode we often access the app via an internal hostname
+        # (e.g., devcontainer hostname). Forcing SESSION_COOKIE_DOMAIN to
+        # PUBLIC_FQDN would prevent cookies from being sent and break CSRF.
+        if flask_env == 'local_test':
+            logger.debug("local_test: leaving SESSION_COOKIE_DOMAIN unset (use request hostname)")
+        else:
+            # Use PUBLIC_FQDN if available (from .env.workspace)
+            public_fqdn = os.environ.get('PUBLIC_FQDN')
+            if public_fqdn:
+                # Leading dot allows cookies to work on subdomains
+                app.config['SESSION_COOKIE_DOMAIN'] = f'.{public_fqdn}'
+                logger.info(f"Session cookies set for domain: .{public_fqdn} (auto-detected from PUBLIC_FQDN)")
+            else:
+                # No PUBLIC_FQDN - use Flask default (current request hostname)
+                # Don't set SESSION_COOKIE_DOMAIN at all (Flask will use request domain)
+                logger.debug("No PUBLIC_FQDN found, using Flask default session cookie domain (request hostname)")
+    elif domain_setting:
+        # Explicit domain set (empty string is treated as False)
+        app.config['SESSION_COOKIE_DOMAIN'] = domain_setting
+        logger.info(f"Session cookies set for domain: {domain_setting} (explicit)")
+    # else: empty string or not set, use Flask default (don't set SESSION_COOKIE_DOMAIN)
+    
     # =========================================================================
     # Template and Static Configuration
     # =========================================================================
@@ -106,14 +154,15 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = static_max_age
     
     # Configure template and static folders for deployment
-    deploy_templates = os.path.join(os.getcwd(), 'src', 'netcup_api_filter', 'templates')
-    deploy_static = os.path.join(os.getcwd(), 'src', 'netcup_api_filter', 'static')
+    cwd = _safe_getcwd()
+    deploy_templates = os.path.join(cwd, 'src', 'netcup_api_filter', 'templates')
+    deploy_static = os.path.join(cwd, 'src', 'netcup_api_filter', 'static')
     
     # Check various possible locations
     for templates_path in [
         deploy_templates,
-        os.path.join(os.getcwd(), 'deploy', 'src', 'netcup_api_filter', 'templates'),
-        os.path.join(os.getcwd(), 'templates'),
+        os.path.join(cwd, 'deploy', 'src', 'netcup_api_filter', 'templates'),
+        os.path.join(cwd, 'templates'),
     ]:
         if os.path.exists(templates_path):
             app.template_folder = templates_path
@@ -121,8 +170,8 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     
     for static_path in [
         deploy_static,
-        os.path.join(os.getcwd(), 'deploy', 'src', 'netcup_api_filter', 'static'),
-        os.path.join(os.getcwd(), 'static'),
+        os.path.join(cwd, 'deploy', 'src', 'netcup_api_filter', 'static'),
+        os.path.join(cwd, 'static'),
     ]:
         if os.path.exists(static_path):
             app.static_folder = static_path

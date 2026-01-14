@@ -13,6 +13,9 @@ from pathlib import Path
 app_root = Path(__file__).resolve().parent
 src_root = app_root / "src"
 
+# Expose app root for modules that need to locate deployment artifacts
+os.environ.setdefault('NETCUP_FILTER_APP_ROOT', str(app_root))
+
 # Add src root to Python path for the netcup_api_filter package
 sys.path.insert(0, str(src_root))
 
@@ -101,9 +104,22 @@ try:
         # Load app-config.toml if present (first-run customization)
         # This file is read once and then deleted
         config_path = os.path.join(app_root, 'app-config.toml')
+        # NOTE: gunicorn may start multiple workers; protect this one-time import
+        # from races by atomically "claiming" the file.
+        claimed_config_path: str | None = None
         if os.path.exists(config_path):
+            processing_path = f"{config_path}.processing.{os.getpid()}"
             try:
-                logger.info(f"Found app-config.toml at {config_path}, loading initial configuration...")
+                os.replace(config_path, processing_path)
+                claimed_config_path = processing_path
+                logger.info(f"Claimed app-config.toml for one-time import: {processing_path}")
+            except FileNotFoundError:
+                # Another worker likely claimed it first.
+                claimed_config_path = None
+
+        if claimed_config_path:
+            try:
+                logger.info(f"Found app-config.toml at {claimed_config_path}, loading initial configuration...")
                 
                 # Try tomllib first (Python 3.11+), fallback to tomli
                 try:
@@ -115,11 +131,52 @@ try:
                     toml_parser = tomli
                     logger.info("Using tomli for TOML parsing")
                 
-                with open(config_path, 'rb') as f:
+                with open(claimed_config_path, 'rb') as f:
                     config = toml_parser.load(f)
                 
                 logger.info(f"Parsed app-config.toml sections: {list(config.keys())}")
                 
+                # Define all valid top-level sections (CRITICAL: keep this updated!)
+                VALID_SECTIONS = {
+                    'rate_limits', 'security', 'smtp',  # Core settings
+                    'session', 'admin', 'logging', 'notifications',  # Additional settings (NEW)
+                    'netcup',  # Legacy, deprecated
+                    'backends', 'domain_roots', 'users',  # Array-based config (new)
+                    'geoip', 'free_domains', 'platform_backends'
+                }
+                
+                # Validate: Fail on unknown sections (prevents typos and config drift)
+                unknown_sections = set(config.keys()) - VALID_SECTIONS
+                if unknown_sections:
+                    error_msg = f"Unknown sections in app-config.toml: {sorted(unknown_sections)}"
+                    logger.error(error_msg)
+                    logger.error(f"Valid sections: {sorted(VALID_SECTIONS)}")
+                    raise ValueError(error_msg)
+                
+                logger.info(f"✓ All sections valid: {sorted(config.keys())}")
+                
+                # Helper function to validate section keys (fail-fast on unknown keys)
+                def validate_section_keys(section_name, actual_keys, valid_keys, is_warning=False):
+                    """Validate that all keys in a section are known/expected.
+                    
+                    Args:
+                        section_name: Name of the section (for error messages)
+                        actual_keys: Set of keys found in the config
+                        valid_keys: Set of valid/expected keys
+                        is_warning: If True, log warning instead of raising error
+                    """
+                    unknown_keys = actual_keys - valid_keys
+                    if unknown_keys:
+                        error_msg = f"Unknown keys in [{section_name}]: {sorted(unknown_keys)}"
+                        logger.error(error_msg)
+                        logger.error(f"Valid keys for [{section_name}]: {sorted(valid_keys)}")
+                        if is_warning:
+                            logger.warning(f"Ignoring unknown keys (non-critical): {sorted(unknown_keys)}")
+                        else:
+                            raise ValueError(error_msg)
+                    else:
+                        logger.debug(f"✓ All keys valid in [{section_name}]")
+
                 # Apply rate limits
                 if 'rate_limits' in config:
                     logger.info(f"Processing rate_limits section with {len(config['rate_limits'])} entries")
@@ -133,18 +190,39 @@ try:
                 # Apply security settings
                 if 'security' in config:
                     logger.info(f"Processing security section with {len(config['security'])} entries")
+                    
+                    # Validate keys (fail-fast on unknown keys)
+                    VALID_SECURITY_KEYS = {
+                        'allowed_ip_ranges', 'blocked_ip_ranges', 'require_https',
+                        'max_request_size', 'session_timeout', 'enable_2fa',
+                        'password_min_length', 'password_require_uppercase',
+                        'password_require_lowercase', 'password_require_digit',
+                        'password_require_special',
+                        'password_reset_expiry_hours', 'invite_expiry_hours'  # From example file
+                    }
+                    validate_section_keys('security', set(config['security'].keys()), VALID_SECURITY_KEYS)
+                    
                     for key, value in config['security'].items():
                         set_setting(key, str(value))
                         logger.info(f"  ✓ Set {key} = '{value}'")
                 else:
                     logger.info("No [security] section found in app-config.toml")
                 
-                # Apply SMTP/email config using TOML field names directly
-                if 'smtp' in config or 'email' in config:  # Support both [smtp] (new) and [email] (legacy)
+                # Apply SMTP config using TOML field names directly
+                if 'smtp' in config:
                     import json
-                    smtp_config = config.get('smtp') or config.get('email')
+                    smtp_config = config['smtp']
                     logger.info(f"Processing smtp section with {len(smtp_config)} entries")
                     logger.info(f"  SMTP config keys: {list(smtp_config.keys())}")
+                    
+                    # Validate keys (fail-fast on unknown keys)
+                    VALID_SMTP_KEYS = {
+                        'smtp_host', 'smtp_port', 'smtp_security', 'use_ssl',
+                        'smtp_username', 'smtp_password', 'from_email', 'from_name',
+                        'reply_to', 'admin_email', 'notify_new_account',
+                        'notify_realm_request', 'notify_security'
+                    }
+                    validate_section_keys('smtp', set(smtp_config.keys()), VALID_SMTP_KEYS)
                     
                     # Use TOML field names directly (no mapping)
                     smtp_data = {
@@ -170,7 +248,118 @@ try:
                     logger.info(f"    - smtp_security: {smtp_data['smtp_security']}")
                     logger.info(f"    - from_email: {smtp_data['from_email']}")
                 else:
-                    logger.info("No [smtp] or [email] section found in app-config.toml")
+                    logger.info("No [smtp] section found in app-config.toml")
+                
+                # Apply session configuration (NEW)
+                if 'session' in config:
+                    import json
+                    session_config = config['session']
+                    logger.info(f"Processing session section with {len(session_config)} entries")
+                    
+                    # Validate keys
+                    VALID_SESSION_KEYS = {
+                        'cookie_secure', 'cookie_httponly', 'cookie_samesite', 'lifetime_seconds'
+                    }
+                    validate_section_keys('session', set(session_config.keys()), VALID_SESSION_KEYS)
+                    
+                    session_data = {
+                        'cookie_secure': session_config.get('cookie_secure', 'auto'),
+                        'cookie_httponly': session_config.get('cookie_httponly', True),
+                        'cookie_samesite': session_config.get('cookie_samesite', 'Lax'),
+                        'lifetime_seconds': session_config.get('lifetime_seconds', 3600),
+                    }
+                    
+                    set_setting('session_config', json.dumps(session_data))
+                    logger.info(f"  ✓ Set session_config")
+                    logger.info(f"    - cookie_secure: {session_data['cookie_secure']}")
+                    logger.info(f"    - cookie_httponly: {session_data['cookie_httponly']}")
+                    logger.info(f"    - cookie_samesite: {session_data['cookie_samesite']}")
+                    logger.info(f"    - lifetime_seconds: {session_data['lifetime_seconds']}")
+                else:
+                    logger.info("No [session] section found in app-config.toml")
+                
+                # Apply admin security configuration (NEW)
+                if 'admin' in config:
+                    import json
+                    admin_config = config['admin']
+                    logger.info(f"Processing admin section with {len(admin_config)} entries")
+                    
+                    # Validate keys
+                    VALID_ADMIN_KEYS = {
+                        'ip_whitelist', 'bind_session_to_ip', 'require_2fa'
+                    }
+                    validate_section_keys('admin', set(admin_config.keys()), VALID_ADMIN_KEYS)
+                    
+                    admin_data = {
+                        'ip_whitelist': admin_config.get('ip_whitelist', []),
+                        'bind_session_to_ip': admin_config.get('bind_session_to_ip', False),
+                        'require_2fa': admin_config.get('require_2fa', False),
+                    }
+                    
+                    set_setting('admin_security_config', json.dumps(admin_data))
+                    logger.info(f"  ✓ Set admin_security_config")
+                    logger.info(f"    - ip_whitelist: {admin_data['ip_whitelist']}")
+                    logger.info(f"    - bind_session_to_ip: {admin_data['bind_session_to_ip']}")
+                    logger.info(f"    - require_2fa: {admin_data['require_2fa']}")
+                else:
+                    logger.info("No [admin] section found in app-config.toml")
+                
+                # Apply logging configuration (NEW)
+                if 'logging' in config:
+                    import json
+                    logging_config = config['logging']
+                    logger.info(f"Processing logging section with {len(logging_config)} entries")
+                    
+                    # Validate keys
+                    VALID_LOGGING_KEYS = {
+                        'level', 'max_size_mb', 'backup_count'
+                    }
+                    validate_section_keys('logging', set(logging_config.keys()), VALID_LOGGING_KEYS)
+                    
+                    logging_data = {
+                        'level': logging_config.get('level', 'INFO'),
+                        'max_size_mb': logging_config.get('max_size_mb', 10),
+                        'backup_count': logging_config.get('backup_count', 5),
+                    }
+                    
+                    set_setting('logging_config', json.dumps(logging_data))
+                    logger.info(f"  ✓ Set logging_config")
+                    logger.info(f"    - level: {logging_data['level']}")
+                    logger.info(f"    - max_size_mb: {logging_data['max_size_mb']}")
+                    logger.info(f"    - backup_count: {logging_data['backup_count']}")
+                else:
+                    logger.info("No [logging] section found in app-config.toml")
+                
+                # Apply notification settings (NEW)
+                if 'notifications' in config:
+                    import json
+                    notif_config = config['notifications']
+                    logger.info(f"Processing notifications section with {len(notif_config)} entries")
+                    
+                    # Validate keys
+                    VALID_NOTIFICATION_KEYS = {
+                        'admin_email', 'notify_new_account', 'notify_realm_request',
+                        'notify_security_events', 'notify_token_expiring_days'
+                    }
+                    validate_section_keys('notifications', set(notif_config.keys()), VALID_NOTIFICATION_KEYS)
+                    
+                    notif_data = {
+                        'admin_email': notif_config.get('admin_email', ''),
+                        'notify_new_account': notif_config.get('notify_new_account', True),
+                        'notify_realm_request': notif_config.get('notify_realm_request', True),
+                        'notify_security_events': notif_config.get('notify_security_events', True),
+                        'notify_token_expiring_days': notif_config.get('notify_token_expiring_days', 7),
+                    }
+                    
+                    set_setting('notifications_config', json.dumps(notif_data))
+                    logger.info(f"  ✓ Set notifications_config")
+                    logger.info(f"    - admin_email: {notif_data['admin_email']}")
+                    logger.info(f"    - notify_new_account: {notif_data['notify_new_account']}")
+                    logger.info(f"    - notify_realm_request: {notif_data['notify_realm_request']}")
+                    logger.info(f"    - notify_security_events: {notif_data['notify_security_events']}")
+                    logger.info(f"    - notify_token_expiring_days: {notif_data['notify_token_expiring_days']}")
+                else:
+                    logger.info("No [notifications] section found in app-config.toml")
                 
                 # Apply Netcup API config (DEPRECATED - use [[backends]] arrays)
                 # Legacy [netcup] section support - store as single JSON object
@@ -205,9 +394,17 @@ try:
                     backends = config['backends']
                     logger.info(f"Processing [[backends]] arrays: {len(backends)} backend(s) defined")
                     
+                    # Valid keys for each backend entry
+                    VALID_BACKEND_KEYS = {
+                        'service_name', 'provider', 'owner', 'display_name', 'config', 'description'
+                    }
+                    
                     # Store backends config as JSON array for bootstrap processing
                     backends_data = []
                     for idx, backend in enumerate(backends, 1):
+                        # Validate backend keys
+                        validate_section_keys(f'backends[{idx}]', set(backend.keys()), VALID_BACKEND_KEYS)
+                        
                         service_name = backend.get('service_name', f'backend-{idx}')
                         provider = backend.get('provider', '')
                         owner = backend.get('owner', 'platform')
@@ -239,9 +436,20 @@ try:
                     domain_roots = config['domain_roots']
                     logger.info(f"Processing [[domain_roots]] arrays: {len(domain_roots)} domain(s) defined")
                     
+                    # Valid keys for each domain_root entry
+                    VALID_DOMAIN_ROOT_KEYS = {
+                        'backend', 'domain', 'dns_zone', 'visibility', 'display_name',
+                        'description', 'allow_apex_access', 'min_subdomain_depth',
+                        'max_subdomain_depth', 'allowed_record_types', 'allowed_operations',
+                        'max_hosts_per_user', 'require_email_verification'
+                    }
+                    
                     # Store domain roots config as JSON array for bootstrap processing
                     domain_roots_data = []
                     for idx, domain_root in enumerate(domain_roots, 1):
+                        # Validate domain_root keys
+                        validate_section_keys(f'domain_roots[{idx}]', set(domain_root.keys()), VALID_DOMAIN_ROOT_KEYS)
+                        
                         backend = domain_root.get('backend', '')
                         domain = domain_root.get('domain', '')
                         dns_zone = domain_root.get('dns_zone', domain)
@@ -284,19 +492,43 @@ try:
                     logger.info("No [[domain_roots]] arrays found in app-config.toml")
                 
                 # Process [[users]] arrays (OPTIONAL USER PRESEEDING)
-                if 'users' in config:
+                users = config.get('users', [])
+                if users:
                     import json
-                    users = config['users']
                     logger.info(f"Processing [[users]] arrays: {len(users)} user(s) to preseed")
-                    
+
                     # Store users config as JSON array for bootstrap processing
                     users_data = []
+                    seen_usernames: set[str] = set()
+
                     for idx, user in enumerate(users, 1):
+                        # Validate per-user keys (fail-fast on typos)
+                        VALID_USER_KEYS = {
+                            'username', 'email', 'password',
+                            'is_approved', 'must_change_password',
+                            'is_admin',
+                        }
+                        validate_section_keys(f'users[{idx}]', set(user.keys()), VALID_USER_KEYS)
+
                         username = user.get('username', '')
                         email = user.get('email', '')
                         password = user.get('password', 'generate')  # Special value "generate"
                         is_approved = user.get('is_approved', True)
                         must_change_password = user.get('must_change_password', False)
+                        is_admin = user.get('is_admin', False)
+
+                        username = username.strip()
+                        email = email.strip()
+                        if not username:
+                            raise ValueError(f"users[{idx}].username is required")
+                        if not email:
+                            raise ValueError(f"users[{idx}].email is required")
+
+                        if username in seen_usernames:
+                            raise ValueError(
+                                f"Duplicate username in [[users]]: {username}"
+                            )
+                        seen_usernames.add(username)
                         
                         users_data.append({
                             'username': username,
@@ -304,12 +536,14 @@ try:
                             'password': password,
                             'is_approved': is_approved,
                             'must_change_password': must_change_password,
+                            'is_admin': is_admin,
                         })
                         
                         logger.info(f"  [{idx}] {username} ({email})")
                         logger.info(f"      - password: {'<generated>' if password == 'generate' else '<explicit>'}")
                         logger.info(f"      - is_approved: {is_approved}")
                         logger.info(f"      - must_change_password: {must_change_password}")
+                        logger.info(f"      - is_admin: {is_admin}")
                     
                     set_setting('users_config', json.dumps(users_data))
                     logger.info(f"  ✓ Set users_config ({len(users_data)} user(s))")
@@ -391,13 +625,23 @@ try:
                     logger.error(f"Failed to initialize platform backends: {e}", exc_info=True)
                 
                 # Delete the config file after successful import
-                os.remove(config_path)
-                logger.info(f"✓ app-config.toml imported and deleted successfully")
+                try:
+                    os.remove(claimed_config_path)
+                except FileNotFoundError:
+                    pass
+                logger.info("✓ app-config.toml imported and deleted successfully")
                 
             except ImportError as e:
                 logger.warning(f"tomllib/tomli not available: {e}, cannot load app-config.toml")
             except Exception as e:
                 logger.error(f"Failed to load app-config.toml: {e}", exc_info=True)
+                # Best-effort: if import failed, restore the file for debugging/retry.
+                try:
+                    if claimed_config_path and not os.path.exists(config_path):
+                        os.replace(claimed_config_path, config_path)
+                        logger.warning("Restored app-config.toml after failed import")
+                except Exception:
+                    logger.warning("Could not restore app-config.toml after failed import", exc_info=True)
         
         # Load/persist SECRET_KEY from database (survives deployment wipes)
         if 'SECRET_KEY' in os.environ:

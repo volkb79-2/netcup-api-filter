@@ -121,10 +121,15 @@ def login_2fa():
         else:
             flash(result.error, 'error')
     
-    return render_template('account/login_2fa.html', 
-                          account=account, 
-                          tfa_methods=tfa_methods,
-                          masked_email=mask_email(account.email))
+    from ..account_auth import SESSION_KEY_2FA_EMAIL_REF
+
+    return render_template(
+        'account/login_2fa.html',
+        account=account,
+        tfa_methods=tfa_methods,
+        masked_email=mask_email(account.email),
+        email_ref_token=session.get(SESSION_KEY_2FA_EMAIL_REF),
+    )
 
 
 @account_bp.route('/logout')

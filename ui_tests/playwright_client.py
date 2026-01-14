@@ -48,7 +48,8 @@ class PlaywrightClient:
         self,
         browser_type: str = "chromium",
         headless: Optional[bool] = None,
-        timeout: int = 30000
+        timeout: int = 30000,
+        storage_state_path: Optional[str] = None,
     ):
         """
         Initialize Playwright client.
@@ -69,6 +70,7 @@ class PlaywrightClient:
                 print("[CONFIG] WARNING: PLAYWRIGHT_HEADLESS not set, using default: true")
             self.headless = headless_str.lower() == 'true'
         self.timeout = timeout
+        self.storage_state_path = storage_state_path
         
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
@@ -97,7 +99,17 @@ class PlaywrightClient:
             self._browser = await self._playwright.chromium.launch(headless=self.headless)
         
         # Create default context
-        self._context = await self._browser.new_context()
+        storage_state_path = self.storage_state_path
+        if storage_state_path and not os.path.exists(storage_state_path):
+            print(
+                f"[CONFIG] WARNING: storage_state_path does not exist, ignoring: {storage_state_path}"
+            )
+            storage_state_path = None
+
+        if storage_state_path:
+            self._context = await self._browser.new_context(storage_state=storage_state_path)
+        else:
+            self._context = await self._browser.new_context()
         self._context.set_default_timeout(self.timeout)
         
         # Create default page for convenience

@@ -1,6 +1,11 @@
 import os
 import sys
 from pathlib import Path
+import time
+import cProfile
+import pstats
+import io
+import json
 
 import pytest
 import pytest_asyncio
@@ -11,6 +16,10 @@ if str(ROOT) not in sys.path:
 
 from ui_tests.browser import Browser
 from ui_tests.config import UiTargetProfile, settings
+from ui_tests.deployment_state import (
+    clear_playwright_storage_state,
+    get_playwright_storage_state_path,
+)
 from ui_tests.playwright_client import PlaywrightClient
 
 
@@ -28,16 +37,79 @@ def refresh_credentials_before_test():
 @pytest_asyncio.fixture()
 async def playwright_client():
     """Create a Playwright client instance."""
-    async with PlaywrightClient(headless=settings.playwright_headless) as client:
+    storage_state_path = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
+    if not storage_state_path:
+        storage_state_path = str(get_playwright_storage_state_path())
+
+    async with PlaywrightClient(
+        headless=settings.playwright_headless,
+        storage_state_path=storage_state_path,
+    ) as client:
         yield client
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clear_playwright_storage_state_on_exit():
+    """Optionally clear persisted Playwright auth state after the test run.
+
+    This is useful when you explicitly want the next run to re-test the full
+    2FA/login flow.
+
+    Controlled via env:
+      - UI_CLEAR_AUTH_STATE_ON_EXIT=1
+    """
+    yield
+    if os.environ.get("UI_CLEAR_AUTH_STATE_ON_EXIT") != "1":
+        return
+    deleted = clear_playwright_storage_state()
+    path = get_playwright_storage_state_path()
+    if deleted:
+        print(f"[CONFIG] Cleared Playwright auth state on exit: {path}")
+    else:
+        print(f"[CONFIG] No Playwright auth state to clear on exit: {path}")
 
 
 @pytest_asyncio.fixture()
 async def browser(playwright_client):
     """Create a Browser instance with the Playwright page."""
+    trace_threshold_s = os.environ.get("UI_TRACE_ON_SLOW_SECONDS")
+    trace_dir = os.environ.get("UI_TRACE_DIR")
+    trace_enabled = False
+    started_at = time.perf_counter()
+
+    if trace_threshold_s:
+        if not trace_dir:
+            raise RuntimeError(
+                "UI_TRACE_ON_SLOW_SECONDS is set but UI_TRACE_DIR is not set. "
+                "Set UI_TRACE_DIR to a writable directory to store trace zips."
+            )
+        os.makedirs(trace_dir, exist_ok=True)
+        try:
+            threshold_val = float(trace_threshold_s)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid UI_TRACE_ON_SLOW_SECONDS={trace_threshold_s!r} (expected float)"
+            ) from exc
+        if threshold_val > 0:
+            await playwright_client.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+            trace_enabled = True
+
     browser = Browser(playwright_client.page)
     await browser.reset()
-    return browser
+    try:
+        yield browser
+    finally:
+        if trace_enabled:
+            duration_s = time.perf_counter() - started_at
+            threshold_val = float(trace_threshold_s)
+            if duration_s >= threshold_val:
+                test_id = os.environ.get("PYTEST_CURRENT_TEST", "unknown_test").split(" ", 1)[0]
+                safe_name = "".join(ch if (ch.isalnum() or ch in "_.-") else "_" for ch in test_id).strip("_.-")
+                safe_name = safe_name or "trace"
+                trace_path = os.path.join(trace_dir, safe_name + ".zip")
+                await playwright_client.context.tracing.stop(path=trace_path)
+            else:
+                await playwright_client.context.tracing.stop()
 
 
 # ============================================================================
@@ -281,3 +353,115 @@ async def client_page_fullcontrol(browser_session, admin_page):
 def base_url():
     """Provide base URL for tests."""
     return os.getenv("UI_BASE_URL", settings.base_url)
+
+
+# =========================================================================
+# Optional per-test profiling (cProfile)
+# =========================================================================
+
+
+def _env_flag(name: str) -> bool:
+    val = (os.environ.get(name) or "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
+def _safe_profile_name(nodeid: str) -> str:
+    safe = "".join(ch if (ch.isalnum() or ch in "_.-") else "_" for ch in nodeid)
+    safe = safe.strip("_.-")
+    return safe or "profile"
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    enabled = _env_flag("PYTEST_PROFILE_ENABLED")
+    if not enabled:
+        yield
+        return
+
+    prof = cProfile.Profile()
+    started_at = time.perf_counter()
+    prof.enable()
+    outcome = yield
+    prof.disable()
+    duration_s = time.perf_counter() - started_at
+
+    # Only report/save for slow tests (config-driven)
+    try:
+        min_seconds = float((os.environ.get("PYTEST_PROFILE_MIN_SECONDS") or "0").strip())
+    except ValueError:
+        min_seconds = 0.0
+
+    if duration_s < min_seconds:
+        return
+
+    profile_dir = (os.environ.get("PYTEST_PROFILE_DIR") or "").strip() or None
+    sort_key = (os.environ.get("PYTEST_PROFILE_SORT") or "tottime").strip() or "tottime"
+    try:
+        top_n = int((os.environ.get("PYTEST_PROFILE_TOP") or "30").strip())
+    except ValueError:
+        top_n = 30
+
+    # Capture a short, readable summary into the test report
+    stream = io.StringIO()
+    stats = pstats.Stats(prof, stream=stream)
+    try:
+        stats.sort_stats(sort_key)
+    except Exception:
+        stats.sort_stats("tottime")
+    stats.print_stats(top_n)
+    summary = stream.getvalue()
+
+    item.user_properties.append(("cprofile_duration_s", duration_s))
+    item.user_properties.append(("cprofile_top", summary))
+
+    if profile_dir:
+        os.makedirs(profile_dir, exist_ok=True)
+        prof_path = os.path.join(profile_dir, _safe_profile_name(item.nodeid) + ".prof")
+        prof.dump_stats(prof_path)
+        item.user_properties.append(("cprofile_file", prof_path))
+
+        meta_path = os.path.splitext(prof_path)[0] + ".json"
+        meta = {
+            "nodeid": item.nodeid,
+            "duration_s": duration_s,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        try:
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2, sort_keys=True)
+                f.write("\n")
+        except OSError:
+            # Best-effort: profiling should not fail tests due to filesystem issues.
+            pass
+
+    return outcome
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    enabled = _env_flag("PYTEST_PROFILE_ENABLED")
+    if not enabled:
+        return
+
+    terminalreporter.write_sep("=", "Per-test cProfile (call phase)")
+
+    # Print summaries for failed/slow tests only (already filtered by min_seconds)
+    for report in terminalreporter.getreports("passed") + terminalreporter.getreports("failed"):
+        duration_s = None
+        profile_text = None
+        profile_file = None
+        for k, v in getattr(report, "user_properties", []):
+            if k == "cprofile_duration_s":
+                duration_s = v
+            elif k == "cprofile_top":
+                profile_text = v
+            elif k == "cprofile_file":
+                profile_file = v
+
+        if profile_text is None or duration_s is None:
+            continue
+
+        terminalreporter.write_line(f"\n{report.nodeid}  (call: {duration_s:.3f}s)")
+        if profile_file:
+            terminalreporter.write_line(f"  profile: {profile_file}")
+        for line in profile_text.rstrip().splitlines():
+            terminalreporter.write_line("  " + line)

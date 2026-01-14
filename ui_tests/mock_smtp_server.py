@@ -243,7 +243,7 @@ async def test_smtp_server():
     await server.start()
     
     try:
-        # Give server time to start
+        # Give server time to start (legitimate server startup delay)
         await asyncio.sleep(0.5)
         
         # Send test email

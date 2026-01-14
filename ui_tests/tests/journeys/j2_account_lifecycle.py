@@ -24,7 +24,6 @@ Verifications:
 - Approved accounts can login
 """
 
-import asyncio
 import re
 import secrets
 import string
@@ -34,6 +33,7 @@ from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
 from ui_tests.mailpit_client import MailpitClient
+from ui_tests import workflows
 
 
 async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
@@ -43,6 +43,17 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
     Note: We fill the code and submit the form directly via JavaScript.
     """
     try:
+        # If multiple 2FA methods exist, prefer email because our automation
+        # can retrieve email codes (TOTP cannot be automated here).
+        try:
+            email_method_link = await browser.query_selector("a[href*='method=email']")
+            if email_method_link:
+                await browser.click("a[href*='method=email']")
+                await browser.wait_for_load_state('domcontentloaded')
+        except Exception:
+            # Best-effort only; if the method switcher isn't present, continue.
+            pass
+
         mailpit = MailpitClient()
         
         # Wait for 2FA email
@@ -78,7 +89,7 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
                 
                 # Wait for navigation to complete
                 for _ in range(20):  # Up to 10 seconds
-                    await asyncio.sleep(0.5)
+                    await browser.wait_for_load_state('domcontentloaded')
                     # Get live URL directly from page
                     new_url = browser._page.url
                     if new_url != url_before and "/2fa" not in new_url:
@@ -134,7 +145,7 @@ class TestJourney2AccountLifecycle:
     async def test_J2_01_registration_page(self, browser: Browser):
         """Registration page is accessible and has required fields."""
         await browser.goto(settings.url("/account/register"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await capture(browser, "registration-page")
         
@@ -167,45 +178,33 @@ class TestJourney2AccountLifecycle:
         Note: The admin account creation page uses an invitation system.
         Admin provides username + email, and the user sets their password via invite link.
         """
-        # Always login because we're in a new browser session
-        # (previous session cookies are lost between journeys)
-        await browser.goto(settings.url("/admin/login"))
-        await browser.fill("#username", "admin")
-        await browser.fill("#password", settings.admin_password)
-        await browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
-        
-        # Check for 2FA redirect and handle it (use live URL)
-        current_url = browser._page.url
-        if "/2fa" in current_url or "/login/2fa" in current_url:
-            print("ℹ️  Redirected to 2FA - handling via Mailpit")
-            await _handle_2fa_via_mailpit(browser)
-            # Wait for navigation to complete after 2FA auto-submit
-            await asyncio.sleep(1.0)
-        
-        # Verify we're actually logged in before proceeding (use live URL)
-        current_url = browser._page.url
-        if "/admin/" not in current_url or "/login" in current_url:
-            # 2FA didn't complete, try explicit navigation to dashboard
-            await browser.goto(settings.url("/admin/"))
-            await asyncio.sleep(0.5)
+        # Use the shared workflow: it handles the full auth matrix reliably
+        # (fresh deploy password setup, 2FA enrollment, 2FA via Mailpit/IMAP, etc.).
+        try:
+            await workflows.ensure_admin_dashboard(browser)
+        except Exception:
+            await capture(browser, "admin-login-failed")
+            raise
         
         # Navigate to account creation
         await browser.goto(settings.url("/admin/accounts/new"))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
-        # Wait for the form to be ready (poll for field)
-        username_field = None
-        for _ in range(10):  # 5 seconds timeout
-            username_field = await browser.query_selector("#username, input[name='username']")
-            if username_field:
+        # Wait for the create-account form specifically.
+        # Note: the login page also contains a '#username' field, so we must
+        # not use that alone as a readiness check.
+        create_form = None
+        email_field = None
+        for _ in range(10):
+            create_form = await browser.query_selector("#createAccountForm")
+            email_field = await browser.query_selector("#email, input[name='email']")
+            if create_form and email_field:
                 break
-            await asyncio.sleep(0.5)
-        
-        if not username_field:
-            print("⚠️  Account creation form not found - page may not have loaded")
+            await browser.wait_for_timeout(250)
+
+        if not (create_form and email_field):
             await capture(browser, "account-creation-page-error")
-            raise RuntimeError("Account creation page did not load properly")
+            raise RuntimeError(f"Account creation page did not load properly (url={browser._page.url})")
         
         username = generate_unique_username()
         email = generate_unique_email(username)
@@ -218,7 +217,7 @@ class TestJourney2AccountLifecycle:
         await capture(browser, "admin-creates-account")
         
         await browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Store account details (no password - invite-based)
         journey_state.test_account_username = username
@@ -250,7 +249,7 @@ class TestJourney2AccountLifecycle:
         
         # Fill registration form
         await browser.goto(settings.url("/account/register"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await browser.fill("#username, input[name='username']", username)
         await browser.fill("#email, input[name='email']", email)
@@ -263,7 +262,7 @@ class TestJourney2AccountLifecycle:
         await capture(browser, "registration-filled")
         
         await browser.click("button[type='submit']")
-        await asyncio.sleep(1.5)
+        await browser.wait_for_timeout(1500)
         
         await capture(browser, "registration-submitted")
         
@@ -330,19 +329,19 @@ class TestJourney2AccountLifecycle:
         if verification_link:
             # Use direct link
             await browser.goto(verification_link)
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             await capture(browser, "verification-link-followed")
         elif verification_code:
             # Enter code on verification page
             await browser.goto(settings.url("/account/verify"))
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             code_field = await browser.query_selector("#code, input[name='code'], #verification_code")
             if code_field:
                 await browser.fill("#code, input[name='code'], #verification_code", verification_code)
                 await capture(browser, "verification-code-entered")
                 await browser.click("button[type='submit']")
-                await asyncio.sleep(1.0)
+                await browser.wait_for_timeout(1000)
         else:
             print("ℹ️  No verification code/link - may be auto-verified")
             return
@@ -360,7 +359,7 @@ class TestJourney2AccountLifecycle:
             # Still capture account list for documentation
             await _login_as_admin(browser)
             await browser.goto(settings.url("/admin/accounts"))
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             await capture(browser, "accounts-list-with-created")
             return
         
@@ -369,7 +368,7 @@ class TestJourney2AccountLifecycle:
         
         # Check pending accounts
         await browser.goto(settings.url("/admin/accounts/pending"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await capture(browser, "pending-accounts")
         
@@ -401,7 +400,7 @@ class TestJourney2AccountLifecycle:
         
         # Navigate to pending accounts
         await browser.goto(settings.url("/admin/accounts/pending"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Find approve button for our account
         # Try different selectors
@@ -419,7 +418,7 @@ class TestJourney2AccountLifecycle:
             return
         
         await approve_btn.click()
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         await capture(browser, "account-approved")
         
@@ -452,11 +451,11 @@ class TestJourney2AccountLifecycle:
         
         # Logout admin if needed
         await browser.goto(settings.url("/admin/logout"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Login as test user
         await browser.goto(settings.url("/account/login"))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await browser.fill("#username, input[name='username']", journey_state.test_account_username or "")
         await browser.fill("#password, input[name='password']", journey_state.test_account_password or "")
@@ -464,7 +463,7 @@ class TestJourney2AccountLifecycle:
         await capture(browser, "user-login-form")
         
         await browser.click("button[type='submit']")
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         await capture(browser, "user-logged-in")
         
@@ -493,7 +492,7 @@ async def _login_as_admin(browser: Browser):
     """
     # Navigate to login page
     await browser.goto(settings.url("/admin/login"))
-    await asyncio.sleep(0.5)
+    await browser.wait_for_load_state('domcontentloaded')
     
     # Check if we were redirected (already logged in)
     current_url = browser._page.url
@@ -518,14 +517,14 @@ async def _login_as_admin(browser: Browser):
     await browser.fill("#username", "admin")
     await browser.fill("#password", settings.admin_password)
     await browser.click("button[type='submit']")
-    await asyncio.sleep(1.0)
+    await browser.wait_for_timeout(1000)
     
     # Handle 2FA if redirected (use live URL)
     current_url = browser._page.url
     if "/2fa" in current_url or "/login/2fa" in current_url:
         print("ℹ️  Redirected to 2FA - handling via Mailpit")
         await _handle_2fa_via_mailpit(browser)
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
     
     journey_state.admin_logged_in = True
 

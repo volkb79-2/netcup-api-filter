@@ -62,7 +62,7 @@
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span><i class="bi bi-envelope me-1"></i>Email (SMTP)</span>
-            {% if email_config and email_config.smtp_server %}
+            {% if smtp_config and smtp_config.smtp_host %}
             <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Configured</span>
             {% else %}
             <span class="badge bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Not configured</span>
@@ -75,41 +75,41 @@
                     <div class="col-md-8">
                         <label for="smtp_host" class="form-label">SMTP Server</label>
                         <input type="text" class="form-control" id="smtp_host" name="smtp_host" 
-                               value="{{ email_config.smtp_host if email_config else '' }}" placeholder="smtp.example.com">
+                               value="{{ smtp_config.smtp_host if smtp_config else '' }}" placeholder="smtp.example.com">
                     </div>
                     <div class="col-md-4">
                         <label for="smtp_port" class="form-label">Port</label>
                         <input type="number" class="form-control" id="smtp_port" name="smtp_port" 
-                               value="{{ email_config.smtp_port if email_config else 587 }}">
+                               value="{{ smtp_config.smtp_port if smtp_config else 587 }}">
                     </div>
                 </div>
                 <div class="mb-3">
                     <label for="smtp_security" class="form-label">Security</label>
                     <select class="form-select" id="smtp_security" name="smtp_security">
-                        <option value="tls" {% if not email_config or email_config.smtp_security == 'tls' %}selected{% endif %}>STARTTLS (587)</option>
-                        <option value="ssl" {% if email_config and email_config.smtp_security == 'ssl' %}selected{% endif %}>SSL/TLS (465)</option>
-                        <option value="none" {% if email_config and email_config.smtp_security == 'none' %}selected{% endif %}>None (25)</option>
+                        <option value="tls" {% if not smtp_config or smtp_config.smtp_security == 'tls' %}selected{% endif %}>STARTTLS (587)</option>
+                        <option value="ssl" {% if smtp_config and smtp_config.smtp_security == 'ssl' %}selected{% endif %}>SSL/TLS (465)</option>
+                        <option value="none" {% if smtp_config and smtp_config.smtp_security == 'none' %}selected{% endif %}>None (25)</option>
                     </select>
                 </div>
                 <div class="mb-3">
                     <label for="smtp_username" class="form-label">Username</label>
                     <input type="text" class="form-control" id="smtp_username" name="smtp_username" 
-                           value="{{ email_config.smtp_username if email_config else '' }}">
+                           value="{{ smtp_config.smtp_username if smtp_config else '' }}">
                 </div>
                 <div class="mb-3">
                     <label for="smtp_password" class="form-label">Password</label>
                     <input type="password" class="form-control" id="smtp_password" name="smtp_password" 
-                           value="{{ email_config.smtp_password if email_config else '' }}">
+                           value="{{ smtp_config.smtp_password if smtp_config else '' }}">
                 </div>
                 <div class="mb-3">
                     <label for="from_email" class="form-label">From Email</label>
                     <input type="email" class="form-control" id="from_email" name="from_email" 
-                           value="{{ email_config.from_email if email_config else '' }}" placeholder="noreply@example.com">
+                           value="{{ smtp_config.from_email if smtp_config else '' }}" placeholder="noreply@example.com">
                 </div>
                 <div class="mb-3">
                     <label for="from_name" class="form-label">From Name</label>
                     <input type="text" class="form-control" id="from_name" name="from_name" 
-                           value="{{ email_config.from_name if email_config else 'Netcup API Filter' }}" placeholder="Netcup API Filter">
+                           value="{{ smtp_config.from_name if smtp_config else 'Netcup API Filter' }}" placeholder="Netcup API Filter">
                 </div>
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-save me-1"></i>Save Email Config

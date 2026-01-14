@@ -15,7 +15,6 @@ Tests validate:
 - Edge cases and boundary conditions
 """
 import pytest
-import asyncio
 import re
 from datetime import datetime
 from ui_tests.browser import browser_session
@@ -134,7 +133,8 @@ async def test_admin_audit_logs_sorting(active_profile):
             sortable_headers = await browser.query_selector_all('table thead th.sortable, table thead th[data-sortable]')
             if sortable_headers:
                 await sortable_headers[0].click()
-                await asyncio.sleep(0.5)
+                # Wait for table to be stable after sort
+                await browser._page.wait_for_load_state('domcontentloaded')
                 
                 # Page should still show audit logs table
                 h1_text = await browser.text('main h1')
@@ -199,10 +199,10 @@ async def test_admin_netcup_config_test_connection(active_profile, mock_netcup_a
         await workflows.open_admin_netcup_config(browser)
         
         # Fill in mock API credentials (field names match actual template)
-        await browser.fill('input[name="customer_number"]', str(mock_netcup_credentials['customer_id']))
+        await browser.fill('input[name="customer_id"]', str(mock_netcup_credentials['customer_id']))
         await browser.fill('input[name="api_key"]', mock_netcup_credentials['api_key'])
         await browser.fill('input[name="api_password"]', mock_netcup_credentials['api_password'])
-        await browser.fill('input[name="api_endpoint"]', mock_netcup_api_server.url)
+        await browser.fill('input[name="api_url"]', mock_netcup_api_server.url)
         
         # Look for test button
         test_buttons = await browser.query_selector_all('button[type="button"]')
@@ -216,7 +216,13 @@ async def test_admin_netcup_config_test_connection(active_profile, mock_netcup_a
         
         if test_button:
             await test_button.click()
-            await asyncio.sleep(2)
+            # Wait for API response and message display
+            try:
+                await browser._page.wait_for_selector('.alert, .message, [role="alert"]', timeout=3000)
+            except:
+                # Message might appear in different format, continue
+                pass
+            await browser._page.wait_for_load_state('networkidle', timeout=5000)
             
             # Should show success message
             page_text = await browser.text('body')
@@ -277,9 +283,9 @@ async def test_admin_system_info_display(active_profile):
         # Should show some system information (page structure may vary)
         assert len(page_text) > 100, "System info page should have content"
         
-        # Verify no error messages displayed
-        assert "500" not in page_text, "Should not show 500 error"
+        # Verify no server error page rendered
         assert "Internal Server Error" not in page_text, "Should not show server error"
+        assert await browser.query_selector("h1.error-code") is None, "Should not show 500 error page"
 
 # ============================================================================
 # CLIENT PORTAL TESTS - DEPRECATED
@@ -350,7 +356,7 @@ async def test_404_page_exists(active_profile):
         
         # Navigate to non-existent page
         await browser.goto(settings.url("/admin/non-existent-page-12345"))
-        await asyncio.sleep(1)
+        await browser._page.wait_for_load_state('domcontentloaded')
         
         page_text = await browser.text('body')
         

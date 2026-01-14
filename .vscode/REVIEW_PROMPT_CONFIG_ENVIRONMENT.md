@@ -278,7 +278,7 @@ cat .gitignore | grep -E "\.env$|deployment_state_.*\.json"
 
 ### 6. `app-config.toml` Import Process
 
-**Files:** `src/netcup_api_filter/passenger_wsgi.py`, `app-config.toml.example`
+**Files:** `src/netcup_api_filter/passenger_wsgi.py`, `app-config.example.toml`
 
 #### Import Workflow
 1. **Check existence**: Does `app-config.toml` exist?
@@ -296,7 +296,7 @@ cat .gitignore | grep -E "\.env$|deployment_state_.*\.json"
 **Test:**
 ```bash
 # Test import process
-cp app-config.toml.example app-config.toml
+cp app-config.example.toml app-config.toml
 # Edit app-config.toml with test data
 
 # Start app (triggers import)
@@ -385,7 +385,7 @@ ls -l /etc/letsencrypt/live/"$PUBLIC_FQDN"/
 - [ ] **`docs/FAIL_FAST_PRINCIPLE.md`**: Fail-fast pattern documented
 - [ ] **`CONFIG_DRIVEN_ARCHITECTURE.md`**: Architecture documented
 - [ ] **Inline comments**: All config files have explanatory comments
-- [ ] **Examples**: `app-config.toml.example` is complete and correct
+- [ ] **Examples**: `app-config.example.toml` is complete and correct
 
 #### Documentation Quality
 - [ ] **Clear examples**: Working examples for all config options

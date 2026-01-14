@@ -27,9 +27,9 @@ server {
     disable_symlinks off;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-Frame-Options SAMEORIGIN;
-    add_header Referrer-Policy "strict-origin-when-cross-origin";
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     # Mailpit web UI and API
     # Mailpit handles webroot internally via MP_WEBROOT environment variable
@@ -84,6 +84,13 @@ server {
     location / {
         # Use variable to force runtime DNS resolution (nginx won't fail at startup if service unavailable)
         set $backend_upstream ${LOCAL_APP_HOST}:${LOCAL_APP_PORT};
+
+        # Avoid duplicate security headers when the upstream (Flask) also sets them.
+        # nginx will add its own copies (see add_header directives above).
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header Referrer-Policy;
+
         # Forward all requests to Flask backend (HTTP, not HTTPS)
         # nginx terminates TLS, backend receives plain HTTP
         proxy_pass http://$backend_upstream;

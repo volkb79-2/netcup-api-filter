@@ -29,19 +29,22 @@ def is_known_error(error_text: str) -> bool:
 
 pytestmark = pytest.mark.asyncio
 
-@pytest.mark.parametrize("path", ADMIN_PATHS)
-async def test_admin_pages_for_console_errors(active_profile, path: str):
-    """Checks admin pages for console errors."""
+async def test_admin_pages_for_console_errors(active_profile):
+    """Checks admin pages for console errors.
+
+    Runs all admin paths in a single authenticated session to avoid triggering
+    repeated 2FA emails (important for live environments with SMTP rate limits).
+    """
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
-        
-        # Navigate to the page
-        await browser.goto(settings.url(path))
-        
-        # Get page text to verify it loaded
-        page_text = await browser.text("body")
-        
-        # Page should have some content
-        assert len(page_text.strip()) > 50, f"Page {path} appears empty"
+
+        for path in ADMIN_PATHS:
+            await browser.goto(settings.url(path))
+
+            # Get page text to verify it loaded
+            page_text = await browser.text("body")
+
+            # Page should have some content
+            assert len(page_text.strip()) > 50, f"Page {path} appears empty"
 
 # Client page tests are skipped until client portal is updated for new auth model

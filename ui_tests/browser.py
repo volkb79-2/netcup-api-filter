@@ -3,12 +3,16 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import os
+import re
+import time
 from typing import Any, Dict, AsyncIterator
 
 import anyio
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 from ui_tests.config import settings
+from ui_tests.deployment_state import get_playwright_storage_state_path
 from ui_tests.playwright_client import PlaywrightClient
 
 
@@ -54,16 +58,36 @@ class Browser:
         Note: "networkidle" can timeout with long-polling/WebSocket connections.
               Use "domcontentloaded" for pages with background connections.
         """
+        start = time.perf_counter()
         try:
             response = await self._page.goto(url, wait_until=wait_until, timeout=timeout)
             await self._update_state()
+            _maybe_emit_step_timing(
+                "goto",
+                time.perf_counter() - start,
+                {
+                    "url": url,
+                    "wait_until": wait_until,
+                    "status": response.status if response else None,
+                },
+            )
             return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
         except PlaywrightTimeout as exc:
             # If networkidle times out, try with domcontentloaded as fallback
             if wait_until == "networkidle":
                 try:
+                    fallback_start = time.perf_counter()
                     response = await self._page.goto(url, wait_until="domcontentloaded", timeout=timeout)
                     await self._update_state()
+                    _maybe_emit_step_timing(
+                        "goto:fallback",
+                        time.perf_counter() - fallback_start,
+                        {
+                            "url": url,
+                            "wait_until": "domcontentloaded",
+                            "status": response.status if response else None,
+                        },
+                    )
                     return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
                 except PlaywrightTimeout:
                     pass  # Fall through to original error
@@ -71,19 +95,31 @@ class Browser:
 
     async def fill(self, selector: str, value: str) -> Dict[str, Any]:
         """Fill input field."""
+        start = time.perf_counter()
         try:
             await self._page.fill(selector, value)
+            _maybe_emit_step_timing(
+                "fill",
+                time.perf_counter() - start,
+                {"selector": selector, "value_length": len(value)},
+            )
             return {"selector": selector, "value": value}
         except Exception as exc:
             raise ToolError(name="fill", payload={"selector": selector, "value": value}, message=str(exc))
 
     async def click(self, selector: str, press_enter: bool | None = None) -> Dict[str, Any]:
         """Click element."""
+        start = time.perf_counter()
         try:
             await self._page.click(selector)
             if press_enter:
                 await self._page.keyboard.press("Enter")
             await self._update_state()
+            _maybe_emit_step_timing(
+                "click",
+                time.perf_counter() - start,
+                {"selector": selector},
+            )
             return {"selector": selector, "url": self.current_url}
         except Exception as exc:
             raise ToolError(name="click", payload={"selector": selector}, message=str(exc))
@@ -155,6 +191,13 @@ class Browser:
             return html or ""
         except Exception as exc:
             raise ToolError(name="html", payload={"selector": selector}, message=str(exc))
+
+    async def page_content(self) -> str:
+        """Get full HTML content of the current page."""
+        try:
+            return await self._page.content()
+        except Exception as exc:
+            raise ToolError(name="page_content", payload={}, message=str(exc))
 
     async def evaluate(self, script: str, arg: Any = None) -> Any:
         """Execute JavaScript in the page context."""
@@ -248,14 +291,22 @@ class Browser:
         """Poll for text content until it contains the expected substring."""
         deadline = anyio.current_time() + timeout
         last_error: ToolError | None = None
+        start = time.perf_counter()
+        attempts = 0
 
         while anyio.current_time() <= deadline:
+            attempts += 1
             try:
                 content = await self.text(selector)
             except ToolError as exc:
                 content = ""
                 last_error = exc
             if expected in content:
+                _maybe_emit_step_timing(
+                    "wait_for_text",
+                    time.perf_counter() - start,
+                    {"selector": selector, "expected": expected, "attempts": attempts},
+                )
                 return content
             await anyio.sleep(interval)
 
@@ -269,6 +320,17 @@ class Browser:
         content = await self.text(selector)
         assert expected in content, f"'{expected}' not found in '{content}'"
         return content
+
+    async def wait_for_timeout(self, ms: int) -> None:
+        """Wait for a fixed amount of time.
+
+        Prefer explicit waits (selectors/navigation) where possible.
+        """
+        await self._page.wait_for_timeout(ms)
+
+    async def wait_for_load_state(self, state: str = "networkidle", timeout: int = 30000) -> None:
+        """Wait for the page to reach a given load state."""
+        await self._page.wait_for_load_state(state, timeout=timeout)
 
     async def query_selector(self, selector: str):
         """Get element handle for selector (exposes Playwright ElementHandle API)."""
@@ -317,14 +379,86 @@ class Browser:
 
 @asynccontextmanager
 async def browser_session() -> AsyncIterator[Browser]:
-    """Yield a Browser instance using direct Playwright with global viewport settings."""
-    client = PlaywrightClient(headless=settings.playwright_headless)
+    """Yield a Browser instance using direct Playwright with global viewport settings.
+
+    Debug/profiling env vars:
+      - UI_STEP_TIMING=1: emits per-action timings to stdout (use with `pytest -s`).
+      - UI_TRACE_ON_SLOW_SECONDS=<float>: records a Playwright trace and saves it
+        for tests whose body duration meets/exceeds the threshold.
+      - UI_TRACE_DIR=<path>: required if UI_TRACE_ON_SLOW_SECONDS is set; traces
+        are written here.
+    """
+    storage_state_path = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
+    if not storage_state_path:
+        storage_state_path = str(get_playwright_storage_state_path())
+    client = PlaywrightClient(
+        headless=settings.playwright_headless,
+        storage_state_path=storage_state_path or None,
+    )
     await client.connect()
+
+    trace_threshold_s = _get_trace_threshold_seconds()
+    trace_dir = os.environ.get("UI_TRACE_DIR")
+    trace_active = False
+    trace_start = time.perf_counter()
+    if trace_threshold_s is not None:
+        if not trace_dir:
+            raise RuntimeError(
+                "UI_TRACE_ON_SLOW_SECONDS is set but UI_TRACE_DIR is not set. "
+                "Set UI_TRACE_DIR to a writable directory to store trace zips."
+            )
+        os.makedirs(trace_dir, exist_ok=True)
+        await client.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        trace_active = True
     try:
         page = await client.new_page()
         browser = Browser(page)
         # CRITICAL: Set viewport globally for ALL browser sessions (including auth flow)
-        await browser.set_viewport(1920, 2400)
+        # Config-driven: defaults come from env via Browser.set_viewport().
+        await browser.set_viewport()
         yield browser
     finally:
+        if trace_active:
+            duration_s = time.perf_counter() - trace_start
+            if duration_s >= (trace_threshold_s or 0):
+                test_id = os.environ.get("PYTEST_CURRENT_TEST", "unknown_test").split(" ", 1)[0]
+                trace_name = _sanitize_artifact_name(test_id) + ".zip"
+                trace_path = os.path.join(trace_dir, trace_name)
+                await client.context.tracing.stop(path=trace_path)
+                _maybe_emit_step_timing(
+                    "trace_saved",
+                    duration_s,
+                    {"path": trace_path, "threshold_s": trace_threshold_s},
+                )
+            else:
+                await client.context.tracing.stop()
         await client.close()
+
+
+def _sanitize_artifact_name(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+    return cleaned.strip("_.-") or "trace"
+
+
+def _get_trace_threshold_seconds() -> float | None:
+    raw = os.environ.get("UI_TRACE_ON_SLOW_SECONDS")
+    if not raw:
+        return None
+    try:
+        threshold = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"Invalid UI_TRACE_ON_SLOW_SECONDS={raw!r} (expected float)") from exc
+    if threshold <= 0:
+        return None
+    return threshold
+
+
+def _maybe_emit_step_timing(action: str, duration_s: float, details: Dict[str, Any] | None = None) -> None:
+    if os.environ.get("UI_STEP_TIMING") != "1":
+        return
+    test_id = os.environ.get("PYTEST_CURRENT_TEST", "").split(" ", 1)[0]
+    detail_str = ""
+    if details:
+        safe_details = ", ".join(f"{k}={v}" for k, v in details.items())
+        detail_str = f" | {safe_details}"
+    print(f"[UI_TIMING] {test_id} {action} {duration_s * 1000:.1f}ms{detail_str}", flush=True)

@@ -113,7 +113,7 @@ volumes:
 # Access deployment
 echo "Admin UI: https://${PUBLIC_FQDN}/admin/login"
 echo "Mailpit: https://${PUBLIC_FQDN}/mailpit/"
-echo "Credentials: admin / admin"
+echo "Admin credentials: see deployment_state_local.json (or .env.defaults for fresh deploy)"
 ```
 
 ### Manual Setup (Step-by-Step)
@@ -143,7 +143,7 @@ All configuration is sourced from `.env.workspace` at the repository root. Varia
 
 | Variable | Source | Description |
 |----------|--------|-------------|
-| `PUBLIC_FQDN` | `.env.workspace` | Auto-detected via reverse DNS (e.g., `gstammtisch.dchive.de`) |
+| `PUBLIC_FQDN` | `.env.workspace` | Auto-detected via reverse DNS (your host's public FQDN) |
 | `PHYSICAL_REPO_ROOT` | `.env.workspace` | Host-side path to repository (for Docker mounts) |
 | `DOCKER_GID` | `.env.workspace` | Docker group GID (for certificate access) |
 | `LOCAL_TLS_DOMAIN` | `.env` | Set to `${PUBLIC_FQDN}` (constructs cert paths) |
@@ -186,8 +186,8 @@ proxy_pass http://${LOCAL_APP_HOST}:${LOCAL_APP_PORT};
 
 ```bash
 # Test asset loading after sub_filter rewrite
-curl -sk -u admin:MailpitDev123! https://${PUBLIC_FQDN}/mailpit/ | grep -E 'href="/mailpit/'
-curl -sk -u admin:MailpitDev123! https://${PUBLIC_FQDN}/mailpit/dist/app.css | head -5
+curl -sk -u admin:MailpitDev123 https://${PUBLIC_FQDN}/mailpit/ | grep -E 'href="/mailpit/'
+curl -sk -u admin:MailpitDev123 https://${PUBLIC_FQDN}/mailpit/dist/app.css | head -5
 ```
 
 ### Full Test Suite

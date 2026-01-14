@@ -105,23 +105,12 @@ export PUBLIC_TLS_CRT_PEM="/etc/letsencrypt/live/gstammtisch.dchive.de/fullchain
 export PUBLIC_TLS_KEY_PEM="/etc/letsencrypt/live/gstammtisch.dchive.de/privkey.pem"
 ```
 
-### `.env.defaults` (Version-controlled defaults)
+### `.env.defaults` (Version-controlled defaults) and `.env` (gitignored secrets)
 
-Defines helper function for dynamic URL construction:
+- `.env.defaults` is the committed skeleton for non-secret defaults.
+- `.env` is a local, gitignored copy that contains secrets and overrides.
 
-```bash
-LOCAL_USE_HTTPS=true
-LOCAL_FLASK_PORT=5100
-
-# Helper function (bash only)
-get_local_base_url() {
-    if [[ "$LOCAL_USE_HTTPS" == "true" ]]; then
-        echo "https://${PUBLIC_FQDN:-localhost}"
-    else
-        echo "http://localhost:${LOCAL_FLASK_PORT}"
-    fi
-}
-```
+The deploy/test harness sets `UI_BASE_URL` explicitly based on `--http/--https`.
 
 ### `tooling/reverse-proxy/proxy.env`
 
@@ -148,7 +137,7 @@ curl https://gstammtisch.dchive.de/admin/login
 curl https://$PUBLIC_FQDN/admin/login
 ```
 
-### Use `$LOCAL_BASE_URL` for Local Tests
+### Use `$UI_BASE_URL` for Tests
 
 **Before** (hardcoded ❌):
 ```python
@@ -157,8 +146,7 @@ UI_BASE_URL = "http://localhost:5100"
 
 **After** (dynamic ✅):
 ```python
-# Source from environment
-UI_BASE_URL = os.environ.get("LOCAL_BASE_URL") or compute_base_url()
+UI_BASE_URL = os.environ["UI_BASE_URL"]
 ```
 
 ---
@@ -195,12 +183,11 @@ sed -i 's|gstammtisch\.dchive\.de|$PUBLIC_FQDN|g' docs/*.md
    URL="https://${PUBLIC_FQDN}/api"
    ```
 
-3. **Use get_local_base_url()**:
-   ```bash
-   source .env.defaults
-   LOCAL_BASE_URL=$(get_local_base_url)
-   curl "${LOCAL_BASE_URL}/health"
-   ```
+3. **Use `UI_BASE_URL`** (preferred):
+    ```bash
+    # deploy.sh computes and exports UI_BASE_URL for tests
+    ./deploy.sh local --tests-only
+    ```
 
 ---
 
@@ -225,9 +212,11 @@ cd ../..
 ### Test HTTP vs HTTPS
 
 ```bash
-# Test with HTTP (localhost)
-export LOCAL_USE_HTTPS=false
-LOCAL_BASE_URL=$(get_local_base_url)
+# Test with HTTP (no TLS proxy)
+./deploy.sh local --http
+
+# Test with HTTPS (TLS proxy)
+./deploy.sh local
 # Result: http://localhost:5100
 
 # Test with HTTPS (public FQDN)

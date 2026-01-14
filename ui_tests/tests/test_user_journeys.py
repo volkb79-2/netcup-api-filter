@@ -57,8 +57,8 @@ class TestAdminAccountManagementJourney:
             
             # Step 2: Navigate to accounts
             await browser.click('a[href="/admin/accounts"]')
-            await asyncio.sleep(0.5)
-            
+            await browser.wait_for_load_state('domcontentloaded')
+
             h1 = await browser.text("main h1")
             assert "Accounts" in h1, f"Should be on accounts page, got: {h1}"
             
@@ -66,8 +66,8 @@ class TestAdminAccountManagementJourney:
             create_btn = await browser.query_selector('a[href="/admin/accounts/new"]')
             if create_btn:
                 await create_btn.click()
-                await asyncio.sleep(0.5)
-                
+                await browser.wait_for_load_state('domcontentloaded')
+
                 h1 = await browser.text("main h1")
                 assert "Create" in h1, f"Should be on create page, got: {h1}"
                 
@@ -80,8 +80,8 @@ class TestAdminAccountManagementJourney:
             
             # Step 4: Navigate back to list
             await browser.goto(settings.url("/admin/accounts"))
-            await asyncio.sleep(0.5)
-            
+            await browser.wait_for_load_state('domcontentloaded')
+
             # Verify we're back on accounts list
             h1 = await browser.text("main h1")
             assert "Accounts" in h1
@@ -91,15 +91,15 @@ class TestAdminAccountManagementJourney:
         async with browser_session() as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/accounts"))
-            await asyncio.sleep(0.5)
-            
+            await browser.wait_for_load_state('domcontentloaded')
+
             # Look for an account link in the table
             account_link = await browser.query_selector('table tbody a[href*="/admin/accounts/"]')
             
             if account_link:
                 await account_link.click()
-                await asyncio.sleep(0.5)
-                
+                await browser.wait_for_load_state('domcontentloaded')
+
                 # Should be on account detail page
                 body = await browser.text("body")
                 # Detail page should show account info
@@ -116,11 +116,9 @@ class TestConfigurationManagementJourney:
     
     Steps:
     1. Login as admin
-    2. Navigate to Netcup API config
-    3. View/modify settings
-    4. Navigate to Email config
-    5. View/modify settings
-    6. Navigate to System info
+    2. Navigate to Settings
+    3. Verify Netcup + Email sections
+    4. Navigate to System info
     """
 
     async def test_complete_config_review_flow(self, active_profile):
@@ -128,50 +126,31 @@ class TestConfigurationManagementJourney:
         async with browser_session() as browser:
             await workflows.ensure_admin_dashboard(browser)
             
-            # Step 1: Navigate to Netcup config via dropdown
-            # Click Config dropdown
-            config_toggle = await browser.query_selector('a.dropdown-toggle:has-text("Config")')
-            if config_toggle:
-                await config_toggle.click()
-                await asyncio.sleep(0.3)
-                
-                # Click Netcup API
-                netcup_link = await browser.query_selector('a[href="/admin/config/netcup"]')
-                if netcup_link:
-                    await netcup_link.click()
-                    await asyncio.sleep(0.5)
-            
-            # Verify on Netcup config page
+            # Step 1: Navigate to unified Settings page
+            await browser.goto(settings.url("/admin/settings"))
+            await browser.wait_for_load_state('domcontentloaded')
+
             h1 = await browser.text("main h1")
-            assert "Netcup" in h1, f"Should be on Netcup config, got: {h1}"
-            
-            # Step 2: Check form fields exist
-            customer_field = await browser.query_selector('input[name="customer_number"]')
+            assert "Settings" in h1, f"Should be on Settings page, got: {h1}"
+
+            # Step 2: Verify Netcup section fields
+            customer_field = await browser.query_selector('input[name="customer_id"]')
             api_key_field = await browser.query_selector('input[name="api_key"]')
             api_pass_field = await browser.query_selector('input[name="api_password"]')
-            
-            assert customer_field, "Customer number field should exist"
+            assert customer_field, "Customer ID field should exist"
             assert api_key_field, "API key field should exist"
             assert api_pass_field, "API password field should exist"
-            
-            # Step 3: Navigate to Email config
-            await browser.goto(settings.url("/admin/config/email"))
-            await asyncio.sleep(0.5)
-            
-            h1 = await browser.text("main h1")
-            assert "Email" in h1, f"Should be on Email config, got: {h1}"
-            
-            # Step 4: Check email form fields
+
+            # Step 3: Verify Email section fields
             smtp_host = await browser.query_selector('input[name="smtp_host"]')
             smtp_port = await browser.query_selector('input[name="smtp_port"]')
-            
             assert smtp_host, "SMTP host field should exist"
             assert smtp_port, "SMTP port field should exist"
-            
-            # Step 5: Navigate to System info
+
+            # Step 4: Navigate to System info
             await browser.goto(settings.url("/admin/system"))
-            await asyncio.sleep(0.5)
-            
+            await browser.wait_for_load_state('domcontentloaded')
+
             h1 = await browser.text("main h1")
             assert "System" in h1, f"Should be on System info, got: {h1}"
             
@@ -207,8 +186,8 @@ class TestAuditLogReviewJourney:
             assert view_all, "Should have link to audit logs"
             
             await view_all.click()
-            await asyncio.sleep(0.5)
-            
+            await browser.wait_for_load_state('domcontentloaded')
+
             # Step 2: Verify on audit logs page
             h1 = await browser.text("main h1")
             assert "Audit" in h1 or "Log" in h1, f"Should be on audit page, got: {h1}"
@@ -242,8 +221,8 @@ class TestAuditLogReviewJourney:
             view_all = await browser.query_selector('a.btn[href="/admin/audit"]')
             if view_all:
                 await view_all.click()
-                await asyncio.sleep(0.5)
-                
+                await browser.wait_for_load_state('domcontentloaded')
+
                 h1 = await browser.text("main h1")
                 assert "Audit" in h1
 
@@ -269,18 +248,18 @@ class TestPasswordChangeJourney:
             user_dropdown = await browser.query_selector('.dropdown-toggle:has-text("admin")')
             if user_dropdown:
                 await user_dropdown.click()
-                await asyncio.sleep(0.3)
-                
+                await browser.wait_for_timeout(300)
+
                 change_pwd = await browser.query_selector('a[href="/admin/change-password"]')
                 if change_pwd:
                     await change_pwd.click()
-                    await asyncio.sleep(0.5)
-            
+                    await browser.wait_for_load_state('domcontentloaded')
+
             # Fallback: Direct navigation
             if "/admin/change-password" not in browser.current_url:
                 await browser.goto(settings.url("/admin/change-password"))
-                await asyncio.sleep(0.5)
-            
+                await browser.wait_for_load_state('domcontentloaded')
+
             # Step 2: Verify on change password page
             h1 = await browser.text("main h1")
             assert "Password" in h1, f"Should be on change password page, got: {h1}"
@@ -297,15 +276,15 @@ class TestPasswordChangeJourney:
             # Step 4: Test password mismatch validation (without submitting)
             await browser.fill("#new_password", "NewPassword123!")
             await browser.fill("#confirm_password", "DifferentPass!")
-            await asyncio.sleep(0.3)
-            
+            await browser.wait_for_timeout(300)
+
             mismatch = await browser.query_selector('#passwordMismatch:not(.d-none)')
             assert mismatch, "Password mismatch warning should appear"
             
             # Step 5: Test matching passwords
             await browser.fill("#confirm_password", "NewPassword123!")
-            await asyncio.sleep(0.3)
-            
+            await browser.wait_for_timeout(300)
+
             mismatch_hidden = await browser.evaluate("""
                 () => {
                     const el = document.getElementById('passwordMismatch');
@@ -331,11 +310,11 @@ class TestThemeCustomizationJourney:
             
             # Step 1: Apply a specific theme
             await browser.evaluate("() => setTheme('ember')")
-            await asyncio.sleep(0.3)
-            
+            await browser.wait_for_timeout(300)
+
             # Step 2: Navigate to different page
             await browser.goto(settings.url("/admin/accounts"))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             # Step 3: Check theme persisted
             theme_class = await browser.evaluate("""
@@ -366,8 +345,8 @@ class TestThemeCustomizationJourney:
             
             # Step 2: Apply compact density
             await browser.evaluate("() => setDensity('compact')")
-            await asyncio.sleep(0.3)
-            
+            await browser.wait_for_timeout(300)
+
             # Step 3: Verify density class applied
             has_compact = await browser.evaluate("""
                 () => document.body.classList.contains('density-compact') ||
@@ -394,11 +373,7 @@ class TestAccountPortalNavigation:
         # Login page
         await browser.goto(settings.url("/account/login"))
         await browser._page.wait_for_load_state("networkidle")
-        
-        h1 = await browser.text("h1, h2")
-        # H1 says "Client Portal", but verify we're on the login page by checking for form elements
-        assert "Client Portal" in h1 or "Login" in h1 or "Sign" in h1, f"Should be on login page, got: {h1}"
-        
+
         # Verify login form is present
         username_input = await browser.query_selector('input[name="username"], input[type="text"]')
         password_input = await browser.query_selector('input[name="password"], input[type="password"]')
@@ -408,9 +383,16 @@ class TestAccountPortalNavigation:
         # Registration page
         await browser.goto(settings.url("/account/register"))
         await browser._page.wait_for_load_state("networkidle")
-        
-        h1 = await browser.text("h1, h2")
-        assert "Register" in h1 or "Create" in h1 or "Account" in h1, f"Should be on register page, got: {h1}"
+
+        # Verify registration form is present (avoid brittle heading assertions)
+        reg_username = await browser.query_selector('input#username[name="username"], input[name="username"]')
+        reg_email = await browser.query_selector('input#email[name="email"], input[name="email"], input[type="email"]')
+        reg_password = await browser.query_selector('input#password[name="password"], input[name="password"]')
+        reg_confirm = await browser.query_selector('input#confirm_password[name="confirm_password"], input[name="confirm_password"]')
+        assert reg_username is not None, "Register page should have username input"
+        assert reg_email is not None, "Register page should have email input"
+        assert reg_password is not None, "Register page should have password input"
+        assert reg_confirm is not None, "Register page should have confirm password input"
         
         # Forgot password page
         await browser.goto(settings.url("/account/forgot-password"))
@@ -430,8 +412,7 @@ class TestAccountPortalNavigation:
         if register_link:
             await register_link.click()
             await browser._page.wait_for_load_state("networkidle")
-            await asyncio.sleep(0.5)
-            
+
             # Should be on register page - get URL directly from page
             current = browser._page.url
             assert "/register" in current, f"Should navigate to register page, got: {current}"
@@ -450,8 +431,7 @@ class TestAccountPortalNavigation:
         if forgot_link:
             await forgot_link.click()
             await browser._page.wait_for_load_state("networkidle")
-            await asyncio.sleep(0.5)
-            
+
             # Should be on forgot password page - get URL directly from page
             current = browser._page.url
             assert "/forgot" in current, f"Should navigate to forgot password page, got: {current}"
@@ -474,8 +454,8 @@ class TestErrorPageHandling:
             
             # Navigate to non-existent page
             await browser.goto(settings.url("/admin/this-page-does-not-exist"))
-            await asyncio.sleep(0.5)
-            
+            await browser.wait_for_load_state('domcontentloaded')
+
             body = await browser.text("body")
             
             # Should show 404 or error message

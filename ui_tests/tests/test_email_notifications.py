@@ -25,7 +25,6 @@ Prerequisites:
 - Mailpit container running: cd tooling/mailpit && docker compose up -d
 - App configured to use mailpit:1025 as SMTP
 """
-import asyncio
 import re
 import uuid
 import pytest
@@ -171,7 +170,7 @@ class TestRegistrationEmails:
         
         # Navigate to registration
         await browser.goto(settings.url('/account/register'))
-        await asyncio.sleep(0.3)
+        await browser._page.wait_for_load_state('domcontentloaded')
         
         # Fill and submit registration form
         await browser.fill('#username', unique_username)
@@ -183,8 +182,9 @@ class TestRegistrationEmails:
         if confirm:
             await browser.fill('#password_confirm, #confirm_password', 'TestPassword123+Secure24')
         
-        await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        # Submit form and wait for navigation
+        async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+            await browser.click('button[type="submit"]')
         
         # Wait for verification email
         msg = mailpit.wait_for_message(
@@ -219,19 +219,21 @@ class TestRegistrationEmails:
         
         # Register new user
         await browser.goto(settings.url('/account/register'))
-        await asyncio.sleep(0.3)
+        await browser._page.wait_for_load_state('domcontentloaded')
         
         await browser.fill('#username', unique_username)
         await browser.fill('#email', unique_email)
         await browser.fill('#password', 'TestPassword123+Secure24')
-        
-        confirm = await browser.query_selector('#password_confirm')
+
+        # Confirm password is required on the registration page.
+        confirm = await browser.query_selector('#password_confirm, #confirm_password')
         if confirm:
-            await browser.fill('#password_confirm', 'TestPassword123+Secure24')
+            await browser.fill('#password_confirm, #confirm_password', 'TestPassword123+Secure24')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
-        
+        # Wait for email processing
+        await browser.wait_for_timeout(1000)
+
         # Look for admin notification (typically has "pending" or "approval" in subject)
         admin_msg = mailpit.wait_for_message(
             predicate=lambda m: (
@@ -268,7 +270,7 @@ class TestAccountLifecycleEmails:
         
         # Navigate to pending accounts
         await browser.goto(settings.url('/admin/accounts/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Check if there are any pending accounts
         page_text = await browser.text('body')
@@ -292,7 +294,7 @@ class TestAccountLifecycleEmails:
             pytest.skip("No visible approve button found")
         
         await approve_btn.click()
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Wait for approval email
         msg = mailpit.wait_for_message(
@@ -314,7 +316,7 @@ class TestAccountLifecycleEmails:
         
         # Navigate to pending accounts
         await browser.goto(settings.url('/admin/accounts/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Check if there are any pending accounts
         page_text = await browser.text('body')
@@ -338,8 +340,9 @@ class TestAccountLifecycleEmails:
             pytest.skip("No visible reject button found")
         
         await reject_btn.click()
-        await asyncio.sleep(1.0)
-        
+        # Wait for email processing
+        await browser.wait_for_timeout(1000)
+
         # Wait for rejection email
         msg = mailpit.wait_for_message(
             predicate=lambda m: 'rejected' in m.subject.lower() or 'denied' in m.subject.lower(),
@@ -366,7 +369,7 @@ class TestPasswordResetEmails:
         
         # Go to forgot password page
         await browser.goto(settings.url('/account/forgot-password'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Use a known test email (would need to be seeded)
         test_email = "test@example.com"
@@ -377,7 +380,7 @@ class TestPasswordResetEmails:
         
         await browser.fill('#email, input[name="email"]', test_email)
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Wait for reset email
         msg = mailpit.wait_for_message(
@@ -402,7 +405,7 @@ class TestPasswordResetEmails:
         
         # Navigate to accounts list
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Find a non-admin account
         account_links = await browser.query_selector_all('a[href*="/admin/accounts/"]')
@@ -411,7 +414,7 @@ class TestPasswordResetEmails:
         
         # Click on second account (first is usually admin)
         await account_links[1].click()
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for password reset button/modal
         reset_btn = await browser.query_selector(
@@ -421,13 +424,13 @@ class TestPasswordResetEmails:
             pytest.skip("Password reset button not found")
         
         await reset_btn.click()
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Submit the reset (may need to confirm in modal)
         submit_btn = await browser.query_selector('.modal button[type="submit"], .modal .btn-primary')
         if submit_btn:
             await submit_btn.click()
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
         
         # Wait for reset email
         msg = mailpit.wait_for_message(
@@ -460,7 +463,7 @@ class TestAccountInviteEmails:
         
         # Navigate to new account page
         await browser.goto(settings.url('/admin/accounts/new'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Fill account form
         await browser.fill('#username', f'invitetest_{unique_email[:8]}')
@@ -477,7 +480,7 @@ class TestAccountInviteEmails:
         
         # Submit form
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Wait for invite email
         msg = mailpit.wait_for_message(
@@ -511,7 +514,7 @@ class TestRealmEmails:
         
         # Navigate to pending realms
         await browser.goto(settings.url('/admin/realms/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Check if there are any pending realms
         page_text = await browser.text('body')
@@ -534,7 +537,7 @@ class TestRealmEmails:
             pytest.skip("No visible approve button found")
         
         await approve_btn.click()
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Wait for approval email
         msg = mailpit.wait_for_message(
@@ -565,13 +568,13 @@ class TestSecurityAlertEmails:
         
         # Attempt login with wrong password multiple times
         await browser.goto(settings.url('/admin/login'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         for _ in range(3):
             await browser.fill('#username', 'admin')
             await browser.fill('#password', 'WrongPassword123!')
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
         
         # Check for security alert email
         msg = mailpit.wait_for_message(
@@ -607,7 +610,7 @@ class TestPasswordChangedEmails:
         
         # Navigate to change password page
         await browser.goto(settings.url('/admin/change-password'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Fill in the password change form with RANDOM password
         original_password = settings.admin_password
@@ -621,7 +624,7 @@ class TestPasswordChangedEmails:
         await browser.fill('#confirm_password', new_password)
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # CRITICAL: Persist password change for subsequent tests
         # Update both in-memory settings AND deployment_state.json
@@ -662,7 +665,7 @@ class TestTokenRevokedEmails:
         
         # Navigate to accounts to find a realm with tokens
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Find non-admin account links (match /admin/accounts/<number> pattern)
         # Exclude /admin/accounts/new and /admin/accounts/pending
@@ -671,7 +674,7 @@ class TestTokenRevokedEmails:
             pytest.skip("No non-admin accounts to test token revocation")
         
         await account_links[0].click()
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for token revoke buttons directly on the account detail page
         # The token revoke form is: /admin/tokens/{id}/revoke
@@ -693,7 +696,7 @@ class TestTokenRevokedEmails:
         
         # Click the revoke button and wait for form submission
         await revoke_btn.click()
-        await asyncio.sleep(2.0)  # Wait for form submission and redirect
+        await browser.wait_for_timeout(2000)  # Wait for form submission and redirect
         
         # Wait for revocation notification
         msg = mailpit.wait_for_message(
@@ -724,7 +727,7 @@ class TestAdminEmailTest:
         
         # Navigate to email config
         await browser.goto(settings.url('/admin/config/email'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for test button
         test_btn = await browser.query_selector(
@@ -735,7 +738,7 @@ class TestAdminEmailTest:
             pytest.skip("Test email button not found")
         
         await test_btn.click()
-        await asyncio.sleep(2.0)
+        await browser.wait_for_timeout(2000)
         
         # Wait for test email
         msg = mailpit.wait_for_message(
@@ -771,21 +774,21 @@ class TestEmailIsolation:
         
         # Register user A
         await browser.goto(settings.url('/account/register'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         await browser.fill('#username', 'user_a_isolation_test')
         await browser.fill('#email', user_a_email)
         await browser.fill('#password', 'TestPassword123+Secure24')
         
-        confirm = await browser.query_selector('#password_confirm')
+        confirm = await browser.query_selector('#password_confirm, #confirm_password')
         if confirm:
-            await browser.fill('#password_confirm', 'TestPassword123+Secure24')
+            await browser.fill('#password_confirm, #confirm_password', 'TestPassword123+Secure24')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         # Wait for any emails
-        await asyncio.sleep(2.0)
+        await browser.wait_for_timeout(2000)
         
         # Check all emails in Mailpit
         messages = mailpit.list_messages()

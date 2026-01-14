@@ -20,33 +20,60 @@ from datetime import datetime
 from typing import Optional
 
 from .database import db
-from .email_reference import generate_email_ref
+from .email_reference import email_ref_token, generate_email_ref
 from .models import Account, AccountRealm, APIToken
 
 logger = logging.getLogger(__name__)
 
 
+def _get_smtp_config() -> Optional[dict]:
+    """Get SMTP/email configuration from the settings store.
+
+    Canonical key is `smtp_config` (set via admin UI and seed tooling).
+    Legacy compatibility: also accept `email_config` if present.
+    """
+    from .database import get_system_config
+    import json
+
+    config = get_system_config('smtp_config')
+    if not config:
+        config = get_system_config('email_config')
+
+    if not config:
+        return None
+
+    if isinstance(config, str):
+        try:
+            parsed = json.loads(config)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    return config if isinstance(config, dict) else None
+
+
 def _get_notifier():
     """Get email notifier from config (lazy load to avoid circular imports)."""
     from .email_notifier import get_email_notifier_from_config
-    from .database import get_system_config
-    
-    email_config = get_system_config('email_config')
-    if not email_config:
-        logger.debug("Email configuration not set")
+
+    smtp_config = _get_smtp_config()
+    if not smtp_config:
+        logger.debug("SMTP configuration not set")
         return None
-    
-    return get_email_notifier_from_config(email_config)
+
+    return get_email_notifier_from_config(smtp_config)
 
 
 def _get_admin_email() -> Optional[str]:
     """Get admin notification email from config."""
-    from .database import get_system_config
-    
-    email_config = get_system_config('email_config')
-    if email_config:
-        return email_config.get('admin_notification_email')
-    return None
+
+    smtp_config = _get_smtp_config()
+    if not smtp_config:
+        return None
+
+    # Canonical field from admin UI / seeding is `admin_email`.
+    # Fall back to legacy name if present.
+    return smtp_config.get('admin_email') or smtp_config.get('admin_notification_email')
 
 
 def _get_base_url() -> str:
@@ -184,7 +211,14 @@ Ref: {email_ref}
         return False
 
 
-def send_2fa_email(email: str, username: str, code: str, expires_minutes: int = 5) -> bool:
+def send_2fa_email(
+    email: str,
+    username: str,
+    code: str,
+    expires_minutes: int = 5,
+    *,
+    email_ref: str | None = None,
+) -> bool:
     """
     Send 2FA verification code via email.
     
@@ -202,16 +236,41 @@ def send_2fa_email(email: str, username: str, code: str, expires_minutes: int = 
         logger.warning(f"Email notifier not configured - cannot send 2FA code to {email}")
         return False
     
-    # Generate email reference ID for traceability
-    email_ref = generate_email_ref('2fa', username)
-    
-    subject = "[Netcup API Filter] Your Login Verification Code"
+    import os
+    from .config_defaults import get_default
+
+    # Generate email reference ID for traceability (or reuse provided ref so
+    # the UI can display the same token and tests can filter by subject).
+    if not email_ref:
+        email_ref = generate_email_ref('2fa', username)
+
+    ref_token = email_ref_token(email_ref) or email_ref
+
+    subject_template = os.environ.get(
+        'NAF_2FA_EMAIL_SUBJECT_TEMPLATE',
+        get_default(
+            'NAF_2FA_EMAIL_SUBJECT_TEMPLATE',
+            '[Netcup API Filter] Your Login Verification Code (Ref {ref_token})',
+        ),
+    )
+    try:
+        subject = str(subject_template).format(
+            ref=email_ref,
+            ref_token=ref_token,
+            username=username,
+        )
+    except Exception:
+        subject = f"[Netcup API Filter] Your Login Verification Code (Ref {ref_token})"
     
     body = f"""Hello {username},
 
 Your login verification code is:
 
     {code}
+
+Reference:
+
+    {ref_token}
 
 This code expires in {expires_minutes} minutes.
 
@@ -245,6 +304,10 @@ Ref: {email_ref}
                 </span>
             </div>
         </div>
+
+        <p style="margin: 14px 0 0; color: #6b7280; font-size: 12px; text-align: center;">
+            Ref: <span style="font-family: 'Courier New', Courier, monospace;">{ref_token}</span>
+        </p>
         
         <p style="margin: 25px 0 0; color: #6b7280; font-size: 13px; text-align: center;">
             This code expires in <strong style="color: #f59e0b;">{expires_minutes} minutes</strong>.
@@ -272,7 +335,6 @@ Ref: {email_ref}
         # Send immediately (2FA codes are time-sensitive)
         notifier._send_email_sync(email, subject, body, html_body)
         logger.info(f"Sent 2FA code via email to {email} [ref={email_ref}]")
-        return True
         return True
     except Exception as e:
         logger.error(f"Failed to send 2FA email to {email}: {e}")

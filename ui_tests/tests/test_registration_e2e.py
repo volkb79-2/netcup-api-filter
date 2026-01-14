@@ -29,6 +29,12 @@ pytestmark = [
 ]
 
 
+async def _accept_terms_if_present(page) -> None:
+    terms = await page.query_selector('input[name="terms"]')
+    if terms is not None:
+        await terms.check()
+
+
 class TestRegistrationPageAccess:
     """Test registration page is accessible."""
     
@@ -75,7 +81,7 @@ class TestRegistrationFormValidation:
         await browser._page.fill('input[name="email"]', "test@example.com")
         await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
         await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024")
-        await browser._page.check('input[name="terms"]')
+        await _accept_terms_if_present(browser._page)
         
         # Submit form
         await browser._page.click('button[type="submit"]')
@@ -102,7 +108,7 @@ class TestRegistrationFormValidation:
         await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
         # Use different password to trigger mismatch
         await browser._page.fill('input[name="confirm_password"]', "DifferentPassword+2024")
-        await browser._page.check('input[name="terms"]')
+        await _accept_terms_if_present(browser._page)
         
         # Wait for client-side validation to run
         await browser._page.wait_for_timeout(500)
@@ -155,7 +161,7 @@ class TestRegistrationWithMailpit:
         await browser._page.fill('input[name="email"]', email)
         await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024")
         await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024")
-        await browser._page.check('input[name="terms"]')
+        await _accept_terms_if_present(browser._page)
         
         # Submit form
         await browser._page.click('button[type="submit"]')
@@ -191,7 +197,7 @@ class TestRegistrationWithMailpit:
         await browser._page.fill('input[name="email"]', email)
         await browser._page.fill('input[name="password"]', "TestPassword123+Secure2024Strong")
         await browser._page.fill('input[name="confirm_password"]', "TestPassword123+Secure2024Strong")
-        await browser._page.check('input[name="terms"]')
+        await _accept_terms_if_present(browser._page)
         
         await browser._page.click('button[type="submit"]')
         await browser._page.wait_for_timeout(2000)
@@ -305,7 +311,7 @@ class TestFullRegistrationFlow:
         await browser._page.fill('input[name="email"]', email)
         await browser._page.fill('input[name="password"]', password)
         await browser._page.fill('input[name="confirm_password"]', password)
-        await browser._page.check('input[name="terms"]')
+        await _accept_terms_if_present(browser._page)
         
         await browser._page.click('button[type="submit"]')
         await browser._page.wait_for_timeout(2000)

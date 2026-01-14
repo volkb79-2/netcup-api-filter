@@ -27,7 +27,9 @@ docker compose down
 
 Configured via `.env` file:
 - Username: `admin` (default)
-- Password: `MailpitDev123!` (default)
+- Password: `MailpitDev123` (default)
+
+Authentication is enabled by default (Mailpit runs with `MP_UI_AUTH`). Do not disable it unless you fully trust the network.
 
 **Change credentials** by editing `.env`:
 ```bash
@@ -47,7 +49,7 @@ All settings in `.env`:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MAILPIT_USERNAME` | `admin` | Web UI username |
-| `MAILPIT_PASSWORD` | `MailpitDev123!` | Web UI password |
+| `MAILPIT_PASSWORD` | `MailpitDev123` | Web UI password |
 | `MAILPIT_WEB_PORT` | `8025` | Web UI/API port |
 | `MAILPIT_SMTP_PORT` | `1025` | SMTP port |
 | `DOCKER_NETWORK_INTERNAL` | `naf-dev-network` | Docker network |
@@ -78,13 +80,13 @@ with smtplib.SMTP('localhost', 1025) as smtp:
 
 ```bash
 # List all messages (with auth)
-curl -u admin:MailpitDev123! http://localhost:8025/api/v1/messages
+curl -u admin:MailpitDev123 http://localhost:8025/api/v1/messages
 
 # Get specific message
-curl -u admin:MailpitDev123! http://localhost:8025/api/v1/message/{id}
+curl -u admin:MailpitDev123 http://localhost:8025/api/v1/message/{id}
 
 # Delete all messages
-curl -u admin:MailpitDev123! -X DELETE http://localhost:8025/api/v1/messages
+curl -u admin:MailpitDev123 -X DELETE http://localhost:8025/api/v1/messages
 ```
 
 ### Python Client
@@ -95,7 +97,7 @@ from ui_tests.mailpit_client import MailpitClient
 # Connect with auth
 mailpit = MailpitClient(
     base_url="http://localhost:8025",
-    auth=("admin", "MailpitDev123!")
+    auth=("admin", "MailpitDev123")
 )
 
 # Wait for specific email

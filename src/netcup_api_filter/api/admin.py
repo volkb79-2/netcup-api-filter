@@ -64,6 +64,8 @@ SESSION_KEY_ADMIN_2FA_CODE = 'admin_2fa_code'
 SESSION_KEY_ADMIN_2FA_EXPIRES = 'admin_2fa_expires'
 SESSION_KEY_ADMIN_SESSION_IP = 'admin_session_ip'
 SESSION_KEY_ADMIN_2FA_METHOD = 'admin_2fa_method'  # 'email' or 'totp'
+SESSION_KEY_ADMIN_2FA_EMAIL_REF = 'admin_2fa_email_ref'
+SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL = 'admin_2fa_email_ref_full'
 
 # Timing attack protection: random delay range (milliseconds)
 LOGIN_DELAY_MIN_MS = 100
@@ -160,6 +162,68 @@ def _clear_failed_logins(username: str):
     """Clear failed login tracking after successful login."""
     from ..database import set_system_config
     set_system_config(f'failed_login_user_{username}', None)
+
+
+def _get_admin_2fa_email_min_interval_seconds() -> int:
+    """Minimum interval between admin 2FA emails (config-driven)."""
+    raw = os.environ.get(
+        'ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS',
+        get_default('ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS', '30'),
+    )
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS value; disabling rate limit", exc_info=True
+        )
+        return 0
+    return max(0, value)
+
+
+def _admin_2fa_email_rate_limit_key(username: str, client_ip: str) -> str:
+    # Keep key stable and readable; Settings keys are plain strings.
+    return f"admin_2fa_email_last_sent:{username}:{client_ip}"
+
+
+def _admin_2fa_email_is_rate_limited(username: str, client_ip: str) -> tuple[bool, int]:
+    """Check whether we should suppress sending a new admin 2FA email.
+
+    Returns:
+        (is_limited, retry_after_seconds)
+    """
+    from ..database import get_system_config
+
+    min_interval_s = _get_admin_2fa_email_min_interval_seconds()
+    if min_interval_s <= 0:
+        return False, 0
+
+    key = _admin_2fa_email_rate_limit_key(username, client_ip)
+    data = get_system_config(key)
+    if not isinstance(data, dict):
+        return False, 0
+
+    last_sent_raw = data.get('last_sent_at')
+    if not last_sent_raw:
+        return False, 0
+
+    try:
+        last_sent_at = datetime.fromisoformat(str(last_sent_raw))
+    except Exception:
+        return False, 0
+
+    now = datetime.utcnow()
+    elapsed_s = int((now - last_sent_at).total_seconds())
+    remaining_s = min_interval_s - elapsed_s
+    if remaining_s > 0:
+        return True, remaining_s
+    return False, 0
+
+
+def _admin_2fa_email_mark_sent(username: str, client_ip: str) -> None:
+    from ..database import set_system_config
+
+    key = _admin_2fa_email_rate_limit_key(username, client_ip)
+    set_system_config(key, {'last_sent_at': datetime.utcnow().isoformat()})
 
 
 def _notify_failed_login_attempt(admin: Account, failed_count: int, client_ip: str):
@@ -339,6 +403,17 @@ def login():
                 else:
                     # Email-only 2FA
                     session[SESSION_KEY_ADMIN_2FA_METHOD] = 'email'
+
+                    is_limited, retry_after_s = _admin_2fa_email_is_rate_limited(username, client_ip)
+                    if is_limited:
+                        logger.warning(
+                            f"Admin 2FA email rate-limited: username={username} ip={client_ip} retry_after_s={retry_after_s}"
+                        )
+                        flash(
+                            f"A verification code was sent recently. Please wait {retry_after_s} seconds and try again.",
+                            'warning',
+                        )
+                        return render_template('admin/login.html')
                     
                     # Generate and send 2FA code via email
                     from ..account_auth import generate_code, TFA_CODE_LENGTH, TFA_CODE_EXPIRY_MINUTES
@@ -349,8 +424,20 @@ def login():
                     session[SESSION_KEY_ADMIN_2FA_EXPIRES] = expires_at.isoformat()
                     
                     # Send 2FA email
+                    from ..email_reference import email_ref_token, generate_email_ref
                     from ..notification_service import send_2fa_email
-                    if send_2fa_email(admin.email, admin.username, code):
+
+                    # Keep the email reference stable across resends for this 2FA session.
+                    full_ref = session.get(SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL)
+                    if not full_ref:
+                        full_ref = generate_email_ref('2fa', admin.username)
+                        session[SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL] = full_ref
+
+                    token = email_ref_token(full_ref) or full_ref
+                    session[SESSION_KEY_ADMIN_2FA_EMAIL_REF] = token
+
+                    if send_2fa_email(admin.email, admin.username, code, email_ref=full_ref):
+                        _admin_2fa_email_mark_sent(username, client_ip)
                         logger.info(f"Admin 2FA code sent to {admin.username}")
                         return redirect(url_for('admin.login_2fa'))
                     else:
@@ -387,6 +474,19 @@ def login_2fa():
         session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
         return redirect(url_for('admin.login'))
     
+    # Check if account is locked due to 2FA failures
+    from ..account_auth import (
+        is_2fa_locked, 
+        TFA_LOCKOUT_MINUTES
+    )
+    if is_2fa_locked(admin):
+        flash(
+            f'Too many failed 2FA attempts. Account locked for {TFA_LOCKOUT_MINUTES} minutes.',
+            'error'
+        )
+        session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+        return redirect(url_for('admin.login'))
+    
     # Determine available 2FA methods
     has_totp = admin.totp_enabled and admin.totp_secret
     has_email = admin.email and admin.email != 'admin@localhost'
@@ -400,14 +500,46 @@ def login_2fa():
         
         # If switching to email, send code
         if current_method == 'email' and not session.get(SESSION_KEY_ADMIN_2FA_CODE):
+            client_ip = _get_client_ip()
+            is_limited, retry_after_s = _admin_2fa_email_is_rate_limited(admin.username, client_ip)
+            if is_limited:
+                logger.warning(
+                    f"Admin 2FA email rate-limited (method switch): username={admin.username} ip={client_ip} retry_after_s={retry_after_s}"
+                )
+                flash(
+                    f"A verification code was sent recently. Please wait {retry_after_s} seconds and try again.",
+                    'warning',
+                )
+                return render_template(
+                    'admin/login_2fa.html',
+                    masked_email=mask_email(admin.email),
+                    username=admin.username,
+                    has_totp=has_totp,
+                    has_email=has_email,
+                    method=current_method,
+                    email_ref_token=session.get(SESSION_KEY_ADMIN_2FA_EMAIL_REF),
+                )
+
             from ..account_auth import generate_code, TFA_CODE_LENGTH, TFA_CODE_EXPIRY_MINUTES
             code = generate_code(TFA_CODE_LENGTH)
             expires_at = datetime.utcnow() + timedelta(minutes=TFA_CODE_EXPIRY_MINUTES)
             session[SESSION_KEY_ADMIN_2FA_CODE] = code
             session[SESSION_KEY_ADMIN_2FA_EXPIRES] = expires_at.isoformat()
             
+            from ..email_reference import email_ref_token, generate_email_ref
             from ..notification_service import send_2fa_email
-            if send_2fa_email(admin.email, admin.username, code):
+
+            # Keep the email reference stable across resends for this 2FA session.
+            full_ref = session.get(SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL)
+            if not full_ref:
+                full_ref = generate_email_ref('2fa', admin.username)
+                session[SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL] = full_ref
+
+            token = email_ref_token(full_ref) or full_ref
+            session[SESSION_KEY_ADMIN_2FA_EMAIL_REF] = token
+
+            if send_2fa_email(admin.email, admin.username, code, email_ref=full_ref):
+                _admin_2fa_email_mark_sent(admin.username, client_ip)
                 flash('Verification code sent to your email', 'info')
             else:
                 flash('Failed to send verification code', 'error')
@@ -432,6 +564,25 @@ def login_2fa():
         
         # Check if this looks like a recovery code (format: XXXX-XXXX)
         if len(code) == 9 and '-' in code:
+            # Check recovery code rate limiting
+            from ..account_auth import (
+                is_recovery_code_locked,
+                RECOVERY_CODE_LOCKOUT_MINUTES,
+                increment_recovery_code_failures
+            )
+            
+            if is_recovery_code_locked(admin):
+                flash(
+                    f'Too many failed recovery code attempts. Locked for {RECOVERY_CODE_LOCKOUT_MINUTES} minutes.',
+                    'error'
+                )
+                return render_template('admin/login_2fa.html',
+                                      masked_email=mask_email(admin.email),
+                                      username=admin.username,
+                                      has_totp=has_totp,
+                                      has_email=has_email,
+                                      method=current_method)
+            
             from ..recovery_codes import verify_recovery_code
             if verify_recovery_code(admin, code):
                 # Recovery code verified - complete login
@@ -439,6 +590,11 @@ def login_2fa():
                 flash('You used a recovery code. Consider regenerating your recovery codes.', 'warning')
                 return _complete_admin_login(admin, client_ip, via='recovery_code')
             else:
+                # Invalid recovery code - increment failure counter
+                increment_recovery_code_failures(admin)
+                logger.warning(
+                    f"Invalid admin recovery code attempt for {admin.username} from {client_ip}"
+                )
                 flash('Invalid recovery code', 'error')
                 return render_template('admin/login_2fa.html',
                                       masked_email=mask_email(admin.email),
@@ -457,7 +613,25 @@ def login_2fa():
                     flash('Login successful', 'success')
                     return _complete_admin_login(admin, client_ip, via='totp')
                 else:
-                    flash('Invalid authenticator code', 'error')
+                    # Track 2FA failure
+                    from ..account_auth import (
+                        increment_2fa_failures,
+                        get_2fa_failure_count,
+                        TFA_MAX_ATTEMPTS
+                    )
+                    increment_2fa_failures(admin)
+                    attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(admin)
+                    
+                    logger.warning(
+                        f"Invalid admin TOTP code for {admin.username} from {client_ip}"
+                    )
+                    
+                    if attempts_left > 0:
+                        flash(f'Invalid authenticator code. {attempts_left} attempts remaining.', 'error')
+                    else:
+                        flash('Too many failed attempts. Account locked.', 'error')
+                        session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+                        return redirect(url_for('admin.login'))
             except ImportError:
                 logger.error("pyotp not installed for TOTP verification")
                 flash('TOTP verification unavailable', 'error')
@@ -481,15 +655,33 @@ def login_2fa():
                 flash('Login successful', 'success')
                 return _complete_admin_login(admin, client_ip, via='email')
             else:
-                logger.warning(f"Invalid admin 2FA code attempt for {admin.username} from {client_ip}")
-                flash('Invalid verification code', 'error')
+                # Track 2FA failure
+                from ..account_auth import (
+                    increment_2fa_failures,
+                    get_2fa_failure_count,
+                    TFA_MAX_ATTEMPTS
+                )
+                increment_2fa_failures(admin)
+                attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(admin)
+                
+                logger.warning(
+                    f"Invalid admin 2FA code attempt for {admin.username} from {client_ip}"
+                )
+                
+                if attempts_left > 0:
+                    flash(f'Invalid verification code. {attempts_left} attempts remaining.', 'error')
+                else:
+                    flash('Too many failed attempts. Account locked.', 'error')
+                    session.pop(SESSION_KEY_ADMIN_2FA_PENDING, None)
+                    return redirect(url_for('admin.login'))
     
     return render_template('admin/login_2fa.html', 
                           masked_email=mask_email(admin.email),
                           username=admin.username,
                           has_totp=has_totp,
                           has_email=has_email,
-                          method=current_method)
+                          method=current_method,
+                          email_ref_token=session.get(SESSION_KEY_ADMIN_2FA_EMAIL_REF))
 
 
 def _complete_admin_login(admin: Account, client_ip: str, via: str = 'email'):
@@ -499,6 +691,20 @@ def _complete_admin_login(admin: Account, client_ip: str, via: str = 'email'):
         Response: Redirect to dashboard or password change page
     """
     _clear_2fa_session()
+    
+    # Regenerate session ID to prevent session fixation attacks
+    old_session_data = dict(session)
+    session.clear()
+    session.update(old_session_data)
+    session.modified = True
+    
+    # Reset failure counters
+    from ..account_auth import (
+        reset_2fa_failures, 
+        reset_recovery_code_failures
+    )
+    reset_2fa_failures(admin)
+    reset_recovery_code_failures(admin)
     
     session[SESSION_KEY_ADMIN_ID] = admin.id
     session[SESSION_KEY_ADMIN_USERNAME] = admin.username
@@ -522,6 +728,8 @@ def _clear_2fa_session():
     session.pop(SESSION_KEY_ADMIN_2FA_CODE, None)
     session.pop(SESSION_KEY_ADMIN_2FA_EXPIRES, None)
     session.pop(SESSION_KEY_ADMIN_2FA_METHOD, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_EMAIL_REF, None)
+    session.pop(SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL, None)
 
 
 @admin_bp.route('/login/2fa/resend', methods=['POST'])
@@ -534,6 +742,18 @@ def resend_2fa():
     admin = Account.query.get(admin_id)
     if not admin:
         return redirect(url_for('admin.login'))
+
+    client_ip = _get_client_ip()
+    is_limited, retry_after_s = _admin_2fa_email_is_rate_limited(admin.username, client_ip)
+    if is_limited:
+        logger.warning(
+            f"Admin 2FA email resend rate-limited: username={admin.username} ip={client_ip} retry_after_s={retry_after_s}"
+        )
+        flash(
+            f"A verification code was sent recently. Please wait {retry_after_s} seconds and try again.",
+            'warning',
+        )
+        return redirect(url_for('admin.login_2fa'))
     
     # Generate new code
     from ..account_auth import generate_code, TFA_CODE_LENGTH, TFA_CODE_EXPIRY_MINUTES
@@ -544,8 +764,20 @@ def resend_2fa():
     session[SESSION_KEY_ADMIN_2FA_EXPIRES] = expires_at.isoformat()
     
     # Send new code
+    from ..email_reference import email_ref_token, generate_email_ref
     from ..notification_service import send_2fa_email
-    if send_2fa_email(admin.email, admin.username, code):
+
+    # Keep the email reference stable across resends for this 2FA session.
+    full_ref = session.get(SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL)
+    if not full_ref:
+        full_ref = generate_email_ref('2fa', admin.username)
+        session[SESSION_KEY_ADMIN_2FA_EMAIL_REF_FULL] = full_ref
+
+    token = email_ref_token(full_ref) or full_ref
+    session[SESSION_KEY_ADMIN_2FA_EMAIL_REF] = token
+
+    if send_2fa_email(admin.email, admin.username, code, email_ref=full_ref):
+        _admin_2fa_email_mark_sent(admin.username, client_ip)
         flash('New verification code sent', 'success')
     else:
         flash('Failed to send verification code', 'error')
@@ -1658,12 +1890,17 @@ def create_audit_ods_export(logs, title):
 def config_netcup():
     """Netcup API configuration."""
     if request.method == 'POST':
+        # Backwards compatible field handling:
+        # - Older templates/tests used customer_number/api_endpoint
+        # - Canonical config uses customer_id/api_url (see app-config.example.toml)
+        customer_id = (request.form.get('customer_id') or request.form.get('customer_number') or '').strip()
+        api_url = (request.form.get('api_url') or request.form.get('api_endpoint') or '').strip()
         config = {
-            'customer_id': request.form.get('customer_id', '').strip(),
+            'customer_id': customer_id,
             'api_key': request.form.get('api_key', '').strip(),
             'api_password': request.form.get('api_password', '').strip(),
-            'api_url': request.form.get('api_url', '').strip() or 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON',
-            'timeout': int(request.form.get('timeout', 30)),
+            'api_url': api_url or 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON',
+            'timeout': int(request.form.get('timeout') or 30),
         }
         
         set_setting('netcup_config', config)
@@ -1697,6 +1934,26 @@ def config_email():
             'notify_realm_request': bool(request.form.get('notify_realm_request')),
             'notify_security': bool(request.form.get('notify_security')),
         }
+
+        # AJAX test-email flow (button on the Email Status card)
+        # The template posts to this endpoint and expects JSON.
+        if (request.form.get('test_only') or '').lower() == 'true':
+            try:
+                from ..email_notifier import get_email_notifier_from_config
+
+                to_email = config.get('admin_email') or config.get('from_email')
+                if not to_email:
+                    return jsonify({'success': False, 'error': 'Set Admin Email (or Sender Email) first'}), 400
+
+                notifier = get_email_notifier_from_config(config)
+                if notifier is None:
+                    return jsonify({'success': False, 'error': 'Email configuration incomplete'}), 400
+
+                ok = notifier.send_test_email(to_email)
+                return jsonify({'success': bool(ok), 'error': None if ok else 'Send failed'}), (200 if ok else 500)
+            except Exception as e:
+                logger.error(f"Test email failed: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
         
         set_setting('smtp_config', config)
         flash('Email configuration saved', 'success')
@@ -1720,8 +1977,25 @@ def config_email_test():
     """Send test email."""
     test_email = request.form.get('test_email', '').strip()
     
-    # TODO: Implement email sending
-    flash(f'Test email sent to {test_email}', 'info')
+    # Legacy endpoint (kept for compatibility). Prefer AJAX flow via config_email(test_only=true).
+    smtp_config = get_setting('smtp_config') or {}
+    try:
+        from ..email_notifier import get_email_notifier_from_config
+        notifier = get_email_notifier_from_config(smtp_config)
+        if notifier is None:
+            flash('Email configuration incomplete', 'error')
+            return redirect(url_for('admin.config_email'))
+        if not test_email:
+            flash('No test email specified', 'error')
+            return redirect(url_for('admin.config_email'))
+        ok = notifier.send_test_email(test_email)
+        if ok:
+            flash(f'Test email sent to {test_email}', 'success')
+        else:
+            flash('Test email sending failed', 'error')
+    except Exception as e:
+        logger.error(f"Legacy test email failed: {e}")
+        flash(f'Test email failed: {e}', 'error')
     
     return redirect(url_for('admin.config_email'))
 
@@ -2030,7 +2304,7 @@ def system_info():
             pass
     
     # Security settings (including rate limiting)
-    # Rate limits come from: Settings table → .env.defaults (no hardcoded fallbacks)
+    # Rate limits come from: Settings table → .env/.env.defaults (no hardcoded fallbacks)
     security_settings = {
         'password_reset_expiry_hours': get_setting('password_reset_expiry_hours') or 1,
         'invite_expiry_hours': get_setting('invite_expiry_hours') or 48,

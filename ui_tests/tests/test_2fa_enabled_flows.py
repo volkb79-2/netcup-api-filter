@@ -10,7 +10,6 @@ These tests should be run separately with Mailpit running and
 WITHOUT the ADMIN_2FA_SKIP environment variable.
 """
 
-import asyncio
 import re
 
 import pytest
@@ -64,10 +63,15 @@ async def test_2fa_warning_component_renders_on_dashboard():
         # Verify dashboard rendered without errors anyway
         h1 = await browser.text("h1")
         assert "Dashboard" in h1
-        
-        # Check for 500 errors
-        assert "500" not in body_text
-        assert "Internal Server Error" not in body_text
+
+        # Check for real error-page indicators (avoid false positives like CSS font-weight: 500)
+        for marker in [
+            "Internal Server Error",
+            "Werkzeug Debugger",
+            "Traceback",
+            "Exception:",
+        ]:
+            assert marker not in body_text
 
 
 async def test_complete_2fa_flow_with_mailpit():
@@ -86,18 +90,20 @@ async def test_complete_2fa_flow_with_mailpit():
     try:
         # Clear any existing messages
         messages = mailpit.list_messages()
-        for msg in messages:
+        for msg in messages.messages:
             mailpit.delete_message(msg.id)
         
         async with browser_session() as browser:
             # Login with admin credentials
             await browser.goto(settings.url("/admin/login"))
-            await asyncio.sleep(0.3)
+            await browser._page.wait_for_load_state('domcontentloaded')
             
             await browser.fill("#username", "admin")
             await browser.fill("#password", settings.admin_password)
-            await browser.click("button[type='submit']")
-            await asyncio.sleep(1.0)
+            
+            # Wait for login navigation to complete
+            async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+                await browser.click("button[type='submit']")
             
             # Check if redirected to 2FA page
             current_url = browser._page.url
@@ -136,13 +142,16 @@ async def test_complete_2fa_flow_with_mailpit():
             """)
             
             # Wait for navigation to complete
-            for _ in range(20):
-                await asyncio.sleep(0.5)
-                new_url = browser._page.url
-                if "/2fa" not in new_url and new_url != current_url:
-                    break
-            else:
-                raise AssertionError("2FA navigation did not complete")
+            try:
+                await browser._page.wait_for_url(
+                    lambda url: "/2fa" not in url and url != current_url,
+                    timeout=10000
+                )
+            except Exception as e:
+                raise AssertionError("2FA navigation did not complete") from e
+            
+            # Wait for page to be ready
+            await browser._page.wait_for_load_state('networkidle')
             
             # Verify we're on dashboard
             h1 = await browser.text("h1")
@@ -178,9 +187,15 @@ async def test_dashboard_renders_with_2fa_enabled():
         
         # Check for errors
         body_text = await browser.text("body")
-        assert "500" not in body_text
-        assert "UndefinedError" not in body_text
-        assert "jinja2.exceptions" not in body_text
+        for marker in [
+            "Internal Server Error",
+            "Werkzeug Debugger",
+            "Traceback",
+            "Exception:",
+            "UndefinedError",
+            "jinja2.exceptions",
+        ]:
+            assert marker not in body_text
         
         # Verify key components rendered
         assert await browser.query_selector("footer")

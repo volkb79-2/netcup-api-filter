@@ -203,7 +203,7 @@ async def capture_public_pages(browser):
         print(f"📸 Capturing {name}...")
         try:
             await browser.goto(settings.url(path))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('networkidle')
             screenshot_path = await browser.screenshot(name)
             screenshots.append((name, screenshot_path))
         except Exception as e:
@@ -244,11 +244,24 @@ async def capture_admin_pages_comprehensive(browser) -> Dict:
     # Login to admin
     print("📸 Logging into admin...")
     await browser.goto(settings.url("/admin/login"))
-    await asyncio.sleep(0.5)
+    await browser.wait_for_load_state('networkidle')
+
+    # If Mailpit is available, clear old messages so we reliably grab the
+    # *current* 2FA email (registration tests may have produced similar subjects).
+    try:
+        from ui_tests.mailpit_client import MailpitClient
+
+        mailpit = MailpitClient()
+        mailpit.clear()
+        mailpit.close()
+        print("ℹ️  Cleared Mailpit inbox before admin login")
+    except Exception as e:
+        print(f"ℹ️  Mailpit not available to pre-clear inbox: {e}")
+
     await browser.fill("#username", settings.admin_username)
     await browser.fill("#password", admin_password)
     await browser.click("button[type='submit']")
-    await asyncio.sleep(1)
+    await browser.wait_for_load_state('networkidle')  # Wait for navigation after form submit
     
     # Check if we're on 2FA page (use page.url for live URL)
     current_url = browser._page.url
@@ -271,29 +284,18 @@ async def capture_admin_pages_comprehensive(browser) -> Dict:
                 if code_match:
                     code = code_match.group(1)
                     print(f"✓ Extracted 2FA code from email: {code}")
-                    
-                    # Remember current URL to detect navigation
-                    url_before = browser._page.url
-                    
-                    # Fill the code field and submit via JavaScript
-                    await browser.evaluate(f"""
-                        (function() {{
-                            const input = document.getElementById('code');
-                            const form = document.getElementById('twoFaForm');
-                            if (input && form) {{
-                                input.value = '{code}';
-                                form.submit();
-                            }}
-                        }})();
-                    """)
-                    
-                    # Wait for navigation to complete
-                    for _ in range(20):
-                        await asyncio.sleep(0.5)
-                        new_url = browser._page.url
-                        if new_url != url_before and "/2fa" not in new_url:
-                            print(f"✓ 2FA navigation complete: {new_url}")
-                            break
+
+                    # Fill the code field and submit. Use requestSubmit/expect_navigation
+                    # patterns to avoid Playwright race conditions.
+                    await browser.fill("#code", code)
+                    await browser.submit("#twoFaForm")
+
+                    # Explicitly wait for leaving the login area.
+                    await browser._page.wait_for_url(
+                        re.compile(r".*/admin/(?!login).*"),
+                        timeout=10_000,
+                    )
+                    print(f"✓ 2FA navigation complete: {browser._page.url}")
                     
                     mailpit.delete_message(msg.id)
                     mailpit.close()
@@ -306,6 +308,8 @@ async def capture_admin_pages_comprehensive(browser) -> Dict:
     
     # Verify login was successful (use live URL)
     current_url = browser._page.url
+    if "/admin/login/2fa" in current_url:
+        raise RuntimeError("Login failed - still on 2FA page")
     if "/admin/login" in current_url:
         raise RuntimeError("Login failed - still on login page")
     
@@ -318,7 +322,7 @@ async def capture_admin_pages_comprehensive(browser) -> Dict:
             screenshots.append(("00b-admin-password-change", path))
             ux_issues.extend(issues)
             await browser.goto(settings.url("/admin/"))
-            await asyncio.sleep(1)
+            await browser.wait_for_load_state('networkidle')
     except Exception:
         pass  # Continue if h1 not found
     
@@ -340,7 +344,7 @@ async def capture_admin_pages_comprehensive(browser) -> Dict:
     for path, name in pages:
         print(f"📸 Capturing {name}...")
         await browser.goto(settings.url(path))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('networkidle')
         
         screenshot_path, issues = await capture_with_validation(browser, name)
         screenshots.append((name, screenshot_path))
@@ -358,7 +362,7 @@ async def capture_admin_detail_pages(browser, screenshots: List, ux_issues: List
     # Find and capture account detail
     try:
         await browser.goto(settings.url("/admin/accounts"))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('networkidle')
         
         page_html = await browser.html("body")
         account_match = re.search(r'/admin/accounts/(\d+)', page_html)
@@ -366,7 +370,7 @@ async def capture_admin_detail_pages(browser, screenshots: List, ux_issues: List
         if account_match:
             account_id = account_match.group(1)
             await browser.goto(settings.url(f"/admin/accounts/{account_id}"))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('networkidle')
             
             path, issues = await capture_with_validation(browser, "04-admin-account-detail")
             screenshots.append(("04-admin-account-detail", path))
@@ -378,7 +382,7 @@ async def capture_admin_detail_pages(browser, screenshots: List, ux_issues: List
     # Find and capture realm detail
     try:
         await browser.goto(settings.url("/admin/realms"))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('networkidle')
         
         page_html = await browser.html("body")
         realm_match = re.search(r'/admin/realms/(\d+)', page_html)
@@ -386,7 +390,7 @@ async def capture_admin_detail_pages(browser, screenshots: List, ux_issues: List
         if realm_match:
             realm_id = realm_match.group(1)
             await browser.goto(settings.url(f"/admin/realms/{realm_id}"))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('networkidle')
             
             path, issues = await capture_with_validation(browser, "12-admin-realm-detail")
             screenshots.append(("12-admin-realm-detail", path))
@@ -403,7 +407,7 @@ async def capture_admin_detail_pages(browser, screenshots: List, ux_issues: List
         if token_match:
             token_id = token_match.group(1)
             await browser.goto(settings.url(f"/admin/tokens/{token_id}"))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('networkidle')
             
             path, issues = await capture_with_validation(browser, "13-admin-token-detail")
             screenshots.append(("13-admin-token-detail", path))
@@ -430,7 +434,7 @@ async def capture_account_pages(browser):
         print(f"📸 Capturing {name}...")
         try:
             await browser.goto(settings.url(path))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('networkidle')
             screenshot_path = await browser.screenshot(name)
             screenshots.append((name, screenshot_path))
         except Exception as e:
@@ -475,14 +479,14 @@ async def capture_bs5_demo_pages(browser):
         try:
             # Navigate to BS5 demo page
             await browser.goto(settings.url("/component-demo-bs5"))
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('networkidle')
             
             # Click the theme link in the sidebar
             theme_selector = f'a.nav-link:has-text("{theme_name}")'
             await browser._page.click(theme_selector)
             
             # Small delay to let CSS transitions complete
-            await asyncio.sleep(0.3)
+            await browser.wait_for_timeout(300)
             
             # Capture full page screenshot
             name = f"99-bs5-demo-{theme_slug}"
@@ -503,7 +507,7 @@ async def capture_error_pages(browser) -> List[Tuple[str, str]]:
     print("📸 Capturing 404 error page...")
     try:
         await browser.goto(settings.url("/nonexistent-page-12345"))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('networkidle')
         screenshot_path = await browser.screenshot("90-error-404")
         screenshots.append(("90-error-404", screenshot_path))
     except Exception as e:

@@ -20,10 +20,10 @@ async def test_netcup_config_page(active_profile):
         
         # Check form fields exist
         page_html = await browser.html("body")
-        assert "customer_number" in page_html
+        assert "customer_id" in page_html
         assert "api_key" in page_html
         assert "api_password" in page_html
-        assert "api_endpoint" in page_html
+        assert "api_url" in page_html
 
 
 async def test_email_config_page(active_profile):

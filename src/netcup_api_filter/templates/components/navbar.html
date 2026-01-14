@@ -60,19 +60,14 @@
                     </li>
                     {# Config Dropdown #}
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if current_page in ['netcup', 'email', 'system'] %}active{% endif %}" 
+                        <a class="nav-link dropdown-toggle {% if current_page in ['settings', 'system'] %}active{% endif %}" 
                            href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-gear me-1"></i>Config
                         </a>
                         <ul class="dropdown-menu">
                             <li>
-                                <a class="dropdown-item" href="{{ url_for('admin.config_netcup') }}">
-                                    <i class="bi bi-cloud me-2"></i>Netcup API
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="{{ url_for('admin.config_email') }}">
-                                    <i class="bi bi-envelope me-2"></i>Email
+                                <a class="dropdown-item" href="{{ url_for('admin.settings') }}">
+                                    <i class="bi bi-gear me-2"></i>Settings
                                 </a>
                             </li>
                             <li><hr class="dropdown-divider"></li>

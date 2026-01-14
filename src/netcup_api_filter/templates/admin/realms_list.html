@@ -186,7 +186,7 @@
         <div class="text-center mt-2">
             <small class="text-muted">
                 Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }} - 
-                {{ min(pagination.page * pagination.per_page, pagination.total) }} of {{ pagination.total }} realms
+                {{ [pagination.page * pagination.per_page, pagination.total] | min }} of {{ pagination.total }} realms
             </small>
         </div>
     </div>

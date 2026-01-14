@@ -124,8 +124,9 @@ async def test_navigation_links_work(active_profile):
             '/admin/',           # Dashboard
             '/admin/accounts',   # Accounts
             '/admin/audit',      # Audit Logs
-            '/admin/config/',    # Config (netcup or email)
+            '/admin/settings',   # Settings (unified config)
             '/admin/system',     # System Info
+            '/admin/app-logs',   # Application Logs
         ]
         
         for link in expected_links:

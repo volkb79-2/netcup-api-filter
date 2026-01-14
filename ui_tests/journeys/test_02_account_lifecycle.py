@@ -23,7 +23,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import re
 import secrets
 from typing import Optional
@@ -119,7 +118,7 @@ class TestSelfRegistrationFlow:
         
         # Submit
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.5)
+        await browser.wait_for_timeout(1500)
         
         await ss.capture('client1-registration-submitted', 'client1 after registration submit')
         
@@ -165,7 +164,7 @@ class TestSelfRegistrationFlow:
         
         # Submit
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.5)
+        await browser.wait_for_timeout(1500)
         
         await ss.capture('client2-registration-submitted', 'client2 after registration submit')
         
@@ -186,7 +185,7 @@ class TestSelfRegistrationFlow:
         # Try a fake verification link
         fake_link = settings.url('/account/verify/fake-token-12345')
         await browser.goto(fake_link)
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('fake-verification-rejected', 'Invalid verification link rejected')
         
@@ -218,7 +217,7 @@ class TestAdminSeesRegisteredAccounts:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/accounts/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-pending-accounts', 'Admin view of pending accounts')
         
@@ -238,7 +237,7 @@ class TestAdminSeesRegisteredAccounts:
         client = account_data["client2_approved"]
         
         await browser.goto(settings.url('/admin/accounts/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for client2 in the list
         body = await browser.text('body')
@@ -253,7 +252,7 @@ class TestAdminSeesRegisteredAccounts:
             )
             if approve_btn:
                 await approve_btn.click()
-                await asyncio.sleep(0.5)
+                await browser.wait_for_load_state('domcontentloaded')
                 await ss.capture('client2-approved', 'client2 approved')
         else:
             print(f"client2 not in pending list yet - may need email verification first")
@@ -290,7 +289,7 @@ async def _fill_admin_create_account_form(browser, client: dict, ss) -> None:
     if include_realm:
         await browser.click('#include_realm')
         # Wait for realm config to appear
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
     
     # Select realm type (use 'host' for simple DDNS use case)
     await browser.select('#realm_type', 'host')
@@ -309,7 +308,7 @@ async def _fill_admin_create_account_form(browser, client: dict, ss) -> None:
     await browser.click('#op_update')
     
     # Small delay for JS validation to run
-    await asyncio.sleep(0.3)
+    await browser.wait_for_timeout(300)
 
 
 class TestAdminInviteFlow:
@@ -328,7 +327,7 @@ class TestAdminInviteFlow:
         
         # Navigate to create account page
         await browser.goto(settings.url('/admin/accounts/new'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-create-account-form', 'Admin create account form')
         
@@ -339,7 +338,7 @@ class TestAdminInviteFlow:
         
         # Submit - button should now be enabled
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.5)
+        await browser.wait_for_timeout(1500)
         
         await ss.capture('client3-invite-submitted', 'client3 invite submitted')
         
@@ -365,7 +364,7 @@ class TestAdminInviteFlow:
         
         # Navigate to create account page
         await browser.goto(settings.url('/admin/accounts/new'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Fill all required fields
         await _fill_admin_create_account_form(browser, client, ss)
@@ -374,7 +373,7 @@ class TestAdminInviteFlow:
         
         # Submit - button should now be enabled
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.5)
+        await browser.wait_for_timeout(1500)
         
         await ss.capture('client4-invite-submitted', 'client4 invite submitted')
         
@@ -404,7 +403,7 @@ class TestClient4CompletesInvite:
         # Admin-created accounts don't have invite links - they're immediately active
         # Navigate to accounts list and verify client4 exists (or was just created)
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('client4-verify-exists', 'Verifying client4 account exists')
         
@@ -426,7 +425,7 @@ class TestClient4CompletesInvite:
         
         # Find and click on client4 in accounts list
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for a link to client4's detail page
         account_link = await browser.query_selector(
@@ -435,7 +434,7 @@ class TestClient4CompletesInvite:
         
         if account_link:
             await account_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             await ss.capture('client4-detail-page', 'client4 account detail')
             
             body = await browser.text('body')
@@ -465,7 +464,7 @@ class TestFinalAccountStates:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-accounts-all-states', 'Admin accounts list with various states')
         
@@ -485,7 +484,7 @@ class TestFinalAccountStates:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/accounts/pending'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('admin-accounts-pending-only', 'Admin pending accounts list')
         
@@ -501,13 +500,13 @@ class TestFinalAccountStates:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/accounts'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Click on first account detail link
         detail_link = await browser.query_selector('a[href*="/admin/accounts/"]:not([href="/admin/accounts/new"])')
         if detail_link:
             await detail_link.click()
-            await asyncio.sleep(0.5)
+            await browser.wait_for_load_state('domcontentloaded')
             
             await ss.capture('admin-account-detail', 'Admin account detail page')
             
@@ -546,7 +545,7 @@ class TestAccountErrorHandling:
         await ss.capture('duplicate-username-filled', 'Duplicate username registration')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         await ss.capture('duplicate-username-rejected', 'Duplicate username rejected')
         
@@ -585,7 +584,7 @@ class TestAccountErrorHandling:
         await ss.capture('weak-password-filled', 'Weak password registration')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(1.0)
+        await browser.wait_for_timeout(1000)
         
         await ss.capture('weak-password-rejected', 'Weak password rejected')
         
@@ -621,7 +620,7 @@ class TestAccountErrorHandling:
             await ss.capture('mismatch-password-filled', 'Mismatched passwords')
             
             await browser.click('button[type="submit"]')
-            await asyncio.sleep(1.0)
+            await browser.wait_for_timeout(1000)
             
             await ss.capture('mismatch-password-rejected', 'Mismatched passwords rejected')
             

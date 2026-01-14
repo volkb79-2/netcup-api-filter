@@ -15,7 +15,6 @@ Prerequisites:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 import httpx
 import secrets
 from typing import Optional
@@ -221,7 +220,7 @@ class TestAuditLogVerification:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/audit'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('audit-log-api-activity', 'Audit log with API calls')
         
@@ -241,7 +240,7 @@ class TestAuditLogVerification:
         
         # Try filtering by denied
         await browser.goto(settings.url('/admin/audit?status=denied'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('audit-log-denied', 'Audit log filtered by denied')
         
@@ -258,7 +257,7 @@ class TestAuditLogVerification:
         
         # Try filtering by action
         await browser.goto(settings.url('/admin/audit?action=dns_read'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('audit-log-dns-read', 'Audit log filtered by DNS read')
         
@@ -274,7 +273,7 @@ class TestAuditLogVerification:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/audit'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         header_html = await browser.html('table thead')
         
@@ -294,7 +293,7 @@ class TestAuditLogVerification:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/audit'))
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         # Look for export button
         export_btn = await browser.query_selector(

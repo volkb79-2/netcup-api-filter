@@ -42,12 +42,15 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # Source environment
 source "${REPO_ROOT}/.env.workspace"
 source "${REPO_ROOT}/.env.services"
-source "${REPO_ROOT}/.env.defaults"
+if [[ -f "${REPO_ROOT}/.env.defaults" ]]; then
+    source "${REPO_ROOT}/.env.defaults"
+fi
+source "${REPO_ROOT}/.env"
 source "${SCRIPT_DIR}/.env"
 
 # PowerDNS API configuration (from .env.services)
 POWERDNS_API_URL="${POWERDNS_API_URL:-http://naf-dev-powerdns:8081}"
-POWERDNS_API_KEY="${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set in .env.defaults}"
+POWERDNS_API_KEY="${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set in .env}"
 
 # Default values (NS from PUBLIC_FQDN)
 DEFAULT_ZONE="dyn.vxxu.de"

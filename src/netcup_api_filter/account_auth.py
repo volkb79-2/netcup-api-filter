@@ -44,11 +44,20 @@ SESSION_KEY_2FA_PENDING = '2fa_pending'
 SESSION_KEY_2FA_CODE = '2fa_code'
 SESSION_KEY_2FA_EXPIRES = '2fa_expires'
 SESSION_KEY_2FA_METHOD = '2fa_method'
+SESSION_KEY_2FA_EMAIL_REF = '2fa_email_ref'
+# Full email reference (e.g. NAF-2FA-...-TOKEN). Stored so resends keep the same
+# reference for a single 2FA challenge.
+SESSION_KEY_2FA_EMAIL_REF_FULL = '2fa_email_ref_full'
 
 # 2FA configuration
 TFA_CODE_LENGTH = 6
 TFA_CODE_EXPIRY_MINUTES = 5
 TFA_MAX_ATTEMPTS = 5
+TFA_LOCKOUT_MINUTES = 30  # Lock account after max failed attempts
+
+# Recovery code rate limiting
+RECOVERY_CODE_MAX_ATTEMPTS = 3  # Max failures before lockout
+RECOVERY_CODE_LOCKOUT_MINUTES = 30  # Lockout duration
 
 # Verification code configuration
 VERIFICATION_CODE_LENGTH = 6
@@ -441,8 +450,19 @@ def send_2fa_code(account_id: int, method: str, source_ip: str) -> tuple[bool, s
     
     if method == 'email':
         # Send 2FA code via email
+        from .email_reference import email_ref_token, generate_email_ref
         from .notification_service import send_2fa_email
-        if send_2fa_email(account.email, account.username, code):
+
+        # Keep the email reference stable across resends for this 2FA session.
+        full_ref = session.get(SESSION_KEY_2FA_EMAIL_REF_FULL)
+        if not full_ref:
+            full_ref = generate_email_ref('2fa', account.username)
+            session[SESSION_KEY_2FA_EMAIL_REF_FULL] = full_ref
+
+        token = email_ref_token(full_ref) or full_ref
+        session[SESSION_KEY_2FA_EMAIL_REF] = token
+
+        if send_2fa_email(account.email, account.username, code, email_ref=full_ref):
             logger.info(f"2FA code sent via email to {account.username}")
             return True, None
         else:
@@ -453,6 +473,8 @@ def send_2fa_code(account_id: int, method: str, source_ip: str) -> tuple[bool, s
         # TOTP doesn't need code sent - user generates from authenticator
         # Clear the code we generated - TOTP verification handles its own
         session.pop(SESSION_KEY_2FA_CODE, None)
+        session.pop(SESSION_KEY_2FA_EMAIL_REF, None)
+        session.pop(SESSION_KEY_2FA_EMAIL_REF_FULL, None)
         logger.info(f"TOTP requested for {account.username}")
         return True, None
     
@@ -473,6 +495,7 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
     
     On success, creates session and returns account.
     Also accepts recovery codes as fallback.
+    Implements lockout after max failures.
     """
     # Get pending 2FA from session
     account_id = session.get(SESSION_KEY_2FA_PENDING)
@@ -484,14 +507,38 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
         clear_2fa_session()
         return TwoFactorResult(success=False, error="Account not found")
     
+    # Check if account is locked due to 2FA failures
+    if is_2fa_locked(account):
+        lockout_mins = TFA_LOCKOUT_MINUTES
+        return TwoFactorResult(
+            success=False, 
+            error=f"Too many failed 2FA attempts. Account locked for {lockout_mins} minutes."
+        )
+    
     method = session.get(SESSION_KEY_2FA_METHOD, 'email')
     
     # Check if code looks like a recovery code (format: XXXX-XXXX)
     if len(code) == 9 and '-' in code:
+        # Check recovery code rate limiting
+        if is_recovery_code_locked(account):
+            lockout_mins = RECOVERY_CODE_LOCKOUT_MINUTES
+            log_login_attempt(
+                username=account.username,
+                source_ip=source_ip,
+                success=False,
+                reason=f"Recovery code locked (rate limit)"
+            )
+            return TwoFactorResult(
+                success=False, 
+                error=f"Too many failed recovery code attempts. Locked for {lockout_mins} minutes."
+            )
+        
         from .recovery_codes import verify_recovery_code
         if verify_recovery_code(account, code):
             # Recovery code verified - complete login
             clear_2fa_session()
+            reset_2fa_failures(account)  # Clear lockout counters
+            reset_recovery_code_failures(account)  # Clear recovery code lockout
             create_session(account)
             account.last_login_at = datetime.utcnow()
             db.session.commit()
@@ -505,6 +552,16 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
             
             logger.info(f"Login complete for {account.username} via recovery code")
             return TwoFactorResult(success=True, account=account)
+        else:
+            # Invalid recovery code - increment failure counter
+            increment_recovery_code_failures(account)
+            log_login_attempt(
+                username=account.username,
+                source_ip=source_ip,
+                success=False,
+                reason="Invalid recovery code"
+            )
+            return TwoFactorResult(success=False, error="Invalid recovery code")
     
     if method == 'totp':
         # Verify TOTP code
@@ -542,16 +599,29 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
         
         # Verify code
         if code != expected_code:
+            increment_2fa_failures(account)
+            attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(account)
             log_login_attempt(
                 username=account.username,
                 source_ip=source_ip,
                 success=False,
                 reason="Invalid 2FA code"
             )
-            return TwoFactorResult(success=False, error="Invalid code")
+            if attempts_left > 0:
+                return TwoFactorResult(
+                    success=False, 
+                    error=f"Invalid code. {attempts_left} attempts remaining."
+                )
+            else:
+                return TwoFactorResult(
+                    success=False, 
+                    error=f"Too many failed attempts. Account locked for {TFA_LOCKOUT_MINUTES} minutes."
+                )
     
     # 2FA verified - create session
     clear_2fa_session()
+    reset_2fa_failures(account)  # Clear lockout counters
+    reset_recovery_code_failures(account)  # Clear recovery code lockout
     create_session(account)
     
     # Update last login
@@ -575,10 +645,18 @@ def clear_2fa_session():
     session.pop(SESSION_KEY_2FA_CODE, None)
     session.pop(SESSION_KEY_2FA_EXPIRES, None)
     session.pop(SESSION_KEY_2FA_METHOD, None)
+    session.pop(SESSION_KEY_2FA_EMAIL_REF, None)
+    session.pop(SESSION_KEY_2FA_EMAIL_REF_FULL, None)
 
 
 def create_session(account: Account):
     """Create authenticated session for account."""
+    # Regenerate session ID to prevent session fixation attacks
+    old_session_data = dict(session)
+    session.clear()
+    session.update(old_session_data)
+    session.modified = True
+    
     session[SESSION_KEY_USER_ID] = account.id
     session[SESSION_KEY_USERNAME] = account.username
     session.permanent = True
@@ -934,3 +1012,95 @@ def disable_account(account_id: int, disabled_by: Account) -> tuple[bool, str | 
     logger.info(f"Account disabled: {account.username} by {disabled_by.username}")
     
     return True, None
+
+
+# ============================================================================
+# 2FA Failure Tracking (Security)
+# ============================================================================
+
+def get_2fa_failure_count(account: Account) -> int:
+    """Get number of recent 2FA failures for account."""
+    from .models import Settings
+    key = f"2fa_failures:{account.id}"
+    data = Settings.get(key)
+    if not data:
+        return 0
+    
+    # Check if lockout expired
+    last_failure = datetime.fromisoformat(data.get('last_failure', datetime.utcnow().isoformat()))
+    if datetime.utcnow() - last_failure > timedelta(minutes=TFA_LOCKOUT_MINUTES):
+        # Lockout expired, reset
+        Settings.delete(key)
+        return 0
+    
+    return data.get('count', 0)
+
+
+def increment_2fa_failures(account: Account):
+    """Increment 2FA failure counter for account."""
+    from .models import Settings
+    key = f"2fa_failures:{account.id}"
+    data = Settings.get(key) or {'count': 0}
+    data['count'] = data.get('count', 0) + 1
+    data['last_failure'] = datetime.utcnow().isoformat()
+    Settings.set(key, data)
+    logger.warning(f"2FA failure #{data['count']} for account {account.username}")
+
+
+def reset_2fa_failures(account: Account):
+    """Reset 2FA failure counter after successful login."""
+    from .models import Settings
+    key = f"2fa_failures:{account.id}"
+    Settings.delete(key)
+
+
+def is_2fa_locked(account: Account) -> bool:
+    """Check if account is locked due to too many 2FA failures."""
+    count = get_2fa_failure_count(account)
+    return count >= TFA_MAX_ATTEMPTS
+
+
+# ============================================================================
+# Recovery Code Rate Limiting (Security)
+# ============================================================================
+
+def get_recovery_code_failure_count(account: Account) -> int:
+    """Get number of recent recovery code failures for account."""
+    from .models import Settings
+    key = f"recovery_failures:{account.id}"
+    data = Settings.get(key)
+    if not data:
+        return 0
+    
+    # Check if lockout expired
+    last_failure = datetime.fromisoformat(data.get('last_failure', datetime.utcnow().isoformat()))
+    if datetime.utcnow() - last_failure > timedelta(minutes=RECOVERY_CODE_LOCKOUT_MINUTES):
+        # Lockout expired, reset
+        Settings.delete(key)
+        return 0
+    
+    return data.get('count', 0)
+
+
+def increment_recovery_code_failures(account: Account):
+    """Increment recovery code failure counter for account."""
+    from .models import Settings
+    key = f"recovery_failures:{account.id}"
+    data = Settings.get(key) or {'count': 0}
+    data['count'] = data.get('count', 0) + 1
+    data['last_failure'] = datetime.utcnow().isoformat()
+    Settings.set(key, data)
+    logger.warning(f"Recovery code failure #{data['count']} for account {account.username}")
+
+
+def reset_recovery_code_failures(account: Account):
+    """Reset recovery code failure counter after successful login."""
+    from .models import Settings
+    key = f"recovery_failures:{account.id}"
+    Settings.delete(key)
+
+
+def is_recovery_code_locked(account: Account) -> bool:
+    """Check if account is locked due to too many recovery code failures."""
+    count = get_recovery_code_failure_count(account)
+    return count >= RECOVERY_CODE_MAX_ATTEMPTS

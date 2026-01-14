@@ -9,7 +9,6 @@ This journey tests the initial admin experience:
 """
 import pytest
 import pytest_asyncio
-import asyncio
 
 from ui_tests.config import settings
 from ui_tests.workflows import ensure_admin_dashboard
@@ -48,7 +47,7 @@ class TestAdminLogin:
         await ss.capture('login-filled', 'Login form filled')
         
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         current_url = browser.current_url
         await ss.capture('after-login', f'After login - URL: {current_url}')
@@ -67,7 +66,7 @@ class TestAdminLogin:
         await browser.fill('#username', 'admin')
         await browser.fill('#password', 'definitely-wrong-password')
         await browser.click('button[type="submit"]')
-        await asyncio.sleep(0.5)
+        await browser.wait_for_load_state('domcontentloaded')
         
         await ss.capture('login-failed', 'Login failed with wrong password')
         
@@ -238,7 +237,7 @@ class TestAdminLogout:
         browser = admin_session
         
         await browser.goto(settings.url('/admin/logout'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         current_url = browser.current_url
         await ss.capture('after-logout', 'After logout')
@@ -256,11 +255,11 @@ class TestAdminLogout:
         
         # Then logout
         await browser.goto(settings.url('/admin/logout'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         # Try to access dashboard
         await browser.goto(settings.url('/admin/'))
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
         
         current_url = browser.current_url
         await ss.capture('dashboard-after-logout', 'Dashboard access after logout')

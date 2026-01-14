@@ -16,7 +16,6 @@ The approach interweaves testing and screenshots to ensure:
 Run with: pytest ui_tests/tests/test_holistic_coverage.py -v --capture=no
 """
 import pytest
-import asyncio
 import re
 import secrets
 from pathlib import Path
@@ -224,8 +223,8 @@ async def create_test_account(browser: Browser, prefix: str = "test") -> Dict:
     }
     
     await browser.goto(settings.url("/admin/accounts/new"))
-    await asyncio.sleep(0.3)
-    
+    await browser.wait_for_load_state('domcontentloaded')
+
     await browser.fill("#username", account_data["username"])
     await browser.fill("#email", account_data["email"])
     
@@ -236,8 +235,7 @@ async def create_test_account(browser: Browser, prefix: str = "test") -> Dict:
     
     # Submit form
     await browser.click("button[type='submit']")
-    await asyncio.sleep(0.5)
-    
+    await browser.wait_for_load_state('domcontentloaded')
     return account_data
 
 
@@ -252,8 +250,8 @@ async def create_test_realm(browser: Browser, account_id: int, prefix: str = "re
     }
     
     await browser.goto(settings.url(f"/admin/accounts/{account_id}/realms/new"))
-    await asyncio.sleep(0.3)
-    
+    await browser.wait_for_load_state('domcontentloaded')
+
     # Fill realm form
     await browser.fill("#realm_value", realm_data["value"])
     
@@ -275,8 +273,7 @@ async def create_test_realm(browser: Browser, account_id: int, prefix: str = "re
             await checkbox.check()
     
     await browser.click("button[type='submit']")
-    await asyncio.sleep(0.5)
-    
+    await browser.wait_for_load_state('domcontentloaded')
     return realm_data
 
 
@@ -416,8 +413,9 @@ class TestHolisticAdminCoverage:
             # Simulate API activity first
             print("   Simulating API activity...")
             await simulate_api_activity(browser)
-            await asyncio.sleep(0.5)
-            
+            # Brief wait for logs to be written
+            await browser.wait_for_timeout(500)
+
             await browser.goto(settings.url("/admin/audit"))
             await capture.capture("holistic-30-audit-logs", validate_ux=True)
             
@@ -461,12 +459,9 @@ class TestHolisticAdminCoverage:
             
             # Switch to other themes and capture
             await browser._page.click('a.nav-link:has-text("Obsidian Noir")')
-            await asyncio.sleep(0.3)
-            await capture.capture("holistic-99-bs5-reference-obsidian", validate_ux=False)
-            
+            await browser.wait_for_timeout(300)
             await browser._page.click('a.nav-link:has-text("Gold Dust")')
-            await asyncio.sleep(0.3)
-            await capture.capture("holistic-99-bs5-reference-gold", validate_ux=False)
+            await browser.wait_for_timeout(300)
             
             # =================================================================
             # Summary
@@ -553,8 +548,8 @@ class TestThemeComplianceValidation:
             
             for page in pages:
                 await browser.goto(settings.url(page))
-                await asyncio.sleep(0.3)
-                
+                await browser.wait_for_load_state('domcontentloaded')
+
                 issues = await self._check_theme_compliance(browser)
                 for issue in issues:
                     issue["page"] = page
@@ -682,14 +677,14 @@ class TestAPIErrorSimulation:
                     pass
             
             # Wait for logs to be written
-            await asyncio.sleep(1)
-            
+            await browser.wait_for_timeout(1000)
+
             # Check audit logs show errors
             await browser.goto(settings.url("/admin/audit"))
-            await asyncio.sleep(0.5)
-            
-            page_html = await browser.html("body")
+            await browser.wait_for_load_state('domcontentloaded')
+
+            page_text = await browser.text('body')
             
             # Should have some error entries
-            assert 'error' in page_html.lower() or 'failed' in page_html.lower() or 'denied' in page_html.lower(), \
+            assert 'error' in page_text.lower() or 'failed' in page_text.lower() or 'denied' in page_text.lower(), \
                 "Audit logs should show error entries from simulated API errors"

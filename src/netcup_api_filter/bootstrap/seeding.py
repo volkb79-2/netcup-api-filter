@@ -39,7 +39,7 @@ from ..config_defaults import get_default, load_defaults, require_default
 logger = logging.getLogger(__name__)
 
 # Lazy-load environment defaults only when needed (not at module import)
-# This allows the module to be imported without .env.defaults present
+# This allows the module to be imported without .env/.env.defaults present
 _ENV_DEFAULTS = None
 
 def _get_env_defaults():
@@ -51,15 +51,15 @@ def _get_env_defaults():
 
 
 def seed_settings_from_env():
-    """Seed Settings table from .env.defaults if not already set.
+    """Seed Settings table from .env/.env.defaults if not already set.
     
     This is called during database creation (build_deployment.py) to populate
-    the Settings table with default values from .env.defaults.
+    the Settings table with default values from .env/.env.defaults.
     
     Hierarchy:
     1. Environment variables (runtime overrides)
     2. Settings table (admin UI changes) ← We populate this
-    3. .env.defaults (defaults) ← We read from this
+    3. .env/.env.defaults (defaults) ← We read from this
     
     Settings that should be seeded:
     - Rate limits (admin, account, API)
@@ -77,7 +77,7 @@ def seed_settings_from_env():
     
     defaults = _get_env_defaults()
     
-    # Map of Settings table keys to .env.defaults keys
+    # Map of Settings table keys to env defaults keys
     settings_map = {
         'admin_rate_limit': defaults.get('ADMIN_RATE_LIMIT', '50 per minute'),
         'account_rate_limit': defaults.get('ACCOUNT_RATE_LIMIT', '50 per minute'),
@@ -95,7 +95,7 @@ def seed_settings_from_env():
     
     if seeded_count > 0:
         db.session.commit()
-        logger.info(f"Seeded {seeded_count} settings from .env.defaults")
+        logger.info(f"Seeded {seeded_count} settings from .env/.env.defaults")
     else:
         logger.info("Settings table already populated, skipping seeding")
     
@@ -111,6 +111,8 @@ class AdminSeedOptions:
     must_change_password: bool = True
     
     def __post_init__(self):
+        # Admin credentials come from env defaults (DEFAULT_ADMIN_*).
+        # app-config.toml preseeding uses [[users]] with is_admin=true.
         if self.username is None:
             self.username = require_default("DEFAULT_ADMIN_USERNAME")
         if self.password is None:
@@ -479,7 +481,10 @@ def seed_default_entities(
             demo_username = f"demouser{secrets.token_urlsafe(4)[:4].lower()}"
             logger.warning(f"Demo username invalid, using generated: {demo_username}")
         
-        demo_password = "DemoPassword123!"
+        demo_password = (
+            os.environ.get('DEFAULT_TEST_ACCOUNT_PASSWORD')
+            or get_default('DEFAULT_TEST_ACCOUNT_PASSWORD', 'DemoPassword123!')
+        )
         
         # Parse realm config
         realm_fqdn = os.environ.get('DEFAULT_TEST_CLIENT_REALM_VALUE') or get_default('DEFAULT_TEST_CLIENT_REALM_VALUE', 'example.com')

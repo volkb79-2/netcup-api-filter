@@ -1,6 +1,6 @@
 """Tests for mock SMTP server functionality."""
-import pytest
 import asyncio
+import pytest
 import smtplib
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
@@ -8,6 +8,18 @@ from email.mime.multipart import MIMEMultipart
 
 
 pytestmark = pytest.mark.asyncio
+
+
+async def _wait_for_captured_emails(mock_smtp_server, expected_count: int, timeout_seconds: float = 2.0) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while len(mock_smtp_server.captured_emails) < expected_count:
+        if asyncio.get_running_loop().time() >= deadline:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(mock_smtp_server.captured_emails) >= expected_count, (
+        f"Expected at least {expected_count} captured email(s), got {len(mock_smtp_server.captured_emails)}"
+    )
 
 
 async def test_mock_smtp_captures_simple_email(mock_smtp_server):
@@ -24,7 +36,7 @@ async def test_mock_smtp_captures_simple_email(mock_smtp_server):
     smtp.quit()
     
     # Give server time to process
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     # Verify email was captured
     assert len(mock_smtp_server.captured_emails) == 1
@@ -58,7 +70,7 @@ async def test_mock_smtp_captures_html_email(mock_smtp_server):
     smtp.send_message(msg)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     assert len(mock_smtp_server.captured_emails) == 1
     
@@ -85,7 +97,7 @@ async def test_mock_smtp_multiple_recipients(mock_smtp_server):
     smtp.send_message(msg)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     assert len(mock_smtp_server.captured_emails) == 1
     
@@ -111,7 +123,7 @@ async def test_mock_smtp_multiple_emails(mock_smtp_server):
     
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=3)
     
     assert len(mock_smtp_server.captured_emails) == 3
     
@@ -136,7 +148,7 @@ async def test_mock_smtp_filter_by_recipient(mock_smtp_server):
     
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=3)
     
     # Filter by recipient
     alice_emails = mock_smtp_server.handler.get_emails_to("alice@example.com")
@@ -169,7 +181,7 @@ async def test_mock_smtp_filter_by_subject(mock_smtp_server):
     
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=len(subjects))
     
     # Filter by subject keyword
     password_emails = mock_smtp_server.handler.get_emails_with_subject("password")
@@ -196,7 +208,7 @@ async def test_mock_smtp_headers_captured(mock_smtp_server):
     smtp.send_message(msg)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     email = mock_smtp_server.captured_emails[0]
     
@@ -222,7 +234,7 @@ async def test_mock_smtp_reset(mock_smtp_server):
     smtp.send_message(msg)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     assert len(mock_smtp_server.captured_emails) == 1
     
@@ -241,7 +253,7 @@ async def test_mock_smtp_reset(mock_smtp_server):
     smtp.send_message(msg2)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     assert len(mock_smtp_server.captured_emails) == 1
     assert mock_smtp_server.captured_emails[0].subject == "Email 2"
@@ -264,7 +276,7 @@ async def test_mock_smtp_timestamp_recorded(mock_smtp_server):
     smtp.send_message(msg)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     after = datetime.now(timezone.utc)
     
@@ -288,7 +300,7 @@ async def test_mock_smtp_raw_message_preserved(mock_smtp_server):
     smtp.send_message(msg)
     smtp.quit()
     
-    await asyncio.sleep(0.2)
+    await _wait_for_captured_emails(mock_smtp_server, expected_count=1)
     
     email = mock_smtp_server.captured_emails[0]
     

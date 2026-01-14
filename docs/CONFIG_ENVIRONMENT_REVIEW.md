@@ -105,11 +105,11 @@ secure_value = os.environ.get('FLASK_SESSION_COOKIE_SECURE', 'auto')
 
 ---
 
-## `app-config.toml.example` Review & Suggestions
+## `app-config.example.toml` Review & Suggestions
 
 ### Current State Analysis
 
-The example file (`app-config.toml.example`) is well-documented with:
+The example file (`app-config.example.toml`) is well-documented with:
 - ✅ Clear header explaining purpose and lifecycle
 - ✅ Configuration hierarchy explanation
 - ✅ Comments for each section
@@ -155,7 +155,7 @@ The SMTP section has `smtp_password = ""` but doesn't explain how to configure f
 
 ### Suggested Improvements
 
-I recommend the following improvements to `app-config.toml.example`:
+I recommend the following improvements to `app-config.example.toml`:
 
 ```toml
 # =============================================================================
@@ -344,7 +344,7 @@ def require_default(key: str) -> str:
 
 ### 1. Credential Placeholders in Example File
 
-**Location:** `app-config.toml.example:67, 50-51`
+**Location:** `app-config.example.toml:67, 50-51`
 **Risk:** Developers may accidentally commit real credentials based on example
 **Recommendation:** Replace with obvious placeholders like `YOUR_*`
 
@@ -354,7 +354,7 @@ def require_default(key: str) -> str:
 
 ### Immediate Actions (P1)
 
-1. ✅ Update `app-config.toml.example` with placeholder credentials
+1. ✅ Update `app-config.example.toml` with placeholder credentials
 
 ### Improvements (P2)
 
@@ -420,7 +420,7 @@ flowchart TD
 | `passenger_wsgi.py` | 101-395 | TOML import process - well implemented |
 | `platform_backends.py` | 364-376 | Env var substitution - working correctly |
 | `.env.defaults` | 1-379 | Comprehensive defaults - complete |
-| `app-config.toml.example` | 67 | Contains potentially real credentials |
+| `app-config.example.toml` | 67 | Contains potentially real credentials |
 | `docs/TOML_CONFIGURATION.md` | 1-501 | Excellent documentation |
 
 ---
@@ -435,7 +435,7 @@ The configuration system is **production-ready** with excellent architecture:
 4. ✅ Proper secret management (no hardcoded credentials)
 5. ✅ Idempotent bootstrap process
 
-The main recommendation is to enhance `app-config.toml.example` with:
+The main recommendation is to enhance `app-config.example.toml` with:
 - Placeholder credentials
 - Additional sections for logging, session, admin, notifications, API settings
 

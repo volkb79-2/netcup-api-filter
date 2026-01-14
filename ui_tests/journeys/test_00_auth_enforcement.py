@@ -24,7 +24,7 @@ class TestAuthEnforcementAdmin:
         await browser.goto(settings.url('/admin/logout'))
         # Wait a moment for session to be cleared
         import asyncio
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
     
     @pytest.mark.asyncio
     async def test_admin_dashboard_requires_auth(self, browser, screenshot_helper):
@@ -129,7 +129,7 @@ class TestAuthEnforcementAccount:
         """Ensure we start unauthenticated."""
         await browser.goto(settings.url('/account/logout'))
         import asyncio
-        await asyncio.sleep(0.3)
+        await browser.wait_for_timeout(300)
     
     @pytest.mark.asyncio
     async def test_account_dashboard_requires_auth(self, browser, screenshot_helper):

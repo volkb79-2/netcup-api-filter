@@ -124,6 +124,7 @@ password = "generate"  # Special value: generates random password (logged once)
 # password = "SetMe123!"  # Or set explicit password
 is_approved = true  # Auto-approve (skip admin workflow)
 must_change_password = false
+is_admin = false  # Optional: mark as admin (allows admin console login)
 ```
 
 ## Section Details
@@ -202,6 +203,11 @@ Preseeds user accounts (useful for user-owned backends).
 | `password` | string | Yes | Password or `"generate"` for random |
 | `is_approved` | bool | No | Auto-approve? (default: true) |
 | `must_change_password` | bool | No | Force password change on first login? (default: false) |
+| `is_admin` | bool | No | Create as admin account? (default: false) |
+
+Notes:
+- Admins are not a separate entity: they are regular `Account` rows with `is_admin = 1`.
+- Setting `is_admin = true` makes the account eligible to log into the admin console.
 
 **Special Values:**
 - `password = "generate"`: Generates random password (logged once in startup logs - **SAVE IT!**)

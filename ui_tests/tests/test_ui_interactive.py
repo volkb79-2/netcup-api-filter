@@ -11,7 +11,6 @@ These tests click every button, fill every form, and test every link to ensure:
 Run with: pytest ui_tests/tests/test_ui_interactive.py -v
 """
 import pytest
-import asyncio
 import re
 from pathlib import Path
 import sys
@@ -163,9 +162,9 @@ class TestNavigationConsistencyMatrix:
         ("/admin/accounts", "Accounts"),
         ("/admin/realms/pending", "Pending"),
         ("/admin/audit", "Audit Logs"),
-        ("/admin/config/netcup", "Netcup API"),
-        ("/admin/config/email", "Email Config"),
+        ("/admin/settings", "Settings"),
         ("/admin/system", "System Info"),
+        ("/admin/app-logs", "Application Logs"),
         ("/admin/change-password", "Change Password"),
     ]
     
@@ -177,9 +176,9 @@ class TestNavigationConsistencyMatrix:
     ]
     
     EXPECTED_DROPDOWN_LINKS = [
-        "/admin/config/netcup",
-        "/admin/config/email",
+        "/admin/settings",
         "/admin/system",
+        "/admin/app-logs",
     ]
 
     async def test_navbar_present_on_all_admin_pages(self, active_profile):
@@ -323,7 +322,11 @@ class TestButtonInteractions:
                 
                 # Click generate
                 await generate_btn.click()
-                await asyncio.sleep(0.3)
+                # Wait for password generation to complete
+                await browser._page.wait_for_function(
+                    "document.getElementById('new_password')?.value?.length > 0",
+                    timeout=2000
+                )
                 
                 # Check password was generated
                 password = await browser.evaluate(
@@ -357,7 +360,8 @@ class TestButtonInteractions:
             config_dropdown = await browser.query_selector('a.dropdown-toggle:has-text("Config")')
             if config_dropdown:
                 await config_dropdown.click()
-                await asyncio.sleep(0.3)
+                # Wait for dropdown to open
+                await browser._page.wait_for_selector('.dropdown-menu.show', timeout=2000)
                 
                 # Dropdown should be visible
                 dropdown_menu = await browser.query_selector('.dropdown-menu.show')
@@ -372,7 +376,8 @@ class TestButtonInteractions:
             theme_btn = await browser.query_selector('button[title*="Theme"]')
             if theme_btn:
                 await theme_btn.click()
-                await asyncio.sleep(0.3)
+                # Wait briefly for Alpine.js to toggle dropdown
+                await browser._page.wait_for_timeout(100)
                 
                 # Dropdown should show
                 is_visible = await browser.evaluate("""
@@ -457,13 +462,13 @@ class TestFormInteractions:
             await browser.verify_status(200)
             
             # Fill config fields
-            await browser.fill('input[name="customer_number"]', "123456")
+            await browser.fill('input[name="customer_id"]', "123456")
             await browser.fill('input[name="api_key"]', "test-api-key")
             await browser.fill('input[name="api_password"]', "test-password")
             
             # Verify values retained
             customer = await browser.evaluate(
-                "() => document.querySelector('input[name=\"customer_number\"]')?.value"
+                "() => document.querySelector('input[name=\"customer_id\"]')?.value"
             )
             assert customer == "123456", f"Customer number should be retained, got {customer}"
 
@@ -526,8 +531,8 @@ class TestLinkNavigation:
             accounts_link = await browser.query_selector('a[href="/admin/accounts"]')
             assert accounts_link, "Accounts link should exist on dashboard (stat card or nav)"
             
-            await accounts_link.click()
-            await asyncio.sleep(0.5)
+            async with browser._page.expect_navigation(wait_until="domcontentloaded"):
+                await accounts_link.click()
             
             h1 = await browser.text("main h1")
             assert "Accounts" in h1, f"Should navigate to accounts page, got h1: {h1}"
@@ -593,13 +598,18 @@ class TestJavaScriptBehavior:
             
             # Type weak password
             await browser.fill("#new_password", "abc")
-            await asyncio.sleep(0.2)
+            # Wait for entropy calculation
+            await browser._page.wait_for_function(
+                "document.getElementById('entropyBadge')?.textContent?.length > 0",
+                timeout=1000
+            )
             
             weak_entropy = await browser.text("#entropyBadge")
             
             # Type strong password
             await browser.fill("#new_password", "Th1s!sAStr0ng&C0mpl3xP@ssw0rd#2024")
-            await asyncio.sleep(0.2)
+            # Wait for entropy recalculation
+            await browser._page.wait_for_timeout(100)
             
             strong_entropy = await browser.text("#entropyBadge")
             
@@ -625,7 +635,7 @@ class TestJavaScriptBehavior:
             pages = ["/admin/", "/admin/accounts", "/admin/audit"]
             for page in pages:
                 await browser.goto(settings.url(page))
-                await asyncio.sleep(0.5)
+                await browser._page.wait_for_load_state('domcontentloaded')
             
             # Filter out known acceptable errors (e.g., network issues, List.js init on pages without tables)
             known_non_critical = [

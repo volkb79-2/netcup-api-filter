@@ -58,7 +58,7 @@ class TestMobileResponsiveness:
                 
                 # Wait a moment for animation
                 import asyncio
-                await asyncio.sleep(0.3)
+                await browser.wait_for_timeout(300)
                 
                 # Check that nav links are now visible
                 nav_collapse = await browser.query_selector('#mainNav.show, #mainNav.collapsing')
@@ -160,14 +160,15 @@ class TestTouchFriendlyUI:
             await browser.set_viewport(MOBILE_VIEWPORT["width"], MOBILE_VIEWPORT["height"])
             await workflows.ensure_admin_dashboard(browser)
             
-            # Navigate to a page with modals (accounts page has delete modals)
-            await browser.goto(settings.url("/admin/accounts"))
-            
-            # Check that Bootstrap modal classes exist
-            page_html = await browser.html("body")
-            # Modal markup should be in the page (even if not visible)
-            # This confirms modals are properly structured for mobile
-            assert "modal" in page_html.lower() or "Bootstrap" in page_html
+            # Navigate to a page with a known Bootstrap modal.
+            # The audit log page includes the GeoIP lookup modal markup.
+            await browser.goto(settings.url("/admin/audit"))
+
+            modal = await browser.query_selector("#geoipModal")
+            assert modal is not None, "Expected GeoIP modal markup on /admin/audit"
+
+            dialog = await browser.query_selector("#geoipModal .modal-dialog")
+            assert dialog is not None, "Modal should include a .modal-dialog container"
 
 
 class TestViewportMeta:

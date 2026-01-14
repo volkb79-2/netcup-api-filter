@@ -15,9 +15,23 @@
 # 1. Environment variables (runtime overrides)
 # 2. Settings table (admin UI changes)
 # 3. app-config.toml (initial deployment config) ← YOU ARE HERE
-# 4. .env.defaults (universal defaults)
+# 4. .env/.env.defaults (env-file defaults)
 #
 # =============================================================================
+
+# =============================================================================
+# INITIAL SETUP (ACCOUNTS)
+# =============================================================================
+# Admins are regular accounts with `is_admin = true`.
+# Define at least one admin via [[users]] for deterministic first-run seeding.
+
+# [[users]]
+# username = "admin"                    # Login username
+# email = "admin@example.com"            # Recipient for email-based 2FA and password reset
+# password = "CHANGE_ME_STRONG_PASSWORD" # Or "generate" to auto-generate (shown once in logs)
+# is_approved = true                      # Auto-approve (skip admin approval workflow)
+# must_change_password = false            # Force change on first login?
+# is_admin = true                         # Admin account (can log into admin console)
 
 # =============================================================================
 # RATE LIMITING
@@ -132,9 +146,9 @@ service_name = "platform-powerdns"
 provider = "powerdns"
 owner = "platform"
 display_name = "Platform PowerDNS"
-# Special value "auto" for api_url triggers auto-detection (PUBLIC_FQDN or container hostname)
-# Use "${POWERDNS_API_KEY}" to reference environment variable
-config = { api_url = "auto", api_key = "${POWERDNS_API_KEY}", server_id = "localhost" }
+# Use "${POWERDNS_API_URL}" and "${POWERDNS_API_KEY}" to reference environment variables.
+# NOTE: deploy builds render these placeholders into a self-contained app-config.toml.
+config = { api_url = "${POWERDNS_API_URL}", api_key = "${POWERDNS_API_KEY}", server_id = "localhost" }
 
 # User-owned backend example (requires user to exist - see [[users]] section)
 # [[backends]]
@@ -180,13 +194,27 @@ require_email_verification = true
 # Define users to create on first deployment (useful for user-owned backends)
 # Each user is created as an Account in the database
 
+# TIP: Prefer creating a small set of known test users here for production-parity
+# testing (webhosting/live), rather than relying on ad-hoc UI creation.
+# The app reads this file once on first start, writes users to the DB, and then
+# deletes the file.
+
+# Example user with explicit password (for deterministic testing)
 # [[users]]
-# username = "alice"
-# email = "alice@example.com"
-# # password = "generate"  # Special value "generate" creates random password (shown once in logs)
-# # password = "SetMe123!"  # Or set explicit password (must meet security requirements)
-# is_approved = true  # Auto-approve (skip admin approval)
-# must_change_password = false  # Require password change on first login?
+# username = "naf-user"                  # Login username
+# email = "naf-user@vxxu.de"             # Recipient for email-based 2FA and password reset
+# password = "CHANGE_ME_STRONG_PASSWORD" # Or "generate" to auto-generate (shown once in logs)
+# is_approved = true                      # Auto-approve (skip admin approval workflow)
+# must_change_password = false            # Force change on first login?
+# is_admin = false                        # Optional: true = admin account (can log into admin console)
+
+# Example user with generated password (copy from logs on first start)
+# [[users]]
+# username = "naf-user2"
+# email = "naf-user2@vxxu.de"
+# password = "generate"
+# is_approved = true
+# must_change_password = true
 
 # =============================================================================
 # TESTING CONFIGURATION

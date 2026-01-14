@@ -285,6 +285,8 @@ class TestRateLimiting:
             for _ in range(5):
                 response = await client.get(url, headers=headers)
                 responses.append(response.status_code)
+                # Small spacing to avoid hammering too fast and to better
+                # simulate real clients without requiring Playwright.
                 await asyncio.sleep(0.1)
             
             # All should be 401 (not 500 or errors)
