@@ -13,6 +13,10 @@ set -euo pipefail
 WORKSPACE_DIR="${REPO_ROOT:?REPO_ROOT must be set (source .env.workspace)}"
 DEPLOY_LOCAL_DIR="${WORKSPACE_DIR}/deploy-local"
 
+# Load service hostnames/URLs (e.g., MOCK_NETCUP_API_URL) for tests.
+# This is config-driven and avoids hardcoding container names in Python.
+source "${WORKSPACE_DIR}/.env.services"
+
 # Parse arguments
 WITH_MOCKS=0
 SKIP_BUILD=0
@@ -48,7 +52,18 @@ echo ""
 # 0. Start mock services if requested
 if [ "$WITH_MOCKS" -eq 1 ]; then
     echo -e "${BLUE}Starting mock services (Mailpit, GeoIP, Netcup API)...${NC}"
-    "${WORKSPACE_DIR}/tooling/mailpit/docker compose up -d && tooling/geoip-mock/docker compose up -d && tooling/netcup-api-mock/docker compose up -d" --wait
+    (
+        cd "${WORKSPACE_DIR}/tooling/mailpit"
+        docker compose up -d --wait
+    )
+    (
+        cd "${WORKSPACE_DIR}/tooling/geoip-mock"
+        docker compose up -d --wait
+    )
+    (
+        cd "${WORKSPACE_DIR}/tooling/netcup-api-mock"
+        docker compose up -d --wait
+    )
     echo ""
 fi
 
@@ -112,12 +127,24 @@ if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwri
     # The workspace is mounted at /workspaces/netcup-api-filter in the container
     # We use the wrapper script which handles user permissions and environment variables
     echo -e "${BLUE}Running tests in Playwright container...${NC}"
-    "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${TEST_PATH:-ui_tests/tests}" -v
+    # Optional extra pytest args (space-delimited). Keep empty by default.
+    EXTRA_ARGS=()
+    if [ -n "${UI_PYTEST_ARGS:-}" ]; then
+        # shellcheck disable=SC2206
+        EXTRA_ARGS=(${UI_PYTEST_ARGS})
+    fi
+
+    "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${TEST_PATH:-ui_tests/tests}" -v "${EXTRA_ARGS[@]}"
 
 else
     echo -e "${YELLOW}Playwright container not running. Running tests locally...${NC}"
     # Run tests locally if Playwright container is not available
-    pytest "${TEST_PATH:-ui_tests/tests}" -v --tb=short
+    EXTRA_ARGS=()
+    if [ -n "${UI_PYTEST_ARGS:-}" ]; then
+        # shellcheck disable=SC2206
+        EXTRA_ARGS=(${UI_PYTEST_ARGS})
+    fi
+    pytest "${TEST_PATH:-ui_tests/tests}" -v --tb=short "${EXTRA_ARGS[@]}"
 fi
 
 TEST_EXIT_CODE=$?

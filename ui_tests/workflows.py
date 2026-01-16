@@ -626,7 +626,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                             f"""
                             (function() {{
                                 const input = document.getElementById('code') || document.querySelector(\"#code, input[name='code']\");
-                                const form = document.getElementById('twoFaForm');
+                                const form = (input && (input.form || input.closest('form'))) || document.getElementById('twoFaForm') || document.querySelector("form[action*='2fa']");
                                 if (input && form) {{
                                     input.value = '{code}';
                                     form.submit();
@@ -776,7 +776,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                     f"""
                     (function() {{
                         const input = document.getElementById('code') || document.querySelector("#code, input[name='code']");
-                        const form = document.getElementById('twoFaForm');
+                        const form = (input && (input.form || input.closest('form'))) || document.getElementById('twoFaForm') || document.querySelector("form[action*='2fa']");
                         if (input && form) {{
                             input.value = '{code}';
                             form.submit();
@@ -841,9 +841,21 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
         await browser.goto(settings.url("/admin/"), wait_until="domcontentloaded")
         await anyio.sleep(0.2)
         current_url = browser._page.url
-        if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
-            print("[DEBUG] Session reuse: already authenticated for admin")
-            return browser
+        if (
+            "/admin/" in current_url
+            and "/admin/login" not in current_url
+            and "/2fa" not in current_url
+            and "/admin/change-password" not in current_url
+        ):
+            # Confirm we really landed on the dashboard, not a forced setup screen.
+            try:
+                h1 = await browser.text("main h1")
+            except Exception:
+                h1 = await browser.text("h1")
+
+            if "Dashboard" in (h1 or ""):
+                print("[DEBUG] Session reuse: already authenticated for admin")
+                return browser
     except Exception:
         # Non-fatal: if backend/proxy hiccups, fall back to explicit login flow.
         pass
@@ -851,7 +863,12 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     # Check if we're already logged in (on an admin page that isn't login)
     # Use live URL (not cached)
     current_url = browser._page.url
-    if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+    if (
+        "/admin/" in current_url
+        and "/admin/login" not in current_url
+        and "/2fa" not in current_url
+        and "/admin/change-password" not in current_url
+    ):
         # Already logged in - just navigate to dashboard
         print("[DEBUG] Already logged in, navigating to dashboard")
         await browser.goto(settings.url("/admin/"))
@@ -864,7 +881,12 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     
     # Check if we were redirected (already logged in via session)
     current_url = browser._page.url
-    if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+    if (
+        "/admin/" in current_url
+        and "/admin/login" not in current_url
+        and "/2fa" not in current_url
+        and "/admin/change-password" not in current_url
+    ):
         print("[DEBUG] Already logged in (redirected from login), on dashboard")
         return browser
     
@@ -874,7 +896,12 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     password_field = None
     for attempt in range(2):
         current_url = browser._page.url
-        if "/admin/" in current_url and "/admin/login" not in current_url and "/2fa" not in current_url:
+        if (
+            "/admin/" in current_url
+            and "/admin/login" not in current_url
+            and "/2fa" not in current_url
+            and "/admin/change-password" not in current_url
+        ):
             print("[DEBUG] Already on admin page (redirected/active session)")
             return browser
 
@@ -889,14 +916,22 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
             await anyio.sleep(0.2)
 
     if not username_field or not password_field:
-        body_preview = (await browser.text("body"))[:300]
-        raise AssertionError(
-            "Admin login form did not render (#username/#password not found). "
-            f"url={browser._page.url} title={browser.current_title!r} preview={body_preview!r}"
-        )
+        current_url = browser._page.url
+        if "/admin/change-password" in current_url:
+            # This can happen when a saved Playwright storage state contains a
+            # still-valid session cookie, but the deployment/database was rebuilt.
+            # In that case, the server forces the initial setup flow.
+            print("[DEBUG] Redirected to /admin/change-password without login form; continuing setup flow")
+        else:
+            body_preview = (await browser.text("body"))[:300]
+            raise AssertionError(
+                "Admin login form did not render (#username/#password not found). "
+                f"url={current_url} title={browser.current_title!r} preview={body_preview!r}"
+            )
     
-    await browser.fill("#username", settings.admin_username)
-    await browser.fill("#password", settings.admin_password)
+    if username_field and password_field:
+        await browser.fill("#username", settings.admin_username)
+        await browser.fill("#password", settings.admin_password)
 
     # Submit the login form (with a small retry loop).
     # In live/proxied environments it's possible to get bounced back to /admin/login
@@ -906,69 +941,70 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     max_attempts = max(1, int(os.getenv("UI_ADMIN_LOGIN_ATTEMPTS", "2")))
     retry_delay = float(os.getenv("UI_ADMIN_LOGIN_RETRY_DELAY", "1.0"))
 
-    for attempt in range(max_attempts):
-        print("[DEBUG] Submitting login form...")
-        print(f"[DEBUG] Current URL: {browser._page.url}")
-        print(f"[DEBUG] Credentials: {settings.admin_username}/{'*' * len(settings.admin_password)}")
+    if username_field and password_field:
+        for attempt in range(max_attempts):
+            print("[DEBUG] Submitting login form...")
+            print(f"[DEBUG] Current URL: {browser._page.url}")
+            print(f"[DEBUG] Credentials: {settings.admin_username}/{'*' * len(settings.admin_password)}")
 
-        # Be specific: the standalone template includes other buttons; clicking a
-        # generic submit button can occasionally hit the wrong control.
-        await browser.click("form[action*='/admin/login'] button[type='submit']")
-        await anyio.sleep(1.0)  # Give time for navigation/redirect
-        print(f"[DEBUG] URL after form submit: {browser._page.url}")
+            # Be specific: the standalone template includes other buttons; clicking a
+            # generic submit button can occasionally hit the wrong control.
+            await browser.click("form[action*='/admin/login'] button[type='submit']")
+            await anyio.sleep(1.0)  # Give time for navigation/redirect
+            print(f"[DEBUG] URL after form submit: {browser._page.url}")
 
-        # Check for error messages
-        body_text = await browser.text("body")
-        has_invalid = "Invalid username or password" in body_text or "Invalid credentials" in body_text
-        print(f"[DEBUG] Body text check: has_invalid={has_invalid}, len={len(body_text)}")
-        if has_invalid:
-            # Only fail if we're still on login page (use live URL)
-            if "/login" in browser._page.url:
-                print(f"[ERROR] Login failed. Page shows: {body_text[:500]}")
-                raise AssertionError(f"Login failed: {body_text[:200]}")
-            else:
-                # Flash message from previous attempt but we're logged in
-                print(f"[DEBUG] Ignoring stale 'Invalid' flash message - already on dashboard")
+            # Check for error messages
+            body_text = await browser.text("body")
+            has_invalid = "Invalid username or password" in body_text or "Invalid credentials" in body_text
+            print(f"[DEBUG] Body text check: has_invalid={has_invalid}, len={len(body_text)}")
+            if has_invalid:
+                # Only fail if we're still on login page (use live URL)
+                if "/login" in browser._page.url:
+                    print(f"[ERROR] Login failed. Page shows: {body_text[:500]}")
+                    raise AssertionError(f"Login failed: {body_text[:200]}")
+                else:
+                    # Flash message from previous attempt but we're logged in
+                    print(f"[DEBUG] Ignoring stale 'Invalid' flash message - already on dashboard")
 
-        if "lockout" in body_text.lower() or "locked" in body_text.lower():
-            print(f"[ERROR] Account locked out. Page shows: {body_text[:500]}")
-            raise AssertionError(f"Account locked: {body_text[:200]}")
+            if "lockout" in body_text.lower() or "locked" in body_text.lower():
+                print(f"[ERROR] Account locked out. Page shows: {body_text[:500]}")
+                raise AssertionError(f"Account locked: {body_text[:200]}")
 
-        # Handle 2FA if we're redirected there
-        handled_2fa = await handle_2fa_if_present(browser)
+            # Handle 2FA if we're redirected there
+            handled_2fa = await handle_2fa_if_present(browser)
 
-        # If 2FA was handled, give extra time for navigation to complete
-        if handled_2fa:
-            print("[DEBUG] 2FA was handled, waiting for navigation...")
-            await anyio.sleep(1.0)
+            # If 2FA was handled, give extra time for navigation to complete
+            if handled_2fa:
+                print("[DEBUG] 2FA was handled, waiting for navigation...")
+                await anyio.sleep(1.0)
 
-        # Re-check current page after potential 2FA (use live URL)
-        current_url = browser._page.url
-        print(f"[DEBUG] URL after 2FA check: {current_url}")
+            # Re-check current page after potential 2FA (use live URL)
+            current_url = browser._page.url
+            print(f"[DEBUG] URL after 2FA check: {current_url}")
 
-        # If we're still on the login page (but NOT on the 2FA step), we did not
-        # establish a session. Allow a retry before failing hard.
-        if "/admin/login" in current_url and "/2fa" not in current_url:
-            if attempt < max_attempts - 1:
-                print(f"[WARN] Still on /admin/login after submit; retrying ({attempt + 1}/{max_attempts})...")
-                await browser._page.reload(wait_until="domcontentloaded")
-                await anyio.sleep(retry_delay)
-                await browser.fill("#username", settings.admin_username)
-                await browser.fill("#password", settings.admin_password)
-                continue
+            # If we're still on the login page (but NOT on the 2FA step), we did not
+            # establish a session. Allow a retry before failing hard.
+            if "/admin/login" in current_url and "/2fa" not in current_url:
+                if attempt < max_attempts - 1:
+                    print(f"[WARN] Still on /admin/login after submit; retrying ({attempt + 1}/{max_attempts})...")
+                    await browser._page.reload(wait_until="domcontentloaded")
+                    await anyio.sleep(retry_delay)
+                    await browser.fill("#username", settings.admin_username)
+                    await browser.fill("#password", settings.admin_password)
+                    continue
 
-            try:
-                login_h1 = await browser.text("h1")
-            except Exception:
-                login_h1 = ""
-            body_preview = (await browser.text("body"))[:500]
-            raise AssertionError(
-                "Admin login did not establish a session (still on /admin/login). "
-                f"url={current_url} h1={login_h1!r} preview={body_preview!r}"
-            )
+                try:
+                    login_h1 = await browser.text("h1")
+                except Exception:
+                    login_h1 = ""
+                body_preview = (await browser.text("body"))[:500]
+                raise AssertionError(
+                    "Admin login did not establish a session (still on /admin/login). "
+                    f"url={current_url} h1={login_h1!r} preview={body_preview!r}"
+                )
 
-        # Successful transition away from /admin/login (or into /2fa)
-        break
+            # Successful transition away from /admin/login (or into /2fa)
+            break
     
     # Check if we're on change password page or dashboard
     # Try main h1 first (standard pages), then h1 (standalone pages like change-password)
@@ -1115,17 +1151,21 @@ async def ensure_user_dashboard(browser: Browser) -> Browser:
     import os
 
     import pytest
-    from netcup_api_filter.config_defaults import get_default
+    from ui_tests.env_defaults import get_env_default
 
-    # Already logged in?
-    current_url = browser._page.url
-    if "/account/" in current_url and "/account/login" not in current_url and "/2fa" not in current_url:
-        await browser.goto(settings.url("/account/dashboard"))
+    # Prefer session reuse: probe the dashboard first.
+    try:
+        await browser.goto(settings.url("/account/dashboard"), wait_until="domcontentloaded")
         await anyio.sleep(0.3)
-        return browser
+        current_url = browser._page.url
+        if "/account/login" not in current_url and "/account/login/2fa" not in current_url:
+            return browser
+    except Exception:
+        # Fall through to explicit login.
+        pass
 
-    demo_username = os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_default("DEFAULT_TEST_CLIENT_ID")
-    demo_password = os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD") or get_default("DEFAULT_TEST_ACCOUNT_PASSWORD")
+    demo_username = os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_env_default("DEFAULT_TEST_CLIENT_ID")
+    demo_password = os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD") or get_env_default("DEFAULT_TEST_ACCOUNT_PASSWORD")
     if not demo_username or not demo_password:
         pytest.skip(
             "No demo account credentials configured for account portal tests "
@@ -1143,9 +1183,32 @@ async def ensure_user_dashboard(browser: Browser) -> Browser:
     await browser.fill("#username", demo_username)
     await browser.fill("#password", demo_password)
     await browser.click("button[type='submit']")
-    await anyio.sleep(1.0)
 
-    await handle_2fa_if_present(browser, timeout=10.0)
+    # After submitting credentials, the portal redirects to /account/login/2fa.
+    # Don't rely on fixed sleeps here: if we miss the redirect, we will later
+    # (correctly) be bounced back to /account/login and interpret it as a
+    # missing session.
+    try:
+        import re
+
+        await browser._page.wait_for_url(
+            re.compile(r".*/account/(?:login/2fa|login|dashboard)(?:\?.*)?$"),
+            timeout=10_000,
+        )
+    except Exception:
+        # Best-effort: keep going and let subsequent checks/handling explain why.
+        pass
+
+    # Handle the mandatory 2FA step if we are on the 2FA page.
+    await handle_2fa_if_present(browser, timeout=20.0)
+
+    # If 2FA completed successfully, we should no longer be on the 2FA page.
+    # (Sometimes there's a short redirect delay after form submission.)
+    if "/account/login/2fa" in browser._page.url:
+        try:
+            await browser._page.wait_for_url(lambda url: "/account/login/2fa" not in url, timeout=10_000)
+        except Exception:
+            pass
 
     # Land on dashboard to verify we are authenticated.
     await browser.goto(settings.url("/account/dashboard"), wait_until="domcontentloaded")
@@ -1153,14 +1216,42 @@ async def ensure_user_dashboard(browser: Browser) -> Browser:
 
     # If redirected back to login, assume demo account is not usable in this environment.
     if "/account/login" in browser._page.url:
+        alert_text = ""
+        try:
+            alert_text = (await browser.text(".alert")) or ""
+        except Exception:
+            alert_text = ""
         body = await browser.text("body")
-        lowered = body.lower()
+        lowered = (body or "").lower()
         if "invalid" in lowered or "locked" in lowered:
             pytest.skip("Demo account login failed or account locked")
-        pytest.skip("Account portal login did not establish a session")
+
+        # If we are stuck in a pending 2FA state, communicate that explicitly.
+        if "2fa" in lowered or "verification code" in lowered:
+            msg = (alert_text or "").strip()
+            suffix = f": {msg}" if msg else ""
+            pytest.skip(f"Account portal still requires 2FA{suffix}")
+
+        msg = (alert_text or "").strip()
+        suffix = f": {msg}" if msg else ""
+        pytest.skip(f"Account portal login did not establish a session{suffix}")
 
     # Basic sanity check that the dashboard rendered.
     await browser.wait_for_text("h1", "Dashboard", timeout=10.0)
+
+    # Persist session state to reduce repeated account logins across tests.
+    from ui_tests.deployment_state import get_playwright_storage_state_path
+
+    storage_state_path = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
+    if not storage_state_path:
+        storage_state_path = str(get_playwright_storage_state_path())
+
+    if storage_state_path:
+        try:
+            os.makedirs(os.path.dirname(storage_state_path) or ".", exist_ok=True)
+            await browser._page.context.storage_state(path=storage_state_path)
+        except Exception:
+            pass
 
     return browser
 
@@ -1261,13 +1352,83 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     Wrong credential testing should be done in a separate, isolated test.
     """
     from netcup_api_filter.utils import generate_token
-    new_password = generate_token()  # Generate secure random password
+    # Auth-flow test: must not inherit persisted sessions.
+    settings.refresh_credentials()
+
+    # Generate a strong password that satisfies special-char requirements.
+    base_token = generate_token()
+    new_password = base_token[:60] + "@#$%"
+
+    async def _wait_for_admin_change_password_heading(timeout: float = 10.0) -> str:
+        deadline = anyio.current_time() + timeout
+        last_heading = ""
+        while anyio.current_time() <= deadline:
+            try:
+                last_heading = await browser.text("main h1")
+            except Exception:
+                try:
+                    last_heading = await browser.text("h1")
+                except Exception:
+                    last_heading = ""
+
+            if "Change Password" in (last_heading or "") or "Initial Setup" in (last_heading or ""):
+                return last_heading or ""
+
+            await anyio.sleep(0.2)
+
+        current_url = browser._page.url or ""
+        raise AssertionError(
+            "Timed out waiting for admin change-password heading. "
+            f"url={current_url} last_heading={last_heading!r}"
+        )
+
+    async def _force_fresh_admin_login_page() -> None:
+        # Prefer server-side logout first.
+        try:
+            await browser.goto(settings.url("/admin/logout"), wait_until="domcontentloaded")
+        except Exception:
+            pass
+
+        # Ensure we have an origin before touching storage APIs.
+        try:
+            await browser.goto(settings.url("/"), wait_until="domcontentloaded")
+        except Exception:
+            pass
+
+        try:
+            await browser._page.context.clear_cookies()
+        except Exception:
+            pass
+        try:
+            await browser.evaluate(
+                """
+                () => {
+                    try { window.localStorage?.clear?.(); } catch (e) {}
+                    try { window.sessionStorage?.clear?.(); } catch (e) {}
+                }
+                """
+            )
+        except Exception:
+            pass
+
+        await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+        await anyio.sleep(0.2)
+        await wait_for_selector(browser, "#username", timeout=10.0)
+        await wait_for_selector(browser, "#password", timeout=10.0)
     
     # 1. Test access to admin pages is prohibited without login
-    await browser.goto(settings.url("/admin/"))
-    await wait_for_selector(browser, ".login-container form button[type='submit']")
-    await browser.goto(settings.url("/admin/accounts"))
-    await wait_for_selector(browser, ".login-container form button[type='submit']")
+    await _force_fresh_admin_login_page()
+    for path in ("/admin/", "/admin/accounts"):
+        await browser.goto(settings.url(path), wait_until="domcontentloaded")
+        await anyio.sleep(0.2)
+        current_url = browser._page.url or ""
+        # Most deployments redirect to /admin/login. If they render an error page
+        # instead, force /admin/login and ensure the login form is present.
+        if "/admin/login" not in current_url:
+            await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+            await anyio.sleep(0.2)
+        await wait_for_selector(browser, "#username", timeout=10.0)
+        await wait_for_selector(browser, "#password", timeout=10.0)
     
     # 2. Login with correct credentials
     await browser.goto(settings.url("/admin/login"))
@@ -1311,7 +1472,7 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     if "/admin/change-password" not in current_url:
         await browser.goto(settings.url("/admin/change-password"))
     
-    await browser.wait_for_text("main h1", "Change Password")
+    await _wait_for_admin_change_password_heading(timeout=10.0)
     
     # Set consistent viewport before screenshot (NO HARDCODED VALUES)
     import os
@@ -1322,13 +1483,20 @@ async def perform_admin_authentication_flow(browser: Browser) -> str:
     # Capture password change page screenshot
     await browser.screenshot("00b-admin-password-change")
     
-    # Test change password with non-matching passwords
+    # Test change password with non-matching passwords (avoid hardcoded passwords)
+    bad_a_base = generate_token()
+    bad_b_base = generate_token()
+    bad_password_a = bad_a_base[:60] + "@#$%"
+    bad_password_b = bad_b_base[:60] + "@#$%"
+    if bad_password_a == bad_password_b:
+        bad_password_b = bad_password_b + "a"
+
     await browser.fill("#current_password", settings.admin_password)
-    await browser.fill("#new_password", "NewPassword123!")
-    await browser.fill("#confirm_password", "DifferentPassword123!")
+    await browser.fill("#new_password", bad_password_a)
+    await browser.fill("#confirm_password", bad_password_b)
     await browser.submit("form")
     await anyio.sleep(0.5)
-    await browser.wait_for_text("main h1", "Change Password")
+    await _wait_for_admin_change_password_heading(timeout=10.0)
     body_text = await browser.text("body")
     assert "New passwords do not match" in body_text or "danger" in body_text
     
@@ -1793,7 +1961,8 @@ async def admin_configure_netcup_api(
     await browser.fill('input[name="timeout"]', timeout)
     
     await browser.submit("form")
-    await browser.wait_for_text(".flash-messages", "Netcup API configuration saved successfully")
+    # Flash messages are rendered by base.html in a `.flash-container`.
+    await browser.wait_for_text(".flash-container", "Netcup API configuration saved")
 
 
 async def admin_create_client_and_extract_token(browser: Browser, data: ClientFormData) -> str:

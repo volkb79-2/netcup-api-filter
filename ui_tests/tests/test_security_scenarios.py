@@ -36,7 +36,11 @@ class TestAuthenticationSecurity:
         affecting other tests.
         """
         async with browser_session() as browser:
+            # Persisted storage-state may already be authenticated.
+            # Clear cookies so we reliably get the login form.
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/admin/login"))
+            await browser._page.wait_for_selector("#username")
             
             # Single wrong login attempt
             await browser.fill("#username", "nonexistent")
@@ -55,7 +59,9 @@ class TestAuthenticationSecurity:
     async def test_account_portal_login_invalid_credentials(self, active_profile):
         """Verify account portal rejects invalid credentials."""
         async with browser_session() as browser:
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/account/login"))
+            await browser._page.wait_for_selector("#username")
             
             # Try invalid login
             await browser.fill("#username", "invalid-user")
@@ -78,7 +84,9 @@ class TestCSRFProtection:
     async def test_login_form_has_csrf_token(self, active_profile):
         """Verify login forms include CSRF tokens."""
         async with browser_session() as browser:
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/admin/login"))
+            await browser._page.wait_for_selector("#username")
             
             # Check for CSRF token in form
             page_html = await browser.html("body")
@@ -87,7 +95,9 @@ class TestCSRFProtection:
     async def test_account_login_form_has_csrf_token(self, active_profile):
         """Verify account login form includes CSRF token."""
         async with browser_session() as browser:
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/account/login"))
+            await browser._page.wait_for_selector("#username")
             
             # Check for CSRF token in form
             page_html = await browser.html("body")
@@ -219,6 +229,9 @@ class TestSessionSecurity:
     async def test_admin_pages_require_authentication(self, active_profile):
         """Verify admin pages require authentication."""
         async with browser_session() as browser:
+            # Persisted storage-state may already be authenticated.
+            # Clear cookies so this test truly verifies unauthenticated access.
+            await browser._page.context.clear_cookies()
             # Try to access admin page directly
             await browser.goto(settings.url("/admin/accounts"))
             await anyio.sleep(0.5)
@@ -230,6 +243,7 @@ class TestSessionSecurity:
     async def test_account_pages_require_authentication(self, active_profile):
         """Verify account pages require authentication."""
         async with browser_session() as browser:
+            await browser._page.context.clear_cookies()
             # Try to access account dashboard directly
             await browser.goto(settings.url("/account/dashboard"))
             await anyio.sleep(0.5)
@@ -317,7 +331,9 @@ class TestSecurityHeaders:
     async def test_content_type_is_set(self, active_profile):
         """Verify pages have proper content type."""
         async with browser_session() as browser:
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/admin/login"))
+            await browser._page.wait_for_selector("#username")
             
             # Page should render as HTML
             body_html = await browser.html("body")
@@ -358,6 +374,7 @@ class TestXSSPrevention:
         async with browser_session() as browser:
             # Try XSS in URL parameter
             xss_url = "/admin/login?error=<script>alert('xss')</script>"
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url(xss_url))
             await anyio.sleep(0.5)
             

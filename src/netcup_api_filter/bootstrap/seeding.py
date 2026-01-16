@@ -76,6 +76,31 @@ def seed_settings_from_env():
     from ..database import set_setting, get_setting
     
     defaults = _get_env_defaults()
+
+    def _parse_bool(raw: object, *, default: bool = False) -> bool:
+        if raw is None:
+            return default
+        if isinstance(raw, bool):
+            return raw
+        value = str(raw).strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    deployment_target = os.environ.get("DEPLOYMENT_TARGET", "").strip().lower()
+    if deployment_target == "local":
+        demo_pages_default_raw = defaults.get("DEMO_PAGES_ENABLED_LOCAL", "true")
+    elif deployment_target == "webhosting":
+        demo_pages_default_raw = defaults.get("DEMO_PAGES_ENABLED_WEBHOSTING", "false")
+    else:
+        # Safe default when target is unknown: prefer webhosting behavior.
+        demo_pages_default_raw = defaults.get(
+            "DEMO_PAGES_ENABLED_WEBHOSTING",
+            defaults.get("DEMO_PAGES_ENABLED_LOCAL", "false"),
+        )
+    demo_pages_enabled = _parse_bool(demo_pages_default_raw, default=False)
     
     # Map of Settings table keys to env defaults keys
     settings_map = {
@@ -84,6 +109,7 @@ def seed_settings_from_env():
         'api_rate_limit': defaults.get('API_RATE_LIMIT', '60 per minute'),
         'password_reset_expiry_hours': '1',  # Conservative default
         'invite_expiry_hours': '48',  # 2 days
+        'enable_demo_pages': demo_pages_enabled,
     }
     
     seeded_count = 0
@@ -212,8 +238,8 @@ def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None)
             username=options.username,
             user_alias=user_alias,
             email=options.email,
-            email_verified=0,  # Not verified yet
-            email_2fa_enabled=0,  # Optional for non-admin accounts
+            email_verified=1,
+            email_2fa_enabled=1,
             totp_enabled=0,
             telegram_enabled=0,
             is_active=1,
@@ -229,6 +255,9 @@ def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None)
         if not account.user_alias:
             account.user_alias = generate_user_alias()
             logger.info(f"Added user_alias to existing account: {options.username}")
+        # Ensure seeded accounts remain login-capable in test deployments.
+        account.email_verified = 1
+        account.email_2fa_enabled = 1
         logger.info(f"Account {options.username} already exists")
     return account
 
@@ -540,6 +569,78 @@ def seed_default_entities(
             primary_secret = plain_token
             all_demo_clients.append((demo_username, plain_token, "Primary demo account"))
             logger.info(f"Created demo account: {demo_username} with token")
+
+        # Create a separate read-only demo account + token for authorization tests.
+        readonly_username = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_ID") or get_default(
+            "DEFAULT_READONLY_TEST_CLIENT_ID",
+            f"{demo_username}-readonly",
+        )
+
+        is_valid, error = validate_username(readonly_username)
+        if not is_valid:
+            readonly_username = f"demoreadonly{secrets.token_urlsafe(4)[:4].lower()}"
+            logger.warning(f"Read-only demo username invalid, using generated: {readonly_username}")
+
+        readonly_realm_fqdn = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_REALM_VALUE") or get_default(
+            "DEFAULT_READONLY_TEST_CLIENT_REALM_VALUE",
+            realm_fqdn,
+        )
+        readonly_realm_type = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_REALM_TYPE") or get_default(
+            "DEFAULT_READONLY_TEST_CLIENT_REALM_TYPE",
+            realm_type,
+        )
+
+        fqdn_parts = readonly_realm_fqdn.split(".")
+        if len(fqdn_parts) > 2:
+            readonly_realm_value = ".".join(fqdn_parts[:-2])
+            readonly_domain = ".".join(fqdn_parts[-2:])
+        else:
+            readonly_realm_value = ""
+            readonly_domain = readonly_realm_fqdn
+
+        readonly_record_types_str = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_RECORD_TYPES") or get_default(
+            "DEFAULT_READONLY_TEST_CLIENT_RECORD_TYPES",
+            record_types_str,
+        )
+        readonly_record_types = [rt.strip() for rt in readonly_record_types_str.split(",")]
+
+        readonly_operations_str = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_OPERATIONS") or get_default(
+            "DEFAULT_READONLY_TEST_CLIENT_OPERATIONS",
+            "read",
+        )
+        readonly_operations = [op.strip() for op in readonly_operations_str.split(",")]
+
+        # Password is not used by API tests, but the account requires a valid value.
+        # Generate a strong value at seed time (no hardcoded secrets).
+        readonly_password = secrets.token_urlsafe(32) + "@#$%"
+
+        readonly_options = DemoAccountSeedOptions(
+            username=readonly_username,
+            password=readonly_password,
+            email=f"{readonly_username}@example.com",
+            realm=RealmSeedOptions(
+                domain=readonly_domain,
+                realm_type=readonly_realm_type,
+                realm_value=readonly_realm_value,
+                record_types=readonly_record_types,
+                operations=readonly_operations,
+            ),
+            token=TokenSeedOptions(
+                token_name="readonly-token",
+                description="Read-only demo token",
+            ),
+        )
+
+        readonly_account = ensure_account(readonly_options, approved_by=admin)
+        db.session.flush()
+        readonly_realm = ensure_realm(readonly_account, readonly_options.realm, approved_by=admin)
+        db.session.flush()
+        readonly_token, readonly_plain_token = ensure_token(readonly_realm, readonly_options.token)
+        db.session.commit()
+
+        if readonly_plain_token:
+            all_demo_clients.append((readonly_username, readonly_plain_token, "Read-only demo account"))
+            logger.info(f"Created read-only demo account: {readonly_username} with token")
         
         # Seed demo activity logs
         seed_demo_audit_logs(demo_account)

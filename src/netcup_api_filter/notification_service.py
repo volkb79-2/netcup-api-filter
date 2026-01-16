@@ -26,6 +26,22 @@ from .models import Account, AccountRealm, APIToken
 logger = logging.getLogger(__name__)
 
 
+def _send_telegram_if_enabled(account: Account, text: str) -> bool:
+    """Send a Telegram notification if the account opted in and Telegram is linked.
+
+    Returns True if a message was sent successfully.
+    """
+    try:
+        if not (account.notify_via_telegram and account.telegram_enabled and account.telegram_chat_id):
+            return False
+        from .telegram_service import send_telegram_message
+
+        return send_telegram_message(chat_id=account.telegram_chat_id, text=text)
+    except Exception as exc:
+        logger.error(f"Telegram notification failed for account={account.username}: {exc}")
+        return False
+
+
 def _get_smtp_config() -> Optional[dict]:
     """Get SMTP/email configuration from the settings store.
 
@@ -1056,12 +1072,21 @@ def notify_failed_login(account: Account, ip_address: str, attempts: int) -> boo
     Returns:
         True if notification sent, False otherwise
     """
-    if not account.email:
-        return False
-    
+    sent_any = False
+
+    sent_any = _send_telegram_if_enabled(
+        account,
+        text=(
+            f"⚠️ Netcup API Filter security alert\n"
+            f"Failed login attempts: {attempts}\n"
+            f"IP: {ip_address}\n"
+            f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        ),
+    ) or sent_any
+
     notifier = _get_notifier()
-    if not notifier:
-        return False
+    if not notifier or not account.email:
+        return sent_any
     
     # Generate email reference ID for traceability
     email_ref = generate_email_ref('alert', account.username)
@@ -1123,7 +1148,7 @@ Ref: {email_ref}
         return True
     except Exception as e:
         logger.error(f"Failed to send failed login notification: {e}")
-        return False
+        return sent_any
 
 
 def notify_new_ip_login(account: Account, ip_address: str, location: Optional[str] = None) -> bool:
@@ -1339,10 +1364,21 @@ def notify_password_changed(account: Account, source_ip: Optional[str] = None) -
     Returns:
         True if notification sent successfully
     """
+    sent_any = _send_telegram_if_enabled(
+        account,
+        text=(
+            "🔐 Netcup API Filter security alert\n"
+            "Your password was changed.\n"
+            f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+            f"IP: {source_ip or 'unknown'}"
+        ),
+    )
+
     notifier = _get_notifier()
-    if not notifier:
-        logger.warning(f"Email notifier not configured - cannot send password changed notification")
-        return False
+    if not notifier or not account.email:
+        if not notifier:
+            logger.warning("Email notifier not configured - skipping email password-changed notification")
+        return sent_any
     
     # Generate email reference ID for traceability
     email_ref = generate_email_ref('notify', account.username)
@@ -1444,7 +1480,7 @@ Ref: {email_ref}
         return True
     except Exception as e:
         logger.error(f"Failed to send password changed notification: {e}")
-        return False
+        return sent_any
 
 
 # =============================================================================

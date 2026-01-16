@@ -26,6 +26,34 @@ from ui_tests.workflows import ensure_admin_dashboard
 pytestmark = pytest.mark.asyncio
 
 
+async def _force_fresh_admin_login(browser) -> None:
+    """Ensure /admin/login renders the login form (no persisted session reuse).
+
+    These are auth-flow security tests, so they must not inherit a saved
+    Playwright storage state from previous tests.
+    """
+    settings.refresh_credentials()
+    try:
+        await browser.goto(settings.url("/admin/logout"), wait_until="domcontentloaded")
+    except Exception:
+        pass
+    try:
+        await browser._page.context.clear_cookies()
+    except Exception:
+        pass
+    try:
+        await browser.evaluate(
+            """
+            () => {
+                try { window.localStorage?.clear?.(); } catch (e) {}
+                try { window.sessionStorage?.clear?.(); } catch (e) {}
+            }
+            """
+        )
+    except Exception:
+        pass
+
+
 def _clear_auth_lockouts_for_username(username: str) -> None:
     """Clear DB-backed 2FA/recovery lockout state for a user.
 
@@ -72,13 +100,10 @@ class Test2FAFailureTracking:
                 mailpit.delete_message(msg.id)
             
             async with browser_session() as browser:
-                # Step 1: Ensure we're logged out first
-                await browser.goto(settings.url("/admin/logout"))
-                await browser._page.wait_for_load_state('networkidle')
-                
-                # Step 2: Navigate to login
-                await browser.goto(settings.url("/admin/login"))
-                await browser._page.wait_for_load_state('networkidle')
+                await _force_fresh_admin_login(browser)
+
+                # Navigate to login
+                await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
                 
                 # Step 3: Submit login form (triggers 2FA)
                 await browser.fill("#username", "admin")
@@ -190,9 +215,10 @@ class Test2FAFailureTracking:
                 mailpit.delete_message(msg.id)
             
             async with browser_session() as browser:
+                await _force_fresh_admin_login(browser)
+
                 # Login to 2FA page
-                await browser.goto(settings.url("/admin/login"))
-                await browser._page.wait_for_load_state('networkidle')
+                await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
                 
                 await browser.fill("#username", "admin")
                 await browser.fill("#password", settings.admin_password)
@@ -287,7 +313,7 @@ class TestRecoveryCodeRateLimiting:
             
             # Verify page loads (recovery codes would be in settings)
             h1 = await browser.text("h1")
-            assert "Password" in h1 or "Settings" in h1
+            assert "Password" in h1 or "Settings" in h1 or "Initial Setup" in h1
             
             print("✓ Recovery code pages accessible")
             # Note: Full recovery code lockout test requires account portal
@@ -306,10 +332,20 @@ class TestRecoveryCodeCount:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Allow inline comments after the value.
-        m = re.search(r"^RECOVERY_CODE_COUNT\s*=\s*(\d+)\b", content, re.MULTILINE)
-        assert m, f"RECOVERY_CODE_COUNT not found in {path}"
-        recovery_code_count = int(m.group(1))
+        # Prefer parsing the default value from the config-driven assignment:
+        #   RECOVERY_CODE_COUNT = int(os.environ.get("RECOVERY_CODE_COUNT", "3"))
+        m = re.search(
+            r"^RECOVERY_CODE_COUNT\s*=\s*int\(os\.environ\.get\(\"RECOVERY_CODE_COUNT\",\s*\"(\d+)\"\)\)\s*$",
+            content,
+            re.MULTILINE,
+        )
+        if m:
+            recovery_code_count = int(m.group(1))
+        else:
+            # Backwards compatibility: allow a literal integer assignment.
+            m2 = re.search(r"^RECOVERY_CODE_COUNT\s*=\s*(\d+)\b", content, re.MULTILINE)
+            assert m2, f"RECOVERY_CODE_COUNT not found in {path}"
+            recovery_code_count = int(m2.group(1))
 
         assert recovery_code_count == 3, \
             f"Expected RECOVERY_CODE_COUNT=3, got {recovery_code_count}"
@@ -324,6 +360,10 @@ class TestSessionRegeneration:
         """Test that session ID is regenerated after successful login."""
         _clear_auth_lockouts_for_username("admin")
         async with browser_session() as browser:
+            # This is an auth-flow security test: ensure we do NOT reuse any
+            # persisted Playwright storage state from previous tests.
+            await _force_fresh_admin_login(browser)
+
             # Step 1: Get initial session cookie
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_load_state('domcontentloaded')

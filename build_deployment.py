@@ -433,6 +433,10 @@ def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = Fa
         
         # Change to deploy directory so SQLite can create the database
         os.chdir(deploy_path)
+
+        # Provide explicit deployment target for config-driven seeding.
+        # This is consumed by netcup_api_filter.bootstrap.seeding.seed_settings_from_env().
+        os.environ['DEPLOYMENT_TARGET'] = 'local' if is_local else 'webhosting'
         
         # Set database path (absolute path)
         db_path = deploy_path / "netcup_filter.db"

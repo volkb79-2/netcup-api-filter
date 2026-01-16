@@ -39,7 +39,9 @@ class TestSecurityHeaders:
     async def test_content_type_header(self, browser):
         """Verify Content-Type header is set correctly."""
         from ui_tests.config import settings
-        
+
+        # Ensure we land on the actual login page (not an authenticated redirect)
+        await browser._page.context.clear_cookies()
         response = await browser._page.goto(settings.url("/admin/login"))
         
         content_type = response.headers.get('content-type', '')
@@ -49,7 +51,9 @@ class TestSecurityHeaders:
     async def test_x_content_type_options(self, browser):
         """Verify X-Content-Type-Options header is set."""
         from ui_tests.config import settings
-        
+
+        # Ensure we land on the actual login page (not an authenticated redirect)
+        await browser._page.context.clear_cookies()
         response = await browser._page.goto(settings.url("/admin/login"))
         
         xcto = response.headers.get('x-content-type-options', '')
@@ -72,9 +76,13 @@ class TestAuthenticationSecurity:
     async def test_login_form_has_csrf_token(self, browser):
         """Verify login form includes CSRF protection."""
         from ui_tests.config import settings
-        
+
+        # Persisted Playwright storage-state may already be authenticated.
+        # Clear cookies so we reliably get the login form.
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         # Check for CSRF token in form
         csrf_token = await browser._page.evaluate("""
@@ -91,9 +99,11 @@ class TestAuthenticationSecurity:
     async def test_password_field_is_password_type(self, browser):
         """Verify password fields use type=password."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         password_type = await browser._page.evaluate("""
             () => {
@@ -108,9 +118,11 @@ class TestAuthenticationSecurity:
     async def test_password_autocomplete_attribute(self, browser):
         """Verify password fields have proper autocomplete."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         autocomplete = await browser._page.evaluate("""
             () => {
@@ -127,9 +139,11 @@ class TestAuthenticationSecurity:
     async def test_failed_login_no_user_enumeration(self, browser):
         """Verify login failures don't reveal if user exists."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         # Try login with non-existent user
         await browser._page.fill("#username", "nonexistent_user_12345")
@@ -211,9 +225,11 @@ class TestInputValidation:
     async def test_xss_in_username_field(self, browser):
         """Verify XSS is prevented in username field."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         # Try XSS payload
         xss_payload = '<script>alert("XSS")</script>'
@@ -230,9 +246,11 @@ class TestInputValidation:
     async def test_html_injection_prevention(self, browser):
         """Verify HTML injection is prevented in user inputs."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         # Try HTML injection
         html_payload = '<img src=x onerror=alert(1)>'
@@ -253,9 +271,11 @@ class TestSessionSecurity:
     async def test_session_cookie_httponly(self, browser):
         """Verify session cookie has HttpOnly flag (when using HTTPS)."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         # Get cookies
         cookies = await browser._page.context.cookies()
@@ -271,9 +291,11 @@ class TestSessionSecurity:
     async def test_session_cookie_samesite(self, browser):
         """Verify session cookie has SameSite attribute."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         cookies = await browser._page.context.cookies()
         session_cookie = next((c for c in cookies if 'session' in c['name'].lower()), None)
@@ -293,7 +315,8 @@ class TestSecurityMisconfiguration:
     async def test_no_server_version_disclosure(self, browser):
         """Verify server doesn't disclose version in headers."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         response = await browser._page.goto(settings.url("/admin/login"))
         
         # Check for common version disclosure headers
@@ -326,7 +349,8 @@ class TestSecurityMisconfiguration:
     async def test_no_debug_mode_indicators(self, browser):
         """Verify no debug mode indicators in response."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
         
         page_content = await browser._page.content()
@@ -343,9 +367,11 @@ class TestFormSecurity:
     async def test_forms_use_post_method(self, browser):
         """Verify sensitive forms use POST method."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         # Check login form method
         method = await browser._page.evaluate("""
@@ -361,9 +387,11 @@ class TestFormSecurity:
     async def test_password_inputs_no_spellcheck(self, browser):
         """Verify password inputs disable spellcheck."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+
+        await browser._page.wait_for_selector("#username")
         
         spellcheck = await browser._page.evaluate("""
             () => {
@@ -383,7 +411,8 @@ class TestClickjackingProtection:
     async def test_x_frame_options_or_csp(self, browser):
         """Verify clickjacking protection headers."""
         from ui_tests.config import settings
-        
+
+        await browser._page.context.clear_cookies()
         response = await browser._page.goto(settings.url("/admin/login"))
         
         x_frame = response.headers.get('x-frame-options', '')

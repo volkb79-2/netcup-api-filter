@@ -25,6 +25,34 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+async def _ensure_admin_login_page(browser) -> None:
+    """Ensure the admin login form is actually rendered.
+
+    The Playwright context may reuse persisted auth state. If we're already
+    authenticated, navigating to /admin/login can redirect to the admin UI.
+    Accessibility checks that target the login form must start from a logged-out
+    state.
+    """
+    from ui_tests.config import settings
+
+    await browser.goto(settings.url("/admin/login"))
+    await browser._page.wait_for_load_state("networkidle")
+
+    if "/admin/login" not in browser._page.url:
+        await browser._page.context.clear_cookies()
+        await browser._page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+        await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+        await browser._page.wait_for_load_state("networkidle")
+
+    if "/admin/login" not in browser._page.url:
+        raise AssertionError(f"Expected to be on /admin/login, got {browser._page.url}")
+
+    username = await browser._page.query_selector("#username")
+    password = await browser._page.query_selector("#password")
+    if not username or not password:
+        raise AssertionError("Admin login form did not render expected #username/#password fields")
+
+
 class TestAccessibilityBasics:
     """Basic accessibility tests for all pages."""
     
@@ -166,10 +194,7 @@ class TestFormAccessibility:
     @pytest.mark.asyncio
     async def test_form_inputs_have_labels(self, browser):
         """Verify all form inputs have associated labels."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         # Check inputs have labels (either <label for> or aria-label)
         unlabeled = await browser._page.evaluate("""
@@ -196,10 +221,7 @@ class TestFormAccessibility:
     @pytest.mark.asyncio
     async def test_required_fields_marked(self, browser):
         """Verify required fields are properly indicated."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         # Check required inputs are marked
         required_inputs = await browser._page.evaluate("""
@@ -218,10 +240,7 @@ class TestFormAccessibility:
     @pytest.mark.asyncio  
     async def test_buttons_have_accessible_text(self, browser):
         """Verify buttons have accessible text."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         buttons_without_text = await browser._page.evaluate("""
             () => {
@@ -246,10 +265,7 @@ class TestKeyboardAccessibility:
     @pytest.mark.asyncio
     async def test_interactive_elements_focusable(self, browser):
         """Verify all interactive elements can receive focus."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         # Tab through elements and verify focus moves
         await browser._page.keyboard.press("Tab")
@@ -265,10 +281,7 @@ class TestKeyboardAccessibility:
     @pytest.mark.asyncio
     async def test_focus_visible(self, browser):
         """Verify focus indicators are visible (WCAG 2.4.7)."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         # Focus on first input
         await browser._page.focus("#username")
@@ -293,10 +306,7 @@ class TestKeyboardAccessibility:
     @pytest.mark.asyncio
     async def test_no_keyboard_traps(self, browser):
         """Verify no keyboard traps exist (WCAG 2.1.2)."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         # Tab through all elements and verify we can cycle
         initial_focused = await browser._page.evaluate("() => document.activeElement?.tagName")
@@ -554,10 +564,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_form_errors_identified(self, browser):
         """Verify form errors are clearly identified."""
-        from ui_tests.config import settings
-        
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await _ensure_admin_login_page(browser)
         
         # Submit empty form to trigger validation
         await browser._page.click("button[type='submit']")

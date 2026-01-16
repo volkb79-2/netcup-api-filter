@@ -175,7 +175,9 @@ class TestDyndns2Protocol:
             "Authorization": f"Bearer {settings.client_token}",
         }
         params = {
-            "hostname": "test.unauthorized-domain.example.com",
+            # Use a different base domain than the seeded realm (which is under example.com)
+            # so this request is truly out-of-scope and should return !yours.
+            "hostname": "test.unauthorized-domain.example.net",
             "myip": "192.0.2.1"
         }
         
@@ -398,7 +400,9 @@ class TestNoipProtocol:
             "Authorization": f"Bearer {settings.client_token}",
         }
         params = {
-            "hostname": "test.unauthorized-domain.example.com",
+            # Use a different base domain than the seeded realm (which is under example.com)
+            # so this request is truly out-of-scope and should return abuse.
+            "hostname": "test.unauthorized-domain.example.net",
             "myip": "192.0.2.1"
         }
         

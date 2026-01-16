@@ -51,6 +51,7 @@ import json
 import os
 import random
 import time
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -2004,20 +2005,39 @@ def config_email_test():
 @require_admin
 def config_geoip():
     """GeoIP configuration."""
+    def normalize_geoip_api_url(raw_value: str) -> str:
+        value = (raw_value or '').strip()
+        if not value:
+            return ''
+
+        parsed = urlparse(value)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+
+        return value.rstrip('/')
+
     if request.method == 'POST':
-        config = {
-            'account_id': request.form.get('account_id', '').strip(),
-            'license_key': request.form.get('license_key', '').strip(),
-            'api_url': request.form.get('api_url', '').strip() or 'https://geoip.maxmind.com/geoip/v2.1',
+        account_id = request.form.get('account_id', '').strip()
+        license_key = request.form.get('license_key', '').strip()
+        api_url = normalize_geoip_api_url(request.form.get('api_url', ''))
+
+        config: dict[str, object] = {
+            'account_id': account_id,
+            'license_key': license_key,
         }
-        
+
+        # Only store api_url when explicitly set. If omitted, the GeoIP service
+        # can fall back to its environment-driven default.
+        if api_url:
+            config['api_url'] = api_url
+
         set_setting('geoip_config', config)
         flash('GeoIP configuration saved', 'success')
         logger.info(f"GeoIP config updated by {g.admin.username}")
         return redirect(url_for('admin.settings'))
-    
-    config = get_setting('geoip_config') or {}
-    return render_template('admin/config_geoip.html', config=config)
+
+    # The unified settings UI is the canonical GeoIP config page.
+    return redirect(url_for('admin.settings'))
 
 
 @admin_bp.route('/settings', methods=['GET'])
@@ -2053,11 +2073,14 @@ def settings():
         'account_rate_limit': get_setting('account_rate_limit') or os.environ.get('ACCOUNT_RATE_LIMIT', '50 per minute'),
         'api_rate_limit': get_setting('api_rate_limit') or os.environ.get('API_RATE_LIMIT', '60 per minute'),
     }
+
+    geoip_default_api_url = os.environ.get('MAXMIND_API_URL', '').strip()
     
     return render_template('admin/settings.html',
                           netcup_config=netcup_config,
                           smtp_config=smtp_config,
                           geoip_config=geoip_config,
+                          geoip_default_api_url=geoip_default_api_url,
                           security_settings=security_settings)
 
 
@@ -2373,11 +2396,22 @@ def update_security_settings():
 def api_geoip_lookup(ip_address):
     """Look up GeoIP information for an IP address (JSON API)."""
     try:
-        location = geoip_location(ip_address)
-        if location:
-            return jsonify({'success': True, 'location': location, 'ip': ip_address})
-        else:
-            return jsonify({'success': False, 'error': 'No location data available', 'ip': ip_address})
+        from ..geoip_service import lookup
+
+        result = lookup(ip_address)
+        if result.error:
+            return jsonify({'success': False, 'error': result.error, 'ip': ip_address}), 200
+
+        payload = result.to_dict()
+        if result.is_valid:
+            return jsonify({'success': True, 'location': payload, 'ip': ip_address})
+
+        return jsonify({
+            'success': False,
+            'error': 'No location data available',
+            'ip': ip_address,
+            'location': payload,
+        }), 200
     except Exception as e:
         logger.error(f"GeoIP lookup failed for {ip_address}: {e}")
         return jsonify({'success': False, 'error': str(e), 'ip': ip_address}), 500
@@ -2999,11 +3033,16 @@ def generate_recovery_codes():
     # Get info about existing codes
     has_recovery_codes = bool(admin.recovery_codes)
     codes_generated_at = admin.recovery_codes_generated_at
+
+    from ..recovery_codes import RECOVERY_CODE_COUNT
     
-    return render_template('admin/recovery_codes.html',
-                          codes=codes_to_display,
-                          has_recovery_codes=has_recovery_codes,
-                          codes_generated_at=codes_generated_at)
+    return render_template(
+        'admin/recovery_codes.html',
+        codes=codes_to_display,
+        has_recovery_codes=has_recovery_codes,
+        codes_generated_at=codes_generated_at,
+        recovery_code_count=RECOVERY_CODE_COUNT,
+    )
 
 # ============================================================================
 # Multi-Backend Management Routes
@@ -3495,7 +3534,90 @@ def domain_root_edit(root_id):
 def domain_root_grants(root_id):
     """Manage grants for a domain root."""
     root = ManagedDomainRoot.query.get_or_404(root_id)
-    return render_template('admin/domain_root_grants.html', root=root)
+    granted_account_ids = {g.account_id for g in (root.grants or [])}
+    eligible_accounts_query = Account.query.filter(Account.is_active == 1, Account.is_admin == 0)
+    if granted_account_ids:
+        eligible_accounts_query = eligible_accounts_query.filter(~Account.id.in_(sorted(granted_account_ids)))
+    eligible_accounts = eligible_accounts_query.order_by(Account.username).all()
+    return render_template('admin/domain_root_grants.html', root=root, eligible_accounts=eligible_accounts)
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/grants/add', methods=['POST'])
+@require_admin
+def domain_root_grant_add(root_id):
+    """Add a user grant for a domain root."""
+    root = ManagedDomainRoot.query.get_or_404(root_id)
+
+    account_id_raw = request.form.get('account_id', '').strip()
+    if not account_id_raw:
+        flash('User is required', 'error')
+        return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+    try:
+        account_id = int(account_id_raw)
+    except ValueError:
+        flash('Invalid user selection', 'error')
+        return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+    account = Account.query.get(account_id)
+    if not account:
+        flash('User not found', 'error')
+        return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+    max_realms_raw = (request.form.get('max_realms') or '5').strip()
+    try:
+        max_realms = max(1, int(max_realms_raw))
+    except ValueError:
+        flash('Max realms must be a number', 'error')
+        return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+    expires_at = None
+    expires_raw = (request.form.get('expires_at') or '').strip()
+    if expires_raw:
+        try:
+            expires_at = datetime.strptime(expires_raw, '%Y-%m-%d')
+        except ValueError:
+            flash('Invalid expiry date', 'error')
+            return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+    grant_type = GrantTypeEnum.query.filter_by(grant_code=GrantTypeEnum.STANDARD).first()
+    if not grant_type:
+        flash('Grant types not initialized', 'error')
+        return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+    grant = DomainRootGrant(
+        domain_root_id=root.id,
+        account_id=account.id,
+        grant_type_id=grant_type.id,
+        max_realms=max_realms,
+        granted_by_id=session.get(SESSION_KEY_ADMIN_ID),
+        expires_at=expires_at,
+    )
+
+    try:
+        db.session.add(grant)
+        db.session.commit()
+        flash(f'Grant added for {account.username}', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        logger.error(f"Failed to add domain root grant: {exc}")
+        flash('Failed to add grant (it may already exist)', 'error')
+
+    return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+
+
+@admin_bp.route('/domain-roots/<int:root_id>/grants/<int:grant_id>/revoke', methods=['POST'])
+@require_admin
+def domain_root_grant_revoke(root_id, grant_id):
+    """Revoke an existing domain root grant."""
+    grant = DomainRootGrant.query.filter_by(id=grant_id, domain_root_id=root_id).first_or_404()
+    if grant.revoked_at is None:
+        grant.revoked_at = datetime.utcnow()
+        grant.revoke_reason = 'revoked_by_admin'
+        grant.granted_by_id = grant.granted_by_id or session.get(SESSION_KEY_ADMIN_ID)
+        db.session.commit()
+        flash('Grant revoked', 'success')
+    return redirect(url_for('admin.domain_root_grants', root_id=root_id))
 
 
 @admin_bp.route('/domain-roots/<int:root_id>/enable', methods=['POST'])

@@ -39,6 +39,8 @@ class UiTargetProfile:
     client_domain: str
     allow_writes: bool = True
     deployment_target: str = "local"
+    readonly_client_id: str = ""
+    readonly_client_secret_key: str = ""
     
     @property
     def client_token(self) -> str:
@@ -49,6 +51,10 @@ class UiTargetProfile:
         The secret_key field contains the full token.
         """
         return self.client_secret_key
+
+    @property
+    def readonly_client_token(self) -> str:
+        return self.readonly_client_secret_key
 
 class UiTestConfig:
     """Configuration loaded from deployment_state.json.
@@ -91,12 +97,27 @@ class UiTestConfig:
         state = load_state(self._deployment_target)
         admin = state.admin
         primary_client = state.get_primary_client()
+
+        # Optional read-only client for authorization tests.
+        readonly_client = None
+        readonly_client_id_override = (os.getenv("DEPLOYED_READONLY_CLIENT_ID") or os.getenv("UI_READONLY_CLIENT_ID") or "").strip()
+        if readonly_client_id_override:
+            readonly_client = next(
+                (c for c in state.clients if (c.client_id or "").strip() == readonly_client_id_override),
+                None,
+            )
+        if readonly_client is None:
+            readonly_client = next((c for c in state.clients if not c.is_primary), None)
         
         # Allow environment variable overrides for specific credentials
         admin_username = os.getenv("DEPLOYED_ADMIN_USERNAME") or admin.username
         admin_password = os.getenv("DEPLOYED_ADMIN_PASSWORD") or admin.password
         client_id = os.getenv("DEPLOYED_CLIENT_ID") or (primary_client.client_id if primary_client else "")
         client_secret_key = os.getenv("DEPLOYED_CLIENT_SECRET_KEY") or (primary_client.secret_key if primary_client else "")
+        readonly_client_id = os.getenv("DEPLOYED_READONLY_CLIENT_ID") or (readonly_client.client_id if readonly_client else "")
+        readonly_client_secret_key = os.getenv("DEPLOYED_READONLY_CLIENT_SECRET_KEY") or (
+            readonly_client.secret_key if readonly_client else ""
+        )
         
         print(f"[CONFIG] Loaded from {state_file.name} (target={self._deployment_target}, updated={state.last_updated_at or 'unknown'})")
         
@@ -114,6 +135,8 @@ class UiTestConfig:
             admin_new_password=os.getenv("UI_ADMIN_NEW_PASSWORD") or None,
             client_id=client_id,
             client_secret_key=client_secret_key,
+            readonly_client_id=readonly_client_id,
+            readonly_client_secret_key=readonly_client_secret_key,
             client_domain=os.getenv("UI_CLIENT_DOMAIN", "example.com"),  # Match preseeded clients
             allow_writes=primary_allow_writes,
             deployment_target=self._deployment_target,
@@ -133,6 +156,11 @@ class UiTestConfig:
                 or primary.admin_new_password,
                 client_id=os.getenv("UI_SMOKE_CLIENT_ID", primary.client_id),
                 client_secret_key=os.getenv("UI_SMOKE_CLIENT_SECRET_KEY", primary.client_secret_key),
+                readonly_client_id=os.getenv("UI_SMOKE_READONLY_CLIENT_ID", primary.readonly_client_id),
+                readonly_client_secret_key=os.getenv(
+                    "UI_SMOKE_READONLY_CLIENT_SECRET_KEY",
+                    primary.readonly_client_secret_key,
+                ),
                 client_domain=os.getenv("UI_SMOKE_CLIENT_DOMAIN", primary.client_domain),
                 allow_writes=smoke_allow_writes,
                 deployment_target=self._deployment_target,
@@ -178,6 +206,10 @@ class UiTestConfig:
     @property
     def client_token(self) -> str:
         return self._active.client_token
+
+    @property
+    def readonly_client_token(self) -> str:
+        return self._active.readonly_client_token
 
     @property
     def client_domain(self) -> str:

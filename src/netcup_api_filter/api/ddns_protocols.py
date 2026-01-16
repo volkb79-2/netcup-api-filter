@@ -232,13 +232,20 @@ def update_dns_record(domain, hostname, ip_address, record_type):
     try:
         # Fetch current records
         info_result = netcup.info_dns_records(domain)
-        
-        if info_result.get('status') != 'success':
-            error_msg = info_result.get('message', 'Failed to fetch records')
-            logger.error(f"Netcup API error fetching records: {error_msg}")
-            return False, error_msg, False
-        
-        records = info_result.get('responsedata', {}).get('dnsrecords', [])
+
+        # NetcupClient.info_dns_records returns a list.
+        # Some mocks/legacy clients may return an envelope.
+        if isinstance(info_result, list):
+            records = info_result
+        elif isinstance(info_result, dict):
+            status = info_result.get('status')
+            if status and status != 'success':
+                error_msg = info_result.get('message', 'Failed to fetch records')
+                logger.error(f"Netcup API error fetching records: {error_msg}")
+                return False, error_msg, False
+            records = info_result.get('responsedata', {}).get('dnsrecords', [])
+        else:
+            raise TypeError(f"Unexpected Netcup response type: {type(info_result)}")
         
         # Find existing record
         existing = None
@@ -271,8 +278,9 @@ def update_dns_record(domain, hostname, ip_address, record_type):
         
         # Execute update
         result = netcup.update_dns_records(domain, [record])
-        
-        if result.get('status') != 'success':
+
+        status = result.get('status') if isinstance(result, dict) else None
+        if status and status != 'success':
             error_msg = result.get('message', 'Failed to update record')
             logger.error(f"Netcup API error updating record: {error_msg}")
             return False, error_msg, False

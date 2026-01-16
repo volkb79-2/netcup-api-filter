@@ -14,7 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config_defaults import get_default, require_default
 from .database import init_db, db
-from .api import account_bp, admin_bp, dns_api_bp, ddns_protocols_bp
+from .api import account_bp, admin_bp, dns_api_bp, ddns_protocols_bp, telegram_bp
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +182,39 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     # =========================================================================
     
     init_db(app)
+
+    # =========================================================================
+    # Feature Flags (config-driven)
+    # =========================================================================
+
+    def _parse_bool(raw: object, *, default: bool = False) -> bool:
+        if raw is None:
+            return default
+        if isinstance(raw, bool):
+            return raw
+        value = str(raw).strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    # Demo/design pages can be disabled in production to reduce surface area.
+    # Priority:
+    # 1) Environment variable override (DEMO_PAGES_ENABLED)
+    # 2) Settings table key: enable_demo_pages (seeded at build time)
+    # 3) Default: disabled (safe)
+    demo_pages_enabled_env = os.environ.get("DEMO_PAGES_ENABLED")
+    if demo_pages_enabled_env is not None:
+        demo_pages_enabled = _parse_bool(demo_pages_enabled_env, default=False)
+    else:
+        from .database import get_setting
+
+        with app.app_context():
+            demo_pages_enabled = _parse_bool(get_setting("enable_demo_pages"), default=False)
+
+    app.config["DEMO_PAGES_ENABLED"] = demo_pages_enabled
+    logger.info(f"Demo pages enabled: {demo_pages_enabled}")
     
     # Create startup timestamp file for uptime tracking
     try:
@@ -203,6 +236,8 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     # Exempt API endpoints from CSRF (they use Bearer tokens)
     csrf.exempt(dns_api_bp)
     csrf.exempt(ddns_protocols_bp)
+    # Bot callbacks authenticate with a shared secret header, not cookies.
+    csrf.exempt(telegram_bp)
     
     # =========================================================================
     # Rate Limiting
@@ -213,7 +248,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     try:
         from flask_limiter import Limiter
         from flask_limiter.util import get_remote_address
-        from .settings import get_setting
+        from .database import get_setting
         
         # Disable rate limiting for local testing
         if flask_env == 'local_test':
@@ -234,8 +269,9 @@ def create_app(config_path: str = "config.yaml") -> Flask:
             
         # Apply rate limiting to admin and account routes
         # Priority: 1. Database settings, 2. Environment variables, 3. Hardcoded defaults
-        admin_rate_limit = get_setting('admin_rate_limit') or os.environ.get('ADMIN_RATE_LIMIT', '50 per minute')
-        account_rate_limit = get_setting('account_rate_limit') or os.environ.get('ACCOUNT_RATE_LIMIT', '50 per minute')
+        with app.app_context():
+            admin_rate_limit = get_setting('admin_rate_limit') or os.environ.get('ADMIN_RATE_LIMIT', '50 per minute')
+            account_rate_limit = get_setting('account_rate_limit') or os.environ.get('ACCOUNT_RATE_LIMIT', '50 per minute')
         limiter.limit(admin_rate_limit)(admin_bp)
         limiter.limit(account_rate_limit)(account_bp)
         
@@ -251,6 +287,7 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     app.register_blueprint(account_bp)
     app.register_blueprint(dns_api_bp)
     app.register_blueprint(ddns_protocols_bp)
+    app.register_blueprint(telegram_bp)
     
     # =========================================================================
     # Template Filters
@@ -467,25 +504,33 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     @app.route('/theme-demo')
     def theme_demo():
         """Theme demo page for previewing all UI themes."""
-        from flask import send_from_directory
+        from flask import abort, current_app, send_from_directory
+        if not current_app.config.get("DEMO_PAGES_ENABLED", False):
+            abort(404)
         return send_from_directory('demos/theme-demo', 'index.html')
     
     @app.route('/component-demo')
     def component_demo():
         """Component demo page for design system reference (custom CSS)."""
-        from flask import send_from_directory
+        from flask import abort, current_app, send_from_directory
+        if not current_app.config.get("DEMO_PAGES_ENABLED", False):
+            abort(404)
         return send_from_directory('demos/component-demo', 'index.html')
     
     @app.route('/component-demo-bs5')
     def component_demo_bs5():
         """Component demo page using Bootstrap 5 theming."""
-        from flask import send_from_directory
+        from flask import abort, current_app, send_from_directory
+        if not current_app.config.get("DEMO_PAGES_ENABLED", False):
+            abort(404)
         return send_from_directory('demos/component-demo-bs5', 'index.html')
     
     @app.route('/theme-demo2')
     def theme_demo2():
         """Theme demo v2 with 17 themes for CSS comparison."""
-        from flask import send_from_directory
+        from flask import abort, current_app, send_from_directory
+        if not current_app.config.get("DEMO_PAGES_ENABLED", False):
+            abort(404)
         return send_from_directory(
             'demos/theme-demo2',
             'Theme Demo - Netcup API Filter.html'
@@ -494,7 +539,9 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     @app.route('/theme-demo2/<path:filename>')
     def theme_demo2_static(filename):
         """Serve static assets for theme demo v2."""
-        from flask import send_from_directory
+        from flask import abort, current_app, send_from_directory
+        if not current_app.config.get("DEMO_PAGES_ENABLED", False):
+            abort(404)
         return send_from_directory('demos/theme-demo2', filename)
     
     logger.info("Flask application created successfully")

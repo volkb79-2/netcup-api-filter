@@ -124,7 +124,9 @@
                         <label class="form-label">User</label>
                         <select class="form-select" name="account_id" required>
                             <option value="">Select user...</option>
-                            {# This would be populated with users not already granted #}
+                            {% for account in eligible_accounts %}
+                            <option value="{{ account.id }}">{{ account.username }} ({{ account.email }})</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">

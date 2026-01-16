@@ -508,7 +508,7 @@ class TestTokenPermissionBoundaries:
         
         url = settings.url(f"/api/dns/{settings.client_domain}/records")
         headers = {
-            "Authorization": f"Bearer {settings.client_token}",
+            "Authorization": f"Bearer {settings.readonly_client_token}",
             "Content-Type": "application/json"
         }
         data = {
@@ -533,7 +533,7 @@ class TestTokenPermissionBoundaries:
         
         url = settings.url(f"/api/dns/{settings.client_domain}/records/999")
         headers = {
-            "Authorization": f"Bearer {settings.client_token}",
+            "Authorization": f"Bearer {settings.readonly_client_token}",
         }
         
         async with httpx.AsyncClient(verify=False) as client:

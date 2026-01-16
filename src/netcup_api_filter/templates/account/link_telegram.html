@@ -30,7 +30,7 @@
             {% endwith %}
 
             <!-- Current Status -->
-            {% if account.telegram_id %}
+            {% if account.telegram_enabled and account.telegram_chat_id %}
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="d-flex align-items-center">
@@ -38,9 +38,17 @@
                         <div class="flex-grow-1">
                             <h5 class="mb-1">Telegram Linked</h5>
                             <p class="text-muted mb-0">
-                                Chat ID: <code>{{ account.telegram_id }}</code>
+                                Chat ID: <code>{{ account.telegram_chat_id }}</code>
                             </p>
                         </div>
+
+                        <form action="{{ url_for('account.telegram_send_test_message') }}" method="post" class="me-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-outline-primary">
+                                <i class="bi bi-send me-1"></i>Send Test
+                            </button>
+                        </form>
+
                         <form action="{{ url_for('account.unlink_telegram') }}" method="post">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-outline-danger">
@@ -52,6 +60,20 @@
             </div>
             {% else %}
 
+            {% if not linking_enabled %}
+            <div class="alert alert-warning" role="alert">
+                <div class="d-flex">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <div>
+                        <strong>Telegram linking is not configured.</strong>
+                        <div class="small mt-1">
+                            An administrator must configure the bot username and linking callback secret.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Step 1: Start Bot -->
             <div class="card mb-4">
                 <div class="card-body">
@@ -60,13 +82,20 @@
                         Start the Bot
                     </h5>
                     <p class="text-muted mb-3">
-                        Click the button below to open Telegram and start our notification bot:
+                        Click the button below to open Telegram and start our notification bot.
+                        This will include a one-time link token.
                     </p>
                     
                     <div class="text-center">
-                        <a href="https://t.me/{{ telegram_bot_username }}" target="_blank" class="btn btn-info">
-                            <i class="bi bi-telegram me-2"></i>Open @{{ telegram_bot_username }}
-                        </a>
+                        {% if linking_enabled and telegram_start_link %}
+                            <a href="{{ telegram_start_link }}" target="_blank" rel="noopener" class="btn btn-info">
+                                <i class="bi bi-telegram me-2"></i>Open @{{ telegram_bot_username }}
+                            </a>
+                        {% else %}
+                            <button type="button" class="btn btn-info" disabled>
+                                <i class="bi bi-telegram me-2"></i>Open bot
+                            </button>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -79,13 +108,13 @@
                         Send Verification Code
                     </h5>
                     <p class="text-muted mb-3">
-                        In the Telegram chat, send this verification code:
+                        If Telegram didn't open with the link token, you can also copy it manually.
                     </p>
                     
                     <div class="text-center mb-3">
                         <div class="d-inline-block p-3 bg-dark rounded">
-                            <code class="fs-4" id="verification-code">{{ verification_code }}</code>
-                            <button type="button" class="btn btn-outline-primary btn-sm ms-2" onclick="copyCode()">
+                            <code class="fs-6" id="telegram-link-token">{{ telegram_link_token or '' }}</code>
+                            <button type="button" class="btn btn-outline-primary btn-sm ms-2" onclick="copyCode(event)">
                                 <i class="bi bi-clipboard"></i>
                             </button>
                         </div>
@@ -93,7 +122,7 @@
                     
                     <p class="text-muted text-center small">
                         <i class="bi bi-clock me-1"></i>
-                        Code expires in 10 minutes
+                        Token expires soon (rotate if needed)
                     </p>
                 </div>
             </div>
@@ -106,19 +135,13 @@
                         Confirm Link
                     </h5>
                     <p class="text-muted mb-3">
-                        After sending the code in Telegram, click below to verify:
+                        After pressing Start in Telegram, this page will confirm automatically.
                     </p>
-                    
-                    <form action="{{ url_for('account.link_telegram') }}" method="post">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="verify">
-                        
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-check-lg me-1"></i>I've Sent the Code
-                            </button>
-                        </div>
-                    </form>
+
+                    <div class="alert alert-info mb-0" role="alert" id="telegram-link-status">
+                        <i class="bi bi-hourglass-split me-1"></i>
+                        Waiting for Telegram confirmation…
+                    </div>
                 </div>
             </div>
             {% endif %}
@@ -154,14 +177,47 @@
 </div>
 
 <script>
-function copyCode() {
-    const code = document.getElementById('verification-code').textContent.trim();
+function copyCode(ev) {
+    const code = document.getElementById('telegram-link-token')?.textContent?.trim() || '';
+    if (!code) return;
     navigator.clipboard.writeText(code).then(() => {
-        const btn = event.target.closest('button');
+        const btn = ev?.target?.closest('button');
+        if (!btn) return;
         const originalHtml = btn.innerHTML;
         btn.innerHTML = '<i class="bi bi-check"></i>';
         setTimeout(() => btn.innerHTML = originalHtml, 1500);
     });
 }
+
+async function pollTelegramLinkStatus() {
+    const statusEl = document.getElementById('telegram-link-status');
+    if (!statusEl) return;
+
+    for (let i = 0; i < 30; i++) {
+        try {
+            const resp = await fetch("{{ url_for('account.telegram_status') }}", { headers: { "Accept": "application/json" } });
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.linked) {
+                    statusEl.classList.remove('alert-info');
+                    statusEl.classList.add('alert-success');
+                    statusEl.innerHTML = '<i class="bi bi-check-circle me-1"></i>Telegram linked! Reloading…';
+                    setTimeout(() => window.location.reload(), 800);
+                    return;
+                }
+            }
+        } catch (e) {
+            // ignore transient polling errors
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    statusEl.classList.remove('alert-info');
+    statusEl.classList.add('alert-warning');
+    statusEl.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Still waiting. If needed, refresh to generate a new token.';
+}
+
+// Only poll on the "not linked" setup screen.
+pollTelegramLinkStatus();
 </script>
 {% endblock %}

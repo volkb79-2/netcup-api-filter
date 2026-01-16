@@ -12,6 +12,7 @@ Routes:
 - /account/tokens/<id>/activity - Token activity
 """
 import logging
+import os
 from datetime import datetime, timedelta
 from flask import (
     Blueprint, flash, g, jsonify, redirect, render_template,
@@ -48,6 +49,14 @@ from ..realm_token_service import (
     revoke_token,
     update_token,
 )
+
+from ..telegram_service import (
+    build_start_link,
+    is_telegram_configured_for_linking,
+    send_telegram_message,
+    sha256_hex,
+)
+from ..utils import generate_token
 
 logger = logging.getLogger(__name__)
 
@@ -797,6 +806,12 @@ def settings():
             account.notify_new_ip = int(request.form.get('notify_new_ip', '0'))
             account.notify_failed_auth = int(request.form.get('notify_failed_auth', '0'))
             account.notify_token_expiring = int(request.form.get('notify_token_expiring', '0'))
+
+            if account.telegram_enabled and account.telegram_chat_id:
+                account.notify_via_telegram = int(request.form.get('notify_via_telegram', '0'))
+            else:
+                account.notify_via_telegram = 0
+
             db.session.commit()
             flash('Settings updated', 'success')
         
@@ -1005,22 +1020,96 @@ def setup_totp():
 @account_bp.route('/settings/telegram/link', methods=['GET', 'POST'])
 @require_account_auth
 def link_telegram():
-    """Link Telegram for 2FA."""
+    """Link Telegram for notifications and 2FA (Option A: deep-link + bot callback)."""
     account = g.account
-    
-    if request.method == 'POST':
-        telegram_id = request.form.get('telegram_id', '').strip()
-        
-        if not telegram_id or not telegram_id.isdigit():
-            flash('Invalid Telegram ID', 'error')
-        else:
-            account.telegram_id = telegram_id
-            account.telegram_enabled = 1
-            db.session.commit()
-            flash('Telegram linked successfully', 'success')
-            return redirect(url_for('account.settings'))
-    
-    return render_template('account/link_telegram.html', account=account)
+
+    # Telegram linking requires a bot username for the deep-link, and a shared
+    # callback secret for the bot -> app confirmation call.
+    bot_username = (os.environ.get('TELEGRAM_BOT_USERNAME') or '').strip() or None
+    callback_secret = (os.environ.get('TELEGRAM_LINK_CALLBACK_SECRET') or '').strip() or None
+    linking_enabled = bool(bot_username) and bool(callback_secret) and is_telegram_configured_for_linking()
+
+    # Linked state: show status + actions
+    if account.telegram_enabled and account.telegram_chat_id:
+        return render_template(
+            'account/link_telegram.html',
+            account=account,
+            telegram_bot_username=bot_username,
+            linking_enabled=linking_enabled,
+            telegram_start_link=None,
+            telegram_link_token=None,
+        )
+
+    # Not configured at the system level
+    if not linking_enabled:
+        return render_template(
+            'account/link_telegram.html',
+            account=account,
+            telegram_bot_username=bot_username,
+            linking_enabled=False,
+            telegram_start_link=None,
+            telegram_link_token=None,
+        )
+
+    # Ensure we always have a raw token to show. Because we store only the hash,
+    # we intentionally rotate the token on each visit.
+    ttl_raw = (os.environ.get('TELEGRAM_LINK_TOKEN_TTL_SECONDS') or '600').strip()
+    try:
+        ttl_seconds = int(ttl_raw)
+    except ValueError:
+        ttl_seconds = 600
+
+    raw_token = generate_token(min_length=32, max_length=32)
+    account.telegram_link_token_hash = sha256_hex(raw_token)
+    account.telegram_link_token_expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
+    db.session.commit()
+
+    telegram_start_link = build_start_link(link_token=raw_token)
+
+    return render_template(
+        'account/link_telegram.html',
+        account=account,
+        telegram_bot_username=bot_username,
+        linking_enabled=True,
+        telegram_start_link=telegram_start_link,
+        telegram_link_token=raw_token,
+    )
+
+
+@account_bp.route('/settings/telegram/status', methods=['GET'])
+@require_account_auth
+def telegram_status():
+    """Return Telegram linking status for the current account (UI polling)."""
+    account = g.account
+    return jsonify(
+        {
+            'linked': bool(account.telegram_enabled and account.telegram_chat_id),
+            'chat_id_present': bool(account.telegram_chat_id),
+        }
+    )
+
+
+@account_bp.route('/settings/telegram/test', methods=['POST'])
+@require_account_auth
+def telegram_send_test_message():
+    """Send a test message to confirm Telegram delivery."""
+    account = g.account
+
+    if not (account.telegram_enabled and account.telegram_chat_id):
+        flash('Telegram is not linked yet.', 'error')
+        return redirect(url_for('account.link_telegram'))
+
+    ok = send_telegram_message(
+        chat_id=account.telegram_chat_id,
+        text='✅ Netcup API Filter test message: Telegram notifications are working.',
+    )
+
+    if ok:
+        flash('Test message sent to Telegram.', 'success')
+    else:
+        flash('Failed to send Telegram test message. Check configuration and bot permissions.', 'error')
+
+    return redirect(url_for('account.link_telegram'))
 
 
 # ============================================================================
@@ -1031,21 +1120,24 @@ def link_telegram():
 @require_account_auth
 def view_recovery_codes():
     """View recovery codes status."""
-    from .recovery_codes import get_remaining_code_count
+    from ..recovery_codes import RECOVERY_CODE_COUNT, get_remaining_code_count
     
     account = g.account
     remaining = get_remaining_code_count(account)
     
-    return render_template('account/recovery_codes.html',
-                          account=account,
-                          remaining_codes=remaining)
+    return render_template(
+        'account/recovery_codes.html',
+        account=account,
+        remaining_codes=remaining,
+        recovery_code_count=RECOVERY_CODE_COUNT,
+    )
 
 
 @account_bp.route('/settings/recovery-codes/generate', methods=['POST'])
 @require_account_auth
 def generate_recovery_codes():
     """Generate new recovery codes (invalidates old ones)."""
-    from .recovery_codes import regenerate_recovery_codes
+    from ..recovery_codes import regenerate_recovery_codes
     
     account = g.account
     
@@ -1751,7 +1843,10 @@ def create_ods_export(logs, title):
             log.action or '',
             log.status or '',
             log.source_ip or '',
-            log.details or ''
+            log.status_reason
+            or log.response_summary
+            or log.request_data
+            or ''
         ]
         cells_xml = ''.join([f'<table:table-cell office:value-type="string"><text:p>{escape_xml(c)}</text:p></table:table-cell>' for c in cells])
         rows_xml.append(f'<table:table-row>{cells_xml}</table:table-row>')
@@ -1816,9 +1911,44 @@ def api_docs():
 def security():
     """Account security settings page."""
     account = g.account
-    
-    # Get active sessions for this account
-    sessions = []  # TODO: Implement session tracking
+
+    from ..account_auth import SESSION_KEY_SESSION_TOKEN
+    from ..models import AccountSession
+
+    def _device_label(user_agent: str | None) -> str | None:
+        ua = (user_agent or "").lower()
+        if not ua:
+            return None
+        if "edg" in ua:
+            return "Edge"
+        if "chrome" in ua and "chromium" not in ua:
+            return "Chrome"
+        if "firefox" in ua:
+            return "Firefox"
+        if "safari" in ua and "chrome" not in ua:
+            return "Safari"
+        if "chromium" in ua:
+            return "Chromium"
+        return "Browser"
+
+    current_token = session.get(SESSION_KEY_SESSION_TOKEN)
+
+    active_sessions = (
+        AccountSession.query.filter_by(account_id=account.id, revoked_at=None)
+        .order_by(AccountSession.last_active.desc())
+        .all()
+    )
+
+    sessions = [
+        {
+            "id": s.id,
+            "is_current": bool(current_token and s.session_token == current_token),
+            "device": _device_label(s.user_agent),
+            "ip_address": s.ip_address or "0.0.0.0",
+            "last_active": s.last_active,
+        }
+        for s in active_sessions
+    ]
     
     # Get recent security events (logins, password changes, etc.)
     security_events = ActivityLog.query.filter_by(
@@ -1867,11 +1997,34 @@ def activity():
 def revoke_session(session_id):
     """Revoke a specific session."""
     account = g.account
-    
-    # TODO: Implement session revocation when session tracking is added
-    # For now, flash a message that this feature is not yet implemented
-    flash('Session management is not yet implemented.', 'warning')
-    
+
+    from ..account_auth import SESSION_KEY_SESSION_TOKEN
+    from ..models import AccountSession
+
+    target = AccountSession.query.get(session_id)
+    if not target or target.account_id != account.id:
+        flash('Session not found.', 'error')
+        return redirect(url_for('account.security'))
+
+    current_token = session.get(SESSION_KEY_SESSION_TOKEN)
+    if current_token and target.session_token == current_token:
+        # Allow revoking the current session as a logout operation.
+        target.revoked_at = datetime.utcnow()
+        target.revoked_reason = 'revoked_current'
+        db.session.commit()
+        from ..account_auth import logout
+        logout()
+        flash('You have been signed out.', 'success')
+        return redirect(url_for('account.login'))
+
+    if target.revoked_at:
+        flash('Session already revoked.', 'warning')
+        return redirect(url_for('account.security'))
+
+    target.revoked_at = datetime.utcnow()
+    target.revoked_reason = 'revoked_by_user'
+    db.session.commit()
+    flash('Session revoked.', 'success')
     return redirect(url_for('account.security'))
 
 
@@ -1880,10 +2033,32 @@ def revoke_session(session_id):
 def revoke_all_sessions():
     """Revoke all sessions except current."""
     account = g.account
-    
-    # TODO: Implement when session tracking is added
-    flash('Session management is not yet implemented.', 'warning')
-    
+
+    from ..account_auth import SESSION_KEY_SESSION_TOKEN
+    from ..models import AccountSession
+
+    current_token = session.get(SESSION_KEY_SESSION_TOKEN)
+    if not current_token:
+        flash('No active session.', 'error')
+        return redirect(url_for('account.login'))
+
+    sessions_to_revoke = (
+        AccountSession.query.filter_by(account_id=account.id, revoked_at=None)
+        .filter(AccountSession.session_token != current_token)
+        .all()
+    )
+
+    if not sessions_to_revoke:
+        flash('No other sessions to sign out.', 'info')
+        return redirect(url_for('account.security'))
+
+    now = datetime.utcnow()
+    for s in sessions_to_revoke:
+        s.revoked_at = now
+        s.revoked_reason = 'revoked_all_by_user'
+    db.session.commit()
+
+    flash(f'Signed out {len(sessions_to_revoke)} other session(s).', 'success')
     return redirect(url_for('account.security'))
 
 
@@ -1895,25 +2070,33 @@ def disable_2fa():
     password = request.form.get('password', '')
     
     # Verify password before disabling 2FA
-    from ..account_auth import verify_password
-    if not verify_password(account.password_hash, password):
+    if not account.verify_password(password):
         flash('Incorrect password.', 'error')
         return redirect(url_for('account.security'))
     
     # Disable TOTP
     account.totp_enabled = False
     account.totp_secret = None
-    
-    # Log the action
-    ActivityLog.log_action(
-        action='2fa_disabled',
-        account_id=account.id,
-        details='TOTP 2FA disabled',
-        ip_address=request.remote_addr
-    )
-    
-    db.session.commit()
-    
+
+    source_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+    try:
+        log = ActivityLog(
+            account_id=account.id,
+            action='2fa_disabled',
+            source_ip=source_ip,
+            user_agent=request.headers.get('User-Agent'),
+            status='success',
+            severity='medium',
+            status_reason='User disabled TOTP 2FA'
+        )
+        db.session.add(log)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to disable 2FA for {account.username}: {e}")
+        flash('Failed to disable two-factor authentication.', 'error')
+        return redirect(url_for('account.security'))
+
     flash('Two-factor authentication has been disabled.', 'success')
     return redirect(url_for('account.security'))
 
@@ -1924,24 +2107,39 @@ def unlink_telegram():
     """Unlink Telegram from account."""
     account = g.account
     
-    if not account.telegram_id:
+    if not account.telegram_chat_id:
         flash('No Telegram account linked.', 'warning')
         return redirect(url_for('account.link_telegram'))
     
-    old_telegram_id = account.telegram_id
-    account.telegram_id = None
-    account.telegram_enabled = False
-    
-    # Log the action
-    ActivityLog.log_action(
-        action='telegram_unlinked',
-        account_id=account.id,
-        details=f'Telegram account unlinked (was: {old_telegram_id})',
-        ip_address=request.remote_addr
-    )
-    
-    db.session.commit()
-    
+    old_telegram_id = account.telegram_chat_id
+    account.telegram_chat_id = None
+    account.telegram_enabled = 0
+    # Explicitly disable channel preference on unlink.
+    account.notify_via_telegram = 0
+    # Clear linking metadata.
+    account.telegram_linked_at = None
+    account.telegram_link_token_hash = None
+    account.telegram_link_token_expires_at = None
+
+    source_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+    try:
+        log = ActivityLog(
+            account_id=account.id,
+            action='telegram_unlinked',
+            source_ip=source_ip,
+            user_agent=request.headers.get('User-Agent'),
+            status='success',
+            severity='low',
+            status_reason='User unlinked Telegram'
+        )
+        db.session.add(log)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to unlink Telegram for {account.username}: {e}")
+        flash('Failed to unlink Telegram.', 'error')
+        return redirect(url_for('account.link_telegram'))
+
     flash('Telegram has been unlinked from your account.', 'success')
     return redirect(url_for('account.link_telegram'))
 

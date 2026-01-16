@@ -88,12 +88,36 @@ async def test_complete_2fa_flow_with_mailpit():
     mailpit = MailpitClient()
     
     try:
+        # Ensure we use the latest admin credentials (other tests may have
+        # changed the password and persisted it to deployment_state_local.json).
+        settings.refresh_credentials()
+
         # Clear any existing messages
         messages = mailpit.list_messages()
         for msg in messages.messages:
             mailpit.delete_message(msg.id)
         
         async with browser_session() as browser:
+            # This is an auth-flow test and must not reuse an existing session.
+            # `browser_session()` loads persisted Playwright storage state by default,
+            # so explicitly clear cookies + origin storage to ensure /admin/login
+            # actually renders the login form.
+            try:
+                await browser._page.context.clear_cookies()
+            except Exception:
+                pass
+            try:
+                await browser.evaluate(
+                    """
+                    () => {
+                        try { window.localStorage?.clear?.(); } catch (e) {}
+                        try { window.sessionStorage?.clear?.(); } catch (e) {}
+                    }
+                    """
+                )
+            except Exception:
+                pass
+
             # Login with admin credentials
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_load_state('domcontentloaded')

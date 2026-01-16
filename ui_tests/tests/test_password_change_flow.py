@@ -48,6 +48,11 @@ async def test_password_change_redirects_to_dashboard_successfully():
     the actual user flow including the redirect.
     """
     async with browser_session() as browser:
+        # This test must start from a logged-out state.
+        # `browser_session()` loads persisted storage-state by default; clear cookies
+        # so /admin/login isn't auto-redirected to an authenticated page.
+        await browser._page.context.clear_cookies()
+
         # Get current credentials
         try:
             target = get_deployment_target()
@@ -59,8 +64,8 @@ async def test_password_change_redirects_to_dashboard_successfully():
             current_password = "admin"
         
         # 1. Login with current credentials
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state('domcontentloaded')
+        await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+        await browser._page.wait_for_selector("#username", timeout=10_000)
         
         await browser.fill("#username", username)
         await browser.fill("#password", current_password)
@@ -271,16 +276,27 @@ async def test_password_change_with_email_setup_optional():
     was configured, making initial setup impossible.
     """
     async with browser_session() as browser:
+        # This test only makes sense on a fresh deployment where the admin is
+        # forced through the password-change flow.
+        target = get_deployment_target()
+        state = load_state(target)
+        if state.admin.password_changed_at:
+            pytest.skip("Not a fresh deployment (admin password already changed)")
+
+        # Ensure we start logged out (storage-state may otherwise redirect away from /admin/login).
+        await browser._page.context.clear_cookies()
+
         # Login with fresh credentials
-        await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state('domcontentloaded')
+        await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+        await browser._page.wait_for_selector("#username", timeout=10_000)
         
-        await browser.fill("#username", "admin")
-        await browser.fill("#password", "admin")
+        await browser.fill("#username", state.admin.username)
+        await browser.fill("#password", state.admin.password)
         
-        # Wait for login navigation to complete
-        async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
-            await browser.click("button[type='submit']")
+        # Wait for login to resolve (login -> optional 2FA -> change-password/dashboard)
+        await browser.click("button[type='submit']")
+        await workflows.handle_2fa_if_present(browser, timeout=10.0)
+        await browser._page.wait_for_load_state("domcontentloaded")
         
         current_url = browser._page.url
         if "/change-password" in current_url:

@@ -71,6 +71,23 @@
                             Token expiring soon (7 days before)
                         </label>
                     </div>
+
+                    {% if account.telegram_enabled and account.telegram_chat_id %}
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="notify_via_telegram" 
+                               name="notify_via_telegram" value="1" {% if account.notify_via_telegram %}checked{% endif %}>
+                        <label class="form-check-label" for="notify_via_telegram">
+                            Also send notifications via Telegram
+                        </label>
+                        <div class="form-text">
+                            Requires Telegram to be linked in Security → Telegram.
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-muted small">
+                        Telegram notifications are available after linking Telegram in Security → Telegram.
+                    </div>
+                    {% endif %}
                     
                     <hr class="my-4">
                     

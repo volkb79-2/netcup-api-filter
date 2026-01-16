@@ -124,6 +124,21 @@ start_flask() {
     
     # Start Flask
     cd "${deploy_dir}"
+
+    # Export config-driven defaults for local runs.
+    # deploy-local/ intentionally does not contain .env.defaults/.env, so the
+    # process environment is the only configuration source at runtime.
+    set -a
+    if [[ -f "${WORKSPACE_DIR}/.env.defaults" ]]; then
+        # shellcheck source=/dev/null
+        source "${WORKSPACE_DIR}/.env.defaults"
+    fi
+    if [[ -f "${WORKSPACE_DIR}/.env" ]]; then
+        # shellcheck source=/dev/null
+        source "${WORKSPACE_DIR}/.env"
+    fi
+    set +a
+
     FLASK_ENV="${flask_env}" \
     DATABASE_PATH="${DATABASE_PATH}" \
         nohup python3 -m flask --app passenger_wsgi:application \

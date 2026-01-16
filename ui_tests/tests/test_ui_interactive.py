@@ -398,8 +398,9 @@ class TestFormInteractions:
 
     async def test_login_form_accepts_input(self, browser):
         """Test admin login form accepts input."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
-        await browser._page.wait_for_load_state("networkidle")
+        await browser._page.wait_for_selector("#username")
         
         # Fill fields
         await browser.fill("#username", "testuser")
@@ -414,6 +415,7 @@ class TestFormInteractions:
 
     async def test_account_registration_form_validation(self, browser):
         """Test registration form validates input."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/account/register"))
         await browser._page.wait_for_load_state("networkidle")
         
@@ -660,6 +662,7 @@ class TestAccountPortalInteraction:
 
     async def test_account_login_form_works(self, browser):
         """Test account login form accepts input and submits."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/account/login"))
         await browser._page.wait_for_load_state("networkidle")
         
@@ -684,6 +687,7 @@ class TestAccountPortalInteraction:
 
     async def test_forgot_password_form_works(self, browser):
         """Test forgot password form accepts email."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/account/forgot-password"))
         await browser._page.wait_for_load_state("networkidle")
         
@@ -702,6 +706,7 @@ class TestAccountPortalInteraction:
 
     async def test_registration_terms_checkbox(self, browser):
         """Test registration form has terms checkbox."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/account/register"))
         await browser._page.wait_for_load_state("networkidle")
         
@@ -737,6 +742,7 @@ class TestLayoutValidation:
 
     async def test_admin_login_page_centering(self, browser):
         """Test admin login page is properly centered on viewport."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/admin/login"))
         await browser._page.wait_for_load_state("networkidle")
         
@@ -786,6 +792,7 @@ class TestLayoutValidation:
 
     async def test_account_login_page_centering(self, browser):
         """Test account login page is properly centered on viewport."""
+        await browser._page.context.clear_cookies()
         await browser.goto(settings.url("/account/login"))
         await browser._page.wait_for_load_state("networkidle")
         

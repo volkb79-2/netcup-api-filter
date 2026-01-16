@@ -127,7 +127,7 @@
                 <ul class="mb-0 small text-muted">
                     <li>Each code can only be used <strong>once</strong></li>
                     <li>Store them in a secure location (password manager, safe)</li>
-                    <li>10 codes are generated each time</li>
+                    <li>{{ recovery_code_count }} code{{ 's' if recovery_code_count != 1 else '' }} are generated each time</li>
                     <li>Use these if you lose access to your authenticator app</li>
                     <li>Regenerating codes invalidates all previous codes</li>
                 </ul>

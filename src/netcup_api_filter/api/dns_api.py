@@ -130,24 +130,31 @@ def list_records(domain):
     try:
         # Fetch records from Netcup
         result = netcup.info_dns_records(domain)
-        
-        if result.get('status') != 'success':
-            log_activity(
-                auth=auth,
-                action='api_call',
-                operation='read',
-                domain=domain,
-                source_ip=client_ip,
-                status='error',
-                status_reason=result.get('message', 'API error'),
-                response_summary={'status': result.get('status')}
-            )
-            return jsonify({
-                'error': 'api_error',
-                'message': result.get('message', 'Failed to fetch records')
-            }), 502
-        
-        records = result.get('responsedata', {}).get('dnsrecords', [])
+
+        # NetcupClient.info_dns_records returns a list of records.
+        # Some mocks/legacy clients may return a Netcup-style envelope.
+        if isinstance(result, list):
+            records = result
+        elif isinstance(result, dict):
+            status = result.get('status')
+            if status and status != 'success':
+                log_activity(
+                    auth=auth,
+                    action='api_call',
+                    operation='read',
+                    domain=domain,
+                    source_ip=client_ip,
+                    status='error',
+                    status_reason=result.get('message', 'API error'),
+                    response_summary={'status': status}
+                )
+                return jsonify({
+                    'error': 'api_error',
+                    'message': result.get('message', 'Failed to fetch records')
+                }), 502
+            records = result.get('responsedata', {}).get('dnsrecords', [])
+        else:
+            raise TypeError(f"Unexpected Netcup response type: {type(result)}")
         
         # Filter records by allowed types
         filtered = filter_dns_records(auth, domain, records)
@@ -241,8 +248,9 @@ def create_record(domain):
         
         # Update DNS records (creates new record)
         result = netcup.update_dns_records(domain, [record])
-        
-        if result.get('status') != 'success':
+
+        status = result.get('status') if isinstance(result, dict) else None
+        if status and status != 'success':
             log_activity(
                 auth=auth,
                 action='api_call',
@@ -353,8 +361,9 @@ def update_record(domain, record_id):
             record['priority'] = data['priority']
         
         result = netcup.update_dns_records(domain, [record])
-        
-        if result.get('status') != 'success':
+
+        status = result.get('status') if isinstance(result, dict) else None
+        if status and status != 'success':
             log_activity(
                 auth=auth,
                 action='api_call',
@@ -443,8 +452,9 @@ def delete_record(domain, record_id):
         }
         
         result = netcup.update_dns_records(domain, [record])
-        
-        if result.get('status') != 'success':
+
+        status = result.get('status') if isinstance(result, dict) else None
+        if status and status != 'success':
             log_activity(
                 auth=auth,
                 action='api_call',
@@ -547,14 +557,19 @@ def ddns_update(domain, hostname):
     try:
         # First, try to find existing record
         info_result = netcup.info_dns_records(domain)
-        
-        if info_result.get('status') != 'success':
-            return jsonify({
-                'error': 'api_error',
-                'message': 'Failed to fetch current records'
-            }), 502
-        
-        records = info_result.get('responsedata', {}).get('dnsrecords', [])
+
+        if isinstance(info_result, list):
+            records = info_result
+        elif isinstance(info_result, dict):
+            status = info_result.get('status')
+            if status and status != 'success':
+                return jsonify({
+                    'error': 'api_error',
+                    'message': 'Failed to fetch current records'
+                }), 502
+            records = info_result.get('responsedata', {}).get('dnsrecords', [])
+        else:
+            raise TypeError(f"Unexpected Netcup response type: {type(info_result)}")
         
         # Find matching record
         existing = None
@@ -580,8 +595,9 @@ def ddns_update(domain, hostname):
             }
         
         result = netcup.update_dns_records(domain, [record])
-        
-        if result.get('status') != 'success':
+
+        status = result.get('status') if isinstance(result, dict) else None
+        if status and status != 'success':
             log_activity(
                 auth=auth,
                 action='api_call',

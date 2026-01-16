@@ -21,7 +21,7 @@ import anyio
 from ui_tests import workflows
 from ui_tests.browser import Browser, browser_session
 from ui_tests.config import settings
-from ui_tests.deployment_state import get_deployment_target, load_state
+from ui_tests.deployment_state import get_deployment_target
 
 pytestmark = pytest.mark.asyncio
 
@@ -88,18 +88,6 @@ async def _create_test_account_and_login(browser: Browser, prefix: str = "test-a
     }
 
 
-async def _login_to_account_portal(browser: Browser, username: str, password: str) -> None:
-    """Login to account portal with given credentials."""
-    await browser.goto(settings.url("/account/login"))
-    await browser.fill("#username", username)
-    await browser.fill("#password", password)
-    await browser.click("button[type='submit']")
-    await anyio.sleep(1.0)
-    
-    # Handle 2FA if present
-    await workflows.handle_2fa_if_present(browser)
-
-
 # ============================================================================
 # Dashboard Tests
 # ============================================================================
@@ -110,30 +98,7 @@ class TestAccountDashboard:
     async def test_dashboard_loads_after_login(self, active_profile):
         """Verify dashboard loads successfully after account login."""
         async with browser_session() as browser:
-            # Use demo account from deployment state
-            state = load_state(get_deployment_target())
-            
-            # Navigate to account login
-            await browser.goto(settings.url("/account/login"))
-            
-            # Fill demo credentials if available, otherwise skip
-            username_field = await browser.query_selector("#username")
-            if not username_field:
-                pytest.skip("Account login page not available")
-            
-            # Try with demo-user account
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            # Check if login succeeded
-            body_text = await browser.text("body")
-            if "Invalid" in body_text or "locked" in body_text.lower():
-                pytest.skip("Demo account not available or locked")
-            
-            # Handle 2FA if present
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Verify dashboard loaded
             current_url = browser._page.url
@@ -142,17 +107,7 @@ class TestAccountDashboard:
     async def test_dashboard_shows_realm_count(self, active_profile):
         """Verify dashboard displays realm count."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Dashboard should show realms section
             page_html = await browser.html("body")
@@ -163,17 +118,7 @@ class TestAccountDashboard:
     async def test_dashboard_quick_actions_present(self, active_profile):
         """Verify dashboard has quick action buttons/links."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Check for common dashboard actions
             page_html = await browser.html("body")
@@ -195,17 +140,7 @@ class TestAccountRealms:
     async def test_realms_list_accessible(self, active_profile):
         """Verify realms list page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to realms list
             await browser.goto(settings.url("/account/realms"))
@@ -221,17 +156,7 @@ class TestAccountRealms:
     async def test_realm_request_form_accessible(self, active_profile):
         """Verify realm request form is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to realm request
             await browser.goto(settings.url("/account/realms/request"))
@@ -255,17 +180,7 @@ class TestAccountTokens:
     async def test_tokens_list_accessible(self, active_profile):
         """Verify tokens list page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to tokens list
             await browser.goto(settings.url("/account/tokens"))
@@ -278,17 +193,7 @@ class TestAccountTokens:
     async def test_token_creation_form_accessible(self, active_profile):
         """Verify token creation form is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to token creation
             await browser.goto(settings.url("/account/tokens/new"))
@@ -309,17 +214,7 @@ class TestAccountSecurity:
     async def test_settings_page_accessible(self, active_profile):
         """Verify account settings page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to settings
             await browser.goto(settings.url("/account/settings"))
@@ -333,17 +228,7 @@ class TestAccountSecurity:
     async def test_change_password_page_accessible(self, active_profile):
         """Verify change password page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to change password
             await browser.goto(settings.url("/account/change-password"))
@@ -356,17 +241,7 @@ class TestAccountSecurity:
     async def test_totp_setup_page_accessible(self, active_profile):
         """Verify TOTP setup page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to TOTP setup
             await browser.goto(settings.url("/account/settings/totp/setup"))
@@ -379,17 +254,7 @@ class TestAccountSecurity:
     async def test_recovery_codes_page_accessible(self, active_profile):
         """Verify recovery codes page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to recovery codes
             await browser.goto(settings.url("/account/settings/recovery-codes"))
@@ -410,17 +275,7 @@ class TestAccountActivity:
     async def test_activity_page_accessible(self, active_profile):
         """Verify activity log page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to activity
             await browser.goto(settings.url("/account/activity"))
@@ -441,17 +296,7 @@ class TestAccountDocs:
     async def test_api_docs_page_accessible(self, active_profile):
         """Verify API documentation page is accessible."""
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to API docs
             await browser.goto(settings.url("/account/docs"))

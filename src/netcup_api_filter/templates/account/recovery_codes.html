@@ -84,7 +84,7 @@
                     
                     <ul class="text-muted small mb-0">
                         <li>Each code can only be used <strong>once</strong></li>
-                        <li>10 codes are generated at a time</li>
+                        <li>{{ recovery_code_count }} code{{ 's' if recovery_code_count != 1 else '' }} are generated at a time</li>
                         <li>Store them in a safe, secure location</li>
                         <li>Generating new codes <strong>invalidates all old codes</strong></li>
                     </ul>

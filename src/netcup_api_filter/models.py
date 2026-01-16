@@ -277,6 +277,12 @@ class Account(db.Model):
     email_2fa_enabled = db.Column(db.Integer, default=1)  # Mandatory
     telegram_chat_id = db.Column(db.String(64))  # NULL = Telegram not linked
     telegram_enabled = db.Column(db.Integer, default=0)
+
+    # Telegram linking (Option A: start-link deep-link + bot callback)
+    # Token is stored hashed; raw token is only shown once in the UI.
+    telegram_link_token_hash = db.Column(db.String(64))  # sha256 hex
+    telegram_link_token_expires_at = db.Column(db.DateTime)
+    telegram_linked_at = db.Column(db.DateTime)
     
     # Recovery codes (JSON array of hashed codes, NULL = not generated)
     recovery_codes = db.Column(db.Text)  # JSON: ["hash1", "hash2", ...]
@@ -289,6 +295,9 @@ class Account(db.Model):
     notify_successful_auth = db.Column(db.Integer, default=0)
     notify_token_expiring = db.Column(db.Integer, default=1)
     notify_realm_status = db.Column(db.Integer, default=1)
+
+    # Channel preference
+    notify_via_telegram = db.Column(db.Integer, default=0)
     
     # Status
     is_active = db.Column(db.Integer, default=0)  # Requires admin approval
@@ -375,6 +384,36 @@ class Account(db.Model):
     
     def __repr__(self):
         return f'<Account {self.username}>'
+
+
+class AccountSession(db.Model):
+    """Track active account UI sessions for revocation and auditing."""
+
+    __tablename__ = 'account_sessions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', ondelete='CASCADE'), nullable=False, index=True)
+
+    # Opaque random token stored in the signed session cookie.
+    session_token = db.Column(db.String(255), unique=True, nullable=False, index=True)
+
+    ip_address = db.Column(db.String(64))
+    user_agent = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    last_active = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    revoked_at = db.Column(db.DateTime)
+    revoked_reason = db.Column(db.String(64))
+
+    account = db.relationship('Account')
+
+    def is_revoked(self) -> bool:
+        return bool(self.revoked_at)
+
+    def __repr__(self) -> str:
+        token_prefix = (self.session_token or "")[:6]
+        return f"<AccountSession id={self.id} account_id={self.account_id} token={token_prefix}... revoked={self.is_revoked()}>"
 
 
 class AccountRealm(db.Model):

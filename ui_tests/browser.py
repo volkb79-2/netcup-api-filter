@@ -93,6 +93,109 @@ class Browser:
                     pass  # Fall through to original error
             raise ToolError(name="goto", payload={"url": url, "wait_until": wait_until}, message=str(exc))
 
+    async def request_get_text(
+        self,
+        url: str,
+        params: Dict[str, Any] | None = None,
+        timeout: int = 30000,
+    ) -> Dict[str, Any]:
+        """Perform an authenticated GET request using the current browser context.
+
+        This is useful for covering JSON/AJAX endpoints while reusing the existing
+        logged-in session cookies.
+        """
+        start = time.perf_counter()
+        try:
+            response = await self._page.request.get(url, params=params, timeout=timeout)
+            text = await response.text()
+            _maybe_emit_step_timing(
+                "request:get_text",
+                time.perf_counter() - start,
+                {"url": url, "status": response.status},
+            )
+            return {"url": url, "status": response.status, "text": text}
+        except Exception as exc:
+            raise ToolError(
+                name="request_get_text",
+                payload={"url": url, "params": params},
+                message=str(exc),
+            )
+
+    async def request_get_json(
+        self,
+        url: str,
+        params: Dict[str, Any] | None = None,
+        timeout: int = 30000,
+    ) -> Dict[str, Any]:
+        """Perform an authenticated GET request and parse JSON."""
+        start = time.perf_counter()
+        try:
+            response = await self._page.request.get(url, params=params, timeout=timeout)
+            payload = await response.json()
+            _maybe_emit_step_timing(
+                "request:get_json",
+                time.perf_counter() - start,
+                {"url": url, "status": response.status},
+            )
+            return {"url": url, "status": response.status, "json": payload}
+        except Exception as exc:
+            raise ToolError(
+                name="request_get_json",
+                payload={"url": url, "params": params},
+                message=str(exc),
+            )
+
+    async def request_get_bytes(
+        self,
+        url: str,
+        params: Dict[str, Any] | None = None,
+        timeout: int = 30000,
+    ) -> Dict[str, Any]:
+        """Perform an authenticated GET request and return raw bytes.
+
+        Useful for download endpoints that return binary payloads.
+        """
+        start = time.perf_counter()
+        try:
+            response = await self._page.request.get(url, params=params, timeout=timeout)
+            body = await response.body()
+            _maybe_emit_step_timing(
+                "request:get_bytes",
+                time.perf_counter() - start,
+                {"url": url, "status": response.status, "bytes": len(body)},
+            )
+            return {"url": url, "status": response.status, "bytes": body}
+        except Exception as exc:
+            raise ToolError(
+                name="request_get_bytes",
+                payload={"url": url, "params": params},
+                message=str(exc),
+            )
+
+    async def request_post_form(
+        self,
+        url: str,
+        data: Dict[str, Any],
+        timeout: int = 30000,
+    ) -> Dict[str, Any]:
+        """Perform an authenticated POST using form-encoded data."""
+        start = time.perf_counter()
+        try:
+            response = await self._page.request.post(url, form=data, timeout=timeout)
+            text = await response.text()
+            _maybe_emit_step_timing(
+                "request:post_form",
+                time.perf_counter() - start,
+                {"url": url, "status": response.status},
+            )
+            return {"url": url, "status": response.status, "text": text}
+        except Exception as exc:
+            raise ToolError(
+                name="request_post_form",
+                payload={"url": url, "data_keys": sorted(list(data.keys()))},
+                message=str(exc),
+            )
+
     async def fill(self, selector: str, value: str) -> Dict[str, Any]:
         """Fill input field."""
         start = time.perf_counter()

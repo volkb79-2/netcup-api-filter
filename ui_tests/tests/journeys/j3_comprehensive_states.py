@@ -206,17 +206,47 @@ class AccountCreator:
     
     async def _accept_invite(self, invite_link: str, username: str, password: str):
         """Accept invite link and set password."""
-        # Navigate to invite link (this logs out admin if logged in)
-        await self.browser.goto(invite_link)
-        await self.browser.wait_for_load_state('domcontentloaded')
+        # Invite acceptance must run in an anonymous account-portal state.
+        # If an account session is already present, /account/invite/* will
+        # redirect to /account/dashboard and the password fields won't render.
+        try:
+            await self.browser.goto(settings.url("/account/logout"), wait_until="domcontentloaded")
+            await self.browser.wait_for_timeout(200)
+        except Exception:
+            pass
+
+        await self.browser.goto(invite_link, wait_until="domcontentloaded")
+        await self.browser.wait_for_timeout(300)
         
         # Check if we're on the invite page (has password fields)
         password_field = await self.browser.query_selector("#new_password, input[name='new_password']")
         if not password_field:
+            # Fallback: aggressively clear cookies/storage and retry once.
+            try:
+                await self.browser._page.context.clear_cookies()
+            except Exception:
+                pass
+            try:
+                await self.browser.evaluate(
+                    """
+                    () => {
+                        try { window.localStorage?.clear?.(); } catch (e) {}
+                        try { window.sessionStorage?.clear?.(); } catch (e) {}
+                    }
+                    """
+                )
+            except Exception:
+                pass
+
+            await self.browser.goto(invite_link, wait_until="domcontentloaded")
+            await self.browser.wait_for_timeout(300)
+
+            password_field = await self.browser.query_selector("#new_password, input[name='new_password']")
+        if not password_field:
             # Take screenshot for debugging
             await capture(browser=self.browser, name=f"invite-error-{username}")
             page_text = await self.browser.text("body")
-            current_url = self.browser.current_url or ""
+            current_url = self.browser._page.url
             print(f"  ⚠️  Invite page not found for {username}")
             print(f"      URL: {current_url}")
             print(f"      Page: {page_text[:200]}...")

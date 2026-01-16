@@ -108,7 +108,7 @@ async def test_api_dns_write_operation_unauthorized():
     # The demo token is read-only, try to create a record
     url = settings.url(f"/api/dns/{settings.client_domain}/records")
     headers = {
-        "Authorization": f"Bearer {settings.client_token}",
+        "Authorization": f"Bearer {settings.readonly_client_token}",
         "Content-Type": "application/json"
     }
     data = {

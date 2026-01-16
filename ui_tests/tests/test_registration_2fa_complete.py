@@ -189,8 +189,14 @@ class TestEmail2FA:
     async def test_2fa_email_option_available(self, active_profile):
         """Verify email 2FA option is available."""
         async with browser_session() as browser:
+            # This test needs the login form. `browser_session()` loads persisted
+            # storage-state by default, so clear cookies to avoid being redirected
+            # to an already-authenticated page.
+            await browser._page.context.clear_cookies()
+
             # Try admin login to trigger 2FA
-            await browser.goto(settings.url("/admin/login"))
+            await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+            await browser._page.wait_for_selector("#username", timeout=10_000)
             await browser.fill("#username", settings.admin_username)
             await browser.fill("#password", settings.admin_password)
             await browser.click("button[type='submit']")

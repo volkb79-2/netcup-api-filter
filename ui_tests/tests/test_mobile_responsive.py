@@ -26,14 +26,19 @@ class TestMobileResponsiveness:
         """Test that login page displays correctly on mobile."""
         async with browser_session() as browser:
             await browser.set_viewport(MOBILE_VIEWPORT["width"], MOBILE_VIEWPORT["height"])
+            # browser_session reuses stored auth state; ensure we are truly logged out.
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/admin/login"))
             
             status = await browser.verify_status()
             assert status == 200
             
-            # Check form is visible and full-width on mobile
-            page_html = await browser.html("body")
-            assert "Sign In" in page_html or "Login" in page_html
+            # Check login form elements are present (avoid brittle copy-based assertions).
+            await browser._page.wait_for_selector("form[action='/admin/login']", timeout=5000)
+            await browser._page.wait_for_selector("#username", timeout=5000)
+            await browser._page.wait_for_selector("#password", timeout=5000)
+            submit_text = (await browser.text("button[type='submit']") or "").lower()
+            assert "sign in" in submit_text
 
     async def test_navbar_toggle_on_mobile(self, active_profile):
         """Test that navbar shows hamburger menu on mobile."""
@@ -133,6 +138,7 @@ class TestTouchFriendlyUI:
         """Test that buttons meet minimum tap target size (44x44px)."""
         async with browser_session() as browser:
             await browser.set_viewport(MOBILE_VIEWPORT["width"], MOBILE_VIEWPORT["height"])
+            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/admin/login"))
             
             # Check submit button exists

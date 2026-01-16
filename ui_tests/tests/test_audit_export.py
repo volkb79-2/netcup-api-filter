@@ -91,15 +91,21 @@ class TestAuditExportEndpoint:
 
     async def test_export_requires_authentication(self, active_profile):
         """Test that export endpoint requires admin authentication."""
-        async with browser_session() as browser:
-            # Try to access export without login
-            # Use a new session (reset clears cookies)
-            await browser.reset()
-            await browser.goto(settings.url("/admin/audit/export"))
-            
-            # Should redirect to login
-            current_url = await browser.evaluate("() => window.location.href")
-            assert "login" in current_url.lower() or "admin" in current_url.lower()
+        import httpx
+
+        # Use a fresh HTTP client (no cookies/storage) to validate the auth guard.
+        url = settings.url("/admin/audit/export")
+        async with httpx.AsyncClient(verify=False, follow_redirects=False) as client:
+            response = await client.get(url)
+
+        # Unauthenticated access should not succeed.
+        assert response.status_code in (302, 401, 403), (
+            f"Expected redirect/unauthorized for unauthenticated export, got {response.status_code}: "
+            f"{response.text[:200]}"
+        )
+        if response.status_code == 302:
+            location = (response.headers.get("location") or "").lower()
+            assert "login" in location, f"Expected redirect to login, got location={location!r}"
 
 
 class TestAuditStats:

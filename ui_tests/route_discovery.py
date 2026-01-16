@@ -49,7 +49,9 @@ class RouteInfo:
         """Determine route category from URL pattern."""
         if self.rule.startswith("/admin"):
             return "admin"
-        elif self.rule.startswith("/client"):
+        elif self.rule.startswith("/account"):
+            # Historical naming: tests refer to the user portal as "client".
+            # The actual app routes are under /account.
             return "client"
         elif self.rule.startswith("/api"):
             return "api"
@@ -98,6 +100,16 @@ def discover_routes_from_app() -> RouteRegistry:
         # Set up minimal environment for import
         os.environ.setdefault("FLASK_ENV", "testing")
         os.environ.setdefault("SECRET_KEY", "route-discovery-key")
+
+        # Route discovery must not depend on any existing on-disk database, which may
+        # be an older schema. Use a dedicated scratch DB to guarantee schema matches
+        # current models (init_db() calls create_all()).
+        scratch_dir = REPO_ROOT / "tmp"
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        scratch_db = scratch_dir / "route_discovery.db"
+        if scratch_db.exists():
+            scratch_db.unlink()
+        os.environ.setdefault("NETCUP_FILTER_DB_PATH", str(scratch_db))
         
         from netcup_api_filter.app import create_app
         app = create_app()
@@ -120,7 +132,8 @@ def discover_routes_from_app() -> RouteRegistry:
                 auth_required = "unknown"
                 if rule.rule.startswith("/admin"):
                     auth_required = "admin"
-                elif rule.rule.startswith("/client"):
+                elif rule.rule.startswith("/account"):
+                    # Keep historical label for compatibility with existing callers.
                     auth_required = "client"
                 elif rule.rule.startswith("/api"):
                     auth_required = "api"
@@ -164,12 +177,14 @@ def discover_routes_static() -> RouteRegistry:
         "/admin/change-password",
     ]
     
-    # Known client pages
+    # Known account (user portal) pages (historically referred to as "client")
     client_pages = [
-        "/client/login",
-        "/client/",
-        "/client/activity",
-        "/client/realms",
+        "/account/login",
+        "/account/dashboard",
+        "/account/activity",
+        "/account/realms",
+        "/account/tokens",
+        "/account/settings",
     ]
     
     # Public pages
@@ -177,7 +192,7 @@ def discover_routes_static() -> RouteRegistry:
         "/",
         "/health",
         "/admin/login",
-        "/client/login",
+        "/account/login",
     ]
     
     for page in admin_pages:

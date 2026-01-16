@@ -63,8 +63,8 @@
                     <div class="col-6">
                         <label class="form-label small text-muted">Active Tokens</label>
                         <div>
-                            {% set active_tokens = realm.tokens.filter_by(is_active=True).count() if realm.tokens else 0 %}
-                            {% set total_tokens = realm.tokens.count() if realm.tokens else 0 %}
+                            {% set total_tokens = realm.tokens | length if realm.tokens else 0 %}
+                            {% set active_tokens = (realm.tokens | selectattr('is_active') | list | length) if realm.tokens else 0 %}
                             <span class="badge bg-success">{{ active_tokens }}</span>
                             <small class="text-muted">/ {{ total_tokens }} total</small>
                         </div>

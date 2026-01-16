@@ -11,5 +11,6 @@ from .account import account_bp
 from .admin import admin_bp
 from .dns_api import dns_api_bp
 from .ddns_protocols import ddns_protocols_bp
+from .telegram import telegram_bp
 
-__all__ = ['account_bp', 'admin_bp', 'dns_api_bp', 'ddns_protocols_bp']
+__all__ = ['account_bp', 'admin_bp', 'dns_api_bp', 'ddns_protocols_bp', 'telegram_bp']

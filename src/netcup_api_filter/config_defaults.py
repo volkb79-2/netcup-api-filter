@@ -12,32 +12,43 @@ from typing import Dict
 
 @lru_cache(maxsize=1)
 def load_defaults() -> Dict[str, str]:
-    """Load key/value defaults from .env (preferred) or .env.defaults (fallback).
+    """Load key/value defaults from `.env.defaults`, then overlay `.env`.
+
+    This matches the project's configuration hierarchy:
+    - `.env.defaults` is the catalog + default values (version-controlled)
+    - `.env` is a local override layer (not required to contain every key)
 
     Returns empty dict if neither file exists (e.g., in production where all
     config is supplied via environment variables).
     """
-    search_paths = []
-    
-    # Try Path.cwd() but catch OSError if working directory was deleted
-    try:
-        search_paths.append(Path.cwd() / ".env")
-        search_paths.append(Path.cwd() / ".env.defaults")
-    except (OSError, FileNotFoundError):
-        pass  # Working directory doesn't exist, skip
-    
-    # Always try relative to this source file
+
+    # Identify candidate directories.
+    dirs: list[Path] = []
     repo_root = Path(__file__).resolve().parent.parent.parent
-    search_paths.append(repo_root / ".env")
-    search_paths.append(repo_root / ".env.defaults")
+    dirs.append(repo_root)
 
-    for env_path in search_paths:
+    # Try Path.cwd() but catch OSError if working directory was deleted.
+    try:
+        cwd = Path.cwd()
+        if cwd.resolve() != repo_root.resolve():
+            dirs.append(cwd)
+    except (OSError, FileNotFoundError):
+        pass
+
+    merged: Dict[str, str] = {}
+
+    # Apply defaults first, then overlay overrides.
+    for directory in dirs:
+        defaults_path = directory / ".env.defaults"
+        if defaults_path.exists():
+            merged.update(_parse_env_file(defaults_path))
+
+    for directory in dirs:
+        env_path = directory / ".env"
         if env_path.exists():
-            return _parse_env_file(env_path)
+            merged.update(_parse_env_file(env_path))
 
-    # Return empty dict instead of raising - allows running without env files
-    # (e.g., in production where all config comes from environment variables)
-    return {}
+    return merged
 
 
 def get_default(key: str, fallback: str | None = None) -> str | None:

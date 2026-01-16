@@ -17,6 +17,7 @@ Handles:
 import logging
 import os
 import random
+import secrets
 import string
 from datetime import datetime, timedelta
 from functools import wraps
@@ -27,6 +28,7 @@ from flask import g, redirect, request, session, url_for
 from .config_defaults import get_default
 from .models import (
     Account,
+    AccountSession,
     ActivityLog,
     RegistrationRequest,
     db,
@@ -40,6 +42,7 @@ logger = logging.getLogger(__name__)
 # Session configuration
 SESSION_KEY_USER_ID = 'account_id'
 SESSION_KEY_USERNAME = 'account_username'
+SESSION_KEY_SESSION_TOKEN = 'account_session_token'
 SESSION_KEY_2FA_PENDING = '2fa_pending'
 SESSION_KEY_2FA_CODE = '2fa_code'
 SESSION_KEY_2FA_EXPIRES = '2fa_expires'
@@ -481,10 +484,19 @@ def send_2fa_code(account_id: int, method: str, source_ip: str) -> tuple[bool, s
     elif method == 'telegram':
         if not account.telegram_chat_id:
             return False, "Telegram not configured"
-        # TODO: Send telegram message
-        # send_telegram_2fa(account.telegram_chat_id, code)
-        logger.info(f"2FA code sent via Telegram to {account.username}")
-        return True, None
+
+        from .telegram_service import send_telegram_message
+
+        ok = send_telegram_message(
+            chat_id=account.telegram_chat_id,
+            text=f"🔐 Netcup API Filter login code: {code}\n\nValid for {TFA_CODE_EXPIRY_MINUTES} minutes.",
+        )
+        if ok:
+            logger.info(f"2FA code sent via Telegram to {account.username}")
+            return True, None
+
+        logger.error(f"Failed to send Telegram 2FA code to {account.username}")
+        return False, "Failed to send Telegram verification code"
     
     return False, f"Unknown 2FA method: {method}"
 
@@ -653,18 +665,60 @@ def create_session(account: Account):
     """Create authenticated session for account."""
     # Regenerate session ID to prevent session fixation attacks
     old_session_data = dict(session)
+    previous_token = old_session_data.get(SESSION_KEY_SESSION_TOKEN)
     session.clear()
     session.update(old_session_data)
     session.modified = True
     
     session[SESSION_KEY_USER_ID] = account.id
     session[SESSION_KEY_USERNAME] = account.username
+
+    # Create/rotate our own session token (used for DB-backed session revocation).
+    if previous_token:
+        try:
+            existing = AccountSession.query.filter_by(session_token=previous_token).first()
+            if existing and not existing.revoked_at:
+                existing.revoked_at = datetime.utcnow()
+                existing.revoked_reason = 'rotated'
+        except Exception:
+            # Best-effort only; auth must still succeed.
+            pass
+
+    session_token = secrets.token_urlsafe(32)
+    session[SESSION_KEY_SESSION_TOKEN] = session_token
+
+    try:
+        db.session.add(
+            AccountSession(
+                account_id=account.id,
+                session_token=session_token,
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent', ''),
+                last_active=datetime.utcnow(),
+            )
+        )
+    except Exception:
+        # Best-effort only; do not break login if session tracking fails.
+        pass
+
     session.permanent = True
 
 
 def logout():
     """Clear session and log out."""
     username = session.get(SESSION_KEY_USERNAME)
+    session_token = session.get(SESSION_KEY_SESSION_TOKEN)
+
+    if session_token:
+        try:
+            existing = AccountSession.query.filter_by(session_token=session_token).first()
+            if existing and not existing.revoked_at:
+                existing.revoked_at = datetime.utcnow()
+                existing.revoked_reason = 'logout'
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+
     session.clear()
     if username:
         logger.info(f"Logged out: {username}")
@@ -695,12 +749,35 @@ def require_account_auth(f):
         account = get_current_account()
         if not account:
             return redirect(url_for('account.login'))
+
+        # Validate DB-backed session token (revocation support).
+        session_token = session.get(SESSION_KEY_SESSION_TOKEN)
+        if not session_token:
+            logout()
+            return redirect(url_for('account.login'))
+
+        account_session = AccountSession.query.filter_by(
+            account_id=account.id,
+            session_token=session_token,
+            revoked_at=None,
+        ).first()
+        if not account_session:
+            logout()
+            return redirect(url_for('account.login'))
         
         if not account.is_active:
             logout()
             return redirect(url_for('account.login'))
+
+        # Touch last_active (best-effort).
+        try:
+            account_session.last_active = datetime.utcnow()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         
         g.account = account
+        g.account_session = account_session
         return f(*args, **kwargs)
     
     return decorated_function

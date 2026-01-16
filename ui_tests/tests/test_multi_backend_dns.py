@@ -109,18 +109,7 @@ class TestDNSRecordUI:
     async def test_dns_records_page_accessible_via_realm(self, active_profile):
         """Verify DNS records page is accessible via realm detail."""
         async with browser_session() as browser:
-            # Login to account portal
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to realms
             await browser.goto(settings.url("/account/realms"))
@@ -141,18 +130,7 @@ class TestDNSRecordUI:
     async def test_dns_record_create_form_fields(self, active_profile):
         """Verify DNS record creation form has required fields."""
         async with browser_session() as browser:
-            # Login to account portal
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to realms
             await browser.goto(settings.url("/account/realms"))
@@ -264,18 +242,7 @@ class TestDDNSQuickUpdate:
     async def test_realm_detail_has_ddns_section(self, active_profile):
         """Verify realm detail page has DDNS quick update section."""
         async with browser_session() as browser:
-            # Login to account portal
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to realms
             await browser.goto(settings.url("/account/realms"))
@@ -304,18 +271,7 @@ class TestZoneInformation:
     async def test_realm_shows_zone_info(self, active_profile):
         """Verify realm detail shows zone information."""
         async with browser_session() as browser:
-            # Login to account portal
-            await browser.goto(settings.url("/account/login"))
-            await browser.fill("#username", "demo-user")
-            await browser.fill("#password", "demo-password")
-            await browser.click("button[type='submit']")
-            await anyio.sleep(1.0)
-            
-            body_text = await browser.text("body")
-            if "Invalid" in body_text:
-                pytest.skip("Demo account not available")
-            
-            await workflows.handle_2fa_if_present(browser)
+            await workflows.ensure_user_dashboard(browser)
             
             # Navigate to realms
             await browser.goto(settings.url("/account/realms"))

@@ -1,103 +1,84 @@
-"""
-Tests for recovery codes functionality.
+"""Recovery codes tests.
 
-Tests:
-1. Recovery code generation and format validation
-2. Recovery code hashing and storage
-3. Recovery code verification and consumption
-4. Recovery codes in 2FA login flow
-5. Recovery codes UI pages
+These are account-portal UI coverage tests for:
+- /account/settings/recovery-codes (GET)
+- /account/settings/recovery-codes/generate (POST)
+- /account/settings/recovery-codes/display (GET)
+
+Design goal: validate the end-user workflow without forcing fresh login/2FA
+unless required (session reuse is allowed).
 """
+
+import os
+import re
 
 import pytest
+
 from ui_tests import workflows
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
+from ui_tests.env_defaults import get_env_default
 
 
 pytestmark = pytest.mark.asyncio
 
 
-class TestRecoveryCodesUnit:
-    """Unit tests for recovery_codes.py module (run via API or direct import)."""
-
-    async def test_recovery_code_format(self, active_profile):
-        """Test that generated codes match XXXX-XXXX format."""
-        # This test verifies the format via the UI display
+class TestRecoveryCodesAccountUI:
+    async def test_generate_recovery_codes_wrong_password_shows_error(self, active_profile):
+        """Wrong password should not generate codes and should show an error."""
         async with browser_session() as browser:
-            # Login to account portal as test user
-            await workflows.ensure_admin_dashboard(browser)
-            
-            # Navigate to settings page
-            await browser.goto(settings.url("/admin/change-password"))
-            
-            # Verify page loads
-            h1 = await browser.text("h1")
-            assert "Change Password" in h1 or "Password" in h1
+            await workflows.ensure_user_dashboard(browser)
 
-    async def test_recovery_codes_page_accessible(self, active_profile):
-        """Test that recovery codes page is accessible from settings."""
+            await browser.goto(settings.url("/account/settings/recovery-codes"))
+            await browser.wait_for_text("h2.mb-0", "Recovery Codes", timeout=10.0)
+
+            await browser.fill("#password", "not-the-password")
+            await browser.click("#generate-codes-form button[type='submit']")
+
+            # Redirect back to view page with flash.
+            await browser.wait_for_text(".alert", "Invalid password", timeout=10.0)
+            assert "/account/settings/recovery-codes" in browser._page.url
+
+    async def test_generate_and_display_recovery_codes_one_time(self, active_profile):
+        """Generate shows codes once; subsequent display redirects with warning."""
+        # Keep these as literals so the route coverage audit can match them.
+        generate_path = "/account/settings/recovery-codes/generate"
+        display_path = "/account/settings/recovery-codes/display"
+
         async with browser_session() as browser:
-            await workflows.ensure_admin_dashboard(browser)
-            
-            # Go to admin dashboard and check for settings link
-            dashboard_html = await browser.html("body")
-            
-            # The admin portal should have navigation
-            assert "Dashboard" in dashboard_html or "dashboard" in dashboard_html.lower()
+            await workflows.ensure_user_dashboard(browser)
 
+            # Navigate to recovery codes page.
+            await browser.goto(settings.url("/account/settings/recovery-codes"))
+            await browser.wait_for_text("h2.mb-0", "Recovery Codes", timeout=10.0)
 
-class TestRecoveryCodesUI:
-    """UI tests for recovery codes pages."""
+            # Generate new codes (invalidates old ones).
+            # The form posts to generate_path.
+            form_action = await browser.get_attribute("#generate-codes-form", "action")
+            assert generate_path in (form_action or "")
 
-    async def test_settings_page_has_recovery_codes_section(self, active_profile):
-        """Test that account settings page has recovery codes section."""
-        async with browser_session() as browser:
-            # First need to login as an account user, not admin
-            # For now, we'll test the admin password change page
-            await workflows.ensure_admin_dashboard(browser)
-            
-            # Admin change password page exists
-            await browser.goto(settings.url("/admin/change-password"))
-            status = await browser.verify_status()
-            assert status == 200
+            demo_password = os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD") or get_env_default(
+                "DEFAULT_TEST_ACCOUNT_PASSWORD"
+            )
+            if not demo_password:
+                # ensure_user_dashboard() already skips if defaults are missing
+                raise AssertionError("DEFAULT_TEST_ACCOUNT_PASSWORD missing; ensure_user_dashboard should have skipped")
 
+            await browser.fill("#password", demo_password)
+            await browser.click("#generate-codes-form button[type='submit']")
 
-class TestRecoveryCodesAPI:
-    """API/functional tests for recovery codes."""
+            # The server redirects to display page for one-time view.
+            await browser.wait_for_text("h2.mb-2", "Save Your Recovery Codes", timeout=10.0)
+            assert display_path in browser._page.url
 
-    async def test_recovery_code_generation_requires_auth(self, active_profile):
-        """Test that generating recovery codes requires authentication."""
-        async with browser_session() as browser:
-            # Try to access recovery codes without login
-            # Should redirect to login
-            await browser.goto(settings.url("/account/security/recovery-codes"))
-            
-            # Should be redirected to login (or show 401/403)
-            current_url = await browser.evaluate("() => window.location.href")
-            # Either on login page or got an error
-            assert "login" in current_url.lower() or "account" in current_url.lower()
+            # Validate we got 10 codes in XXXX-XXXX format.
+            grid_text = await browser.text("#recovery-codes-grid")
+            codes = re.findall(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b", grid_text or "")
+            expected_count_str = os.environ.get("RECOVERY_CODE_COUNT") or get_env_default("RECOVERY_CODE_COUNT")
+            expected_count = int(expected_count_str or "3")
+            assert len(set(codes)) == expected_count
 
-
-class TestRecoveryCodesIntegration:
-    """Integration tests for recovery codes in 2FA flow."""
-
-    async def test_recovery_code_format_xxxx_xxxx(self, active_profile):
-        """Test that the format XXXX-XXXX is recognized as recovery code."""
-        # This test would require a full account with 2FA setup
-        # For now, we verify the route exists
-        async with browser_session() as browser:
-            await workflows.ensure_admin_dashboard(browser)
-            
-            # Verify admin portal is functional
-            h1 = await browser.text("h1")
-            assert "Dashboard" in h1
-
-
-# Additional tests that could be added when account portal is fully functional:
-# - test_can_generate_recovery_codes_after_totp_setup
-# - test_can_download_recovery_codes_txt
-# - test_can_print_recovery_codes
-# - test_recovery_code_login_consumes_code
-# - test_used_recovery_code_rejected
-# - test_regenerate_invalidates_old_codes
+            # Display page must be one-time: revisiting should redirect back.
+            await browser.goto(settings.url(display_path))
+            await browser.wait_for_text(".alert", "No recovery codes to display", timeout=10.0)
+            assert "/account/settings/recovery-codes" in browser._page.url
