@@ -19,15 +19,15 @@ Rate limits are applied in this order of priority:
    - Used when no database setting exists
    - Examples:
      ```bash
-     ADMIN_RATE_LIMIT=10 per minute
-     ACCOUNT_RATE_LIMIT=10 per minute
+     ADMIN_RATE_LIMIT=50 per minute
+     ACCOUNT_RATE_LIMIT=50 per minute
      API_RATE_LIMIT=60 per minute
      ```
 
 3. **Hardcoded Defaults** (Lowest Priority)
    - Fallback values in code
    - Only used if neither database nor environment has values
-   - Default: `10 per minute` for admin/account, `60 per minute` for API
+   - Default: `50 per minute` for admin/account, `60 per minute` for API
 
 ## Format
 
@@ -44,9 +44,9 @@ Examples:
 
 From `.env.defaults`:
 ```bash
-ADMIN_RATE_LIMIT=10 per minute
-ACCOUNT_RATE_LIMIT=10 per minute
-API_RATE_LIMIT=60 per minute
+ADMIN_RATE_LIMIT="50 per minute"
+ACCOUNT_RATE_LIMIT="50 per minute"
+API_RATE_LIMIT="60 per minute"
 ```
 
 ## Editing via Admin UI
@@ -54,9 +54,9 @@ API_RATE_LIMIT=60 per minute
 1. Navigate to **Admin → Config → System Info**
 2. Scroll to **Security Settings** card
 3. Edit rate limit values:
-   - **Admin Portal**: Rate limit for `/admin/*` routes
-   - **Account Portal**: Rate limit for `/account/*` routes
-   - **API Endpoints**: Rate limit for `/api/*` routes
+   - **Admin Portal**: Rate limit for the admin blueprint (`/admin/*` routes)
+   - **Account Portal**: Rate limit for the account blueprint (`/account/*` routes)
+   - **API Endpoints** (`API_RATE_LIMIT`): currently applied **only** to the Telegram callback blueprint (`/api/telegram/*`). The DNS/DDNS data API (`/api/dns/*`, `/api/ddns/*`) is **not** covered by this per-blueprint limit — see the note below.
 4. Click **Save Security Settings**
 5. **Restart application** for changes to take effect
 
@@ -93,11 +93,15 @@ For local testing, set `FLASK_ENV=local_test` to disable rate limiting entirely.
 
 ## Security Considerations
 
-- **Conservative defaults**: Start with low limits (10/min) and increase based on usage patterns
+- **Conservative defaults**: Start with low limits (50/min) and increase based on usage patterns
 - **Monitor logs**: Watch for legitimate users hitting limits
-- **Separate limits**: Admin and account portals have different limits to prevent admin lockout
-- **API limits**: Higher default (60/min) for programmatic access
+- **Separate limits**: Admin and account portals have their own limits to prevent admin lockout
+- **API limits**: `API_RATE_LIMIT` (default 60/min) applies only to the Telegram callback blueprint
 - **Testing**: Always test limit changes in staging before production
+
+### Known Gap: DNS/DDNS Data API
+
+`API_RATE_LIMIT` is **not** wired to the DNS/DDNS data API blueprints. In `app.py`, `limiter.limit(api_rate_limit)` is applied only to the Telegram blueprint (`telegram_bp`); the DNS API (`dns_api_bp`) and DDNS protocol (`ddns_protocols_bp`) blueprints have no per-blueprint limit. They are therefore covered only by the **global default limits** (`200 per hour` and `50 per minute`, set as `default_limits` on the `Limiter`). Tightening the data API to use a dedicated, configurable limit is a known improvement.
 
 ## Troubleshooting
 

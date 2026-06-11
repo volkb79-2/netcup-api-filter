@@ -17,6 +17,7 @@ Authentication: Bearer token only for API, bcrypt hashed storage
 """
 import json
 import logging
+import os
 import re
 import secrets
 from datetime import datetime
@@ -97,9 +98,18 @@ def validate_username(username: str) -> tuple[bool, str | None]:
 
 
 # Password validation
-# Pattern: printable ASCII (32-126), min 20 chars, min 100 bits entropy
-PASSWORD_MIN_LENGTH = 20
-PASSWORD_MIN_ENTROPY = 100  # bits
+# Pattern: printable ASCII (32-126), min length + min entropy.
+# Env-configurable (defaults shown); parsed defensively so a bad value can't
+# break import. Raising these strengthens new-password requirements.
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(str(os.environ.get(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+PASSWORD_MIN_LENGTH = _env_int("PASSWORD_MIN_LENGTH", 20)
+PASSWORD_MIN_ENTROPY = _env_int("PASSWORD_MIN_ENTROPY", 100)  # bits
 
 # Safe printable ASCII: excludes characters that cause shell escaping issues
 # Excludes: ! (shell history), ` (command substitution), ' " (quoting), \ (escape)
@@ -280,7 +290,8 @@ class Account(db.Model):
 
     # Telegram linking (Option A: start-link deep-link + bot callback)
     # Token is stored hashed; raw token is only shown once in the UI.
-    telegram_link_token_hash = db.Column(db.String(64))  # sha256 hex
+    # Indexed: the bot callback looks accounts up by this hash on every call.
+    telegram_link_token_hash = db.Column(db.String(64), index=True)  # sha256 hex
     telegram_link_token_expires_at = db.Column(db.DateTime)
     telegram_linked_at = db.Column(db.DateTime)
     

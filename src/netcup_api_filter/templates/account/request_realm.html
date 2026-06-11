@@ -39,37 +39,20 @@
                     </h5>
                 </div>
                 <div class="card-body">
+                    {# Quick-template buttons from the canonical realm_templates list (realm_templates.py). #}
                     <div class="row g-3">
+                        {% for tpl in templates %}
                         <div class="col-md-4">
                             <button type="button" class="btn btn-outline-primary w-100 h-100 py-3 template-btn"
-                                    data-realm-type="host"
-                                    data-record-types="A,AAAA"
-                                    data-operations="read,update">
-                                <i class="bi bi-house d-block fs-3 mb-2"></i>
-                                <strong>DDNS Single Host</strong>
-                                <small class="d-block text-muted mt-1">Update single hostname IP</small>
+                                    data-realm-type="{{ tpl.realm_type }}"
+                                    data-record-types="{{ tpl.record_types | join(',') }}"
+                                    data-operations="{{ tpl.operations | join(',') }}">
+                                <span class="d-block fs-3 mb-2">{{ tpl.icon }}</span>
+                                <strong>{{ tpl.name }}</strong>
+                                <small class="d-block text-muted mt-1">{{ tpl.description }}</small>
                             </button>
                         </div>
-                        <div class="col-md-4">
-                            <button type="button" class="btn btn-outline-warning w-100 h-100 py-3 template-btn"
-                                    data-realm-type="subdomain"
-                                    data-record-types="TXT"
-                                    data-operations="read,create,delete">
-                                <i class="bi bi-shield-lock d-block fs-3 mb-2"></i>
-                                <strong>Let's Encrypt DNS-01</strong>
-                                <small class="d-block text-muted mt-1">Automated certificates</small>
-                            </button>
-                        </div>
-                        <div class="col-md-4">
-                            <button type="button" class="btn btn-outline-success w-100 h-100 py-3 template-btn"
-                                    data-realm-type="subdomain"
-                                    data-record-types="A,AAAA,CNAME,TXT,MX"
-                                    data-operations="read,create,update,delete">
-                                <i class="bi bi-gear d-block fs-3 mb-2"></i>
-                                <strong>Full Management</strong>
-                                <small class="d-block text-muted mt-1">Complete control</small>
-                            </button>
-                        </div>
+                        {% endfor %}
                     </div>
                 </div>
             </div>

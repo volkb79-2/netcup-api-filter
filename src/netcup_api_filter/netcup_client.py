@@ -9,6 +9,50 @@ from typing import Dict, List, Optional, Any
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Response normalization helpers
+#
+# NetcupClient.info_dns_records() returns a plain list of record dicts, while
+# some mocks/legacy clients (and the raw Netcup CCP API) return a Netcup-style
+# envelope: {"status": "...", "responsedata": {"dnsrecords": [...]}, ...}. These
+# helpers centralize the "which shape is it" handling so every DNS/DDNS handler
+# treats both forms identically instead of re-deriving it inline.
+# ---------------------------------------------------------------------------
+
+def extract_dns_records(result: Any) -> List[dict]:
+    """Return the list of record dicts from an info_dns_records() result.
+
+    Accepts either a plain list or a Netcup-style envelope. Raises TypeError on
+    any other shape so an unexpected response fails loudly rather than silently
+    returning no records.
+    """
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        return result.get('responsedata', {}).get('dnsrecords', []) or []
+    raise TypeError(f"Unexpected Netcup response type: {type(result)}")
+
+
+def mutation_failed(result: Any) -> bool:
+    """True if a Netcup mutation envelope reports a non-success status.
+
+    A plain/None result (or an envelope without a status) is treated as success,
+    matching NetcupClient.update_dns_records() which returns {'status':'success'}.
+    """
+    return (
+        isinstance(result, dict)
+        and bool(result.get('status'))
+        and result.get('status') != 'success'
+    )
+
+
+def mutation_message(result: Any, default: str) -> str:
+    """Return the error message from a mutation envelope, or ``default``."""
+    if isinstance(result, dict):
+        return result.get('message', default)
+    return default
+
+
 class NetcupAPIError(Exception):
     """Exception raised for Netcup API errors"""
     pass

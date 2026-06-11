@@ -25,6 +25,7 @@ Prerequisites:
 - Mailpit container running: cd tooling/mailpit && docker compose up -d
 - App configured to use mailpit:1025 as SMTP
 """
+import os
 import re
 import uuid
 import pytest
@@ -40,6 +41,19 @@ from ui_tests.workflows import ensure_admin_dashboard
 
 
 pytestmark = [pytest.mark.asyncio]
+
+
+def _email_delivery_disabled() -> bool:
+    """Whether email delivery is *explicitly* disabled for this deployment.
+
+    Only an explicit opt-out env flag counts. A missing email must NOT be
+    excused by inferring "registration auto-approved" from the absence of an
+    email -- that would mask a genuine email/registration regression. The
+    `mailpit` fixture already guarantees the SMTP sink is reachable, so when this
+    returns False the email arriving is the expected, asserted behavior.
+    """
+    val = (os.environ.get("NAF_EMAIL_DELIVERY_DISABLED") or "").strip().lower()
+    return val in ("1", "true", "yes", "on")
 
 
 # =============================================================================
@@ -164,7 +178,14 @@ class TestRegistrationEmails:
     """Test emails sent during registration flow."""
 
     async def _ensure_registration_form_visible(self, browser) -> None:
-        """Ensure /account/register shows the registration form (anonymous session)."""
+        """Ensure /account/register shows the registration form (anonymous session).
+
+        Self-registration has no config gate: GET /account/register always
+        renders the form for an anonymous visitor (it only redirects when an
+        account session is already authenticated). So after clearing any
+        persisted auth state the form MUST be present -- a missing form is a
+        genuine product regression and is asserted, not skipped.
+        """
         await browser.goto(settings.url('/account/register'))
         await browser._page.wait_for_load_state('domcontentloaded')
 
@@ -192,6 +213,15 @@ class TestRegistrationEmails:
         await browser.goto(settings.url('/account/register'))
         await browser._page.wait_for_load_state('domcontentloaded')
 
+        username_field = await browser.query_selector('#username, input[name="username"]')
+        email_field = await browser.query_selector('#email, input[name="email"]')
+        body_preview = (await browser.text('body'))[:800]
+        assert username_field is not None and email_field is not None, (
+            "Registration form must render for an anonymous visitor at "
+            "/account/register (self-registration has no config gate). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
+
     async def test_registration_sends_verification_email(
         self, browser, mailpit: MailpitClient, unique_username, unique_email
     ):
@@ -202,18 +232,17 @@ class TestRegistrationEmails:
 
         username_field = await browser.query_selector('#username, input[name="username"]')
         email_field = await browser.query_selector('#email, input[name="email"]')
-        if username_field is None or email_field is None:
-            body_preview = (await browser.text('body'))[:800]
-            pytest.skip(
-                "Registration form not available (may be disabled or redirected). "
-                f"url={browser._page.url} preview={body_preview!r}"
-            )
-        
+        body_preview = (await browser.text('body'))[:800]
+        assert username_field is not None and email_field is not None, (
+            "Registration form must be present (self-registration has no config gate). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
+
         # Fill and submit registration form
         await browser.fill('#username, input[name="username"]', unique_username)
         await browser.fill('#email, input[name="email"]', unique_email)
         await browser.fill('#password, input[name="password"]', 'TestPassword123+Secure24')
-        
+
         # Check for confirm password field
         confirm = await browser.query_selector('#password_confirm, #confirm_password')
         if confirm:
@@ -230,9 +259,19 @@ class TestRegistrationEmails:
         )
         
         if msg is None:
-            # Registration might be disabled or auto-approved
-            pytest.skip("No verification email - registration may be auto-approved")
-        
+            # Mailpit is reachable (fixture-gated) and registration always sends
+            # a verification email, so a missing message is a regression unless
+            # email delivery is explicitly disabled for this deployment.
+            if _email_delivery_disabled():
+                pytest.skip(
+                    "Verification email not delivered and NAF_EMAIL_DELIVERY_DISABLED "
+                    "is set (email delivery intentionally disabled for this deployment)."
+                )
+            raise AssertionError(
+                f"No verification email received for {unique_email}. Registration must "
+                "deliver a verification email (Mailpit is reachable)."
+            )
+
         # Verify email was sent to correct recipient ONLY
         assert_email_to_only(
             msg, unique_email,
@@ -258,12 +297,11 @@ class TestRegistrationEmails:
 
         username_field = await browser.query_selector('#username, input[name="username"]')
         email_field = await browser.query_selector('#email, input[name="email"]')
-        if username_field is None or email_field is None:
-            body_preview = (await browser.text('body'))[:800]
-            pytest.skip(
-                "Registration form not available (may be disabled or redirected). "
-                f"url={browser._page.url} preview={body_preview!r}"
-            )
+        body_preview = (await browser.text('body'))[:800]
+        assert username_field is not None and email_field is not None, (
+            "Registration form must be present (self-registration has no config gate). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
 
         await browser.fill('#username, input[name="username"]', unique_username)
         await browser.fill('#email, input[name="email"]', unique_email)
@@ -834,17 +872,20 @@ class TestEmailIsolation:
     """Verify emails don't leak between accounts."""
 
     async def _ensure_registration_form_visible(self, browser: Browser) -> None:
+        # Callers use a fresh anonymous session, so GET /account/register must
+        # render the form. Self-registration has no config gate, so a missing
+        # form is a genuine product regression and is asserted, not skipped.
         await browser.goto(settings.url('/account/register'))
         await browser._page.wait_for_load_state('domcontentloaded')
 
         username_field = await browser.query_selector('#username, input[name="username"]')
         email_field = await browser.query_selector('#email, input[name="email"]')
-        if username_field is None or email_field is None:
-            body_preview = (await browser.text('body'))[:800]
-            pytest.skip(
-                "Registration form not available (may be disabled or redirected). "
-                f"url={browser._page.url} preview={body_preview!r}"
-            )
+        body_preview = (await browser.text('body'))[:800]
+        assert username_field is not None and email_field is not None, (
+            "Registration form must render for an anonymous visitor at "
+            "/account/register (self-registration has no config gate). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
 
     async def test_user_a_email_not_sent_to_user_b(
         self, session_manager, mailpit: MailpitClient

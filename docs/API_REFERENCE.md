@@ -231,6 +231,27 @@ good 198.51.100.5
 
 **Note:** No-IP uses `nohost` for both authentication and hostname errors.
 
+### REST DDNS Update
+
+**Endpoint:** `POST /api/ddns/<domain>/<hostname>` or `PUT /api/ddns/<domain>/<hostname>`
+
+**Description:** JSON DDNS-style update. Detects the caller IP and updates the corresponding `A`/`AAAA` record for `<hostname>.<domain>`. Unlike the DynDNS2/No-IP endpoints above, this returns **JSON** (not plain text).
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `ip` | No | Explicit IP address (defaults to the caller IP) |
+| `type` | No | `A` or `AAAA` (defaults to `A`) |
+
+**Authentication:** Bearer token in `Authorization` header.
+
+**Example Request:**
+```bash
+curl -X POST "https://naf.example.com/api/ddns/example.com/device" \
+  -H "Authorization: Bearer naf_..."
+```
+
 ### Auto IP Detection
 
 Both endpoints support automatic IP detection:
@@ -299,11 +320,17 @@ curl "https://naf.example.com/api/geoip/8.8.8.8"
 ```json
 {
   "ip": "8.8.8.8",
-  "country": "US",
+  "country_code": "US",
   "country_name": "United States",
   "city": "Mountain View",
   "latitude": 37.386,
-  "longitude": -122.0838
+  "longitude": -122.0838,
+  "timezone": "America/Los_Angeles",
+  "continent": "North America",
+  "subdivision": "California",
+  "postal_code": "94035",
+  "location": "Mountain View, California, United States",
+  "flag": "🇺🇸"
 }
 ```
 
@@ -353,8 +380,8 @@ All JSON error responses follow this format:
 ## Rate Limiting
 
 API endpoints are subject to rate limiting:
-- **Default:** 200 requests per hour, 50 per minute
-- **Auth endpoints:** 10 requests per minute
+- **Global default:** 200 requests per hour and 50 per minute (applies to all routes, including the DNS/DDNS data endpoints).
+- **Admin / Account / Telegram blueprints:** dedicated per-blueprint limits (`ADMIN_RATE_LIMIT`, `ACCOUNT_RATE_LIMIT`, `API_RATE_LIMIT`; defaults `50`/`50`/`60` per minute). `API_RATE_LIMIT` is wired only to the Telegram callback blueprint, so the DNS/DDNS data endpoints (`/api/dns/*`, `/api/ddns/*`) currently fall under the **global default** only.
 - **Response Header:** `Retry-After` (seconds to wait)
 
 **Rate Limit Response:**

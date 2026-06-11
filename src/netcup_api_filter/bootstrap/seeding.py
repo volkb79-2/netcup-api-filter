@@ -35,6 +35,7 @@ from ..models import (
     VisibilityEnum,
 )
 from ..config_defaults import get_default, load_defaults, require_default
+from ..utils import parse_bool
 
 logger = logging.getLogger(__name__)
 
@@ -74,20 +75,8 @@ def seed_settings_from_env():
     - SECRET_KEY (generated per deployment)
     """
     from ..database import set_setting, get_setting
-    
-    defaults = _get_env_defaults()
 
-    def _parse_bool(raw: object, *, default: bool = False) -> bool:
-        if raw is None:
-            return default
-        if isinstance(raw, bool):
-            return raw
-        value = str(raw).strip().lower()
-        if value in {"1", "true", "yes", "on"}:
-            return True
-        if value in {"0", "false", "no", "off"}:
-            return False
-        return default
+    defaults = _get_env_defaults()
 
     deployment_target = os.environ.get("DEPLOYMENT_TARGET", "").strip().lower()
     if deployment_target == "local":
@@ -100,7 +89,7 @@ def seed_settings_from_env():
             "DEMO_PAGES_ENABLED_WEBHOSTING",
             defaults.get("DEMO_PAGES_ENABLED_LOCAL", "false"),
         )
-    demo_pages_enabled = _parse_bool(demo_pages_default_raw, default=False)
+    demo_pages_enabled = parse_bool(demo_pages_default_raw, default=False)
     
     # Map of Settings table keys to env defaults keys
     settings_map = {
@@ -114,7 +103,10 @@ def seed_settings_from_env():
     
     seeded_count = 0
     for setting_key, default_value in settings_map.items():
-        if not get_setting(setting_key):
+        # Seed only when the key is truly absent. `if not get_setting(...)` would
+        # treat a deliberately-stored falsy value (e.g. enable_demo_pages = False)
+        # as unseeded and overwrite it with the env default on every build.
+        if get_setting(setting_key) is None:
             set_setting(setting_key, default_value)
             seeded_count += 1
             logger.info(f"Seeded setting '{setting_key}' = '{default_value}'")
@@ -255,9 +247,9 @@ def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None)
         if not account.user_alias:
             account.user_alias = generate_user_alias()
             logger.info(f"Added user_alias to existing account: {options.username}")
-        # Ensure seeded accounts remain login-capable in test deployments.
-        account.email_verified = 1
-        account.email_2fa_enabled = 1
+        # Do NOT force email_verified / email_2fa_enabled here. Re-seeding (every
+        # build) would otherwise silently re-enable flags an operator or test had
+        # deliberately cleared. These flags are set once, at account creation.
         logger.info(f"Account {options.username} already exists")
     return account
 

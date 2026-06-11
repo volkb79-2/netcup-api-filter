@@ -324,7 +324,7 @@ class TestRecoveryCodeCount:
     """Test that recovery code count is limited to 3."""
 
     async def test_recovery_codes_limited_to_three(self):
-        """Verify that only 3 recovery codes are generated (not 10)."""
+        """Verify the default recovery code count is 3 (not 10)."""
         # Avoid importing backend modules here (Playwright container may not have
         # Flask/SQLAlchemy runtime deps installed). Parse constant from source.
         repo_root = os.environ.get("REPO_ROOT", "/workspaces/netcup-api-filter")
@@ -332,25 +332,33 @@ class TestRecoveryCodeCount:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Prefer parsing the default value from the config-driven assignment:
-        #   RECOVERY_CODE_COUNT = int(os.environ.get("RECOVERY_CODE_COUNT", "3"))
+        # The default now lives inside a defensive helper that clamps the value:
+        #   raw = os.environ.get("RECOVERY_CODE_COUNT", "3")
+        #   ...
+        #   return max(1, min(count, 20))
+        # Parse the env-default literal from the os.environ.get(...) call so this
+        # test survives the helper refactor (it is no longer a bare assignment).
         m = re.search(
-            r"^RECOVERY_CODE_COUNT\s*=\s*int\(os\.environ\.get\(\"RECOVERY_CODE_COUNT\",\s*\"(\d+)\"\)\)\s*$",
+            r"os\.environ\.get\(\s*[\"']RECOVERY_CODE_COUNT[\"']\s*,\s*[\"'](\d+)[\"']\s*\)",
             content,
-            re.MULTILINE,
         )
         if m:
             recovery_code_count = int(m.group(1))
         else:
             # Backwards compatibility: allow a literal integer assignment.
             m2 = re.search(r"^RECOVERY_CODE_COUNT\s*=\s*(\d+)\b", content, re.MULTILINE)
-            assert m2, f"RECOVERY_CODE_COUNT not found in {path}"
+            assert m2, f"RECOVERY_CODE_COUNT default not found in {path}"
             recovery_code_count = int(m2.group(1))
 
         assert recovery_code_count == 3, \
-            f"Expected RECOVERY_CODE_COUNT=3, got {recovery_code_count}"
-        
-        print("✓ Recovery code count is 3 (security improvement)")
+            f"Expected default RECOVERY_CODE_COUNT=3, got {recovery_code_count}"
+
+        # The clamping range must be present so a bad/huge env value can't expand
+        # the code set and weaken brute-force resistance.
+        assert "max(1, min(" in content, \
+            "Expected RECOVERY_CODE_COUNT to be clamped via max(1, min(count, 20))"
+
+        print("✓ Default recovery code count is 3 (security improvement)")
 
 
 class TestSessionRegeneration:

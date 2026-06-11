@@ -37,6 +37,7 @@ from ..models import (
     BackendProvider, BackendService, ManagedDomainRoot, DomainRootGrant,
     OwnerTypeEnum, VisibilityEnum, TestStatusEnum, GrantTypeEnum,
 )
+from ..realm_templates import REALM_TEMPLATES
 from ..realm_token_service import (
     approve_realm,
     create_realm_by_admin,
@@ -231,16 +232,14 @@ def _notify_failed_login_attempt(admin: Account, failed_count: int, client_ip: s
     """Send notification to admin about failed login attempts on their account."""
     if failed_count < FAILED_LOGIN_ALERT_THRESHOLD:
         return
-    
+
     try:
-        from ..notification_service import send_security_alert_email
-        send_security_alert_email(
-            email=admin.email,
-            username=admin.username,
-            event_type='failed_login',
-            details=f"{failed_count} failed login attempts detected from IP {client_ip}",
-            source_ip=client_ip
-        )
+        # Route through notify_failed_login so the alert honours the account's
+        # channel preferences (email AND/OR Telegram). Calling
+        # send_security_alert_email directly here was email-only and left the
+        # Telegram branch in notify_failed_login as dead code.
+        from ..notification_service import notify_failed_login
+        notify_failed_login(admin, client_ip, failed_count)
         logger.info(f"Security alert sent to {admin.username} after {failed_count} failed attempts")
     except Exception as e:
         logger.error(f"Failed to send security alert: {e}")
@@ -1071,7 +1070,7 @@ def account_create():
         else:
             flash(error_or_warning, 'error')
     
-    return render_template('admin/account_create.html')
+    return render_template('admin/account_create.html', realm_templates=REALM_TEMPLATES)
 
 
 @admin_bp.route('/accounts/<int:account_id>/approve', methods=['POST'])
@@ -1355,12 +1354,12 @@ def account_add_realm(account_id):
         # e.g., "example.com" -> domain="example.com", realm_value=""
         if not full_domain:
             flash('Domain is required', 'error')
-            return render_template('admin/realm_create.html', account=account)
+            return render_template('admin/realm_create.html', account=account, realm_templates=REALM_TEMPLATES)
         
         parts = full_domain.split('.')
         if len(parts) < 2:
             flash('Invalid domain format (need at least domain.tld)', 'error')
-            return render_template('admin/realm_create.html', account=account)
+            return render_template('admin/realm_create.html', account=account, realm_templates=REALM_TEMPLATES)
         
         # Extract base domain (last 2 parts) and subdomain prefix (rest)
         # For TLDs like co.uk, this is simplified - assume 2-part TLD for now
@@ -1382,8 +1381,8 @@ def account_add_realm(account_id):
             return redirect(url_for('admin.account_detail', account_id=account_id))
         else:
             flash(result.error, 'error')
-    
-    return render_template('admin/realm_create.html', account=account)
+
+    return render_template('admin/realm_create.html', account=account, realm_templates=REALM_TEMPLATES)
 
 
 # ============================================================================
@@ -3534,7 +3533,13 @@ def domain_root_edit(root_id):
 def domain_root_grants(root_id):
     """Manage grants for a domain root."""
     root = ManagedDomainRoot.query.get_or_404(root_id)
-    granted_account_ids = {g.account_id for g in (root.grants or [])}
+    # Only ACTIVE (non-revoked) grants make an account ineligible. A revoked
+    # grant must leave the user selectable again so they can be re-granted
+    # (the add handler reactivates the existing row rather than inserting a
+    # duplicate that would violate uq_grant_root_account).
+    granted_account_ids = {
+        g.account_id for g in (root.grants or []) if g.revoked_at is None
+    }
     eligible_accounts_query = Account.query.filter(Account.is_active == 1, Account.is_admin == 0)
     if granted_account_ids:
         eligible_accounts_query = eligible_accounts_query.filter(~Account.id.in_(sorted(granted_account_ids)))
@@ -3575,7 +3580,13 @@ def domain_root_grant_add(root_id):
     expires_raw = (request.form.get('expires_at') or '').strip()
     if expires_raw:
         try:
-            expires_at = datetime.strptime(expires_raw, '%Y-%m-%d')
+            # Interpret the date as inclusive end-of-day (23:59:59), so a grant
+            # that "expires on D" stays valid for all of D. Parsing to midnight
+            # would expire it at the very start of D — a grant dated today would
+            # be dead on arrival because is_active() uses expires_at < utcnow().
+            expires_at = datetime.strptime(expires_raw, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59
+            )
         except ValueError:
             flash('Invalid expiry date', 'error')
             return redirect(url_for('admin.domain_root_grants', root_id=root_id))
@@ -3585,23 +3596,52 @@ def domain_root_grant_add(root_id):
         flash('Grant types not initialized', 'error')
         return redirect(url_for('admin.domain_root_grants', root_id=root_id))
 
-    grant = DomainRootGrant(
-        domain_root_id=root.id,
-        account_id=account.id,
-        grant_type_id=grant_type.id,
-        max_realms=max_realms,
-        granted_by_id=session.get(SESSION_KEY_ADMIN_ID),
-        expires_at=expires_at,
-    )
-
+    # (domain_root_id, account_id) is unique, so a prior (possibly revoked)
+    # grant for this pair must be reactivated in place rather than re-inserted —
+    # otherwise the INSERT hits uq_grant_root_account and the user can never be
+    # re-granted through the UI.
+    grant = DomainRootGrant.query.filter_by(
+        domain_root_id=root.id, account_id=account.id
+    ).first()
     try:
-        db.session.add(grant)
+        if grant is not None:
+            if grant.revoked_at is None:
+                flash(f'{account.username} already has an active grant', 'info')
+                return redirect(url_for('admin.domain_root_grants', root_id=root_id))
+            grant.revoked_at = None
+            grant.revoke_reason = None
+            grant.grant_type_id = grant_type.id
+            grant.max_realms = max_realms
+            grant.granted_by_id = session.get(SESSION_KEY_ADMIN_ID)
+            grant.granted_at = datetime.utcnow()
+            grant.expires_at = expires_at
+            action = 'domain_root_grant_reinstated'
+        else:
+            grant = DomainRootGrant(
+                domain_root_id=root.id,
+                account_id=account.id,
+                grant_type_id=grant_type.id,
+                max_realms=max_realms,
+                granted_by_id=session.get(SESSION_KEY_ADMIN_ID),
+                expires_at=expires_at,
+            )
+            db.session.add(grant)
+            action = 'domain_root_grant_added'
+
+        db.session.add(ActivityLog(  # type: ignore[call-arg]
+            account_id=account.id,
+            action=action,
+            source_ip=request.remote_addr or 'unknown',
+            status='success',
+            severity='medium',
+            status_reason=f"root={root.root_domain} by admin_id={session.get(SESSION_KEY_ADMIN_ID)}",
+        ))
         db.session.commit()
         flash(f'Grant added for {account.username}', 'success')
     except Exception as exc:
         db.session.rollback()
         logger.error(f"Failed to add domain root grant: {exc}")
-        flash('Failed to add grant (it may already exist)', 'error')
+        flash('Failed to add grant', 'error')
 
     return redirect(url_for('admin.domain_root_grants', root_id=root_id))
 
@@ -3615,6 +3655,14 @@ def domain_root_grant_revoke(root_id, grant_id):
         grant.revoked_at = datetime.utcnow()
         grant.revoke_reason = 'revoked_by_admin'
         grant.granted_by_id = grant.granted_by_id or session.get(SESSION_KEY_ADMIN_ID)
+        db.session.add(ActivityLog(  # type: ignore[call-arg]
+            account_id=grant.account_id,
+            action='domain_root_grant_revoked',
+            source_ip=request.remote_addr or 'unknown',
+            status='success',
+            severity='medium',
+            status_reason=f"root_id={root_id} by admin_id={session.get(SESSION_KEY_ADMIN_ID)}",
+        ))
         db.session.commit()
         flash('Grant revoked', 'success')
     return redirect(url_for('admin.domain_root_grants', root_id=root_id))

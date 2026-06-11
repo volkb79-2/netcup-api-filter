@@ -12,6 +12,7 @@ Requires: Mailpit container running (tooling/mailpit/docker compose up -d)
 
 Run with: pytest ui_tests/tests/test_registration_e2e.py -v
 """
+import os
 import pytest
 import re
 import time
@@ -27,6 +28,20 @@ from ui_tests.config import settings
 pytestmark = [
     pytest.mark.asyncio,
 ]
+
+
+def _email_delivery_disabled() -> bool:
+    """Whether email delivery is *explicitly* disabled for this deployment.
+
+    Only an explicit opt-out env flag counts. We must NOT infer "email disabled"
+    from product behavior (e.g. "the page didn't redirect to verify"), because
+    that would silently mask a genuine registration/email regression. When this
+    returns False, a missing verification email is a hard failure: the `mailpit`
+    fixture already guarantees the SMTP sink is reachable, so the email arriving
+    is the expected, asserted behavior.
+    """
+    val = (os.environ.get("NAF_EMAIL_DELIVERY_DISABLED") or "").strip().lower()
+    return val in ("1", "true", "yes", "on")
 
 
 async def _accept_terms_if_present(page) -> None:
@@ -170,11 +185,14 @@ class TestRegistrationWithMailpit:
         current_url = (browser._page.url or "").lower()
         page_html = (await browser._page.content()).lower()
 
-        # Some deployments may auto-approve registrations or disable sending a
-        # verification email even if a verification page is reachable. In that
-        # case, skip instead of failing the whole suite.
-        if "verify" not in current_url and "verify" not in page_html:
-            pytest.skip(f"Registration did not enter verification flow (url={browser._page.url})")
+        # Registration MUST enter the verification flow. This is the product gate:
+        # a registration that does not lead to email verification is a genuine
+        # regression and must FAIL here (not be downgraded to a skip on the basis
+        # that "the page didn't redirect").
+        assert ("verify" in current_url or "verify" in page_html), (
+            f"Registration must enter the verification flow, but it did not. "
+            f"url={browser._page.url}"
+        )
 
         # Check for verification email (be tolerant of recipient ordering).
         msg = mailpit.wait_for_message(
@@ -186,8 +204,17 @@ class TestRegistrationWithMailpit:
         )
 
         if msg is None:
-            pytest.skip(
-                f"No verification email received for {email} (verification emails may be disabled). "
+            # The mailpit fixture guarantees Mailpit is reachable, so a missing
+            # email is a regression UNLESS email delivery is explicitly disabled
+            # for this deployment via an opt-out env flag.
+            if _email_delivery_disabled():
+                pytest.skip(
+                    "Verification email not delivered and NAF_EMAIL_DELIVERY_DISABLED "
+                    "is set (email delivery intentionally disabled for this deployment)."
+                )
+            raise AssertionError(
+                f"No verification email received for {email}. Mailpit is reachable "
+                f"(fixture-gated), so registration must deliver a verification email. "
                 f"url={browser._page.url}"
             )
 

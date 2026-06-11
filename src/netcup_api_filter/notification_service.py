@@ -16,27 +16,104 @@ Each email includes a reference ID in the footer for traceability.
 Format: NAF-{type}-{timestamp}-{random}
 """
 import logging
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from .database import db
 from .email_reference import email_ref_token, generate_email_ref
 from .models import Account, AccountRealm, APIToken
+from .utils import parse_bool
 
 logger = logging.getLogger(__name__)
 
 
-def _send_telegram_if_enabled(account: Account, text: str) -> bool:
-    """Send a Telegram notification if the account opted in and Telegram is linked.
+# =============================================================================
+# Background dispatch
+#
+# Email already sends off-thread (EmailNotifier.send_email_async spawns a
+# daemon thread). The remaining synchronous cost in a request is the Telegram
+# HTTP call, so we run it on a small shared executor — a slow/unreachable
+# Telegram API must never block the user's request. Work submitted here must be
+# built from PRIMITIVES (no request/session-bound ORM objects), because it runs
+# after the request has returned, on another thread.
+# =============================================================================
 
-    Returns True if a message was sent successfully.
+_executor_lock = threading.Lock()
+_executor: Optional[ThreadPoolExecutor] = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        with _executor_lock:
+            if _executor is None:
+                _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="naf-notify")
+    return _executor
+
+
+def _notifications_synchronous() -> bool:
+    """Run notifications inline (not backgrounded)?
+
+    True under test deployments (FLASK_ENV=local_test) or when NOTIFICATIONS_SYNC
+    is set, so the UI/email tests get deterministic, immediately-asserted
+    delivery. Real deployments background the work.
+    """
+    if parse_bool(os.environ.get("NOTIFICATIONS_SYNC"), default=False):
+        return True
+    return (os.environ.get("FLASK_ENV") or "").strip().lower() == "local_test"
+
+
+def dispatch_in_background(work: Callable[[], object]) -> bool:
+    """Run ``work`` (a zero-arg callable) off the request thread.
+
+    Pushes a Flask app context in the worker so callables may use config/DB.
+    Falls back to synchronous execution in test mode or when there is no app
+    context (e.g. CLI). Returns True (queued/sent) — never raises.
+    """
+    if _notifications_synchronous():
+        try:
+            work()
+        except Exception:
+            logger.exception("Notification failed")
+        return True
+    app = None
+    try:
+        from flask import current_app
+        app = current_app._get_current_object()
+    except Exception:
+        pass
+
+    def _runner():
+        try:
+            if app is not None:
+                with app.app_context():
+                    work()
+            else:
+                work()
+        except Exception:
+            logger.exception("Background notification failed")
+
+    _get_executor().submit(_runner)
+    return True
+
+
+def _send_telegram_if_enabled(account: Account, text: str) -> bool:
+    """Queue a Telegram notification if the account opted in and Telegram is linked.
+
+    The opt-in check runs now (the account is live on the request thread); the
+    actual HTTP send is dispatched to the background so a slow Telegram API never
+    blocks the request. Returns True if queued (or sent, in synchronous mode).
     """
     try:
         if not (account.notify_via_telegram and account.telegram_enabled and account.telegram_chat_id):
             return False
+        chat_id = account.telegram_chat_id  # capture primitive before backgrounding
         from .telegram_service import send_telegram_message
 
-        return send_telegram_message(chat_id=account.telegram_chat_id, text=text)
+        return dispatch_in_background(lambda: send_telegram_message(chat_id=chat_id, text=text))
     except Exception as exc:
         logger.error(f"Telegram notification failed for account={account.username}: {exc}")
         return False
@@ -1149,6 +1226,84 @@ Ref: {email_ref}
     except Exception as e:
         logger.error(f"Failed to send failed login notification: {e}")
         return sent_any
+
+
+def notify_2fa_lockout(
+    account: Account,
+    *,
+    ip_address: Optional[str] = None,
+    locked_minutes: Optional[int] = None,
+) -> bool:
+    """Alert that an account hit the 2FA lockout (too many failed 2FA attempts).
+
+    Notifies the affected user (NOTIFY_USER_ON_2FA_LOCKOUT, default on) and/or an
+    operator (NOTIFY_ADMIN_ON_2FA_LOCKOUT → ADMIN_SECURITY_EMAIL, default off).
+    Email is sent async; Telegram (if the user opted in) is backgrounded too.
+    Best-effort: never raises into the auth path.
+    """
+    notify_user = parse_bool(os.environ.get("NOTIFY_USER_ON_2FA_LOCKOUT"), default=True)
+    notify_admin = parse_bool(os.environ.get("NOTIFY_ADMIN_ON_2FA_LOCKOUT"), default=False)
+    if not (notify_user or notify_admin):
+        return False
+
+    when = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    where = f"\nSource IP: {ip_address}" if ip_address else ""
+    duration = f"{locked_minutes} minutes" if locked_minutes else "a cooldown period"
+    sent_any = False
+
+    try:
+        # Telegram to the affected user (if they linked it for alerts).
+        if notify_user:
+            sent_any = _send_telegram_if_enabled(
+                account,
+                text=(
+                    "🔒 Netcup API Filter security alert\n"
+                    f"Your account was temporarily locked after repeated failed 2FA attempts.{where}\n"
+                    f"Time: {when}\nLocked for: {duration}\n"
+                    "If this wasn't you, change your password once the lock clears."
+                ),
+            ) or sent_any
+
+        notifier = _get_notifier()
+        if not notifier:
+            return sent_any
+
+        if notify_user and account.email:
+            ref = generate_email_ref("lockout", account.username)
+            subject = "[Netcup API Filter] Security alert: account temporarily locked"
+            body = (
+                f"Hello {account.username},\n\n"
+                f"Your account was temporarily locked after repeated failed 2FA attempts.{where}\n"
+                f"Time: {when}\nLocked for: {duration}\n\n"
+                "Access is restored automatically once the lock clears. If this was not you, "
+                "change your password as soon as you can sign in.\n\n"
+                f"---\nAutomated security notification.\nRef: {ref}\n"
+            )
+            try:
+                notifier.send_email_async(account.email, subject, body, None, delay=0)
+                sent_any = True
+            except Exception as exc:
+                logger.error(f"Failed to send 2FA lockout email to user: {exc}")
+
+        if notify_admin:
+            admin_email = (os.environ.get("ADMIN_SECURITY_EMAIL") or "").strip() or _get_admin_email()
+            if admin_email:
+                ref = generate_email_ref("lockout-admin", account.username)
+                subject = f"[Netcup API Filter] 2FA lockout: {account.username}"
+                body = (
+                    f"Account '{account.username}' was locked after repeated failed 2FA attempts.{where}\n"
+                    f"Time: {when}\nLocked for: {duration}\n\n"
+                    f"---\nAutomated security notification.\nRef: {ref}\n"
+                )
+                try:
+                    notifier.send_email_async(admin_email, subject, body, None, delay=0)
+                    sent_any = True
+                except Exception as exc:
+                    logger.error(f"Failed to send 2FA lockout email to admin: {exc}")
+    except Exception as exc:  # never break the auth path
+        logger.error(f"notify_2fa_lockout failed for {account.username}: {exc}")
+
+    return sent_any
 
 
 def notify_new_ip_login(account: Account, ip_address: str, location: Optional[str] = None) -> bool:

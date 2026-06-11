@@ -136,19 +136,30 @@ def init_db(app):
     db_path = get_db_path()
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': 10,
-        'pool_recycle': 3600,
-        'pool_pre_ping': True,
-    }
+    # In-memory SQLite uses StaticPool, which rejects pool_size/pool_recycle;
+    # only apply connection-pool tuning to a real file-based database.
+    if ':memory:' in db_path:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+    else:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_size': 10,
+            'pool_recycle': 3600,
+            'pool_pre_ping': True,
+        }
     
     db.init_app(app)
-    
+
     with app.app_context():
         # Create all tables from models
         db.create_all()
         logger.info("Database tables created/verified")
-        
+
+        # create_all() only creates missing *tables*; it never alters existing
+        # ones. Reconcile additive column/index changes so a deployment that
+        # keeps its database across an upgrade doesn't crash with 'no such
+        # column' on the first query (e.g. the Telegram fields on `accounts`).
+        run_lightweight_migrations()
+
         # Seed multi-backend infrastructure (enum tables + providers)
         seed_multi_backend_infrastructure()
         
@@ -160,6 +171,90 @@ def init_db(app):
         if seed_demo:
             seed_demo_accounts()
             logger.info("Demo accounts seeded")
+
+
+def _column_default_sql(column) -> str | None:
+    """Render a scalar column default as a SQL literal, or None if not scalar.
+
+    Callable defaults (e.g. datetime.utcnow) are intentionally skipped — they
+    apply to new rows via the ORM; existing rows get NULL, which is acceptable
+    for the additive nullable columns this project adds.
+    """
+    default = column.default
+    if default is None or not getattr(default, 'is_scalar', False):
+        return None
+    value = default.arg
+    if isinstance(value, bool):
+        return '1' if value else '0'
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return None
+
+
+def run_lightweight_migrations():
+    """Add columns/indexes present in the models but missing from the database.
+
+    The app manages its schema with ``db.create_all()`` (no Alembic), which
+    creates missing tables but never alters existing ones. When a release adds
+    a nullable column to an existing table, an upgraded deployment that keeps
+    its SQLite file would otherwise raise ``OperationalError: no such column``
+    on the first query and fail to start. This bridges that gap for additive,
+    nullable/scalar-default column changes and for declared single-table
+    indexes. Anything more involved (drops, type changes, new constraints,
+    backfills) still requires a hand-written migration.
+    """
+    from sqlalchemy import inspect as sa_inspect, text
+
+    engine = db.engine
+    if engine.dialect.name != 'sqlite':
+        # Only the SQLite deployments rely on create_all()-style management.
+        return
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    added = 0
+    with engine.begin() as conn:
+        for table in db.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue  # brand-new table already handled by create_all()
+
+            existing_cols = {c['name'] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing_cols:
+                    continue
+                if not column.nullable and _column_default_sql(column) is None:
+                    # Can't safely backfill a NOT NULL column without a default;
+                    # leave it to fail loudly rather than corrupt existing rows.
+                    logger.error(
+                        "Lightweight migration cannot add NOT NULL column "
+                        f"{table.name}.{column.name} without a scalar default"
+                    )
+                    continue
+                col_type = column.type.compile(dialect=engine.dialect)
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}'
+                default_sql = _column_default_sql(column)
+                if default_sql is not None:
+                    ddl += f' DEFAULT {default_sql}'
+                logger.warning(f"Lightweight migration: {ddl}")
+                conn.execute(text(ddl))
+                added += 1
+
+            existing_indexes = {ix['name'] for ix in inspector.get_indexes(table.name)}
+            for index in table.indexes:
+                if index.name in existing_indexes:
+                    continue
+                cols = ', '.join(f'"{c.name}"' for c in index.columns)
+                unique = 'UNIQUE ' if index.unique else ''
+                conn.execute(text(
+                    f'CREATE {unique}INDEX IF NOT EXISTS "{index.name}" '
+                    f'ON "{table.name}" ({cols})'
+                ))
+
+    if added:
+        logger.info(f"Lightweight migration added {added} missing column(s)")
 
 
 def seed_admin_account():

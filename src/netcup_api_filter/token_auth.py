@@ -74,6 +74,7 @@ ERROR_SEVERITY = {
     # Authorization errors
     'ip_denied': 'critical',  # Unexpected location - possible compromise
     'domain_denied': 'high',  # Scope probing
+    'hostname_denied': 'high',  # In-zone host outside the realm's scope
     'operation_denied': 'medium',  # May be user error
     'record_type_denied': 'low',  # May be user error
 }
@@ -84,6 +85,7 @@ NOTIFY_USER_ERRORS = {
     'token_revoked',  # Revoked token still in use
     'ip_denied',  # Access from unexpected location
     'domain_denied',  # Scope probing
+    'hostname_denied',  # Scope probing within an authorized zone
 }
 
 
@@ -321,6 +323,23 @@ def check_ip_allowed(token: APIToken, client_ip: str) -> bool:
     return False
 
 
+def _resolve_fqdn(domain: str, record_name: str | None) -> str:
+    """Reconstruct the fully-qualified hostname an operation targets.
+
+    ``domain`` is the DNS zone (e.g. ``example.com``); ``record_name`` is the
+    record relative to that zone — ``''`` or ``'@'`` for the apex, otherwise a
+    prefix such as ``vpn`` or ``host1.iot``. Some callers may already pass a
+    full FQDN, so guard against appending the zone twice.
+    """
+    zone = (domain or '').strip().lower().rstrip('.')
+    name = (record_name or '').strip().lower().rstrip('.')
+    if name in ('', '@'):
+        return zone
+    if name == zone or name.endswith('.' + zone):
+        return name
+    return f'{name}.{zone}'
+
+
 def check_permission(
     auth: AuthResult,
     operation: str,
@@ -331,27 +350,28 @@ def check_permission(
 ) -> PermissionResult:
     """
     Check if authenticated token has permission for operation.
-    
+
     Permission chain:
     1. Account must be active (already checked in auth)
     2. Realm must be approved (already checked in auth)
     3. Token must be active and not expired (already checked in auth)
     4. IP must be in whitelist (if configured)
-    5. Domain must match realm scope
-    6. Operation must be allowed (token-level or realm-level)
-    7. Record type must be allowed (token-level or realm-level)
-    
+    5. Domain (zone) must match realm scope
+    6. Hostname must be within the realm's scope (host/subdomain/subdomain_only)
+    7. Operation must be allowed (token-level or realm-level)
+    8. Record type must be allowed (token-level or realm-level)
+
     Returns PermissionResult with structured error_code for logging.
     """
     if not auth.success:
         return PermissionResult(granted=False, reason=auth.error, error_code=auth.error_code)
-    
+
     # After checking auth.success, token and realm are guaranteed non-None
     token = auth.token
     realm = auth.realm
     assert token is not None, "token should be set when auth.success is True"
     assert realm is not None, "realm should be set when auth.success is True"
-    
+
     # Check IP whitelist
     if client_ip and not check_ip_allowed(token, client_ip):
         logger.warning(f"IP not whitelisted: {client_ip} for token {token.token_name}")
@@ -360,8 +380,8 @@ def check_permission(
             reason="IP address not in whitelist",
             error_code="ip_denied"
         )
-    
-    # Check domain matches realm
+
+    # Check domain (zone) matches realm
     if not realm.matches_domain(domain):
         logger.warning(f"Domain {domain} not in realm {realm.realm_type}:{realm.realm_value}")
         return PermissionResult(
@@ -369,7 +389,25 @@ def check_permission(
             reason="Domain not in authorized scope",
             error_code="domain_denied"
         )
-    
+
+    # Check the specific hostname is within the realm's scope. matches_domain()
+    # only validates the zone, so without this a token scoped to a single host
+    # (or to children-only) could target ANY record in the zone. Only enforced
+    # when a record name is supplied (record-level operations); zone-wide reads
+    # pass record_name=None and remain bounded by record-type filtering.
+    if record_name is not None:
+        fqdn = _resolve_fqdn(domain, record_name)
+        if not realm.matches_hostname(fqdn):
+            logger.warning(
+                f"Hostname {fqdn} outside realm scope "
+                f"{realm.realm_type}:{realm.get_fqdn()}"
+            )
+            return PermissionResult(
+                granted=False,
+                reason="Hostname not in authorized scope",
+                error_code="hostname_denied"
+            )
+
     # Check operation allowed
     allowed_ops = token.get_effective_operations()
     if operation not in allowed_ops:

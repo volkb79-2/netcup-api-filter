@@ -41,6 +41,18 @@ suite can exercise the linking flow without extra manual setup.
 
 Production deployments MUST override these values (do not rely on placeholders).
 
+### Placeholder secret rejection on non-local deployments
+
+The placeholder value shipped in `.env.defaults` for `TELEGRAM_LINK_CALLBACK_SECRET`
+(`local-test-telegram-callback-secret-change-me`) is **rejected at runtime** on any
+deployment where `DEPLOYMENT_TARGET` is not `local`. When that value is detected on a
+non-local target the app logs an error and returns `503` to the bot, silently
+disabling Telegram linking. This prevents a public, repo-committed secret from ever
+authorizing the callback endpoint in production.
+
+To enable linking in production set a strong, unique value for
+`TELEGRAM_LINK_CALLBACK_SECRET` in your deployment environment.
+
 ## User flow (UI)
 
 1. User goes to Account → Settings → Security → Telegram → Link
@@ -50,6 +62,26 @@ Production deployments MUST override these values (do not rely on placeholders).
 
 3. User presses **Start** in Telegram
 4. UI polls `/account/settings/telegram/status` and auto-refreshes when linked
+
+**Token stability across page refreshes:** the raw link token is cached in the user's browser
+session so that reloading the linking page (or opening it in a second tab) reuses the same
+deep-link while the token is still valid. A new token is only issued when the cached one has
+expired or is absent. This means opening the Telegram app and pressing **Start** will still work
+even if the user refreshed the page after seeing the deep-link.
+
+## Telegram as a 2FA method
+
+Linking a Telegram chat enables Telegram as an additional 2FA option at login — but only when
+the server can actually deliver a code. Telegram is offered as a 2FA method only when **both**
+conditions are true at login time:
+
+- `TELEGRAM_NOTIFICATIONS_ENABLED=true`
+- `TELEGRAM_BOT_TOKEN` is set
+
+If the account has Telegram linked but the server has notifications disabled (or the bot token
+is missing), Telegram will **not appear** in the 2FA method list. Email, TOTP, and recovery codes
+continue to work normally. No action is needed from the user — Telegram will reappear
+automatically once the server-side configuration is restored.
 
 ## Bot → App callback (API contract)
 
@@ -71,10 +103,23 @@ Responses:
 - `200 {"status":"linked"}`
 - `401` unauthorized (wrong/missing secret)
 - `404` token unknown
+- `409` token not in pending state, or `chat_id` already linked to a different account
 - `410` token expired
-- `503` linking not configured
+- `503` linking not configured (including when the placeholder secret is active on a non-local deployment)
 
 On success, NAF consumes the token (clears token hash + expiry) and stores the `chat_id`.
+
+**Security properties of the callback endpoint:**
+
+- The `X-NAF-TELEGRAM-SECRET` value is compared in **constant time** (`hmac.compare_digest`) to
+  prevent timing-based secret discovery.
+- The entire `/api/telegram` blueprint is **rate-limited** (default: 60 requests per minute,
+  configurable via `api_rate_limit`).
+- A `chat_id` can only be linked to **one account**. Attempting to link a chat already bound to
+  another account returns HTTP 409. This prevents a single Telegram chat from receiving 2FA codes
+  or security alerts for multiple accounts.
+- Every successful link operation is written to the **audit log** (`telegram_linked` action,
+  severity `medium`).
 
 ## Manual testing (without real Telegram)
 

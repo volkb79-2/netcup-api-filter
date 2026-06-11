@@ -23,20 +23,31 @@ Security:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
+import threading
 from dataclasses import dataclass
 
 import httpx
 
+from .utils import parse_bool, sha256_hex
+
 logger = logging.getLogger(__name__)
+
+# Placeholder secret shipped in .env.defaults so local UI tests can exercise the
+# linking flow. It is public (committed to the repo), so it must never authorize
+# the callback on a real deployment — get_link_callback_secret() rejects it
+# unless DEPLOYMENT_TARGET is local.
+LINK_CALLBACK_PLACEHOLDER = "local-test-telegram-callback-secret-change-me"
+
+# A single pooled HTTP client, created lazily, so each Telegram send reuses the
+# TCP/TLS connection instead of paying a fresh handshake per message.
+_client_lock = threading.Lock()
+_http_client: httpx.Client | None = None
 
 
 def _truthy(value: str | None) -> bool:
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return parse_bool(value, default=False)
 
 
 @dataclass(frozen=True)
@@ -70,9 +81,31 @@ def get_telegram_config() -> TelegramConfig:
     )
 
 
+def get_link_callback_secret() -> str | None:
+    """Return the bot->app callback shared secret, or None if unusable.
+
+    The placeholder value from .env.defaults is treated as "not configured" on
+    any non-local deployment so that copying the defaults into production can
+    never leave the linking callback authenticated by a public, repo-committed
+    secret.
+    """
+    secret = (os.environ.get("TELEGRAM_LINK_CALLBACK_SECRET") or "").strip()
+    if not secret:
+        return None
+    if secret == LINK_CALLBACK_PLACEHOLDER:
+        target = (os.environ.get("DEPLOYMENT_TARGET") or "").strip().lower()
+        if target != "local":
+            logger.error(
+                "TELEGRAM_LINK_CALLBACK_SECRET is the public placeholder value; "
+                "refusing to enable Telegram linking. Set a strong secret per deployment."
+            )
+            return None
+    return secret
+
+
 def is_telegram_configured_for_linking() -> bool:
     cfg = get_telegram_config()
-    return bool(cfg.bot_username)
+    return bool(cfg.bot_username) and bool(get_link_callback_secret())
 
 
 def is_telegram_configured_for_sending() -> bool:
@@ -91,8 +124,28 @@ def build_start_link(*, link_token: str) -> str:
     return f"https://t.me/{cfg.bot_username}?start={payload}"
 
 
-def sha256_hex(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+# sha256_hex is re-exported from utils so existing callers
+# (api.telegram, api.account) keep importing it from here.
+__all__ = [
+    "TelegramConfig",
+    "get_telegram_config",
+    "get_link_callback_secret",
+    "is_telegram_configured_for_linking",
+    "is_telegram_configured_for_sending",
+    "build_start_link",
+    "sha256_hex",
+    "send_telegram_message",
+]
+
+
+def _get_http_client(timeout_seconds: float) -> httpx.Client:
+    """Return the shared httpx client, creating it on first use (thread-safe)."""
+    global _http_client
+    if _http_client is None:
+        with _client_lock:
+            if _http_client is None:
+                _http_client = httpx.Client(timeout=timeout_seconds)
+    return _http_client
 
 
 def send_telegram_message(*, chat_id: str, text: str) -> bool:
@@ -116,21 +169,22 @@ def send_telegram_message(*, chat_id: str, text: str) -> bool:
     url = f"{cfg.api_base_url}/bot{cfg.bot_token}/sendMessage"
 
     try:
-        with httpx.Client(timeout=cfg.timeout_seconds) as client:
-            resp = client.post(
-                url,
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "disable_web_page_preview": True,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            ok = bool(data.get("ok"))
-            if not ok:
-                logger.warning(f"Telegram sendMessage returned ok=false for chat_id={chat_id}")
-            return ok
+        client = _get_http_client(cfg.timeout_seconds)
+        resp = client.post(
+            url,
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "disable_web_page_preview": True,
+            },
+            timeout=cfg.timeout_seconds,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        ok = bool(data.get("ok"))
+        if not ok:
+            logger.warning(f"Telegram sendMessage returned ok=false for chat_id={chat_id}")
+        return ok
     except Exception as exc:
         logger.error(f"Telegram sendMessage failed for chat_id={chat_id}: {exc}")
         return False

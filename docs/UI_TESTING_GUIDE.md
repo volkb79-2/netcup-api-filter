@@ -58,7 +58,7 @@ This performs complete coverage:
 
 ## Route Coverage
 
-See [ROUTE_COVERAGE.md](ROUTE_COVERAGE.md) for the complete route matrix with test and screenshot coverage status.
+See [ROUTE_COVERAGE.md](deprecated/ROUTE_COVERAGE.md) for the complete route matrix with test and screenshot coverage status.
 
 ### Priority Gaps
 

@@ -400,12 +400,17 @@ def login_step1(username: str, password: str, source_ip: str) -> LoginResult:
         return LoginResult(success=False, error="Email not verified")
     
     # Determine available 2FA methods
+    from .telegram_service import is_telegram_configured_for_sending
+
     tfa_methods = []
     if account.email_2fa_enabled:
         tfa_methods.append('email')
     if account.totp_enabled:
         tfa_methods.append('totp')
-    if account.telegram_enabled:
+    # Only offer Telegram if the server can actually deliver a code. The account
+    # can be linked while sending is globally disabled, in which case a Telegram
+    # code would never arrive — don't present a dead option.
+    if account.telegram_enabled and is_telegram_configured_for_sending():
         tfa_methods.append('telegram')
     
     # At least one 2FA method required
@@ -673,34 +678,36 @@ def create_session(account: Account):
     session[SESSION_KEY_USER_ID] = account.id
     session[SESSION_KEY_USERNAME] = account.username
 
-    # Create/rotate our own session token (used for DB-backed session revocation).
+    # Rotate any previous DB-backed session (revocation support).
     if previous_token:
-        try:
-            existing = AccountSession.query.filter_by(session_token=previous_token).first()
-            if existing and not existing.revoked_at:
-                existing.revoked_at = datetime.utcnow()
-                existing.revoked_reason = 'rotated'
-        except Exception:
-            # Best-effort only; auth must still succeed.
-            pass
+        existing = AccountSession.query.filter_by(session_token=previous_token).first()
+        if existing and not existing.revoked_at:
+            existing.revoked_at = datetime.utcnow()
+            existing.revoked_reason = 'rotated'
 
+    # Persist the DB-backed session row and commit BEFORE writing the token into
+    # the signed cookie. require_account_auth rejects a cookie token that has no
+    # matching row, so setting the cookie first and failing to persist would
+    # bounce the just-authenticated user straight back to login. On failure we
+    # roll back and propagate so the caller surfaces a real error instead of a
+    # silent login loop.
     session_token = secrets.token_urlsafe(32)
-    session[SESSION_KEY_SESSION_TOKEN] = session_token
-
-    try:
-        db.session.add(
-            AccountSession(
-                account_id=account.id,
-                session_token=session_token,
-                ip_address=request.remote_addr,
-                user_agent=request.headers.get('User-Agent', ''),
-                last_active=datetime.utcnow(),
-            )
+    db.session.add(
+        AccountSession(
+            account_id=account.id,
+            session_token=session_token,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', ''),
+            last_active=datetime.utcnow(),
         )
+    )
+    try:
+        db.session.commit()
     except Exception:
-        # Best-effort only; do not break login if session tracking fails.
-        pass
+        db.session.rollback()
+        raise
 
+    session[SESSION_KEY_SESSION_TOKEN] = session_token
     session.permanent = True
 
 
@@ -769,13 +776,18 @@ def require_account_auth(f):
             logout()
             return redirect(url_for('account.login'))
 
-        # Touch last_active (best-effort).
-        try:
-            account_session.last_active = datetime.utcnow()
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-        
+        # Touch last_active (best-effort), but throttle the write: every
+        # authenticated request (including JSON status polls) would otherwise
+        # issue an UPDATE + commit, serializing requests behind SQLite's write
+        # lock. A minute's granularity is plenty for an activity timestamp.
+        now = datetime.utcnow()
+        if account_session.last_active is None or (now - account_session.last_active) > timedelta(seconds=60):
+            try:
+                account_session.last_active = now
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
         g.account = account
         g.account_session = account_session
         return f(*args, **kwargs)
@@ -937,10 +949,12 @@ def create_account_by_admin(
     # Generate password if not provided
     if not password:
         password = generate_token(24)
-    
-    # Validate password (even temp passwords should be strong)
-    if len(password) < 12:
-        return None, "Password must be at least 12 characters"
+
+    # Validate against the canonical (env-configurable) password policy, so this
+    # path can't accept weaker passwords than registration/self-service change.
+    is_valid, error_msg = validate_password(password)
+    if not is_valid:
+        return None, error_msg
     
     # Generate unique user_alias for token attribution
     user_alias = _generate_unique_user_alias()
@@ -1114,7 +1128,12 @@ def get_2fa_failure_count(account: Account) -> int:
 
 
 def increment_2fa_failures(account: Account):
-    """Increment 2FA failure counter for account."""
+    """Increment 2FA failure counter for account.
+
+    When the count first reaches TFA_MAX_ATTEMPTS (the lockout threshold), fire a
+    one-time lockout notification. Doing it here covers every caller (account and
+    admin 2FA paths) from a single point.
+    """
     from .models import Settings
     key = f"2fa_failures:{account.id}"
     data = Settings.get(key) or {'count': 0}
@@ -1122,6 +1141,14 @@ def increment_2fa_failures(account: Account):
     data['last_failure'] = datetime.utcnow().isoformat()
     Settings.set(key, data)
     logger.warning(f"2FA failure #{data['count']} for account {account.username}")
+
+    if data['count'] == TFA_MAX_ATTEMPTS:
+        try:
+            from .notification_service import notify_2fa_lockout
+            source_ip = request.remote_addr if request else None
+            notify_2fa_lockout(account, ip_address=source_ip, locked_minutes=TFA_LOCKOUT_MINUTES)
+        except Exception as exc:  # notifications must never break auth
+            logger.error(f"2FA lockout notification failed for {account.username}: {exc}")
 
 
 def reset_2fa_failures(account: Account):

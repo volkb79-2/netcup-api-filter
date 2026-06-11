@@ -2,6 +2,7 @@
 Utility functions for netcup-api-filter
 Token generation, password hashing, validation helpers
 """
+import hashlib
 import secrets
 import bcrypt
 import os
@@ -15,6 +16,40 @@ from typing import List, Dict
 import string
 
 logger = logging.getLogger(__name__)
+
+# Strings accepted as truthy/falsy when parsing boolean-like environment values
+# or settings. Centralised here so every caller (app config, seeding, Telegram,
+# etc.) agrees on what "true" means instead of each maintaining its own copy.
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+_FALSY_VALUES = {"0", "false", "no", "off"}
+
+
+def parse_bool(raw: object, *, default: bool = False) -> bool:
+    """Parse a boolean from an env string / setting value / actual bool.
+
+    Returns ``default`` for ``None`` or any unrecognised string so a malformed
+    value never crashes the caller. JSON booleans (already ``bool``) pass
+    through unchanged, which matters for settings stored as JSON ``false``.
+    """
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    value = str(raw).strip().lower()
+    if value in _TRUTHY_VALUES:
+        return True
+    if value in _FALSY_VALUES:
+        return False
+    return default
+
+
+def sha256_hex(value: str) -> str:
+    """Return the hex SHA-256 of ``value``.
+
+    Shared one-way hash for non-secret lookup keys (e.g. one-time Telegram link
+    tokens). Not for passwords — use :func:`hash_password` for those.
+    """
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def generate_token(min_length: int = 63, max_length: int = 65) -> str:

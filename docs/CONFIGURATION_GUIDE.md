@@ -42,8 +42,8 @@ Whenever you add a new security-relevant constant, update `.env.defaults`, docum
 
 The build pipeline seeds the database using the values from `.env.defaults`:
 
-- **Admin user** – Default username/password (`ADMIN_DEFAULT_USERNAME`, `ADMIN_DEFAULT_PASSWORD`). The first login forces a password change, and UI tests expect the rotated password stored under `/screenshots/.env.webhosting` when running against staging/production-like targets.
-- **Preseeded client** – `DEFAULT_TEST_CLIENT_ID`, `DEFAULT_TEST_CLIENT_TOKEN`, `DEFAULT_TEST_CLIENT_DOMAIN`, `DEFAULT_TEST_CLIENT_OPERATIONS`, and related realm variables create a ready-to-use client for smoke testing and automated flows.
+- **Admin user** – Default username/password (`DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_PASSWORD`). The first login forces a password change, and UI tests expect the rotated password stored under `/screenshots/.env.webhosting` when running against staging/production-like targets.
+- **Preseeded client** – `DEFAULT_TEST_CLIENT_ID`, `DEFAULT_TEST_CLIENT_REALM_TYPE`, `DEFAULT_TEST_CLIENT_REALM_VALUE`, `DEFAULT_TEST_CLIENT_RECORD_TYPES`, and `DEFAULT_TEST_CLIENT_OPERATIONS` create a ready-to-use client (token issued at seed time) for smoke testing and automated flows.
 
 If you change any of these defaults, also update the Playwright environment variables or the UI tests will fail.
 

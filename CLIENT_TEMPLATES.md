@@ -238,22 +238,38 @@ Enable email alerts for:
 
 ## Integration Examples
 
-### Terraform (Full Management)
+### Full Management (REST API via curl)
 
-```hcl
-provider "netcup" {
-  api_url    = "https://naf.example.com"
-  client_id  = var.netcup_client_id
-  secret_key = var.netcup_secret_key
-}
+Authentication is a single bearer token (`naf_<alias>_<random>`); there is no
+`client_id`/`secret_key` pair and no dedicated Terraform provider. Manage records
+through the REST endpoints (`GET/POST/PUT/DELETE /api/dns/<domain>/records`):
 
-resource "netcup_dns_record" "www" {
-  zone     = "example.com"
-  hostname = "www"
-  type     = "A"
-  destination = "192.0.2.1"
-}
+```bash
+TOKEN="naf_<alias>_<random>"
+
+# Create an A record (www.example.com → 192.0.2.1)
+curl -X POST "https://naf.example.com/api/dns/example.com/records" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"www","type":"A","destination":"192.0.2.1"}'
+
+# List records
+curl "https://naf.example.com/api/dns/example.com/records" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Update a record by id
+curl -X PUT "https://naf.example.com/api/dns/example.com/records/12345" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"www","type":"A","destination":"192.0.2.2"}'
+
+# Delete a record by id
+curl -X DELETE "https://naf.example.com/api/dns/example.com/records/12345" \
+  -H "Authorization: Bearer $TOKEN"
 ```
+
+From Infrastructure-as-Code (Terraform/Ansible/Pulumi), call these endpoints with a
+generic HTTP resource/module — there is no first-party `netcup` provider for this filter.
 
 ### Certbot (LetsEncrypt DNS-01)
 
@@ -267,43 +283,50 @@ certbot certonly \
 
 ### DDNS Update Script (DDNS Single Host)
 
+The REST DDNS endpoint detects the caller IP automatically (or accepts an explicit
+`?ip=`), so a one-line update is enough:
+
 ```bash
 #!/bin/bash
-CURRENT_IP=$(curl -s https://api.ipify.org)
-curl -X POST https://naf.example.com/api/updateDnsRecords \
-  -H "Authorization: Bearer $TOKEN" \
-  -d "{\"domainname\":\"example.com\",\"dnsrecordset\":{\"dnsrecords\":[{\"hostname\":\"home\",\"type\":\"A\",\"destination\":\"$CURRENT_IP\"}]}}"
+TOKEN="naf_<alias>_<random>"
+
+# Auto-detect caller IP and update home.example.com (A record)
+curl -X POST "https://naf.example.com/api/ddns/example.com/home" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Or pass an explicit IP:
+# CURRENT_IP=$(curl -s https://api.ipify.org)
+# curl -X POST "https://naf.example.com/api/ddns/example.com/home?ip=$CURRENT_IP" \
+#   -H "Authorization: Bearer $TOKEN"
 ```
 
-### Kubernetes external-dns (DDNS Subdomain)
+Standard DynDNS2/No-IP clients can instead use
+`GET /api/ddns/dyndns2/update?hostname=home.example.com&myip=auto` (see `docs/API_REFERENCE.md`).
+
+### Kubernetes (DDNS Subdomain)
+
+This filter exposes a simple bearer-token REST API rather than a provider that
+external-dns ships natively, so integrate by storing the token in a `Secret` and
+calling the REST endpoints from your own job/controller (or a generic webhook):
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Secret
 metadata:
-  name: external-dns
-spec:
-  template:
-    spec:
-      containers:
-      - name: external-dns
-        image: registry.k8s.io/external-dns/external-dns:v0.14.0
-        args:
-        - --source=service
-        - --domain-filter=k8s.example.com
-        - --provider=netcup
-        - --netcup-api-url=https://naf.example.com
-        env:
-        - name: NETCUP_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: netcup-credentials
-              key: client-id
-        - name: NETCUP_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: netcup-credentials
-              key: secret-key
+  name: naf-credentials
+type: Opaque
+stringData:
+  # Single bearer token: naf_<alias>_<random>
+  token: "naf_<alias>_<random>"
+```
+
+```bash
+# Example: register/update a service host under the delegated subdomain
+TOKEN="$(kubectl get secret naf-credentials -o jsonpath='{.data.token}' | base64 -d)"
+curl -X POST "https://naf.example.com/api/dns/example.com/records" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"svc1.k8s","type":"A","destination":"203.0.113.10"}'
 ```
 
 ## Template Selection Guide

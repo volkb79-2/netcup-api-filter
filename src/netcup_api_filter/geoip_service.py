@@ -157,7 +157,15 @@ def _get_config() -> tuple[str, str, str]:
             geoip_config = json.loads(geoip_config_str) if isinstance(geoip_config_str, str) else geoip_config_str
             account_id = geoip_config.get('account_id', '')
             license_key = geoip_config.get('license_key', '')
-            api_url = geoip_config.get('api_url', 'https://geoip.maxmind.com')
+            # When the admin leaves the URL field blank we deliberately fall back
+            # to the env-configured endpoint (MAXMIND_API_URL), not the hardcoded
+            # production host — otherwise a local/mock setup would silently send
+            # real credentials to live MaxMind while the UI still shows the mock URL.
+            api_url = (
+                geoip_config.get('api_url')
+                or os.environ.get('MAXMIND_API_URL')
+                or 'https://geoip.maxmind.com'
+            )
             return account_id, license_key, api_url
     except Exception:
         pass  # Fall through to environment variables

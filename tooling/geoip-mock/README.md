@@ -115,5 +115,5 @@ docker compose down && docker compose up -d
 
 ## Related Documentation
 
-- [TESTING_STRATEGY.md](../../docs/TESTING_STRATEGY.md) - Overall testing architecture
+- [TESTING_STRATEGY.md](../../docs/deprecated/TESTING_STRATEGY.md) - Overall testing architecture
 - Mock implementation: `ui_tests/mock_geoip_server.py`

@@ -27,8 +27,8 @@ Before deployment, the following services must be running:
 
 ### For Local Mock Mode
 ```bash
-# Start all infrastructure
-./deploy.sh local --mode mock --start-infra
+# Infrastructure starts automatically as Phase 0 (use --skip-infra to reuse running services)
+./deploy.sh local --mode mock
 ```
 
 This starts:
@@ -73,8 +73,9 @@ This starts:
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 4: Authentication                                     │
-│   - Run auth test to change default password                 │
+│ Phase 4: Journey Tests (Fresh Deployment)                   │
+│   - Run journey tests (test_journey_master.py) on fresh DB   │
+│   - Authentication / mandatory password change is folded in  │
 │   - Update deployment_state.json with new password           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -156,14 +157,14 @@ This starts:
 # Re-run tests only (skip build/deploy)
 ./deploy.sh local --tests-only
 
-# Start infrastructure without deploying
-./deploy.sh local --infra-only
+# Reuse already-running infrastructure (skip Phase 0)
+./deploy.sh local --skip-infra
 
-# Use HTTPS for local testing
-./deploy.sh local --mode mock --https
+# HTTPS is the default for local; opt out with --http
+./deploy.sh local --mode mock --http
 
 # Clean shutdown of all services
-./deploy.sh local --cleanup
+./deploy.sh --stop
 ```
 
 ## Environment Variables
@@ -172,7 +173,7 @@ This starts:
 |----------|-------------|---------|
 | `DEPLOYMENT_TARGET` | Target: local or webhosting | local |
 | `DEPLOYMENT_MODE` | Mode: mock or live | mock (local), live (webhosting) |
-| `USE_HTTPS` | Use TLS proxy for HTTPS | false |
+| `USE_HTTPS` | Use TLS proxy for HTTPS (HTTPS is the default for local; `--http` sets this to false) | true |
 | `SKIP_INFRA` | Don't start infrastructure | false |
 | `SKIP_TESTS` | Don't run tests | false |
 | `SKIP_SCREENSHOTS` | Don't capture screenshots | false |

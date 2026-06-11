@@ -316,6 +316,6 @@ Parallel sessions enable comprehensive testing scenarios:
 
 ## Related Documentation
 
-- [TESTING_STRATEGY.md](TESTING_STRATEGY.md) - Overall testing approach
+- [TESTING_STRATEGY.md](deprecated/TESTING_STRATEGY.md) - Overall testing approach
 - [UI_TESTING_GUIDE.md](UI_TESTING_GUIDE.md) - UI test patterns
 - [PLAYWRIGHT_MCP_SETUP.md](PLAYWRIGHT_MCP_SETUP.md) - Playwright configuration

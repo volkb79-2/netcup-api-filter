@@ -98,48 +98,15 @@
                     <div class="mb-4">
                         <label class="form-label">Quick Template</label>
                         <div class="row g-2">
+                            {% for tpl in realm_templates %}
                             <div class="col-md-4 col-lg-2">
-                                <button type="button" class="btn btn-outline-secondary w-100 py-2" 
-                                        onclick="applyTemplate('ddns_host')" title="Update single hostname IP">
-                                    <i class="bi bi-house d-block mb-1"></i>
-                                    <small>DDNS Host</small>
+                                <button type="button" class="btn btn-outline-secondary w-100 py-2"
+                                        onclick="applyTemplate('{{ tpl.id }}')" title="{{ tpl.description }}">
+                                    <span class="d-block mb-1" style="font-size: 1.25rem;">{{ tpl.icon }}</span>
+                                    <small>{{ tpl.name }}</small>
                                 </button>
                             </div>
-                            <div class="col-md-4 col-lg-2">
-                                <button type="button" class="btn btn-outline-secondary w-100 py-2" 
-                                        onclick="applyTemplate('ddns_subdomain')" title="Manage entire subdomain zone">
-                                    <i class="bi bi-globe d-block mb-1"></i>
-                                    <small>DDNS Zone</small>
-                                </button>
-                            </div>
-                            <div class="col-md-4 col-lg-2">
-                                <button type="button" class="btn btn-outline-secondary w-100 py-2" 
-                                        onclick="applyTemplate('readonly')" title="View records without modification">
-                                    <i class="bi bi-eye d-block mb-1"></i>
-                                    <small>Read-Only</small>
-                                </button>
-                            </div>
-                            <div class="col-md-4 col-lg-2">
-                                <button type="button" class="btn btn-outline-secondary w-100 py-2" 
-                                        onclick="applyTemplate('letsencrypt')" title="Automated certificate issuance">
-                                    <i class="bi bi-shield-lock d-block mb-1"></i>
-                                    <small>Let's Encrypt</small>
-                                </button>
-                            </div>
-                            <div class="col-md-4 col-lg-2">
-                                <button type="button" class="btn btn-outline-secondary w-100 py-2" 
-                                        onclick="applyTemplate('full_control')" title="Complete DNS control">
-                                    <i class="bi bi-gear d-block mb-1"></i>
-                                    <small>Full Control</small>
-                                </button>
-                            </div>
-                            <div class="col-md-4 col-lg-2">
-                                <button type="button" class="btn btn-outline-secondary w-100 py-2" 
-                                        onclick="applyTemplate('cname_only')" title="CDN/Load balancer aliases">
-                                    <i class="bi bi-link-45deg d-block mb-1"></i>
-                                    <small>CNAME Only</small>
-                                </button>
-                            </div>
+                            {% endfor %}
                         </div>
                     </div>
 
@@ -242,39 +209,11 @@ function applyTemplate(template) {
     // Clear all checkboxes first
     document.querySelectorAll('.record-type, .operation').forEach(cb => cb.checked = false);
     
-    const templates = {
-        ddns_host: {
-            realm_type: 'host',
-            record_types: ['A', 'AAAA'],
-            operations: ['read', 'update']
-        },
-        ddns_subdomain: {
-            realm_type: 'subdomain',
-            record_types: ['A', 'AAAA'],
-            operations: ['read', 'update', 'create', 'delete']
-        },
-        readonly: {
-            realm_type: 'subdomain',
-            record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'],
-            operations: ['read']
-        },
-        letsencrypt: {
-            realm_type: 'subdomain',
-            record_types: ['TXT'],
-            operations: ['read', 'update', 'create', 'delete']
-        },
-        full_control: {
-            realm_type: 'subdomain',
-            record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA'],
-            operations: ['read', 'update', 'create', 'delete']
-        },
-        cname_only: {
-            realm_type: 'subdomain',
-            record_types: ['CNAME'],
-            operations: ['read', 'update', 'create', 'delete']
-        }
-    };
-    
+    // Presets come from the canonical source (realm_templates.py) via the route,
+    // so the admin and account portals stay in sync. Index the list by id.
+    const templates = {};
+    {{ realm_templates | tojson }}.forEach(function (t) { templates[t.id] = t; });
+
     const t = templates[template];
     if (!t) return;
     

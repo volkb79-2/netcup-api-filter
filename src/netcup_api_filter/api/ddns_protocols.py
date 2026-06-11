@@ -26,6 +26,7 @@ import os
 from flask import Blueprint, g, request
 
 from ..database import get_setting
+from ..netcup_client import extract_dns_records, mutation_failed, mutation_message
 from ..token_auth import (
     check_permission,
     extract_bearer_token,
@@ -230,23 +231,15 @@ def update_dns_record(domain, hostname, ip_address, record_type):
         return False, 'Netcup API not configured', False
     
     try:
-        # Fetch current records
+        # Fetch current records (list or Netcup-style envelope)
         info_result = netcup.info_dns_records(domain)
 
-        # NetcupClient.info_dns_records returns a list.
-        # Some mocks/legacy clients may return an envelope.
-        if isinstance(info_result, list):
-            records = info_result
-        elif isinstance(info_result, dict):
-            status = info_result.get('status')
-            if status and status != 'success':
-                error_msg = info_result.get('message', 'Failed to fetch records')
-                logger.error(f"Netcup API error fetching records: {error_msg}")
-                return False, error_msg, False
-            records = info_result.get('responsedata', {}).get('dnsrecords', [])
-        else:
-            raise TypeError(f"Unexpected Netcup response type: {type(info_result)}")
-        
+        if mutation_failed(info_result):
+            error_msg = mutation_message(info_result, 'Failed to fetch records')
+            logger.error(f"Netcup API error fetching records: {error_msg}")
+            return False, error_msg, False
+        records = extract_dns_records(info_result)
+
         # Find existing record
         existing = None
         for rec in records:
@@ -279,12 +272,11 @@ def update_dns_record(domain, hostname, ip_address, record_type):
         # Execute update
         result = netcup.update_dns_records(domain, [record])
 
-        status = result.get('status') if isinstance(result, dict) else None
-        if status and status != 'success':
-            error_msg = result.get('message', 'Failed to update record')
+        if mutation_failed(result):
+            error_msg = mutation_message(result, 'Failed to update record')
             logger.error(f"Netcup API error updating record: {error_msg}")
             return False, error_msg, False
-        
+
         return True, None, True  # Success with change
     
     except Exception as e:

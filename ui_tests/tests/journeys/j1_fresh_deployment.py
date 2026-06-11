@@ -169,17 +169,28 @@ class TestJourney1FreshDeployment:
         h1_text = await browser.text("h1")
         assert any(text in h1_text for text in ["Netcup API Filter", "Login", "Admin Portal"]), f"Expected login page header, got: {h1_text}"
         
-        # Check form elements exist - this confirms it's the login page
+        # Check form elements exist - this confirms it's the login page.
+        # This is a hard gate: the admin login page MUST render #username,
+        # #password and a submit button. A broken/empty login page is a genuine
+        # product regression and must FAIL this fresh-deployment gate (it must
+        # not be downgraded to a skip, which would hide the breakage).
         username_field = await browser.query_selector("#username, input[name='username']")
         password_field = await browser.query_selector("#password, input[name='password']")
         submit_btn = await browser.query_selector("button[type='submit']")
-        
-        if username_field is None or password_field is None or submit_btn is None:
-            body_preview = (await browser.text("body"))[:800]
-            pytest.skip(
-                "Admin login form not available (may be redirected or disabled). "
-                f"url={browser._page.url} preview={body_preview!r}"
-            )
+
+        body_preview = (await browser.text("body"))[:800]
+        assert username_field is not None, (
+            f"Admin login page must render a username field (#username / input[name='username']). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
+        assert password_field is not None, (
+            f"Admin login page must render a password field (#password / input[name='password']). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
+        assert submit_btn is not None, (
+            f"Admin login page must render a submit button (button[type='submit']). "
+            f"url={browser._page.url} preview={body_preview!r}"
+        )
     
     async def test_J1_02_default_credentials_work(self, browser: Browser):
         """Admin credentials from state file authenticate successfully."""

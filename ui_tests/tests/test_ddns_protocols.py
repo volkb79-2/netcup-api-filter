@@ -739,16 +739,19 @@ class TestProtocolDifferences:
     async def test_dyndns2_permission_error_format(self):
         """DynDNS2 uses !yours for permission denied."""
         import httpx
-        
+
         if not is_ddns_enabled():
             pytest.skip("DDNS protocols disabled")
-        
+
         url = settings.url("/api/ddns/dyndns2/update")
         headers = {
             "Authorization": f"Bearer {settings.client_token}",
         }
         params = {
-            "hostname": "test.unauthorized.example.com",
+            # Out-of-zone host: the seeded demo realm covers example.com (apex +
+            # children), so an in-zone host like *.example.com is now AUTHORIZED.
+            # Use a different base domain to actually exercise the denied path.
+            "hostname": "test.unauthorized-domain.example.net",
             "myip": "192.0.2.1"
         }
         
@@ -763,16 +766,19 @@ class TestProtocolDifferences:
     async def test_noip_permission_error_format(self):
         """No-IP uses abuse for permission denied."""
         import httpx
-        
+
         if not is_ddns_enabled():
             pytest.skip("DDNS protocols disabled")
-        
+
         url = settings.url("/api/ddns/noip/update")
         headers = {
             "Authorization": f"Bearer {settings.client_token}",
         }
         params = {
-            "hostname": "test.unauthorized.example.com",
+            # Out-of-zone host: the seeded demo realm covers example.com (apex +
+            # children), so an in-zone host like *.example.com is now AUTHORIZED.
+            # Use a different base domain to actually exercise the denied path.
+            "hostname": "test.unauthorized-domain.example.net",
             "myip": "192.0.2.1"
         }
         

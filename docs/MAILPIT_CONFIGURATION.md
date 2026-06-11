@@ -443,7 +443,7 @@ curl -X DELETE http://naf-mailpit:8025/api/v1/messages
 ## Related Documentation
 
 - [Testing Lessons Learned](TESTING_LESSONS_LEARNED.md) - Browser automation patterns (2FA, email verification)
-- [Testing Strategy](TESTING_STRATEGY.md) - Overall testing architecture
+- [Testing Strategy](deprecated/TESTING_STRATEGY.md) - Overall testing architecture
 - [UI Testing Guide](UI_TESTING_GUIDE.md) - Comprehensive UI testing approach
 - [Mailpit Official Docs](https://mailpit.axllent.org/docs/) - Complete feature reference
 

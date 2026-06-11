@@ -270,7 +270,8 @@ class TestPasswordChangeJourney:
             current_pwd = await browser.query_selector('#current_password')
             new_pwd = await browser.query_selector('#new_password')
             confirm_pwd = await browser.query_selector('#confirm_password')
-            
+
+            assert current_pwd, "Current password field should exist"
             assert new_pwd, "New password field should exist"
             assert confirm_pwd, "Confirm password field should exist"
             

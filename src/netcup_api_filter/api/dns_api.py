@@ -14,6 +14,7 @@ import logging
 from flask import Blueprint, g, jsonify, request
 
 from ..models import db
+from ..netcup_client import extract_dns_records, mutation_failed, mutation_message
 from ..token_auth import (
     authenticate_token,
     check_permission,
@@ -128,34 +129,27 @@ def list_records(domain):
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
     
     try:
-        # Fetch records from Netcup
+        # Fetch records from Netcup (list or Netcup-style envelope)
         result = netcup.info_dns_records(domain)
 
-        # NetcupClient.info_dns_records returns a list of records.
-        # Some mocks/legacy clients may return a Netcup-style envelope.
-        if isinstance(result, list):
-            records = result
-        elif isinstance(result, dict):
-            status = result.get('status')
-            if status and status != 'success':
-                log_activity(
-                    auth=auth,
-                    action='api_call',
-                    operation='read',
-                    domain=domain,
-                    source_ip=client_ip,
-                    status='error',
-                    status_reason=result.get('message', 'API error'),
-                    response_summary={'status': status}
-                )
-                return jsonify({
-                    'error': 'api_error',
-                    'message': result.get('message', 'Failed to fetch records')
-                }), 502
-            records = result.get('responsedata', {}).get('dnsrecords', [])
-        else:
-            raise TypeError(f"Unexpected Netcup response type: {type(result)}")
-        
+        if mutation_failed(result):
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='read',
+                domain=domain,
+                source_ip=client_ip,
+                status='error',
+                status_reason=mutation_message(result, 'API error'),
+                response_summary={'status': result.get('status')}
+            )
+            return jsonify({
+                'error': 'api_error',
+                'message': mutation_message(result, 'Failed to fetch records')
+            }), 502
+
+        records = extract_dns_records(result)
+
         # Filter records by allowed types
         filtered = filter_dns_records(auth, domain, records)
         
@@ -249,8 +243,7 @@ def create_record(domain):
         # Update DNS records (creates new record)
         result = netcup.update_dns_records(domain, [record])
 
-        status = result.get('status') if isinstance(result, dict) else None
-        if status and status != 'success':
+        if mutation_failed(result):
             log_activity(
                 auth=auth,
                 action='api_call',
@@ -260,12 +253,12 @@ def create_record(domain):
                 record_name=hostname,
                 source_ip=client_ip,
                 status='error',
-                status_reason=result.get('message', 'API error'),
+                status_reason=mutation_message(result, 'API error'),
                 request_data=data
             )
             return jsonify({
                 'error': 'api_error',
-                'message': result.get('message', 'Failed to create record')
+                'message': mutation_message(result, 'Failed to create record')
             }), 502
         
         log_activity(
@@ -362,8 +355,7 @@ def update_record(domain, record_id):
         
         result = netcup.update_dns_records(domain, [record])
 
-        status = result.get('status') if isinstance(result, dict) else None
-        if status and status != 'success':
+        if mutation_failed(result):
             log_activity(
                 auth=auth,
                 action='api_call',
@@ -373,12 +365,12 @@ def update_record(domain, record_id):
                 record_name=hostname,
                 source_ip=client_ip,
                 status='error',
-                status_reason=result.get('message', 'API error'),
+                status_reason=mutation_message(result, 'API error'),
                 request_data=data
             )
             return jsonify({
                 'error': 'api_error',
-                'message': result.get('message', 'Failed to update record')
+                'message': mutation_message(result, 'Failed to update record')
             }), 502
         
         log_activity(
@@ -453,8 +445,7 @@ def delete_record(domain, record_id):
         
         result = netcup.update_dns_records(domain, [record])
 
-        status = result.get('status') if isinstance(result, dict) else None
-        if status and status != 'success':
+        if mutation_failed(result):
             log_activity(
                 auth=auth,
                 action='api_call',
@@ -462,11 +453,11 @@ def delete_record(domain, record_id):
                 domain=domain,
                 source_ip=client_ip,
                 status='error',
-                status_reason=result.get('message', 'API error')
+                status_reason=mutation_message(result, 'API error')
             )
             return jsonify({
                 'error': 'api_error',
-                'message': result.get('message', 'Failed to delete record')
+                'message': mutation_message(result, 'Failed to delete record')
             }), 502
         
         log_activity(

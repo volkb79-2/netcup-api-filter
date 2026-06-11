@@ -16,12 +16,10 @@ The deployment system now provides a seamless, zero-configuration workflow for b
 ```
 
 **How it works:**
-1. When starting TLS proxy, checks if `PUBLIC_FQDN` exists in `.env.workspace`
-2. If missing, automatically runs `detect-fqdn.sh --update-workspace`
-3. Detects public IP via multiple endpoints (ipify, icanhazip, ifconfig.me)
-4. Performs reverse DNS lookup to get FQDN
-5. Saves results to `.env.workspace` for future runs
-6. Configures TLS proxy with detected FQDN
+1. The devcontainer's `.devcontainer/post-create.sh` detects the public IP and performs a reverse DNS lookup at container-create time.
+2. It saves `PUBLIC_FQDN` (and related values) to `.env.workspace` for all later runs.
+3. `deploy.sh` reads `PUBLIC_FQDN` from `.env.workspace` when starting the TLS proxy (it does not re-detect; it warns if the value is missing).
+4. The TLS proxy is configured with the detected FQDN and its Let's Encrypt certificate paths.
 
 **Files updated automatically:**
 - `.env.workspace` - Adds `PUBLIC_FQDN` and `PUBLIC_IP`
@@ -167,7 +165,7 @@ SERVICE_MAILPIT="naf-dev-mailpit"
 
 ### `.env.workspace` (Auto-generated)
 
-Created by `post-create.sh` and updated by `detect-fqdn.sh`:
+Created and populated by `.devcontainer/post-create.sh` (including `PUBLIC_FQDN` via reverse DNS):
 
 ```bash
 export PUBLIC_FQDN="gstammtisch.dchive.de"
@@ -269,13 +267,14 @@ Simplified setup without TLS:
 
 ### FQDN Detection Failed
 
-If reverse DNS is not configured:
+If reverse DNS is not configured, FQDN detection runs in `.devcontainer/post-create.sh`, which honors a `FORCE_FQDN` override:
 
 ```bash
-# Manual override
-FORCE_FQDN=my-domain.com ./detect-fqdn.sh --update-workspace
+# Re-run container post-create with a forced FQDN, or set it directly in .env.workspace:
+#   export PUBLIC_FQDN="my-domain.com"
+FORCE_FQDN=my-domain.com bash .devcontainer/post-create.sh
 
-# Or use HTTP mode
+# Or use HTTP mode (no FQDN/TLS needed)
 ./deploy.sh local --http
 ```
 
@@ -350,9 +349,10 @@ curl -sk https://gstammtisch.dchive.de/admin/login
 
 ### Before (Manual Steps)
 
+> Historical only. These standalone scripts (`detect-fqdn.sh`, `build-and-deploy-local.sh`) no longer exist; their work is now done by `.devcontainer/post-create.sh` and `deploy.sh`.
+
 ```bash
-# 1. Manual FQDN detection
-./detect-fqdn.sh --update-workspace
+# 1. Manual FQDN detection (now handled by .devcontainer/post-create.sh)
 
 # 2. Manual proxy configuration
 cd tooling/reverse-proxy
@@ -360,11 +360,10 @@ cd tooling/reverse-proxy
 ./stage-proxy-inputs.sh
 docker compose up -d
 
-# 3. Build and deploy
+# 3. Build and deploy (now: ./deploy.sh local)
 cd ../..
-./build-and-deploy-local.sh
 
-# 4. Manual cleanup
+# 4. Manual cleanup (now: ./deploy.sh --stop)
 pkill gunicorn
 docker stop naf-playwright
 docker stop naf-reverse-proxy
@@ -390,6 +389,6 @@ docker stop naf-reverse-proxy
 ## See Also
 
 - [FQDN Detection](FQDN_DETECTION.md) - Reverse DNS and certificate paths
-- [Local Testing Guide](LOCAL_TESTING_GUIDE.md) - HTTP testing without TLS
-- [HTTPS Local Testing](HTTPS_LOCAL_TESTING.md) - TLS proxy setup
+- [Local Testing Guide](deprecated/LOCAL_TESTING_GUIDE.md) - HTTP testing without TLS (archived)
+- [HTTPS Local Testing](deprecated/HTTPS_LOCAL_TESTING.md) - TLS proxy setup (archived)
 - [Deploy Architecture](DEPLOY_ARCHITECTURE.md) - System architecture

@@ -24,7 +24,23 @@ from .models import Account, db
 logger = logging.getLogger(__name__)
 
 # Configuration
-RECOVERY_CODE_COUNT = int(os.environ.get("RECOVERY_CODE_COUNT", "3"))
+def _recovery_code_count() -> int:
+    """Read RECOVERY_CODE_COUNT, tolerating bad values and bounding the range.
+
+    Parsed defensively so a malformed env value (empty string, non-numeric)
+    can't raise at import time and 500 every 2FA/recovery route. Bounded to a
+    sane range to preserve the brute-force resistance of a small code set.
+    """
+    raw = os.environ.get("RECOVERY_CODE_COUNT", "3")
+    try:
+        count = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(f"Invalid RECOVERY_CODE_COUNT={raw!r}; defaulting to 3")
+        return 3
+    return max(1, min(count, 20))
+
+
+RECOVERY_CODE_COUNT = _recovery_code_count()
 RECOVERY_CODE_LENGTH = 8  # Characters per code (e.g., "ABCD-1234")
 RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # Excludes confusables: I,O,0,1
 

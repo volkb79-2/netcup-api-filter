@@ -243,6 +243,6 @@ docker network ls | grep naf-dev-network
 ## Related Documentation
 
 - [`AGENTS.md`](../../AGENTS.md) - Complete deployment workflows
-- [`docs/HTTPS_LOCAL_TESTING.md`](../../docs/HTTPS_LOCAL_TESTING.md) - HTTPS testing guide
+- [`docs/HTTPS_LOCAL_TESTING.md`](../../docs/deprecated/HTTPS_LOCAL_TESTING.md) - HTTPS testing guide
 - [`docs/MAILPIT_CONFIGURATION.md`](../../docs/MAILPIT_CONFIGURATION.md) - Mailpit setup
 - [`detect-fqdn.sh`](../../detect-fqdn.sh) - FQDN detection script

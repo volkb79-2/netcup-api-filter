@@ -37,9 +37,10 @@ from ..account_auth import (
 from ..models import (
     Account, AccountRealm, ActivityLog, APIToken, RegistrationRequest, db,
     # Multi-backend models
-    BackendService, BackendProvider, ManagedDomainRoot, DomainRootGrant, 
+    BackendService, BackendProvider, ManagedDomainRoot, DomainRootGrant,
     VisibilityEnum, OwnerTypeEnum, TestStatusEnum,
 )
+from ..realm_templates import REALM_TEMPLATES
 from ..realm_token_service import (
     create_token,
     get_realms_for_account,
@@ -52,11 +53,18 @@ from ..realm_token_service import (
 
 from ..telegram_service import (
     build_start_link,
+    get_link_callback_secret,
+    get_telegram_config,
     is_telegram_configured_for_linking,
     send_telegram_message,
     sha256_hex,
 )
 from ..utils import generate_token
+
+# Raw Telegram link token cached in the user's session so a page refresh or a
+# second tab reuses the same deep-link instead of rotating it (only the hash is
+# stored on the account, so the raw value can't be re-derived otherwise).
+SESSION_KEY_TELEGRAM_LINK_TOKEN = 'telegram_link_token'
 
 logger = logging.getLogger(__name__)
 
@@ -445,53 +453,14 @@ def register_realms():
             else:
                 flash(result.error, 'error')
     
-    # Render template with current realm requests
+    # Render template with current realm requests.
     realm_requests = reg_request.get_realm_requests()
-    
-    # Available templates for quick selection
-    templates = [
-        {
-            'id': 'ddns_single_host',
-            'name': 'DDNS Single Host',
-            'icon': '🏠',
-            'realm_type': 'host',
-            'record_types': ['A', 'AAAA'],
-            'operations': ['read', 'update'],
-            'description': 'Update IP address for a single hostname (home router, VPN endpoint)'
-        },
-        {
-            'id': 'ddns_subdomain_zone',
-            'name': 'DDNS Subdomain Zone',
-            'icon': '🌐',
-            'realm_type': 'subdomain',
-            'record_types': ['A', 'AAAA', 'CNAME'],
-            'operations': ['read', 'update', 'create', 'delete'],
-            'description': 'Manage a subdomain and all hosts under it (IoT fleet, K8s)'
-        },
-        {
-            'id': 'letsencrypt_dns01',
-            'name': 'LetsEncrypt DNS-01',
-            'icon': '🔒',
-            'realm_type': 'subdomain',
-            'record_types': ['TXT'],
-            'operations': ['read', 'create', 'delete'],
-            'description': 'ACME DNS-01 challenge for certificate automation'
-        },
-        {
-            'id': 'monitoring_readonly',
-            'name': 'Read-Only Monitoring',
-            'icon': '👁️',
-            'realm_type': 'host',
-            'record_types': ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'],
-            'operations': ['read'],
-            'description': 'View-only access for monitoring and dashboards'
-        }
-    ]
-    
+
+    # Available templates for quick selection (canonical source: realm_templates.py).
     return render_template('account/register_realms.html',
                           reg_request=reg_request,
                           realm_requests=realm_requests,
-                          templates=templates)
+                          templates=REALM_TEMPLATES)
 
 
 @account_bp.route('/register/resend', methods=['POST'])
@@ -579,13 +548,21 @@ def get_available_domain_roots_for_account(account):
         ).all()
         available_roots.extend(public_roots)
     
-    # Also get roots where user has explicit grant
+    # Also get roots where user has an ACTIVE grant. A grant is active only if
+    # it is neither revoked nor past its expiry — matching DomainRootGrant
+    # .is_active(). Without the expiry clause an expired-but-unrevoked grant
+    # would keep authorizing access to a private root.
+    now = datetime.utcnow()
     granted_roots = ManagedDomainRoot.query.join(
         DomainRootGrant,
         DomainRootGrant.domain_root_id == ManagedDomainRoot.id
     ).filter(
         DomainRootGrant.account_id == account.id,
         DomainRootGrant.revoked_at.is_(None),
+        db.or_(
+            DomainRootGrant.expires_at.is_(None),
+            DomainRootGrant.expires_at > now,
+        ),
         ManagedDomainRoot.is_active.is_(True)
     ).all()
     
@@ -625,7 +602,8 @@ def request_realm_view():
             flash('Please select a DNS zone', 'error')
             return render_template('account/request_realm.html',
                                  available_roots=available_roots,
-                                 user_backends=user_backends)
+                                 user_backends=user_backends,
+                                 templates=REALM_TEMPLATES)
         
         # Get selected domain root
         try:
@@ -638,14 +616,16 @@ def request_realm_view():
             flash('Invalid DNS zone selection', 'error')
             return render_template('account/request_realm.html',
                                  available_roots=available_roots,
-                                 user_backends=user_backends)
+                                 user_backends=user_backends,
+                                 templates=REALM_TEMPLATES)
         
         # Check user has access to this root
         if domain_root not in available_roots:
             flash('You do not have access to this DNS zone', 'error')
             return render_template('account/request_realm.html',
                                  available_roots=available_roots,
-                                 user_backends=user_backends)
+                                 user_backends=user_backends,
+                                 templates=REALM_TEMPLATES)
         
         # Build full realm value
         realm_value = subdomain if subdomain else ''
@@ -669,7 +649,8 @@ def request_realm_view():
     
     return render_template('account/request_realm.html',
                           available_roots=available_roots,
-                          user_backends=user_backends)
+                          user_backends=user_backends,
+                          templates=REALM_TEMPLATES)
 
 
 # ============================================================================
@@ -1023,11 +1004,13 @@ def link_telegram():
     """Link Telegram for notifications and 2FA (Option A: deep-link + bot callback)."""
     account = g.account
 
-    # Telegram linking requires a bot username for the deep-link, and a shared
-    # callback secret for the bot -> app confirmation call.
-    bot_username = (os.environ.get('TELEGRAM_BOT_USERNAME') or '').strip() or None
-    callback_secret = (os.environ.get('TELEGRAM_LINK_CALLBACK_SECRET') or '').strip() or None
-    linking_enabled = bool(bot_username) and bool(callback_secret) and is_telegram_configured_for_linking()
+    # Telegram linking requires a bot username for the deep-link, and a usable
+    # callback secret for the bot -> app confirmation call. Both come from the
+    # telegram_service (single source of truth; the secret accessor also rejects
+    # the public placeholder value outside local deployments).
+    cfg = get_telegram_config()
+    bot_username = cfg.bot_username
+    linking_enabled = is_telegram_configured_for_linking()
 
     # Linked state: show status + actions
     if account.telegram_enabled and account.telegram_chat_id:
@@ -1051,18 +1034,33 @@ def link_telegram():
             telegram_link_token=None,
         )
 
-    # Ensure we always have a raw token to show. Because we store only the hash,
-    # we intentionally rotate the token on each visit.
     ttl_raw = (os.environ.get('TELEGRAM_LINK_TOKEN_TTL_SECONDS') or '600').strip()
     try:
         ttl_seconds = int(ttl_raw)
     except ValueError:
         ttl_seconds = 600
 
-    raw_token = generate_token(min_length=32, max_length=32)
-    account.telegram_link_token_hash = sha256_hex(raw_token)
-    account.telegram_link_token_expires_at = datetime.utcnow() + timedelta(seconds=ttl_seconds)
-    db.session.commit()
+    # Reuse the current token while it is still valid so a refresh or a second
+    # tab does not invalidate the deep-link the user already opened in Telegram.
+    # The raw token is cached in the session (only its hash lives on the
+    # account); we re-issue only when there is no matching, unexpired token.
+    now = datetime.utcnow()
+    cached_raw = session.get(SESSION_KEY_TELEGRAM_LINK_TOKEN)
+    token_still_valid = (
+        bool(cached_raw)
+        and account.telegram_link_token_hash == sha256_hex(cached_raw)
+        and account.telegram_link_token_expires_at is not None
+        and account.telegram_link_token_expires_at > now
+    )
+
+    if token_still_valid:
+        raw_token = cached_raw
+    else:
+        raw_token = generate_token(min_length=32, max_length=32)
+        account.telegram_link_token_hash = sha256_hex(raw_token)
+        account.telegram_link_token_expires_at = now + timedelta(seconds=ttl_seconds)
+        db.session.commit()
+        session[SESSION_KEY_TELEGRAM_LINK_TOKEN] = raw_token
 
     telegram_start_link = build_start_link(link_token=raw_token)
 
@@ -2120,6 +2118,8 @@ def unlink_telegram():
     account.telegram_linked_at = None
     account.telegram_link_token_hash = None
     account.telegram_link_token_expires_at = None
+    # Drop any cached deep-link token so a future link starts fresh.
+    session.pop(SESSION_KEY_TELEGRAM_LINK_TOKEN, None)
 
     source_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
     try:

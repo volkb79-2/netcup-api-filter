@@ -341,8 +341,9 @@ If database or logs aren't working:
 
 ✅ **DO:**
 - Use realm type appropriately:
-  - `host` for specific domain access
-  - `subdomain` for wildcard subdomain access
+  - `host` — exact FQDN only (e.g. `vpn.example.com` and nothing else)
+  - `subdomain` — apex plus all children (e.g. `iot.example.com` and any `*.iot.example.com`)
+  - `subdomain_only` — children only, not the apex itself
 - Limit allowed record types to only what's needed
 - Restrict operations to minimum required
 - Set IP access restrictions when clients have static IPs
@@ -352,6 +353,11 @@ If database or logs aren't working:
 - Grant wildcard permissions unless absolutely necessary
 - Allow all operations when only `read` is needed
 - Skip IP restrictions for sensitive clients
+
+**Realm hostname enforcement:** token authorization checks the specific hostname targeted by a
+write, not just the DNS zone. A token scoped to `host` (`vpn.example.com`) cannot write
+`other.example.com` even though both are in the `example.com` zone. Zone-wide reads
+(`record_name=None`) are still bounded only by record-type filtering.
 
 ### Monitoring
 
@@ -449,13 +455,56 @@ If database or logs aren't working:
 4. Ensure all required fields in YAML are present
 5. Run with: `python migrate_yaml_to_db.py config.yaml`
 
+## Domain-Root Grants
+
+The admin can grant accounts access to managed domain roots (Admin → Domain Roots → Grants).
+
+### Revoking and re-granting
+
+Revoking a grant marks it revoked but leaves the database row intact. If you later want to
+re-grant the same account on the same root, use the **Add Grant** form again — the app detects
+the existing revoked row and reactivates it in place instead of inserting a new row. This avoids
+a unique-constraint violation that would otherwise prevent re-granting through the UI.
+
+### Grant expiry
+
+When you set an **Expires** date on a grant, that date is treated as an **inclusive end-of-day**
+(23:59:59 UTC). A grant dated for today stays valid for the entire day and expires at midnight.
+Entering midnight (00:00:00) of the target date would expire the grant immediately on creation —
+the UI prevents that by always using end-of-day.
+
+Expired grants no longer authorize access; they are excluded from authorization checks the same
+way revoked grants are.
+
+## GeoIP Configuration
+
+GeoIP lookups are used to display the approximate location of login and API sessions (Admin →
+System Info and Audit Logs).
+
+### API URL fallback
+
+The **GeoIP API URL** field in admin settings can be left blank. When it is blank the service
+falls back to the `MAXMIND_API_URL` environment variable, then to the hardcoded default
+(`https://geoip.maxmind.com`). This means a local mock or proxy URL configured in the
+environment is honored even if the admin settings field is cleared.
+
+**Configuration priority:**
+
+1. `geoip_config.api_url` (admin settings, if non-empty)
+2. `MAXMIND_API_URL` environment variable
+3. `https://geoip.maxmind.com` (hardcoded default)
+
+For local development with the mock GeoIP service, set `MAXMIND_API_URL` in your environment
+file and leave the admin settings field blank — any value you save in the UI takes precedence
+over the environment variable.
+
 ## Getting Help
 
 If you encounter issues not covered in this guide:
 
 1. Check application logs for detailed error messages
 2. Review the [README.md](README.md) for general information
-3. Check [WEBHOSTING_DEPLOYMENT.md](WEBHOSTING_DEPLOYMENT.md) for deployment-specific issues
+3. Check [WEBHOSTING_DEPLOYMENT.md](DEPLOYMENT_WORKFLOW.md) for deployment-specific issues
 4. Open an issue on GitHub with:
    - Detailed description of the problem
    - Steps to reproduce

@@ -18,24 +18,19 @@ See docs:
 
 from __future__ import annotations
 
+import hmac
 import logging
-import os
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
 from ..database import db
-from ..models import Account
-from ..telegram_service import send_telegram_message, sha256_hex
+from ..models import Account, ActivityLog
+from ..telegram_service import get_link_callback_secret, send_telegram_message, sha256_hex
 
 logger = logging.getLogger(__name__)
 
 telegram_bp = Blueprint("telegram", __name__, url_prefix="/api/telegram")
-
-
-def _get_callback_secret() -> str | None:
-    secret = (os.environ.get("TELEGRAM_LINK_CALLBACK_SECRET") or "").strip()
-    return secret or None
 
 
 @telegram_bp.route("/link", methods=["POST"])
@@ -49,12 +44,15 @@ def telegram_link_callback():
     Returns JSON with status.
     """
 
-    secret = _get_callback_secret()
+    secret = get_link_callback_secret()
     if not secret:
         return jsonify({"error": "Telegram linking not configured"}), 503
 
+    # Constant-time comparison: a plain != short-circuits on the first differing
+    # byte, leaking the secret's length/prefix via response timing to anyone who
+    # can hit this (unauthenticated) endpoint.
     provided = (request.headers.get("X-NAF-TELEGRAM-SECRET") or "").strip()
-    if provided != secret:
+    if not hmac.compare_digest(provided, secret):
         return jsonify({"error": "Unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -77,6 +75,22 @@ def telegram_link_callback():
     if datetime.utcnow() > account.telegram_link_token_expires_at:
         return jsonify({"error": "Token expired"}), 410
 
+    # Refuse to bind a chat_id that already belongs to a different account, so a
+    # single Telegram chat can never receive 2FA codes / security alerts for
+    # multiple accounts. (telegram_chat_id has no DB unique constraint because
+    # NULL = "not linked" must be allowed for every account.)
+    conflict = (
+        Account.query
+        .filter(Account.telegram_chat_id == chat_id, Account.id != account.id)
+        .first()
+    )
+    if conflict is not None:
+        logger.warning(
+            f"Telegram link rejected: chat_id already linked to another account "
+            f"(requested for account={account.username})"
+        )
+        return jsonify({"error": "This Telegram chat is already linked to another account"}), 409
+
     account.telegram_chat_id = chat_id
     account.telegram_enabled = 1
     account.telegram_linked_at = datetime.utcnow()
@@ -84,6 +98,16 @@ def telegram_link_callback():
     # Consume token
     account.telegram_link_token_hash = None
     account.telegram_link_token_expires_at = None
+
+    # Audit trail: linking binds a channel that will carry 2FA codes, so record
+    # it (the unlink action is already audited in api/account.py).
+    db.session.add(ActivityLog(  # type: ignore[call-arg]
+        account_id=account.id,
+        action="telegram_linked",
+        source_ip=request.remote_addr or "unknown",
+        status="success",
+        severity="medium",
+    ))
 
     db.session.commit()
 

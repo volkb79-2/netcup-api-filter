@@ -291,3 +291,27 @@ class UiTestConfig:
 
 # Singleton instance - initialized on first import
 settings = UiTestConfig()
+
+
+def require_readonly_token() -> str:
+    """Return the read-only client token, or pytest.skip if it is unavailable.
+
+    The read-only client is OPTIONAL in deployment state: older states (or a
+    --skip-build run against a state that predates the read-only client) have no
+    non-primary client, so ``settings.readonly_client_token`` resolves to ''.
+    Sending ``Bearer `` (empty) makes the API return 401, which would hard-fail
+    authorization tests that assert ``status in [403, 500]``. That 401 is a
+    MISSING FIXTURE, not a product failure, so callers skip instead.
+
+    Tests that DO have a token keep their real assertions unchanged.
+    """
+    import pytest  # local import: only test code calls this
+
+    token = (settings.readonly_client_token or "").strip()
+    if not token:
+        pytest.skip(
+            "Read-only client token not available in deployment state "
+            "(no non-primary client; e.g. stale state or --skip-build). "
+            "Set DEPLOYED_READONLY_CLIENT_SECRET_KEY or rebuild with a read-only client."
+        )
+    return token

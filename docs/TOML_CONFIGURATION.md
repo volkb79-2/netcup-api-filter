@@ -393,18 +393,15 @@ visibility = "private"
 
 ## Post-Deployment Management
 
-After import, manage via **Admin UI** (not TOML):
+After import, manage via the **Admin UI** (not TOML) — all of these are implemented:
 
-- **Backends:** CRUD operations for `BackendService` (not yet implemented)
-- **Domain Roots:** CRUD operations for `ManagedDomainRoot` (not yet implemented)
-- **Users:** Standard account management
-- **Realm Approvals:** Approve/reject user access requests (not yet implemented)
+- **Backends:** full CRUD for `BackendService` at `/admin/backends` (create / edit / test / enable / disable / delete).
+- **Domain Roots:** full CRUD for `ManagedDomainRoot` at `/admin/domain-roots`, plus per-account **grant** management (`/admin/domain-roots/<id>/grants`).
+- **Realm Approvals:** approve / reject / revoke user realm requests at `/admin/realms` and `/admin/realms/pending`.
+- **Users:** account management, approval, and per-account realm creation.
 
-**Coming soon:**
-- Admin UI for backend management
-- Admin UI for domain root management
-- Realm approval workflow UI
-- User portal for BYOD
+TOML import is for **first-start seeding**; day-to-day changes go through the Admin UI. See
+[`ADMIN_GUIDE.md`](ADMIN_GUIDE.md).
 
 ## Validation Rules
 
@@ -500,8 +497,8 @@ max_hosts_per_user = 5
 
 ## See Also
 
-- [CONFIG_DRIVEN_ARCHITECTURE.md](CONFIG_DRIVEN_ARCHITECTURE.md) - Configuration philosophy
+- [CONFIG_DRIVEN_ARCHITECTURE.md](deprecated/CONFIG_DRIVEN_ARCHITECTURE.md) - Configuration philosophy
 - [FQDN_DETECTION.md](FQDN_DETECTION.md) - PUBLIC_FQDN auto-detection
 - [ENV_WORKSPACE.md](ENV_WORKSPACE.md) - Environment variables
 - [DEPLOYMENT_WORKFLOW.md](DEPLOYMENT_WORKFLOW.md) - Deployment process
-- [ADMIN_GUIDE.md](ADMIN_GUIDE.md) - Admin UI (when implemented)
+- [ADMIN_GUIDE.md](ADMIN_GUIDE.md) - Admin UI walkthrough

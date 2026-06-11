@@ -334,7 +334,7 @@ When updating tests to use these patterns:
 
 - [UI Testing Guide](UI_TESTING_GUIDE.md) - Comprehensive UI testing strategy
 - [Journey Contracts](JOURNEY_CONTRACTS.md) - Test journey specifications
-- [Testing Strategy](TESTING_STRATEGY.md) - Overall testing architecture
+- [Testing Strategy](deprecated/TESTING_STRATEGY.md) - Overall testing architecture
 - [Parallel Session Strategy](PARALLEL_SESSION_STRATEGY.md) - Multi-session testing
 
 ---

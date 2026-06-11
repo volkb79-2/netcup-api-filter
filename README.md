@@ -36,59 +36,35 @@ Initial Setup Flow for fresh installation via provided `deploy.zip` package:
 
 ## Quick Start - Development
 
-```
+`deploy.sh` is the master orchestrator (build → deploy → test). Its shape:
 
+```
 deploy.sh (master orchestrator)
 ├── local (default)
-│   ├── --mock (default): Start mocks, build, deploy, test via HTTPS
-│   └── --live: Build, deploy, test via HTTPS (use real services)
-├── webhosting
-│   └── Build, upload, restart Passenger, test via HTTPS
-└── Common flow:
-    1. Start infrastructure (mocks if --mock, TLS proxy always)
-    2. Build deployment
-    3. Deploy (local extract or remote upload)
-    4. Start backend (gunicorn or Passenger restart)
-    5. Run tests via HTTPS
+│   ├── --mock (default): start mocks, build, deploy, test via HTTPS
+│   └── --mode live    : build, deploy, test via HTTPS using real services
+├── webhosting          : build, upload, restart Passenger, test
+└── Common phases: infra → build → deploy → start (gunicorn/Passenger) → tests
+```
 
-
-# 1. Clone repository
+```bash
+# 1. Clone and open in the devcontainer (VS Code builds it and runs post-create,
+#    which installs packages and generates .env.workspace: PUBLIC_FQDN,
+#    PHYSICAL_REPO_ROOT, DOCKER_GID). The public FQDN is auto-detected there.
 git clone git@github.com:user/netcup-api-filter.git
 cd netcup-api-filter
 
-# 2. Open in devcontainer (automatic setup)
-# VS Code will:
-# - Build devcontainer from Dockerfile
-# - Run postCreateCommand (installs packages)
-# - Source .env.workspace (PUBLIC_FQDN, PHYSICAL_REPO_ROOT, DOCKER_GID)
-
-# 3. Detect public FQDN (if PUBLIC_FQDN not set)
-./detect-fqdn.sh --update-workspace  # Populates .env.workspace
-
-# safe clean restart / deploy 
+# 2. Clean restart + local deploy (mocked services by default)
 ./deploy.sh --stop && ./deploy.sh local | tee deploy.log
 
-# 4. run deployment script
-deploy.sh (master orchestrator)
-├── local (default)
-│   ├── --mock (default): Start mocks, build, deploy, test via HTTPS
-│   └── --live: Build, deploy, test via HTTPS (use real services)
-├── webhosting
-│   └── Build, upload, restart Passenger, test via HTTPS
-└── Common flow:
-    1. Start infrastructure (mocks if --mock, TLS proxy always)
-    2. Build deployment
-    3. Deploy (local extract or remote upload)
-    4. Start backend (gunicorn or Passenger restart)
-    5. Run tests via HTTPS
+# 3. Access the deployment
+echo "Admin UI:    https://${PUBLIC_FQDN}/admin/login"
+echo "Mailpit:     https://${PUBLIC_FQDN}/mailpit/"
+echo "Credentials: admin / admin (fresh deploy; forced password change)"
 
-# 6. Access deployment
-echo "Admin UI: https://${PUBLIC_FQDN}/admin/login"
-echo "Mailpit: https://${PUBLIC_FQDN}/mailpit/"
-echo "Credentials: admin / admin (from .env.defaults)"
-
-# 7. Run tests (optional)
-./run-local-tests.sh  # Full test suite (90 tests)
+# 4. Run the UI test suite directly (optional; deploy.sh also runs it)
+./run-local-tests.sh                 # build + run ui_tests against deploy-local
+./run-local-tests.sh --with-mocks    # also start mock services
 ```
 
 ## DDNS Protocol Support
@@ -173,6 +149,29 @@ Client token → Access policies → Netcup API Filter → Netcup DNS API
 ```
 
 The proxy runs as a Flask app (WSGI via Passenger on webhosting, Gunicorn for local validation) with SQLite as the default persistence layer. All configuration flows through environment variables seeded from `.env.defaults` and finalized in the database via the admin UI.
+
+## Upgrading an Existing Deployment (Database Migrations)
+
+The app does not use Alembic. On startup, after `db.create_all()`, it runs a lightweight
+automatic migration (`run_lightweight_migrations` in `database.py`) that adds any columns or
+indexes present in the models but missing from the existing SQLite file. This means you can
+upgrade a deployment that keeps its `netcup_filter.db` across releases without getting
+`OperationalError: no such column` errors on the first request after the update.
+
+**What the auto-migration handles:**
+- Adding nullable columns (new column gets `NULL` for all existing rows).
+- Adding columns with a scalar default (e.g. `INTEGER DEFAULT 0`).
+- Creating new single-table indexes declared in the models.
+
+**What it does NOT handle (requires a hand-written migration):**
+- Dropping columns or renaming them.
+- Changing a column's type.
+- Adding a `NOT NULL` column without a scalar default.
+- Data backfills (transforming existing row values).
+
+If a release note mentions one of those operations, apply the migration manually before (or
+immediately after) restarting the app. The lightweight migrator logs every `ALTER TABLE` it
+executes at `WARNING` level so you can verify what was applied.
 
 ## Testing & Validation Cheatsheet
 

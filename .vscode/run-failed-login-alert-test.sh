@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
+# Run the failed-login security alert email test (fail-fast, with mocks).
 set -euo pipefail
-
-WORKSPACE_DIR="/workspaces/netcup-api-filter"
-cd "${WORKSPACE_DIR}"
-
-# shellcheck source=/dev/null
-source "${WORKSPACE_DIR}/.env.workspace"
-
 export UI_PYTEST_ARGS="-x"
-
-./run-local-tests.sh --with-mocks ui_tests/tests/test_email_notifications.py::TestSecurityAlertEmails::test_failed_login_alert
+exec "$(dirname "$0")/run-tests.sh" \
+  "ui_tests/tests/test_email_notifications.py::TestSecurityAlertEmails::test_failed_login_alert"

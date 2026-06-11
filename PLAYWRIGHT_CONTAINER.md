@@ -29,7 +29,7 @@ docker stop playwright
 ## Architecture
 
 ```
-Playwright Container (generic-playwright:latest)
+Playwright Container (built locally; service "naf-dev-playwright")
   ├── /workspaces/netcup-api-filter → Project root (read-write)
   ├── /screenshots → deploy-local/screenshots (direct output)
   ├── Network: Shares devcontainer network (e.g., naf-dev-network)
@@ -151,24 +151,14 @@ Falling back to local Playwright installation
 
 ## Integration with Build Scripts
 
-### `build-and-deploy-local.sh`
+### `deploy.sh`
 
-The local deployment script automatically uses the Playwright container for screenshots:
-
-```bash
-# Inside build-and-deploy-local.sh
-source build_deployment_lib.sh
-capture_screenshots  # Automatically uses container if available
-```
-
-### `build-and-deploy.sh`
-
-The webhosting deployment script also uses the container:
+The deployment script (`./deploy.sh local` and `./deploy.sh webhosting`) automatically uses the Playwright container for screenshots via the shared screenshot-capture helper:
 
 ```bash
-# Inside build-and-deploy.sh
+# Inside the deploy pipeline (build_deployment_lib.sh)
 source build_deployment_lib.sh
-capture_screenshots  # Same automatic detection
+capture_screenshots  # Automatically uses the container if available
 ```
 
 ## Requirements Management
@@ -270,7 +260,7 @@ The `start-playwright.sh` script uses **content-based change detection** to dete
 2. **Comparison**: Compares current hash against stored hash in `.build-hash`
 
 3. **Rebuild Triggers**:
-   - Image doesn't exist (`generic-playwright:latest`)
+   - Locally-built image doesn't exist yet (image is built from `tooling/playwright/Dockerfile` via `docker compose build`; not pulled from a registry)
    - No `.build-hash` file (first run)
    - Hash mismatch (files changed)
 
@@ -427,4 +417,4 @@ ls -la deploy-local/screenshots/
 - `PYTHON_PACKAGES.md` - Requirements file documentation
 - `tooling/playwright/README.md` - Detailed container setup and usage
 - `build_deployment_lib.sh` - Screenshot capture implementation
-- `LOCAL_TESTING_GUIDE.md` - Local testing workflows
+- `docs/deprecated/LOCAL_TESTING_GUIDE.md` - Local testing workflows (archived)

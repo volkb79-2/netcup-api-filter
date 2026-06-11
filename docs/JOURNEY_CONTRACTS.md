@@ -17,15 +17,27 @@
 
 ## Journey Overview
 
-| Journey | Purpose | Creates | Depends On |
-|---------|---------|---------|------------|
-| J1 | Fresh Deployment | Admin session, changed password | Fresh DB |
-| J2 | Account Lifecycle | Pending account, verified account | J1 |
-| J3 | Admin Approvals | Approved account, rejected account | J2 |
-| J4 | Realm Creation | Realms of each type | J3 |
-| J5 | Token Issuance | Tokens with various scopes | J4 |
-| J6 | API Access | Audit log entries | J5 |
-| J7 | Security Operations | Password change, token rotation | J6 |
+> **Implementation status:** Only **J1**, **J2**, and **J3 (comprehensive states)** are
+> implemented today — `test_journey_master.py` imports exactly three journey classes
+> (`TestJourney1FreshDeployment`, `TestJourney2AccountLifecycle`,
+> `TestJourney3ComprehensiveStates`). The only journey files on disk are
+> `j1_fresh_deployment.py`, `j2_account_lifecycle.py`, and `j3_comprehensive_states.py`
+> (plus `journey_state.py` and `state_matrix.py`). Journeys **J4–J7 below are
+> planned / not yet implemented** — there are no `j4_*`/`j5_*`/`j6_*`/`j7_*` files.
+
+| Journey | Purpose | Creates | Depends On | Status |
+|---------|---------|---------|------------|--------|
+| J1 | Fresh Deployment | Admin session, changed password | Fresh DB | Implemented (`j1_fresh_deployment.py`) |
+| J2 | Account Lifecycle | Pending account, verified account | J1 | Implemented (`j2_account_lifecycle.py`) |
+| J3 | Comprehensive States (accounts/realms/tokens) | Accounts/realms/tokens in many states | J2 | Implemented (`j3_comprehensive_states.py`) |
+| J4 | Realm Creation | Realms of each type | J3 | **Planned — not yet implemented** |
+| J5 | Token Issuance | Tokens with various scopes | J4 | **Planned — not yet implemented** |
+| J6 | API Access | Audit log entries | J5 | **Planned — not yet implemented** |
+| J7 | Security Operations | Password change, token rotation | J6 | **Planned — not yet implemented** |
+
+Note: J3's comprehensive-states journey already exercises much of what J4–J7 describe
+(realm creation, token issuance, API access) as part of building the state matrix; the
+separate J4–J7 journeys below remain a future breakdown.
 
 ---
 
@@ -186,7 +198,7 @@ ui_tests/tests/journeys/j2_account_lifecycle.py
 
 ---
 
-## Journey 3: Admin Approvals (j3_admin_approvals.py)
+## Journey 3: Comprehensive States / Admin Approvals (j3_comprehensive_states.py)
 
 ### Contract Reference
 ```
@@ -249,11 +261,16 @@ ui_tests/tests/journeys/j3_comprehensive_states.py
 
 ---
 
-## Journey 4: Realm Creation (j4_realm_creation.py)
+## Journey 4: Realm Creation — Planned (not yet implemented)
+
+> **Status: Planned.** There is no `j4_realm_creation.py` file. The realm-creation
+> behavior below is currently covered by the realm section of
+> `j3_comprehensive_states.py`; a dedicated J4 journey is future work.
 
 ### Contract Reference
 ```
-ui_tests/tests/journeys/j3_comprehensive_states.py (realm section)
+(planned) ui_tests/tests/journeys/j4_realm_creation.py
+currently exercised by: ui_tests/tests/journeys/j3_comprehensive_states.py (realm section)
 ```
 
 ### Preconditions
@@ -321,11 +338,16 @@ ui_tests/tests/journeys/j3_comprehensive_states.py (realm section)
 
 ---
 
-## Journey 5: Token Issuance (j5_token_issuance.py)
+## Journey 5: Token Issuance — Planned (not yet implemented)
+
+> **Status: Planned.** There is no `j5_token_issuance.py` file. Token issuance is
+> currently covered by the token section of `j3_comprehensive_states.py`; a dedicated
+> J5 journey is future work.
 
 ### Contract Reference
 ```
-ui_tests/tests/journeys/j3_comprehensive_states.py (token section)
+(planned) ui_tests/tests/journeys/j5_token_issuance.py
+currently exercised by: ui_tests/tests/journeys/j3_comprehensive_states.py (token section)
 ```
 
 ### Preconditions
@@ -385,11 +407,16 @@ ui_tests/tests/journeys/j3_comprehensive_states.py (token section)
 
 ---
 
-## Journey 6: API Access (j6_api_access.py)
+## Journey 6: API Access — Planned (not yet implemented)
+
+> **Status: Planned.** There is no `j6_api_access.py` file. API authorization checks
+> are currently covered by the API section of `j3_comprehensive_states.py`; a dedicated
+> J6 journey is future work.
 
 ### Contract Reference
 ```
-ui_tests/tests/journeys/j3_comprehensive_states.py (API section)
+(planned) ui_tests/tests/journeys/j6_api_access.py
+currently exercised by: ui_tests/tests/journeys/j3_comprehensive_states.py (API section)
 ```
 
 ### Preconditions
@@ -457,11 +484,14 @@ ui_tests/tests/journeys/j3_comprehensive_states.py (API section)
 
 ---
 
-## Journey 7: Security Operations (j7_security_ops.py)
+## Journey 7: Security Operations — Planned (not yet implemented)
+
+> **Status: Planned.** There is no `j7_security_ops.py` file; this journey has not been
+> created yet.
 
 ### Contract Reference
 ```
-(New journey to be created)
+(planned) ui_tests/tests/journeys/j7_security_ops.py — not yet created
 ```
 
 ### Preconditions
@@ -586,7 +616,7 @@ deploy-local/screenshots/
 3. Verify `refresh_credentials()` was called before login
 
 ### When Test Order Matters
-1. Journeys MUST run in order: J1 → J2 → J3 → J4 → J5 → J6 → J7
+1. Implemented journeys MUST run in order: J1 → J2 → J3 (the only journeys currently wired into `test_journey_master.py`). J4–J7 are planned extensions of this sequence.
 2. Check `journey_state` for expected preconditions
 3. Skip gracefully if precondition missing (with clear message)
 

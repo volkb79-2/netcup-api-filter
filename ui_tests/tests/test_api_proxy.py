@@ -8,7 +8,7 @@ Uses the new REST API endpoints:
 - GET  /api/myip - Get caller's public IP
 """
 import pytest
-from ui_tests.config import settings
+from ui_tests.config import settings, require_readonly_token
 
 
 pytestmark = pytest.mark.asyncio
@@ -104,11 +104,12 @@ async def test_api_dns_unauthorized_domain_rejected():
 async def test_api_dns_write_operation_unauthorized():
     """Test that read-only token cannot create records."""
     import httpx
-    
+
+    readonly_token = require_readonly_token()
     # The demo token is read-only, try to create a record
     url = settings.url(f"/api/dns/{settings.client_domain}/records")
     headers = {
-        "Authorization": f"Bearer {settings.readonly_client_token}",
+        "Authorization": f"Bearer {readonly_token}",
         "Content-Type": "application/json"
     }
     data = {

@@ -89,7 +89,7 @@ a-z A-Z 0-9
 **Example:** `naf_Ab3xYz9KmNpQrStU_aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV1wX2yZ3aB4cD5eF6gH7iJ8kL9mN0`
 
 **Security notes:**
-- Only the SHA-256 hash of the token is stored
+- Only a bcrypt hash (of the SHA-256 of the token) is stored — the token is SHA-256-prehashed first because it can exceed bcrypt's 72-byte input limit (see `models.hash_token()`)
 - Full token shown once to user at creation
 - Token prefix (first 8 chars) logged for identification
 

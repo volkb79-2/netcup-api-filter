@@ -20,83 +20,21 @@
                     <i class="bi bi-magic me-1"></i>Configuration Templates
                 </div>
                 <div class="list-group list-group-flush">
-                    <button type="button" class="list-group-item list-group-item-action" 
-                            onclick="applyTemplate('ddns_host')">
+                    {# Buttons rendered from the canonical realm_templates list (realm_templates.py). #}
+                    {% for tpl in realm_templates %}
+                    <button type="button" class="list-group-item list-group-item-action"
+                            onclick="applyTemplate('{{ tpl.id }}')">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
-                                <i class="bi bi-house text-primary me-2"></i>
-                                <strong>DDNS Single Host</strong>
+                                <span class="me-2">{{ tpl.icon }}</span>
+                                <strong>{{ tpl.name }}</strong>
                                 <small class="d-block text-muted mt-1">
-                                    Update single hostname IP (home router, VPN)
+                                    {{ tpl.description }}
                                 </small>
                             </div>
                         </div>
                     </button>
-                    
-                    <button type="button" class="list-group-item list-group-item-action" 
-                            onclick="applyTemplate('ddns_subdomain')">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <i class="bi bi-globe text-success me-2"></i>
-                                <strong>DDNS Subdomain Delegation</strong>
-                                <small class="d-block text-muted mt-1">
-                                    Manage entire subdomain zone (IoT, K8s)
-                                </small>
-                            </div>
-                        </div>
-                    </button>
-                    
-                    <button type="button" class="list-group-item list-group-item-action" 
-                            onclick="applyTemplate('readonly')">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <i class="bi bi-eye text-info me-2"></i>
-                                <strong>Read-Only Monitoring</strong>
-                                <small class="d-block text-muted mt-1">
-                                    View records without modification
-                                </small>
-                            </div>
-                        </div>
-                    </button>
-                    
-                    <button type="button" class="list-group-item list-group-item-action" 
-                            onclick="applyTemplate('letsencrypt')">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <i class="bi bi-shield-lock text-warning me-2"></i>
-                                <strong>Let's Encrypt DNS-01</strong>
-                                <small class="d-block text-muted mt-1">
-                                    Automated certificate issuance (TXT only)
-                                </small>
-                            </div>
-                        </div>
-                    </button>
-                    
-                    <button type="button" class="list-group-item list-group-item-action" 
-                            onclick="applyTemplate('full_dns')">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <i class="bi bi-gear text-secondary me-2"></i>
-                                <strong>Full DNS Management</strong>
-                                <small class="d-block text-muted mt-1">
-                                    Complete control (CI/CD, Terraform)
-                                </small>
-                            </div>
-                        </div>
-                    </button>
-                    
-                    <button type="button" class="list-group-item list-group-item-action" 
-                            onclick="applyTemplate('cname')">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <i class="bi bi-link-45deg text-danger me-2"></i>
-                                <strong>CNAME Delegation</strong>
-                                <small class="d-block text-muted mt-1">
-                                    CDN/load balancer alias management
-                                </small>
-                            </div>
-                        </div>
-                    </button>
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -269,38 +207,12 @@
 
 {% block extra_scripts %}
 <script>
-const templates = {
-    ddns_host: {
-        realm_type: 'host',
-        record_types: ['A', 'AAAA'],
-        operations: ['read', 'update']
-    },
-    ddns_subdomain: {
-        realm_type: 'subdomain',
-        record_types: ['A', 'AAAA'],
-        operations: ['read', 'update', 'create', 'delete']
-    },
-    readonly: {
-        realm_type: 'subdomain',
-        record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'],
-        operations: ['read']
-    },
-    letsencrypt: {
-        realm_type: 'subdomain',
-        record_types: ['TXT'],
-        operations: ['read', 'update', 'create', 'delete']
-    },
-    full_dns: {
-        realm_type: 'subdomain',
-        record_types: ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA'],
-        operations: ['read', 'update', 'create', 'delete']
-    },
-    cname: {
-        realm_type: 'host',
-        record_types: ['CNAME'],
-        operations: ['read', 'update']
-    }
-};
+// Template presets come from the server (canonical source: realm_templates.py).
+// tojson is safe inside <script> (auto-escapes </script>, &, <, >).
+const realmTemplates = {{ realm_templates | tojson }};
+// Index by id so applyTemplate('<id>') can look up its preset; the ids here
+// match the applyTemplate('<id>') button onclicks rendered above.
+const templates = Object.fromEntries(realmTemplates.map(t => [t.id, t]));
 
 function applyTemplate(name) {
     const t = templates[name];

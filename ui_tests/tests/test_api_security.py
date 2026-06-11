@@ -15,7 +15,7 @@ import sys
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ui_tests.config import settings
+from ui_tests.config import settings, require_readonly_token
 
 
 pytestmark = pytest.mark.asyncio
@@ -72,10 +72,11 @@ class TestTokenOperationScopeEnforcement:
     async def test_readonly_token_cannot_create(self):
         """Read-only token cannot create records."""
         import httpx
-        
+
+        readonly_token = require_readonly_token()
         url = settings.url(f"/api/dns/{settings.client_domain}/records")
         headers = {
-            "Authorization": f"Bearer {settings.readonly_client_token}",
+            "Authorization": f"Bearer {readonly_token}",
             "Content-Type": "application/json"
         }
         data = {
@@ -96,10 +97,11 @@ class TestTokenOperationScopeEnforcement:
     async def test_readonly_token_cannot_delete(self):
         """Read-only token cannot delete records."""
         import httpx
-        
+
+        readonly_token = require_readonly_token()
         url = settings.url(f"/api/dns/{settings.client_domain}/records/1")
         headers = {
-            "Authorization": f"Bearer {settings.readonly_client_token}",
+            "Authorization": f"Bearer {readonly_token}",
         }
         
         async with httpx.AsyncClient(verify=False) as client:

@@ -22,7 +22,7 @@ import sqlite3
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ui_tests.config import settings
+from ui_tests.config import settings, require_readonly_token
 
 pytestmark = pytest.mark.asyncio
 
@@ -505,10 +505,11 @@ class TestTokenPermissionBoundaries:
         Token with only 'read' operation cannot create records.
         """
         import httpx
-        
+
+        readonly_token = require_readonly_token()
         url = settings.url(f"/api/dns/{settings.client_domain}/records")
         headers = {
-            "Authorization": f"Bearer {settings.readonly_client_token}",
+            "Authorization": f"Bearer {readonly_token}",
             "Content-Type": "application/json"
         }
         data = {
@@ -530,10 +531,11 @@ class TestTokenPermissionBoundaries:
         Token with only 'read' operation cannot delete records.
         """
         import httpx
-        
+
+        readonly_token = require_readonly_token()
         url = settings.url(f"/api/dns/{settings.client_domain}/records/999")
         headers = {
-            "Authorization": f"Bearer {settings.readonly_client_token}",
+            "Authorization": f"Bearer {readonly_token}",
         }
         
         async with httpx.AsyncClient(verify=False) as client:

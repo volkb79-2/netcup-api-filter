@@ -143,6 +143,6 @@ docker compose down && docker compose up -d
 
 ## Related Documentation
 
-- [TESTING_STRATEGY.md](../../docs/TESTING_STRATEGY.md) - Overall testing architecture
-- [CLIENT_USAGE.md](../../docs/CLIENT_USAGE.md) - Netcup API integration
+- [TESTING_STRATEGY.md](../../docs/deprecated/TESTING_STRATEGY.md) - Overall testing architecture
+- [CLIENT_USAGE.md](../../docs/deprecated/CLIENT_USAGE.md) - Netcup API integration
 - Mock implementation: `ui_tests/mock_netcup_api.py`

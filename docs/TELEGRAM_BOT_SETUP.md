@@ -31,6 +31,11 @@ Optional:
 Note: `.env.defaults` includes placeholder values for local testing. Production
 deployments must override `TELEGRAM_BOT_USERNAME` and `TELEGRAM_LINK_CALLBACK_SECRET`.
 
+**Important:** The placeholder value for `TELEGRAM_LINK_CALLBACK_SECRET` in `.env.defaults` is
+rejected by NAF on any deployment where `DEPLOYMENT_TARGET != local`. Telegram linking will
+return `503` to the bot and stay silently disabled until you set a strong, unique secret.
+Generate one with e.g. `openssl rand -hex 32`.
+
 ## 3) Configure the bot service
 
 ### Receiving updates
@@ -64,7 +69,7 @@ If NAF returns `200`, send a user-facing confirmation message in Telegram.
 
 ## 4) Testing bot integration
 
-- Fast local test (no Telegram): simulate bot callback as described in [docs/TELEGRAM_LINKING.md](docs/TELEGRAM_LINKING.md).
+- Fast local test (no Telegram): simulate bot callback as described in [TELEGRAM_LINKING.md](TELEGRAM_LINKING.md).
 - Full end-to-end test requires:
   - public HTTPS URL reachable by Telegram
   - bot webhook configured
@@ -72,7 +77,15 @@ If NAF returns `200`, send a user-facing confirmation message in Telegram.
 
 ## 5) Security checklist
 
-- `TELEGRAM_LINK_CALLBACK_SECRET` must be random and kept secret.
+- `TELEGRAM_LINK_CALLBACK_SECRET` must be random and kept secret. The placeholder value from
+  `.env.defaults` is rejected on any non-local deployment — set a real secret before going live.
+- NAF compares the secret in constant time to prevent timing-based brute-force attacks.
+- The `/api/telegram` blueprint is rate-limited (same limit as the API; default 60/min).
+- A `chat_id` can only be linked to one account. Attempting to link an already-bound chat
+  returns HTTP 409.
+- Successful link operations are written to the admin audit log.
 - Do not accept link callbacks without the secret header.
 - Keep link tokens short-lived (`TELEGRAM_LINK_TOKEN_TTL_SECONDS`).
 - Never store raw link tokens in the database.
+- Telegram is only offered as a 2FA option at login when `TELEGRAM_NOTIFICATIONS_ENABLED=true`
+  and `TELEGRAM_BOT_TOKEN` is set — a linked-but-undeliverable channel is skipped gracefully.

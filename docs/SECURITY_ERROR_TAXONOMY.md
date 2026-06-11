@@ -48,7 +48,7 @@ if the user_alias is valid. This enables targeted security notifications.
 | Pattern | Detection | Severity | Action |
 |---------|-----------|----------|--------|
 | **TOKEN_PROBE** | Many `invalid_format` from same IP | Low | Rate limit IP |
-| **CREDENTIAL_STUFFING** | Many `user_not_found` from same IP | Medium | Block IP + notify admin |
+| **CREDENTIAL_STUFFING** | Many `alias_not_found` from same IP | Medium | Block IP + notify admin |
 | **BRUTE_FORCE** | Multiple `token_hash_mismatch` for same user | **Critical** | Block IP + **notify user** + lock account? |
 | **COMPROMISED_TOKEN** | `ip_denied` from unexpected location/country | **Critical** | **Notify user** + consider revocation |
 | **REPLAY_ATTACK** | `token_revoked` or `token_expired` repeated use | High | Log + notify user |
@@ -90,31 +90,28 @@ if the user_alias is valid. This enables targeted security notifications.
 
 ---
 
-## Database Schema Implications
+## Database Schema
 
-### Current ActivityLog Fields (Sufficient)
+### ActivityLog Fields (Implemented)
+
+The `ActivityLog` model (`models.py`) carries structured security fields:
 
 ```python
 class ActivityLog:
-    token_id       # ✅ Links to token (knows user)
-    account_id     # ✅ Links to account directly
-    source_ip      # ✅ For IP-based detection
+    token_id       # Links to token (knows user)
+    account_id     # Links to account directly
+    source_ip      # For IP-based detection
     status         # 'success', 'denied', 'error'
-    status_reason  # ✅ Free-text, but should be error_code
-    user_agent     # ✅ For client fingerprinting
-    created_at     # ✅ For temporal analysis
+    error_code     # db.String(30), indexed — structured error code for analytics
+    status_reason  # Human-readable description
+    severity       # db.String(10) — 'low', 'medium', 'high', 'critical'
+    is_attack      # db.Integer, default 0 — 1 if detected as attack pattern
+    user_agent     # For client fingerprinting
+    created_at     # For temporal analysis
 ```
 
-### Recommended Enhancement
+The indexed `error_code` column enables structured querying:
 
-Add `error_code` column for structured querying:
-
-```python
-error_code = db.Column(db.String(30), index=True)  # New column
-# Values: 'invalid_format', 'user_not_found', 'token_hash_mismatch', etc.
-```
-
-This enables:
 ```sql
 -- Find brute-force attacks against specific users
 SELECT account_id, source_ip, COUNT(*)
@@ -127,31 +124,20 @@ HAVING COUNT(*) >= 5;
 
 ---
 
-## Token Lookup Security Enhancement
+## Token Lookup Security (Implemented)
 
-Current code lumps three failures into one `invalid_token`:
-
-```python
-# Current (insufficient granularity)
-if not account:
-    return AuthResult(success=False, error="Invalid token", error_code="invalid_token")
-if not api_token:
-    return AuthResult(success=False, error="Invalid token", error_code="invalid_token")
-if not api_token.verify(token):
-    return AuthResult(success=False, error="Invalid token", error_code="invalid_token")
-```
-
-**Security problem**: We lose attribution for brute-force detection!
-
-### Recommended Change
+Rather than lumping every failure into a generic `invalid_token`, `token_auth.py`
+returns a distinct `error_code` (and `severity`, via `ERROR_SEVERITY`) for each
+failure stage, preserving attribution for brute-force detection:
 
 ```python
-# Proposed (preserves attribution)
+# Implemented in token_auth.py (preserves attribution)
 if not account:
     return AuthResult(
         success=False,
         error="Invalid token",
-        error_code="user_not_found",
+        error_code="alias_not_found",
+        severity=ERROR_SEVERITY['alias_not_found'],
         account=None  # No attribution possible
     )
 
@@ -160,7 +146,8 @@ if not api_token:
         success=False,
         error="Invalid token",
         error_code="token_prefix_not_found",
-        account=account  # ✅ We know which account is targeted!
+        severity=ERROR_SEVERITY['token_prefix_not_found'],
+        account=account  # We know which account is targeted!
     )
 
 if not api_token.verify(token):
@@ -168,23 +155,24 @@ if not api_token.verify(token):
         success=False,
         error="Invalid token",
         error_code="token_hash_mismatch",
+        severity=ERROR_SEVERITY['token_hash_mismatch'],
         account=account,
-        token=api_token  # ✅ We know exactly which token!
+        token=api_token  # We know exactly which token!
     )
 ```
 
-**Benefit**: When `token_hash_mismatch` occurs, we can:
+**Benefit**: When `token_hash_mismatch` occurs, the system can:
 1. Log `account_id` and `token_id` (even though auth failed)
-2. Send notification to account owner
+2. Send notification to the account owner (`should_notify_user` / `NOTIFY_USER_ERRORS`)
 3. Implement per-token rate limiting
 
 ---
 
-## UI Display Considerations
+## UI Display (Implemented)
 
-### Audit Log Enhancement
-
-Add colored badges for error severity:
+The admin **Security Dashboard** (`security_dashboard()` route in `api/admin.py`,
+template `templates/admin/security_dashboard.html`) surfaces these signals using the
+`error_code`/`severity`/`is_attack` columns. Events are color-coded by severity:
 
 | Error Code | Badge Color | Icon |
 |------------|-------------|------|
@@ -195,18 +183,14 @@ Add colored badges for error severity:
 | `operation_denied` | 🔵 Blue | 🔒 |
 | `invalid_format` | ⚪ Gray | 🤖 |
 
-### Dashboard Security Widgets
+The dashboard includes these widgets (backed by `stats_1h` / `stats_24h`):
 
-1. **Failed Auth Attempts (24h)**
-   - By error type (pie chart)
-   - By IP (table with GeoIP)
+1. **Failed Auth Attempts (1h / 24h)** — counts by severity and `by_error_code` breakdown, plus a severity pie chart.
+2. **Accounts / events under attack** — high-severity events flagged via `is_attack`.
+3. **Suspicious IPs (24h)** — IPs with the highest denial rate.
 
-2. **Accounts Under Attack**
-   - List of accounts with recent `token_hash_mismatch` or `ip_denied`
-
-3. **Suspicious IPs**
-   - IPs with highest denial rate
-   - GeoIP map visualization
+**Future enhancements** (not yet implemented): GeoIP map visualization of suspicious
+IPs, and richer time-series trend charts (see *Future Work* below).
 
 ---
 
@@ -234,19 +218,18 @@ The state matrix should include tests for:
 
 ---
 
-## Implementation Priority
+## Implementation Status
 
-1. **High Priority**
-   - Split `invalid_token` into `user_not_found`, `token_prefix_not_found`, `token_hash_mismatch`
-   - Add `error_code` column to ActivityLog
-   - Log `account_id` even on failed auth (when attributable)
+### Implemented
 
-2. **Medium Priority**
-   - Email notifications for critical errors (hash mismatch, IP denied)
-   - Dashboard security widgets
-   - Rate limiting per IP and per token
+- Split `invalid_token` into distinct codes (`alias_not_found`, `token_prefix_not_found`, `token_hash_mismatch`, …) in `token_auth.py`, each with a `severity` from `ERROR_SEVERITY`.
+- `error_code`, `severity`, and `is_attack` columns on `ActivityLog` (`models.py`).
+- `account_id` / `token_id` recorded on failed auth when attributable.
+- User-notification flagging for high-severity events (`should_notify_user` / `NOTIFY_USER_ERRORS`).
+- Admin **Security Dashboard** with by-severity / by-error-code breakdowns, severity pie chart, and suspicious-IP listing.
 
-3. **Lower Priority**
-   - Attack pattern detection (requires time-series analysis)
-   - GeoIP alerting (location anomaly detection)
-   - Account lockout automation
+### Future Work
+
+- Time-series attack-pattern detection (e.g. brute-force / IP-sweep heuristics over rolling windows).
+- GeoIP anomaly / location-based alerting and map visualization.
+- Account lockout automation driven by detected attack patterns.

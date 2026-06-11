@@ -229,7 +229,7 @@ python3 tooling/validate-playwright-websocket.py
 ## Additional Resources
 
 - [Playwright README](tooling/playwright/README.md) - Detailed usage guide
-- [UI Testing Guide](UI_GUIDE.md) - Integration with test suite
+- [UI Testing Guide](ADMIN_GUIDE.md) - Integration with test suite
 - [Docker networking docs](https://docs.docker.com/network/) - Docker network concepts
 
 ## Common Workflows
