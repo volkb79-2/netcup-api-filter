@@ -60,7 +60,7 @@ mutation testing, visual regression.
 | ✓ | ID | Task | Depends | Model / effort | Size |
 |---|----|------|---------|----------------|------|
 | [x] | [T01](tasks/T01-cleanup-quick-fixes.md) | Cleanup & quick fixes (broken tests, dead scripts, stale CI ignore) | — | Sonnet / high | S |
-| [ ] | [T02](tasks/T02-unit-bootstrap.md) | `tests/conftest.py` + factories + `test_database_init.py` | T01 | Sonnet / high | M |
+| [x] | [T02](tasks/T02-unit-bootstrap.md) | `tests/conftest.py` + factories + `test_database_init.py` | T01 | Sonnet / high | M |
 | [ ] | [T03](tasks/T03-unit-token-auth.md) | Unit: token auth + realm matching (~49 cases) | T02 | Sonnet / high | M |
 | [ ] | [T04](tasks/T04-unit-validators-passwords-recovery.md) | Unit: validators + password policy + recovery codes (~59) | T02 | Sonnet / high | M |
 | [ ] | [T05](tasks/T05-unit-ddns-netcup-client.md) | Unit: DDNS parsing + netcup envelopes (~42) | T02 | Sonnet / high | M |
@@ -130,3 +130,8 @@ Fable 5 $10/$50 plus a ~30%-hungrier tokenizer (≈2.6× Opus, ≈4× Sonnet eff
   current behavior). Removed CI --ignore. Deleted 9 dead files. Three conditional tooling scripts
   kept: `tooling/run-tests.sh` (setup.sh exists in tooling/playwright/), `tooling/setup-playwright.sh`,
   `tooling/start-ui-stack.sh` (unreferenced but not provably broken). All 30 unit tests green.
+- 2026-06-12 — T02 landed (working tree, not committed). Added `tests/conftest.py` (app/client/db
+  fixtures + make_account/make_realm/make_token factories), `tests/test_database_init.py` (4 cases:
+  in-memory engine-options guard, file-DB pool options, get_db_path env precedence, default fallback),
+  `tests/test_factories.py` (5 round-trip cases). All 39 unit tests green. Spec discrepancies: none —
+  spec lined up with the code.
