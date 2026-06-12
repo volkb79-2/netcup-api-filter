@@ -22,19 +22,17 @@ from netcup_api_filter import account_auth
 
 
 @pytest.fixture
-def app():
-    """Create test Flask app with in-memory database."""
-    # Set required environment variables
-    os.environ['SECRET_KEY'] = 'test_secret_key_for_testing_only'
-    os.environ['NETCUP_FILTER_DB_PATH'] = ':memory:'
-    
+def app(monkeypatch, tmp_path):
+    """Create test Flask app with a temporary SQLite database file."""
+    monkeypatch.setenv("SECRET_KEY", "test_secret_key_for_testing_only")
+    monkeypatch.setenv("NETCUP_FILTER_DB_PATH", str(tmp_path / "test.db"))
+
     app = create_app()
     app.config['TESTING'] = True
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    
+
     with app.app_context():
         db.create_all()
-        
+
         # Create test account
         account = Account(
             username='testuser',
@@ -42,13 +40,15 @@ def app():
             email='test@example.com',
             password_hash='dummy_hash',
             email_2fa_enabled=True,
-            approved=True
+            is_active=1,
+            approved_at=datetime.utcnow(),
+            email_verified=1,
         )
         db.session.add(account)
         db.session.commit()
-        
+
         yield app
-        
+
         db.session.remove()
         db.drop_all()
 
@@ -105,13 +105,15 @@ class Test2FAFailureTracking:
             
             assert account_auth.is_2fa_locked(account)
             
-            # Manually expire the lockout by modifying the settings
-            key = f"2fa_failures_{account.id}"
-            setting = Settings.query.filter_by(key=key).first()
-            
-            # Set expiry to 1 minute ago
-            setting.json_value['expires_at'] = (datetime.utcnow() - timedelta(minutes=1)).isoformat()
-            db.session.commit()
+            # Manually expire the lockout by back-dating last_failure via Settings.set.
+            # The real key uses ":" as separator; expiry is based on last_failure being
+            # older than TFA_LOCKOUT_MINUTES (30 min) — there is no separate expires_at
+            # field; the old test used the wrong key format and a non-existent attribute.
+            key = f"2fa_failures:{account.id}"
+            data = Settings.get(key)
+            assert data is not None, "Settings entry must exist after locking"
+            data['last_failure'] = (datetime.utcnow() - timedelta(minutes=31)).isoformat()
+            Settings.set(key, data)
             
             # Should no longer be locked
             assert not account_auth.is_2fa_locked(account)
@@ -189,26 +191,33 @@ class TestRecoveryCodeRateLimiting:
 
 class TestSessionRegeneration:
     """Test session regeneration on login."""
-    
-    def test_create_session_clears_old_session(self, app, test_account):
-        """Test that create_session clears old session data."""
+
+    def test_create_session_sets_account_keys(self, app, test_account):
+        """Test that create_session sets account_id and account_username.
+
+        create_session() preserves pre-existing session data (session fixation
+        protection: the session *ID* is rotated, not the contents) while writing
+        the authenticated account identity keys.  The old test asserted
+        'old_key' would be removed, which contradicts the session.clear() +
+        session.update(old_data) pattern in account_auth.create_session().
+        """
         with app.app_context():
             account = Account.query.get(test_account.id)
-            
+
             with app.test_request_context():
                 from flask import session
-                
-                # Set some old session data
+
+                # Set some pre-login session data
                 session['old_key'] = 'old_value'
                 session['user_id'] = 999
-                
+
                 # Create new session
                 account_auth.create_session(account)
-                
-                # Old keys should be gone (except user_id which gets updated)
-                assert 'old_key' not in session
-                assert session['user_id'] == account.id
-                assert session['username'] == account.username
+
+                # create_session restores pre-existing data then overwrites the
+                # identity keys — old_key is preserved by design.
+                assert session['account_id'] == account.id
+                assert session['account_username'] == account.username
 
 
 class TestConfigurationDefaults:

@@ -89,19 +89,19 @@ class TestAdminBackendInfrastructure:
         
         # Navigate to backend providers
         await browser.goto(settings.url('/admin/backends/providers'))
-        await browser.wait_for_load()
-        
+        await browser.wait_for_load_state()
+
         # Verify page loaded
         page_text = await browser.text('main')
         assert 'Backend Providers' in page_text, "Provider list page should load"
-        
+
         # Verify built-in providers are shown
         assert 'netcup' in page_text.lower() or 'Netcup' in page_text, \
             "Netcup provider should be listed"
         assert 'powerdns' in page_text.lower() or 'PowerDNS' in page_text, \
             "PowerDNS provider should be listed"
-        
-        await ss.take("providers-list")
+
+        await ss.capture("providers-list")
     
     @pytest.mark.asyncio
     async def test_02_admin_views_backends_list(
@@ -113,7 +113,7 @@ class TestAdminBackendInfrastructure:
         
         # Navigate to backends list
         await browser.goto(settings.url('/admin/backends'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify page loaded
         page_text = await browser.text('main')
@@ -123,7 +123,7 @@ class TestAdminBackendInfrastructure:
         assert 'Total' in page_text or 'Active' in page_text, \
             "Stats should be displayed"
         
-        await ss.take("backends-list")
+        await ss.capture("backends-list")
     
     @pytest.mark.asyncio
     async def test_03_admin_views_domain_roots_list(
@@ -135,7 +135,7 @@ class TestAdminBackendInfrastructure:
         
         # Navigate to domain roots list
         await browser.goto(settings.url('/admin/domain-roots'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify page loaded
         page_text = await browser.text('main')
@@ -145,7 +145,7 @@ class TestAdminBackendInfrastructure:
         if 'dyn.example.com' in page_text:
             print("✅ Demo domain root found")
         
-        await ss.take("domain-roots-list")
+        await ss.capture("domain-roots-list")
 
 
 # ============================================================================
@@ -165,7 +165,7 @@ class TestAdminCreatesBackendService:
         
         # Navigate to backend create
         await browser.goto(settings.url('/admin/backends/new'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify form loaded
         page_text = await browser.text('main')
@@ -176,7 +176,7 @@ class TestAdminCreatesBackendService:
         assert 'Provider' in page_text, "Provider selection should exist"
         assert 'Service Name' in page_text, "Service name field should exist"
         
-        await ss.take("backend-create-form")
+        await ss.capture("backend-create-form")
     
     @pytest.mark.asyncio
     async def test_05_admin_can_access_domain_root_create_form(
@@ -188,7 +188,7 @@ class TestAdminCreatesBackendService:
         
         # Navigate to domain root create
         await browser.goto(settings.url('/admin/domain-roots/new'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify form loaded
         page_text = await browser.text('main')
@@ -200,7 +200,7 @@ class TestAdminCreatesBackendService:
         assert 'Visibility' in page_text, "Visibility selection should exist"
         assert 'Backend' in page_text, "Backend selection should exist"
         
-        await ss.take("domain-root-create-form")
+        await ss.capture("domain-root-create-form")
 
 
 # ============================================================================
@@ -220,7 +220,7 @@ class TestUserViewsDomainRoots:
         
         # Navigate to realm request page
         await browser.goto(settings.url('/account/realms/request'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify page loaded
         page_text = await browser.text('main')
@@ -235,7 +235,7 @@ class TestUserViewsDomainRoots:
         if 'dyn.example.com' in page_text or 'Demo Dynamic DNS' in page_text:
             print("✅ Demo domain root available for selection")
         
-        await ss.take("user-realm-request-with-dropdown")
+        await ss.capture("user-realm-request-with-dropdown")
 
 
 # ============================================================================
@@ -255,7 +255,7 @@ class TestUserBackendManagement:
         
         # Navigate to user backends list
         await browser.goto(settings.url('/account/backends'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify page loaded
         page_text = await browser.text('main')
@@ -269,7 +269,7 @@ class TestUserBackendManagement:
         # Check for Add Backend button
         assert 'Add Backend' in page_text, "Add backend button should exist"
         
-        await ss.take("user-backends-list")
+        await ss.capture("user-backends-list")
     
     @pytest.mark.asyncio
     async def test_08_user_can_access_backend_create_form(
@@ -281,7 +281,7 @@ class TestUserBackendManagement:
         
         # Navigate to backend create
         await browser.goto(settings.url('/account/backends/new'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify form loaded
         page_text = await browser.text('main')
@@ -295,7 +295,7 @@ class TestUserBackendManagement:
         # Check for provider options
         assert 'Netcup' in page_text, "Netcup provider should be available"
         
-        await ss.take("user-backend-create-form")
+        await ss.capture("user-backend-create-form")
     
     @pytest.mark.asyncio
     async def test_09_user_sees_supported_providers(
@@ -307,14 +307,14 @@ class TestUserBackendManagement:
         
         # Navigate to user backends list
         await browser.goto(settings.url('/account/backends'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Verify providers section
         page_text = await browser.text('main')
         if 'Supported Providers' in page_text:
             print("✅ Supported providers section shown")
         
-        await ss.take("user-backends-providers")
+        await ss.capture("user-backends-providers")
 
 
 # ============================================================================
@@ -334,7 +334,7 @@ class TestStateCombinations:
         
         # Navigate to domain roots and check for public visibility badge
         await browser.goto(settings.url('/admin/domain-roots'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         page_text = await browser.text('main')
         
@@ -342,7 +342,7 @@ class TestStateCombinations:
         if 'Public' in page_text:
             print("✅ Public visibility domain roots shown")
         
-        await ss.take("domain-roots-visibility-states")
+        await ss.capture("domain-roots-visibility-states")
     
     @pytest.mark.asyncio
     async def test_11_backend_test_status_displayed(
@@ -354,7 +354,7 @@ class TestStateCombinations:
         
         # Navigate to backends list
         await browser.goto(settings.url('/admin/backends'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         page_text = await browser.text('main')
         
@@ -362,7 +362,7 @@ class TestStateCombinations:
         if 'Active' in page_text or 'Inactive' in page_text:
             print("✅ Backend status indicators displayed")
         
-        await ss.take("backends-status-indicators")
+        await ss.capture("backends-status-indicators")
 
 
 # ============================================================================
@@ -382,7 +382,7 @@ class TestMultiBackendNavigation:
         
         # Start at dashboard
         await browser.goto(settings.url('/admin/dashboard'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
         # Navigate through DNS menu items
         pages_to_test = [
@@ -393,13 +393,13 @@ class TestMultiBackendNavigation:
         
         for url, expected_text in pages_to_test:
             await browser.goto(settings.url(url))
-            await browser.wait_for_load()
+            await browser.wait_for_load_state()
             
             page_text = await browser.text('main')
             assert expected_text in page_text, f"Page {url} should contain '{expected_text}'"
             print(f"✅ {url} loaded correctly")
         
-        await ss.take("navigation-complete")
+        await ss.capture("navigation-complete")
     
     @pytest.mark.asyncio
     async def test_13_user_backends_navigation(
@@ -417,14 +417,14 @@ class TestMultiBackendNavigation:
         
         for url, expected_text in pages_to_test:
             await browser.goto(settings.url(url))
-            await browser.wait_for_load()
+            await browser.wait_for_load_state()
             
             page_text = await browser.text('main')
             assert expected_text in page_text or 'Backend' in page_text, \
                 f"Page {url} should contain backend-related content"
             print(f"✅ {url} loaded correctly")
         
-        await ss.take("user-backends-navigation")
+        await ss.capture("user-backends-navigation")
 
 
 # ============================================================================
@@ -442,8 +442,8 @@ class TestCleanup:
         
         # Take final screenshot at dashboard
         await browser.goto(settings.url('/admin/dashboard'))
-        await browser.wait_for_load()
+        await browser.wait_for_load_state()
         
-        await ss.take("final-dashboard")
+        await ss.capture("final-dashboard")
         
         print("✅ Multi-backend journey tests completed")

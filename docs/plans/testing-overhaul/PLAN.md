@@ -53,7 +53,7 @@ mutation testing, visual regression.
 
 | ✓ | ID | Task | Depends | Model / effort | Size |
 |---|----|------|---------|----------------|------|
-| [ ] | [T01](tasks/T01-cleanup-quick-fixes.md) | Cleanup & quick fixes (broken tests, dead scripts, stale CI ignore) | — | Sonnet / high | S |
+| [x] | [T01](tasks/T01-cleanup-quick-fixes.md) | Cleanup & quick fixes (broken tests, dead scripts, stale CI ignore) | — | Sonnet / high | S |
 | [ ] | [T02](tasks/T02-unit-bootstrap.md) | `tests/conftest.py` + factories + `test_database_init.py` | T01 | Sonnet / high | M |
 | [ ] | [T03](tasks/T03-unit-token-auth.md) | Unit: token auth + realm matching (~49 cases) | T02 | Sonnet / high | M |
 | [ ] | [T04](tasks/T04-unit-validators-passwords-recovery.md) | Unit: validators + password policy + recovery codes (~59) | T02 | Sonnet / high | M |
@@ -119,3 +119,8 @@ Fable 5 $10/$50 plus a ~30%-hungrier tokenizer (≈2.6× Opus, ≈4× Sonnet eff
 ## Worklog
 
 - 2026-06-12 — plan + task specs created (audit session). No implementation yet.
+- 2026-06-12 — T01 landed (working tree, not committed). Fixed journey 09 method names, 2FA
+  functional fixture (monkeypatch+tmp_path, correct model fields, outdated assertions updated to
+  current behavior). Removed CI --ignore. Deleted 9 dead files. Three conditional tooling scripts
+  kept: `tooling/run-tests.sh` (setup.sh exists in tooling/playwright/), `tooling/setup-playwright.sh`,
+  `tooling/start-ui-stack.sh` (unreferenced but not provably broken). All 30 unit tests green.

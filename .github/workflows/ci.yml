@@ -65,25 +65,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      # Run the whole tests/ directory EXCEPT test_2fa_security_functional.py.
       # Coverage flags (--cov=src/netcup_api_filter, term-missing + xml) come
       # from addopts in pytest.ini, so they are applied automatically here.
-      #
-      # known infra issue: test_2fa_security_functional.py uses an in-memory
-      # SQLite fixture (sqlite:///:memory:), but init_db() unconditionally sets
-      # SQLALCHEMY_ENGINE_OPTIONS={'pool_size': 10, ...}. Flask-SQLAlchemy picks
-      # StaticPool for in-memory SQLite, and StaticPool rejects pool_size, so
-      # create_app() raises:
-      #   TypeError: Invalid argument(s) 'pool_size' sent to create_engine(),
-      #   using configuration SQLiteDialect_pysqlite/StaticPool/Engine
-      # This is a pre-existing bug in src/.../database.py:140 (init_db), not a
-      # CI concern, so we ignore just that one file. The other three test files
-      # use file-based SQLite and pass. Remove the --ignore once init_db drops
-      # pool_size for in-memory/StaticPool engines.
       - name: Run unit tests with coverage
         run: |
-          python -m pytest tests/ \
-            --ignore=tests/test_2fa_security_functional.py
+          python -m pytest tests/
 
       - name: Upload coverage.xml
         if: always() # keep the report even if a test failed

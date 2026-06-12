@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] — T01: Cleanup & quick fixes — 2026-06-12
+
+### Fixed
+
+- **Broken journey 09**: `ui_tests/journeys/test_09_multibackend.py` called nonexistent methods
+  `browser.wait_for_load()` and `ss.take()`. Replaced with the real methods
+  `wait_for_load_state()` and `ss.capture()` throughout.
+- **Broken 2FA functional fixture**: `tests/test_2fa_security_functional.py` used an invalid
+  `approved=True` kwarg on `Account` (no such column), leaked `os.environ` writes into the test
+  session, and applied a post-`create_app()` SQLAlchemy URI rewrite that had no effect. Fixture
+  now mirrors the `test_telegram_linking.py` pattern: `monkeypatch + tmp_path file DB`. Two
+  tests with outdated assertions were updated to match current behavior (`test_2fa_lockout_expiry`
+  used wrong Settings key format and a non-existent `json_value` attribute;
+  `test_create_session_clears_old_session` asserted the old session was cleared when
+  `create_session()` intentionally preserves data during session-ID rotation).
+- **Stale CI `--ignore`**: Removed `--ignore=tests/test_2fa_security_functional.py` and its
+  comment block from `.github/workflows/ci.yml`; the underlying `pool_size` / StaticPool bug
+  was already fixed in `database.py` (commit `f99ea20`).
+
+### Removed
+
+- Dead runner scripts: `run-screenshot-tests.sh` (target `test_screenshot_coverage.py` does not
+  exist), `test_installation_workflow.sh` and `test-https-deployment.sh` (curl-based, 2FA flow
+  incompatible).
+- Orphaned top-level UI test: `ui_tests/test_console_errors.py` (targets legacy `/client/…`
+  routes that no longer exist; the live version in `ui_tests/tests/` is unaffected).
+- Orphaned UI utilities: `ui_tests/analyze_ui_screenshots.py`, `ui_tests/compare_visuals.py`,
+  `ui_tests/mailpit_client_selftest.py`, `ui_tests/quick_capture.py` (unused, not referenced by
+  any live code or documentation).
+
 ## [Unreleased] — Testing-overhaul plan — 2026-06-12
 
 ### Documentation

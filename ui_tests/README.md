@@ -268,7 +268,6 @@ ui_tests/
 ├── parallel_session_manager.py       # Multi-browser orchestration
 ├── playwright_client.py              # MCP server client
 ├── capture_ui_screenshots.py         # Automated screenshot capture
-├── analyze_ui_screenshots.py         # Screenshot diff analysis
 ├── mock_netcup_api.py                # Netcup CCP API mock server
 ├── mock_smtp_server.py               # SMTP testing server
 ├── mock_geoip_server.py              # GeoIP lookup mock
