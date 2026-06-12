@@ -15,12 +15,17 @@ Prerequisites:
 - At least one approved account exists (from test_02)
 - Mailpit running for notifications
 """
+import re
 import pytest
 import pytest_asyncio
 import secrets
 from typing import Optional
 
+from ui_tests import verification, workflows
+from ui_tests.browser import Browser
 from ui_tests.config import settings
+from ui_tests.deployment_state import get_base_url, get_deployment_target
+from ui_tests.mailpit_client import MailpitClient
 from ui_tests.workflows import ensure_admin_dashboard
 
 
@@ -39,7 +44,7 @@ def realm_data():
             "description": "Realm to be approved",
         },
         "realm_pending_for_rejection": {
-            "value": f"pending-reject-{suffix}.example.com", 
+            "value": f"pending-reject-{suffix}.example.com",
             "type": "host",
             "description": "Realm to be rejected",
         },
@@ -78,98 +83,205 @@ def test_account_credentials():
 
 
 # ============================================================================
-# Phase 0: Setup Pending Realms (via direct database to ensure test data)
+# Phase 0: Setup Pending Realms (UI-driven — no direct DB writes)
 # ============================================================================
 
-async def create_pending_realm_in_db(realm_value: str, account_id: int = 1) -> bool:
-    """Create a pending realm directly in the database for testing.
+def _j03_base_url() -> str:
+    return get_base_url(get_deployment_target()).rstrip("/")
 
-    # WRITE: legacy seeding, see T07 — do not copy this pattern.
-    # This will be replaced with UI-driven realm request in T09.
+
+async def _j03_request_realm_as_user(
+    user: Browser, *, subdomain: str, account_username: str
+) -> None:
+    """Request a pending realm via the account portal form.
+
+    Uses the public domain root (first available option in the request form).
+    Waits until Channel A (DB) confirms the pending realm exists.
     """
-    import sqlite3
-    import os
-    from datetime import datetime, timezone
+    await user.goto(settings.url("/account/realms/request"))
+    submitted = await user.evaluate(
+        f"""
+        () => {{
+            const rootSel = document.getElementById('domain_root_id');
+            if (!rootSel) return false;
+            const firstOpt = [...rootSel.options].find(o => o.value && o.value !== '');
+            if (!firstOpt) return false;
+            rootSel.value = firstOpt.value;
+            rootSel.dispatchEvent(new Event('change'));
 
-    db_path = os.environ.get('DATABASE_PATH', '/workspaces/netcup-api-filter/deploy-local/netcup_filter.db')
-    
-    if not os.path.exists(db_path):
-        print(f"Database not found at {db_path}")
-        return False
-    
-    try:
-        conn = sqlite3.connect(db_path, timeout=10.0)
-        cursor = conn.cursor()
-        
-        # Check if account exists
-        cursor.execute("SELECT id FROM accounts WHERE id = ?", (account_id,))
-        if not cursor.fetchone():
-            # Use first available account
-            cursor.execute("SELECT id FROM accounts LIMIT 1")
-            row = cursor.fetchone()
-            if not row:
-                print("No accounts in database")
-                conn.close()
-                return False
-            account_id = row[0]
-        
-        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Insert pending realm with all required fields
-        cursor.execute("""
-            INSERT INTO account_realms (
-                account_id, domain, realm_type, realm_value, 
-                allowed_record_types, allowed_operations, status, 
-                requested_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            account_id,
-            'example.com',
-            'host',
-            realm_value,
-            'A,AAAA',
-            'read,update',
-            'pending',
-            now,
-            now
-        ))
-        conn.commit()
-        conn.close()
-        print(f"✅ Created pending realm: {realm_value}")
-        return True
-    except Exception as e:
-        print(f"❌ Failed to create pending realm: {e}")
-        return False
+            const sub = document.getElementById('subdomain');
+            if (sub) sub.value = '{subdomain}';
+
+            const typeHost = document.getElementById('type-host');
+            if (typeHost) typeHost.checked = true;
+
+            for (const id of ['rt-A', 'rt-AAAA']) {{
+                const e = document.getElementById(id);
+                if (e) e.checked = true;
+            }}
+            for (const id of ['op-read', 'op-update']) {{
+                const e = document.getElementById(id);
+                if (e) e.checked = true;
+            }}
+
+            document.getElementById('request-form').submit();
+            return true;
+        }}
+        """
+    )
+    assert submitted, f"realm request form could not be submitted for subdomain={subdomain!r}"
+
+    await user._page.wait_for_url(
+        re.compile(r".*/account/dashboard(?:\?.*)?$"), timeout=10_000
+    )
+    verification.wait_for(
+        lambda: verification.get_realm(
+            account_username=account_username, realm_value=subdomain
+        ) is not None,
+        timeout=10.0,
+        message=f"pending realm {subdomain!r} not created after user request",
+    )
+    row = verification.get_realm(account_username=account_username, realm_value=subdomain)
+    assert row["status"] == "pending", f"expected pending realm, got status={row['status']!r}"
+    print(f"Created pending realm: {subdomain!r} (realm_id={row['id']})")
 
 
 class TestSetupPendingRealms:
-    """Create pending realms to ensure test data exists for approval/rejection tests."""
-    
+    """Create pending realms via UI to ensure test data exists for approval/rejection tests."""
+
     @pytest.mark.asyncio
     async def test_00_create_pending_realms_for_testing(
-        self, admin_session, screenshot_helper, realm_data
+        self, admin_session, screenshot_helper, playwright_client
     ):
-        """Create pending realm entries directly for testing approval flow."""
+        """Create pending realm entries via UI for testing the approval flow.
+
+        Replaces the legacy DB-write seeding (T09). Creates a throwaway account
+        via admin invite, logs in as that user, and requests two pending realms.
+        The account is left in place (it will be cleaned up by the deployment reset);
+        the realms persist as pending for the downstream approval/rejection tests.
+        """
+        from ui_tests.parallel_session_manager import ParallelSessionManager
+
         ss = screenshot_helper('03-realm')
-        browser = admin_session
-        
-        # Create pending realms for approval and rejection tests
+        admin = admin_session
+
+        # Generate unique identifiers for this test run.
         suffix = secrets.token_hex(4)
-        
-        await create_pending_realm_in_db(f"test-approve-{suffix}")
-        await create_pending_realm_in_db(f"test-reject-{suffix}")
-        
-        # Verify pending realms now exist
-        await browser.goto(settings.url('/admin/realms/pending'))
-        await browser.wait_for_load_state('domcontentloaded')
-        
+        username = f"j03setup-{suffix}"
+        email = f"j03setup-{suffix}@example.test"
+        password = f"J03Setup{suffix}@#$%TestPassXq"
+
+        mailpit = MailpitClient()
+        mailpit.clear()
+
+        # Step 1: Admin creates a throwaway account (no pre-approved realm).
+        await admin.goto(settings.url("/admin/accounts/new"))
+        await admin.wait_for_text("main h1", "Create Account")
+        await admin.fill("#username", username)
+        await admin.fill("#email", email)
+        await admin.evaluate(
+            """
+            () => {
+                const inc = document.getElementById('include_realm');
+                if (inc) inc.checked = false;
+                document.getElementById('createAccountForm').submit();
+            }
+            """
+        )
+        verification.wait_for(
+            lambda: verification.get_account(username) is not None,
+            timeout=10.0,
+            message=f"account {username!r} not visible in DB after create",
+        )
+        account_row = verification.get_account(username)
+        account_id = account_row["id"]
+
+        # Step 2: Complete the invite to set a known password.
+        def _wait_for_email(*, to_address, subject_substr, timeout=20.0):
+            msg = mailpit.wait_for_message(
+                predicate=lambda m: (
+                    subject_substr.lower() in (m.subject or "").lower()
+                    and any(to_address.lower() == a.address.lower() for a in (m.to or []))
+                ),
+                timeout=timeout,
+                poll_interval=0.5,
+            )
+            assert msg is not None, f"Timed out waiting for email to {to_address!r}"
+            return msg
+
+        def _link_to_local_url(absolute_url):
+            path = re.sub(r"^https?://[^/]+", "", absolute_url)
+            return _j03_base_url() + path
+
+        def _extract_link(msg, path_prefix):
+            body = (msg.text or "") + "\n" + (msg.html or "")
+            pattern = re.compile(r"https?://[^\s\"'<>]*" + re.escape(path_prefix) + r"[^\s\"'<>]+")
+            m = pattern.search(body)
+            assert m, f"No URL containing {path_prefix!r} in email body:\n{body[:400]}"
+            return m.group(0)
+
+        invite_msg = _wait_for_email(to_address=email, subject_substr="account has been created")
+        invite_url = _link_to_local_url(_extract_link(invite_msg, "/account/invite/"))
+        mailpit.clear()
+
+        async with ParallelSessionManager(
+            browser=playwright_client.browser, base_url=settings.url("")
+        ) as mgr:
+            invite_handle = await mgr.create_session(role="anonymous", session_id=f"j03invite_{suffix}")
+            invite_browser = Browser(invite_handle.page)
+            await invite_browser.reset()
+            await invite_browser.goto(invite_url, wait_until="domcontentloaded")
+            await invite_browser.fill("#new_password", password)
+            await invite_browser.fill("#confirm_password", password)
+            await invite_browser.submit("#invite-form")
+            await invite_browser._page.wait_for_url(
+                re.compile(r".*/account/login(?:\?.*)?$"), timeout=10_000
+            )
+
+            verification.wait_for(
+                lambda: verification.get_account(username)["must_change_password"] == 0,
+                timeout=10.0,
+                message="invite not accepted for j03 setup account",
+            )
+
+            # Step 3: Log in as the user and request two pending realms.
+            user_handle = await mgr.create_session(role="account", session_id=f"j03user_{suffix}")
+            user = Browser(user_handle.page)
+            await user.reset()
+
+            # Login (with 2FA via Mailpit).
+            await user.goto(settings.url("/account/login"))
+            await user.fill("#username", username)
+            await user.fill("#password", password)
+            await user.click("button[type='submit']")
+            try:
+                await user._page.wait_for_url(
+                    re.compile(r".*/account/(?:login/2fa|login|dashboard)(?:\?.*)?$"),
+                    timeout=10_000,
+                )
+            except Exception:
+                pass
+            await workflows.handle_2fa_if_present(user, timeout=20.0)
+            await user.goto(settings.url("/account/dashboard"), wait_until="domcontentloaded")
+            assert "/account/login" not in user._page.url, (
+                f"user login failed for j03 setup account; at {user._page.url}"
+            )
+
+            # Request two pending realms.
+            subdom1 = f"j03approve{suffix}"
+            subdom2 = f"j03reject{suffix}"
+            await _j03_request_realm_as_user(user, subdomain=subdom1, account_username=username)
+            await _j03_request_realm_as_user(user, subdomain=subdom2, account_username=username)
+
+        # Step 4: Verify admin sees pending realms.
+        await admin.goto(settings.url('/admin/realms/pending'))
+        await admin.wait_for_load_state('domcontentloaded')
         await ss.capture('realm-pending-after-setup', 'Pending realms after setup')
-        
-        body = await browser.text('body')
+
+        body = await admin.text('body')
         has_pending = 'No Pending' not in body
         print(f"Pending realms exist: {has_pending}")
-        
-        assert has_pending, "Should have pending realms after setup"
+        assert has_pending, "Should have pending realms after UI-driven setup"
 
 
 # ============================================================================
