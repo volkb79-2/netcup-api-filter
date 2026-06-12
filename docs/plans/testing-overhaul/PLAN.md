@@ -48,6 +48,12 @@ mutation testing, visual regression.
 4. **E2E tasks (T07–T12) need a running local deployment** (`./deploy.sh local`, mock mode)
    and the Playwright container (`tooling/playwright/`). The task files say so.
 5. When a task lands: tick its checkbox below, add a worklog line (date, task, commit, notes).
+6. **Specs are hints where they cite counts/line numbers, contracts where they state rules.**
+   Audit-derived details (number of failures, line refs, "this script is broken") can be
+   stale or wrong — trust the code you read over the spec when they disagree, fix everything
+   you find (not just the enumerated items), and call out each discrepancy in your summary so
+   the remaining specs can be corrected. (Lesson from the T01 pilot: the spec listed 3 fixture
+   problems, the file had 5; a "broken" tooling script turned out to be fine.)
 
 ## Task index
 
