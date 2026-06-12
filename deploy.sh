@@ -1189,33 +1189,31 @@ phase_tests() {
     # Note: Admin UI excludes auth_flow test since Journey Tests handle authentication
     local test_suites=(
         # Core UI validation tests (always run)
+        "Route Smoke|ui_tests/tests/test_route_smoke.py|all"
+        "UI Widgets|ui_tests/tests/test_ui_widgets.py|all"
         "Admin UI|ui_tests/tests/test_admin_ui.py --deselect=ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow|all"
         "API Proxy|ui_tests/tests/test_api_proxy.py|all"
         "Audit Logs|ui_tests/tests/test_audit_logs.py|all"
         "Audit Export|ui_tests/tests/test_audit_export.py|all"
         "Config Pages|ui_tests/tests/test_config_pages.py|all"
-        "UI Comprehensive|ui_tests/tests/test_ui_comprehensive.py|all"
-        "UI Regression|ui_tests/tests/test_ui_regression.py|all"
-        "UI UX Validation|ui_tests/tests/test_ui_ux_validation.py|all"
-        "UI Interactive|ui_tests/tests/test_ui_interactive.py|all"
-        "UI Functional|ui_tests/tests/test_ui_functional.py|all"
-        "User Journeys|ui_tests/tests/test_user_journeys.py|all"
         "Backends UI|ui_tests/tests/test_backends_ui.py|all"
-        "Console Errors|ui_tests/tests/test_console_errors.py|all"
         "Bulk Operations|ui_tests/tests/test_bulk_operations.py|all"
         "Accessibility|ui_tests/tests/test_accessibility.py|all"
-        "Mobile Responsive|ui_tests/tests/test_mobile_responsive.py|all"
         "Performance|ui_tests/tests/test_performance.py|all"
         "Security|ui_tests/tests/test_security.py|all"
         "Recovery Codes|ui_tests/tests/test_recovery_codes.py|all"
         "Registration E2E|ui_tests/tests/test_registration_e2e.py|all"
-        
+        "Cross-Role Accounts|ui_tests/tests/test_cross_role_account_lifecycle.py|all"
+        "Cross-Role Realms|ui_tests/tests/test_cross_role_realm_propagation.py|all"
+        "Cross-Role Tokens|ui_tests/tests/test_cross_role_token_lifecycle.py|all"
+
         # Mock-only tests (require mock services)
         "Mock API Standalone|ui_tests/tests/test_mock_api_standalone.py|mock"
         "Mock SMTP|ui_tests/tests/test_mock_smtp.py|mock"
         "Mock GeoIP|ui_tests/tests/test_mock_geoip.py|mock"
         "DDNS Quick Update|ui_tests/tests/test_ddns_quick_update.py|mock"
-        
+        "DDNS Protocols|ui_tests/tests/test_ddns_protocols.py|mock"
+
         # Live API tests (require real Netcup API configured)
         "UI Flow E2E|ui_tests/tests/test_ui_flow_e2e.py|live"
         "API Security|ui_tests/tests/test_api_security.py|all"

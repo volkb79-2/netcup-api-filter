@@ -83,3 +83,19 @@ async def test_admin_netcup_config_save_roundtrip(active_profile):
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.admin_save_netcup_config(browser)
+
+
+async def test_create_account_form_has_fields(active_profile):
+    """Account creation form exposes username and email fields (moved from test_ui_ux_validation)."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+        await browser.goto(settings.url("/admin/accounts/new"))
+        await browser.verify_status(200)
+
+        page_html = await browser.html("form")
+        assert 'name="username"' in page_html or 'id="username"' in page_html, (
+            "Username field not found in account creation form"
+        )
+        assert 'name="email"' in page_html or 'id="email"' in page_html, (
+            "Email field not found in account creation form"
+        )
