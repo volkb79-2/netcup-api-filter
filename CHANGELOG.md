@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — Testing-overhaul plan — 2026-06-12
+
+### Documentation
+
+- **Added `docs/plans/testing-overhaul/`** — full test-suite audit findings and a 14-task
+  execution plan as self-contained agent specs (`tasks/T01…T14`). Scope: fix broken/dead test
+  tooling, unit coverage for untested security logic (`check_permission`, DDNS parsing,
+  migrations, validators), a read-only backend-verification channel for E2E tests
+  (`ui_tests/verification.py`), 12 cross-role round-trip tests (admin action → user's
+  API/portal verifiably changes), smoke-suite consolidation behind route discovery, and a CI
+  `e2e-smoke` job. Plan only — no test or code changes yet; tasks execute sequentially per
+  `PLAN.md`.
+
 ## [Unreleased] — Security & reliability fixes — 2026-06-11
 
 ### Security

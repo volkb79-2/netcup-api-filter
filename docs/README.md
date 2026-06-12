@@ -54,6 +54,7 @@ the architecture overview, then dive into the relevant guide below.
 
 ## Testing
 
+- [`plans/testing-overhaul/PLAN.md`](plans/testing-overhaul/PLAN.md) — **active testing-overhaul plan**: audit findings + sequential agent task queue (T01–T14); check task status here before starting testing work.
 - [`TESTING_LESSONS_LEARNED.md`](TESTING_LESSONS_LEARNED.md) — **read before writing Playwright auth/2FA tests**.
 - [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md) — flask-manager / reset / installation-test tooling.
 - [`JOURNEY_CONTRACTS.md`](JOURNEY_CONTRACTS.md) — end-to-end journey definitions.
