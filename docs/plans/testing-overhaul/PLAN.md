@@ -67,7 +67,7 @@ mutation testing, visual regression.
 | [x] | [T06](tasks/T06-unit-migrations.md) | Unit: lightweight migrations (~6) | T02 | Sonnet / high | S |
 | [x] | [T07](tasks/T07-verification-channel.md) | `ui_tests/verification.py` backend-truth channel + migrate inline sqlite | — | Sonnet / high + Opus review | M |
 | [x] | [T08](tasks/T08-cross-role-account-lifecycle.md) | Round-trips #1–3: account lifecycle (pattern-setting) | T07 | **Opus 4.8 / xhigh** | M |
-| [ ] | [T09](tasks/T09-cross-role-realm-propagation.md) | Round-trips #4–6: realm propagation | T08 | Sonnet / high | M |
+| [x] | [T09](tasks/T09-cross-role-realm-propagation.md) | Round-trips #4–6: realm propagation | T08 | Sonnet / high | M |
 | [ ] | [T10](tasks/T10-cross-role-token-lifecycle.md) | Round-trips #7–9: token lifecycle | T08 | Sonnet / high | M |
 | [ ] | [T11](tasks/T11-dns-roundtrip-extensions.md) | Round-trips #10–12: DNS/DDNS backend truth + security-event contract | T08 | Sonnet / high | M |
 | [ ] | [T12](tasks/T12-smoke-consolidation.md) | Route-smoke + widgets; delete 9 smoke files; deploy.sh suite list | T07 | Sonnet / high + Opus review | L |
@@ -130,6 +130,7 @@ Fable 5 $10/$50 plus a ~30%-hungrier tokenizer (≈2.6× Opus, ≈4× Sonnet eff
   current behavior). Removed CI --ignore. Deleted 9 dead files. Three conditional tooling scripts
   kept: `tooling/run-tests.sh` (setup.sh exists in tooling/playwright/), `tooling/setup-playwright.sh`,
   `tooling/start-ui-stack.sh` (unreferenced but not provably broken). All 30 unit tests green.
+- 2026-06-12 — T09 landed (commit f17c372). Tests 4-6 (realm approval/rejection/revocation), journey 03 DB-write seeding retired. Revoke route has CHECK constraint bug — used admin JSON API. rejection_reason not rendered in user UI (channel A only). cross_role_helpers.py created.
 - 2026-06-12 — T08 landed (commit 3eb369a). 3 round-trips: disable/enable account (401+activity_log error_code), approval enables login (Mailpit), password reset link flow. Anti-false-green confirmed. Spec deviations: 401 not 403 for disabled account (documented); reset sends link not temp password (documented). Needs MAILPIT_USERNAME/PASSWORD env from tooling/mailpit/.env at test run time.
 - 2026-06-12 — T07 landed (commit b26943b). Created ui_tests/verification.py (Channels A/B/C), test_verification_selftest.py (4 cases green). Added /_test/records + /_test/reset to mock. Migrated 3 inline-sqlite call sites; legacy write in 2fa_security preserved with WRITE comment. Verified with Flask+mock services running.
 - 2026-06-12 — T06 landed (commit 9003493). Added test_lightweight_migrations_unit.py (6 cases). Non-sqlite guard confirmed present (line 211). NOT NULL case uses synthetic column injection. engine.dispose() documented as required to clear pool schema cache. 239 total tests green.
