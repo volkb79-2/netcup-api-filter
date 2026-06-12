@@ -103,7 +103,7 @@ def _attach_listener(page):
 # 1. Admin route smoke
 # ============================================================================
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.ci_smoke]
 
 
 @pytest.mark.parametrize("rule", ADMIN_ROUTES)

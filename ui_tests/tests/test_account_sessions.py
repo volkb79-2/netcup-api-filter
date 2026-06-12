@@ -16,7 +16,7 @@ from ui_tests.config import settings
 from ui_tests import workflows
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.ci_smoke]
 
 
 class TestAccountSessionRevocation:

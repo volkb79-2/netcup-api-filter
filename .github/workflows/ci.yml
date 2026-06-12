@@ -78,3 +78,111 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: ignore
+
+  e2e-smoke:
+    name: E2E smoke (ui_tests/, ci_smoke)
+    runs-on: ubuntu-latest
+
+    # Mailpit captures the app's 2FA / invite mail. MP_SMTP_AUTH_ACCEPT_ANY lets
+    # the app's "no auth" SMTP config deliver without credentials; the REST API
+    # is unauthenticated here, so MAILPIT_USERNAME/PASSWORD are dummies the test
+    # client requires but Mailpit ignores.
+    services:
+      mailpit:
+        image: axllent/mailpit
+        ports:
+          - 8025:8025
+          - 1025:1025
+        env:
+          MP_SMTP_AUTH_ACCEPT_ANY: "true"
+          MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+
+    env:
+      # --- Bootstrap + app runtime ---
+      SECRET_KEY: ci-e2e-smoke-secret-not-a-real-secret
+      DEPLOYMENT_TARGET: local
+      NETCUP_FILTER_DB_PATH: ${{ github.workspace }}/ci-deploy/netcup_filter.db
+      # FLASK_ENV=local_test is load-bearing over plain HTTP: it clears
+      # SESSION_COOKIE_SECURE (so Playwright sends cookies on http://) and
+      # disables rate limiting (avoids flaky 429s in the smoke run).
+      FLASK_ENV: local_test
+      # Where the app delivers mail (Mailpit SMTP on the runner). Consumed by
+      # seed_mock_email_config at bootstrap AND by the running app.
+      MOCK_SMTP_HOST: localhost
+      MOCK_SMTP_PORT: "1025"
+      # --- Mailpit REST client (ui_tests/mailpit_client.py) ---
+      MAILPIT_URL: http://localhost:8025
+      MAILPIT_USERNAME: ci
+      MAILPIT_PASSWORD: ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # matches deploy target (.venv pyvenv.cfg -> 3.11.2)
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            ui_tests/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # App + unit-test deps, plus the ui_tests stack (playwright, httpx, …).
+          pip install -r requirements-dev.txt -r ui_tests/requirements.txt playwright pytest-timeout
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Bootstrap deployment (DB + state file)
+        run: |
+          python scripts/ci_bootstrap_e2e.py \
+            --state-file "$RUNNER_TEMP/deployment_state_local.json"
+
+      - name: Start app (gunicorn, plain HTTP :5100)
+        run: |
+          mkdir -p "$RUNNER_TEMP"
+          PYTHONPATH=src nohup python -m gunicorn \
+            -w 2 -b 127.0.0.1:5100 \
+            'netcup_api_filter.app:create_app()' \
+            > "$RUNNER_TEMP/gunicorn.log" 2>&1 &
+          echo "Waiting for app health on http://127.0.0.1:5100/health ..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5100/health >/dev/null 2>&1; then
+              echo "App is up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "App did not become healthy within 60s; last log lines:"
+          tail -n 50 "$RUNNER_TEMP/gunicorn.log" || true
+          exit 1
+
+      - name: Run ci_smoke subset (serial)
+        run: |
+          DEPLOYMENT_TARGET=local \
+          DEPLOYMENT_STATE_FILE="$RUNNER_TEMP/deployment_state_local.json" \
+          UI_BASE_URL=http://127.0.0.1:5100 \
+          UI_PLAYWRIGHT_STORAGE_STATE_PATH="$RUNNER_TEMP/admin_auth.json" \
+          NAF_VERIFY_DB_PATH="${{ github.workspace }}/ci-deploy/netcup_filter.db" \
+          PLAYWRIGHT_HEADLESS=true \
+          python -m pytest -o addopts="" --timeout=120 -m ci_smoke ui_tests/tests -v
+
+      - name: Collect Mailpit message dump (on failure)
+        if: failure()
+        run: |
+          curl -fsS "$MAILPIT_URL/api/v1/messages" \
+            > "$RUNNER_TEMP/mailpit-messages.json" 2>/dev/null || \
+            echo '{"error":"could not reach mailpit"}' > "$RUNNER_TEMP/mailpit-messages.json"
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-debug
+          path: |
+            ${{ runner.temp }}/gunicorn.log
+            ${{ runner.temp }}/mailpit-messages.json
+            tmp/ui-screenshots
+          if-no-files-found: ignore

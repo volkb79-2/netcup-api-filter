@@ -248,6 +248,7 @@ async def _dns_create(token: str, domain: str) -> tuple[int, dict]:
 # Test 7 — admin revokes token → immediate API block + channel A/B confirm
 # --------------------------------------------------------------------------
 
+@pytest.mark.ci_smoke
 async def test_admin_token_revocation_immediate(playwright_client, _demo_username):
     """Admin revokes a token; C1 goes 401 instantly; Channel A sees is_active==0."""
     async with ParallelSessionManager(

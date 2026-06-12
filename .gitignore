@@ -164,6 +164,7 @@ netcup_filter.log
 deploy/
 deploy-local/
 deploy-webhosting/
+ci-deploy/
 deploy.zip
 deploy.zip.sha256
 deploy-local.zip

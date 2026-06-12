@@ -21,7 +21,7 @@ from ui_tests.browser import Browser
 from ui_tests.config import settings
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.ci_smoke]
 
 
 async def test_admin_security_api_contracts(session_manager):
