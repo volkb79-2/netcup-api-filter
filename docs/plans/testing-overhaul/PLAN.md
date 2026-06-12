@@ -64,7 +64,7 @@ mutation testing, visual regression.
 | [x] | [T03](tasks/T03-unit-token-auth.md) | Unit: token auth + realm matching (~49 cases) | T02 | Sonnet / high | M |
 | [x] | [T04](tasks/T04-unit-validators-passwords-recovery.md) | Unit: validators + password policy + recovery codes (~59) | T02 | Sonnet / high | M |
 | [x] | [T05](tasks/T05-unit-ddns-netcup-client.md) | Unit: DDNS parsing + netcup envelopes (~42) | T02 | Sonnet / high | M |
-| [ ] | [T06](tasks/T06-unit-migrations.md) | Unit: lightweight migrations (~6) | T02 | Sonnet / high | S |
+| [x] | [T06](tasks/T06-unit-migrations.md) | Unit: lightweight migrations (~6) | T02 | Sonnet / high | S |
 | [ ] | [T07](tasks/T07-verification-channel.md) | `ui_tests/verification.py` backend-truth channel + migrate inline sqlite | — | Sonnet / high + Opus review | M |
 | [ ] | [T08](tasks/T08-cross-role-account-lifecycle.md) | Round-trips #1–3: account lifecycle (pattern-setting) | T07 | **Opus 4.8 / xhigh** | M |
 | [ ] | [T09](tasks/T09-cross-role-realm-propagation.md) | Round-trips #4–6: realm propagation | T08 | Sonnet / high | M |
@@ -130,6 +130,7 @@ Fable 5 $10/$50 plus a ~30%-hungrier tokenizer (≈2.6× Opus, ≈4× Sonnet eff
   current behavior). Removed CI --ignore. Deleted 9 dead files. Three conditional tooling scripts
   kept: `tooling/run-tests.sh` (setup.sh exists in tooling/playwright/), `tooling/setup-playwright.sh`,
   `tooling/start-ui-stack.sh` (unreferenced but not provably broken). All 30 unit tests green.
+- 2026-06-12 — T06 landed (commit 9003493). Added test_lightweight_migrations_unit.py (6 cases). Non-sqlite guard confirmed present (line 211). NOT NULL case uses synthetic column injection. engine.dispose() documented as required to clear pool schema cache. 239 total tests green.
 - 2026-06-12 — T05 landed (commit a92daff). Added test_ddns_parsing_unit.py (29 cases) and test_netcup_client_unit.py (14 cases). XFF trust contract pinned: leftmost element trusted, comment documents spoofability risk. parse_hostname uses pure heuristic (no DB). 233 total tests green; no xfail.
 - 2026-06-12 — T04 landed (commit 23390a9). Added test_validators_unit.py (55 cases), test_password_policy_unit.py (15 cases, entropy boundaries derived from source constants), test_recovery_codes_unit.py (19 DB-backed cases). 190 total tests green; no xfail needed.
 - 2026-06-12 — T03 landed (commit 5e67c71). Added `tests/test_token_auth_unit.py` (62 cases: extract_bearer_token, authenticate_token, check_ip_allowed, check_permission, _resolve_fqdn) and `tests/test_realm_matching_unit.py` (8 DB-free cases: matches_domain, get_fqdn). 101 tests total green. Coverage of target functions: substantial (all 5 target functions fully exercised). No bugs found in src/; no xfail needed. Also fixed gitignore for *,cover annotation files.
