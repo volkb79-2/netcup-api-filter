@@ -1,6 +1,6 @@
 # Testing Overhaul — Plan & Task Index
 
-**Status: in progress.** The task index below is the source of truth — tick a task's checkbox
+**Status: COMPLETE.** All 14 tasks landed 2026-06-12. The task index below is the source of truth — tick a task's checkbox
 and add a worklog line when it lands. Created 2026-06-12 from a full audit of the test suites
 (5 parallel deep-dives over `tests/`, `ui_tests/`, the harness, runners, and CI).
 
@@ -72,7 +72,7 @@ mutation testing, visual regression.
 | [x] | [T11](tasks/T11-dns-roundtrip-extensions.md) | Round-trips #10–12: DNS/DDNS backend truth + security-event contract | T08 | Sonnet / high | M |
 | [x] | [T12](tasks/T12-smoke-consolidation.md) | Route-smoke + widgets; delete 9 smoke files; deploy.sh suite list | T07 | Sonnet / high + Opus review | L |
 | [x] | [T13](tasks/T13-ci-e2e-smoke.md) | CI `e2e-smoke` job + `scripts/ci_bootstrap_e2e.py` + `ci_smoke` marker | T12 | **Opus 4.8 / xhigh** | M |
-| [ ] | [T14](tasks/T14-docs-sync.md) | Docs sync (TESTING_LESSONS_LEARNED, README, CHANGELOG) | T01–T13 | Sonnet / medium | S |
+| [x] | [T14](tasks/T14-docs-sync.md) | Docs sync (TESTING_LESSONS_LEARNED, README, CHANGELOG) | T01–T13 | Sonnet / medium | S |
 
 ## Round-trip catalog (what T08–T11 buy us)
 
@@ -130,6 +130,7 @@ Fable 5 $10/$50 plus a ~30%-hungrier tokenizer (≈2.6× Opus, ≈4× Sonnet eff
   current behavior). Removed CI --ignore. Deleted 9 dead files. Three conditional tooling scripts
   kept: `tooling/run-tests.sh` (setup.sh exists in tooling/playwright/), `tooling/setup-playwright.sh`,
   `tooling/start-ui-stack.sh` (unreferenced but not provably broken). All 30 unit tests green.
+- 2026-06-12 — T14 landed (commit 7dfa8f3). Updated TESTING_LESSONS_LEARNED (verification-channel section), AGENTS.md Testing, TESTING_INFRASTRUCTURE.md (full rewrite), DEPLOY_ARCHITECTURE.md, UI_REQUIREMENTS.md, README, CHANGELOG. Stale-reference check clean.
 - 2026-06-12 — T13 landed (commit 9ebcb5b). scripts/ci_bootstrap_e2e.py, e2e-smoke job in ci.yml, ci_smoke marker (93 tests collected). Key findings: FLASK_ENV=local_test needed for plain HTTP; initialize_database overrides MOCK_SMTP_HOST so bootstrap re-seeds email_config. CI run triggered on branch testing-overhaul-t13-ci — verify at github.com/volkb79-2/netcup-api-filter/actions.
 - 2026-06-12 — T12 landed (commit ad27fd0). test_route_smoke.py (86 tests), test_ui_widgets.py (19 tests). 9 smoke files + test_console_errors.py deleted. Survivors moved to test_config_pages/audit_logs/admin_ui.py with false-green fixes. deploy.sh suite list updated (8 removed, 6 added).
 - 2026-06-12 — T11 landed (commit c6df834). Tests 10-12 + security event upgrade. 10 passed + 4 skipped (mock reachability guard) with default URL; 14 passed with MOCK_NETCUP_API_URL set to container address. Mock container needs restart to pick up /_test/ routes from T07.
