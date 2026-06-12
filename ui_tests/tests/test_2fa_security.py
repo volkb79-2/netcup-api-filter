@@ -62,19 +62,27 @@ def _clear_auth_lockouts_for_username(username: str) -> None:
     - recovery_failures:<account_id>
 
     We clear these between tests to keep the suite isolated.
+
+    # WRITE: legacy cleanup, see T07 — do not copy this pattern
     """
+    from ui_tests import verification  # lazy: avoid module-level config import
+
+    # Use Channel A (read-only) to look up the account id.
+    account = verification.get_account(username)
+    if not account:
+        return
+    account_id = int(account["id"])
+
+    # The write below is the ONE sanctioned legacy write in this helper.
+    # All other DB access must go through verification.ro_connection().
     db_path = os.environ.get(
         "DATABASE_PATH",
         "/workspaces/netcup-api-filter/deploy-local/netcup_filter.db",
     )
+    # WRITE: legacy cleanup, see T07 — do not copy this pattern
     conn = sqlite3.connect(db_path, timeout=10.0)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM accounts WHERE username = ?", (username,))
-        row = cur.fetchone()
-        if not row:
-            return
-        account_id = int(row[0])
         for prefix in ("2fa_failures", "recovery_failures"):
             cur.execute(
                 "DELETE FROM settings WHERE key = ?",

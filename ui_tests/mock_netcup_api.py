@@ -417,6 +417,21 @@ app = create_mock_api_app()
 seed_test_domain("test.example.com")
 
 
+# ---- Test-only inspection routes (appended after app creation) ----
+
+@app.route('/_test/records/<domain>', methods=['GET'])
+def _test_records(domain):
+    """Return current in-memory DNS records for *domain* (test inspection only)."""
+    return jsonify({"domain": domain, "records": DNS_RECORDS.get(domain, [])}), 200
+
+
+@app.route('/_test/reset', methods=['POST'])
+def _test_reset():
+    """Reset all mock state (sessions, zones, records) for test isolation."""
+    reset_mock_state()
+    return jsonify({"status": "reset"}), 200
+
+
 if __name__ == '__main__':
     # For testing the mock server directly
     print(f"Mock Netcup API server running on http://localhost:5555")

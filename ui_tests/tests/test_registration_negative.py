@@ -17,7 +17,6 @@ import re
 import httpx
 from pathlib import Path
 import sys
-import sqlite3
 
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -273,24 +272,18 @@ class TestPendingAccountRestrictions:
         return match.group(1) if match else ""
     
     def _get_verification_code(self, username: str) -> str | None:
-        """Get verification code from database."""
+        """Get verification code from database via verification channel."""
+        from ui_tests import verification  # lazy: avoids module-level config import
         try:
-            # Determine database path based on deployment target
-            if settings.deployment_target == "local":
-                db_path = Path("/workspaces/netcup-api-filter/deploy-local/netcup_filter.db")
-            else:
-                # For webhosting, we can't access the database directly
+            if not verification.db_available():
                 return None
-            
-            conn = sqlite3.connect(str(db_path))
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT verification_code FROM registration_requests WHERE username=?",
-                (username,)
-            )
-            row = cur.fetchone()
-            conn.close()
-            return row[0] if row else None
+            with verification.ro_connection() as conn:
+                cur = conn.execute(
+                    "SELECT verification_code FROM registration_requests WHERE username=?",
+                    (username,),
+                )
+                row = cur.fetchone()
+                return row["verification_code"] if row else None
         except Exception:
             return None
 

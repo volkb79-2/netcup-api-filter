@@ -82,11 +82,15 @@ def test_account_credentials():
 # ============================================================================
 
 async def create_pending_realm_in_db(realm_value: str, account_id: int = 1) -> bool:
-    """Create a pending realm directly in the database for testing."""
+    """Create a pending realm directly in the database for testing.
+
+    # WRITE: legacy seeding, see T07 — do not copy this pattern.
+    # This will be replaced with UI-driven realm request in T09.
+    """
     import sqlite3
     import os
     from datetime import datetime, timezone
-    
+
     db_path = os.environ.get('DATABASE_PATH', '/workspaces/netcup-api-filter/deploy-local/netcup_filter.db')
     
     if not os.path.exists(db_path):
