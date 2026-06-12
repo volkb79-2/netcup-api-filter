@@ -120,6 +120,7 @@ The webhosting target (host, remote dir, restart path) is defined by the deploym
 Two distinct layers:
 
 - **`tests/`** — fast pytest **unit/integration** tests (no browser). Run with `pytest tests/`.
+  - `tests/conftest.py` provides `app`/`client`/`db` fixtures and `make_account`/`make_realm`/`make_token` factories. New unit tests should use these rather than building their own fixtures.
 - **`ui_tests/`** — **Playwright** end-to-end tests against a running deployment (`ui_tests/tests/`, plus multi-step `ui_tests/tests/journeys/`).
 
 The standard runner builds a production-parity deployment and runs the suite:
@@ -138,10 +139,22 @@ cd tooling/playwright && docker compose up -d
 ./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 ```
 
+**Route-smoke suite (`ui_tests/tests/test_route_smoke.py`)**: parametrized over every app
+route discovered at import time — 86 tests, automatically cover new routes as they are added.
+Contributors get smoke coverage for free; they must still add round-trip tests that assert
+backend state changes for any new behavior (smoke only checks status codes and basic page
+loading).
+
+**CI `e2e-smoke` job** (`.github/workflows/ci.yml`): boots the app on the GitHub Actions
+runner, seeds a fresh DB via `scripts/ci_bootstrap_e2e.py`, and runs all tests tagged
+`@pytest.mark.ci_smoke` (93 tests). This gives PRs E2E regression coverage without needing a
+full Playwright container. Tag new tests `ci_smoke` when they are fast, hermetic, and do not
+require external services beyond Mailpit.
+
 **Before writing any Playwright login / 2FA / navigation test, read
 [`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md)** — it documents the
-patterns (JS `form.submit()` for 2FA, live `browser._page.url`, session detection) that
-prevent most flakiness.
+patterns (JS `form.submit()` for 2FA, live `browser._page.url`, verification channels,
+`wait_for` poller) that prevent most flakiness.
 
 **Test hygiene:** a test that can't fail is worse than no test. Don't downgrade a load-bearing
 `assert` to `pytest.skip` to make a suite green — skip only when a feature is genuinely

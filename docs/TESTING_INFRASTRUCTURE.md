@@ -1,254 +1,153 @@
-# Testing Infrastructure Improvements
+# Testing Infrastructure
 
 ## Overview
 
-This document describes the automated testing infrastructure improvements made to ease local development and testing workflows.
+This document describes the testing infrastructure: the two-layer suite layout,
+the local runners, the CI jobs, and the tooling that supports them.
 
-## New Scripts
+---
 
-### 1. Flask Manager (`tooling/flask-manager.sh`)
+## Suite layout
 
-Centralized Flask process management for local testing.
+### `tests/` — unit/integration (no browser)
 
-**Commands:**
-```bash
-# Start Flask backend
-./tooling/flask-manager.sh start
+Run with `python -m pytest tests/` (or plain `pytest tests/`). No running app required.
 
-# Stop Flask backend
-./tooling/flask-manager.sh stop
+- **`tests/conftest.py`** — shared fixtures: `app`, `client`, `db` (in-memory SQLite per
+  test), and factories `make_account` / `make_realm` / `make_token`.
+- Unit modules cover: token auth (`authenticate_token`, `check_permission`, `check_ip_allowed`),
+  realm matching, validators, password policy, recovery codes, DDNS parsing, netcup client
+  envelope helpers, and lightweight migrations.
+- CI runs this suite on every push/PR (see **`unit-tests` job** below).
 
-# Restart Flask backend
-./tooling/flask-manager.sh restart
+### `ui_tests/` — Playwright E2E (browser required)
 
-# Check Flask status
-./tooling/flask-manager.sh status
-
-# Tail Flask logs
-./tooling/flask-manager.sh logs
-```
-
-**Features:**
-- PID file management (no more orphaned processes)
-- Automatic health check (waits for Flask to be ready)
-- Fail-fast validation (checks deploy directory and database exist)
-- Clear error messages with suggestions
-- Logs centralized in `tmp/flask.log`
-
-**Configuration:**
-- Uses `.env.workspace` for environment detection
-- Default deploy dir: `deploy/`
-- Default port: `5100`
-- Override with: `--deploy-dir DIR` or `--port PORT`
-
-### 2. Reset Local Deployment (`tooling/reset-local-deployment.sh`)
-
-Quick reset to fresh state with default credentials.
-
-**Usage:**
-```bash
-# Full reset: rebuild deployment and restart Flask
-./tooling/reset-local-deployment.sh
-
-# Keep deployment files, only reset database
-./tooling/reset-local-deployment.sh --skip-rebuild
-
-# Reset with demo data seeded
-./tooling/reset-local-deployment.sh --seed-demo
-
-# Reset but don't restart Flask
-./tooling/reset-local-deployment.sh --no-restart
-```
-
-**Use Cases:**
-- Quick iteration during development
-- Reset after failed tests
-- Test fresh installation workflow
-- Recover from broken state
-
-### 3. Installation Workflow Test (`ui_tests/tests/test_installation_workflow.py`)
-
-Automated E2E test for fresh installation workflow.
-
-**Test Coverage:**
-1. Login with default credentials (admin/admin)
-2. Forced password change on first login
-3. Email setup during initial configuration
-4. SMTP verification (pre-seeded config)
-5. Automatic 2FA enablement when email is configured
-6. Logout and re-login with new password
-7. 2FA email verification via Mailpit API
-8. Successful dashboard access
-
-**Running:**
-```bash
-# Run installation workflow test only
-pytest ui_tests/tests/test_installation_workflow.py -v
-
-# Run with other tests
-./run-local-tests.sh
-```
-
-**Prerequisites:**
-- Fresh deployment with default credentials
-- Mailpit running (`tooling/mailpit/docker compose up -d`)
-- SMTP config pre-seeded in database
-
-## Integrated Workflow
-
-### Before (Manual)
+Requires a running deployment and the Playwright container.
 
 ```bash
-# Manual steps (error-prone)
-pkill -9 -f flask
-cd /workspaces/netcup-api-filter
-rm -rf deploy
-python3 build_deployment.py --target local
-cd deploy
-DATABASE_PATH=$PWD/netcup_filter.db nohup python3 -m flask --app passenger_wsgi:application run --host=0.0.0.0 --port=5100 >/tmp/local_app.log 2>&1 &
-sleep 5
-# Hope Flask started...
-# Run tests manually
-# Kill Flask manually (hopefully all processes)
-pkill -9 -f flask
+cd tooling/playwright && docker compose up -d
+./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 ```
 
-### After (Automated)
+Or via the standard runner (builds a fresh deployment first):
 
 ```bash
-# Single command for complete test run
-./run-local-tests.sh
-
-# Or for quick iteration:
-./tooling/reset-local-deployment.sh    # Reset to fresh state
-pytest ui_tests/tests/test_installation_workflow.py -v  # Run specific test
-./tooling/flask-manager.sh logs        # Debug if needed
+./run-local-tests.sh --with-mocks    # Mailpit + GeoIP + Netcup-API mocks
+./run-local-tests.sh --skip-build    # reuse existing deploy-local
 ```
 
-## Benefits
+---
 
-### 1. **No More Orphaned Processes**
-- PID file management prevents multiple Flask instances
-- Clean shutdown with `flask-manager.sh stop`
-- Automatic cleanup in test scripts
+## Standard local runner
 
-### 2. **Faster Iteration**
-- `reset-local-deployment.sh` rebuilds in ~10 seconds
-- No need to manually check if Flask is running
-- No need to manually kill processes
-
-### 3. **Reliable Testing**
-- Health checks ensure Flask is ready before tests run
-- Automatic retry logic for transient failures
-- Clear error messages when things go wrong
-
-### 4. **Better Observability**
-- Centralized logs in `tmp/flask.log`
-- Status command shows PID and port
-- Logs command for real-time debugging
-
-### 5. **Integration with Existing Tools**
-- `run-local-tests.sh` now uses Flask manager
-- Consistent behavior across all test scripts
-- Works with Playwright container
-
-## Configuration
-
-### Environment Variables
-
-Flask manager and reset script use `.env.workspace` for configuration:
+**`run-local-tests.sh`** — the single entry point for local testing:
 
 ```bash
-# Set in .env.workspace (auto-generated by post-create.sh)
-REPO_ROOT=/workspaces/netcup-api-filter
-DOCKER_NETWORK_INTERNAL=naf-dev-network
-PUBLIC_FQDN=<auto-detected-public-fqdn>
+./run-local-tests.sh                          # build + run full ui_tests suite
+./run-local-tests.sh --with-mocks             # also start mock services
+./run-local-tests.sh --skip-build             # reuse existing deploy-local
+./run-local-tests.sh --with-mocks <file>      # run a single test file
 ```
 
-### Database Path
+The script builds a production-parity deployment under `deploy-local/`, starts the app,
+and runs the `ui_tests` suite. `deploy.sh` manages the suite list; it is updated alongside
+test additions and deletions so the two stay in sync.
 
-Automatically detected based on deploy directory:
-- `deploy/netcup_filter.db` for standard local testing
-- Configurable via `DATABASE_PATH` environment variable
+---
 
-## Testing Workflow
+## Route-smoke suite
 
-### 1. Fresh Installation Test
+**`ui_tests/tests/test_route_smoke.py`** (86 tests) — parametrized over every route
+discovered at import time via Flask's URL map. New routes added to any blueprint are
+automatically smoke-tested without any manual update. Smoke checks: correct status codes,
+no unhandled exceptions, basic page structure for HTML routes.
 
-```bash
-# Reset to fresh state
-./tooling/reset-local-deployment.sh
+Contributors get smoke for free; they must still add round-trip tests for new behavior
+(see `test_cross_role_account_lifecycle.py` for the pattern).
 
-# Run installation workflow test
-pytest ui_tests/tests/test_installation_workflow.py -v -s
-```
+---
 
-### 2. Full Test Suite
+## CI jobs
 
-```bash
-# Runs all tests including installation workflow
-./run-local-tests.sh
-```
+Two jobs run on every push and pull request (`.github/workflows/ci.yml`):
 
-### 3. Debugging
+### `unit-tests`
 
-```bash
-# Check Flask status
-./tooling/flask-manager.sh status
+Runs `python -m pytest tests/` with coverage. No services required; fast (< 60 s).
+Uploads `coverage.xml` as an artifact on every run.
 
-# View logs in real-time
-./tooling/flask-manager.sh logs
+### `e2e-smoke`
 
-# Restart Flask
-./tooling/flask-manager.sh restart
-```
+Boots the full app in the CI runner (gunicorn, plain HTTP :5100) and runs all tests
+tagged `@pytest.mark.ci_smoke` (93 tests). Services: Mailpit on ports 1025/8025.
 
-## Future Improvements
+**Bootstrap**: `scripts/ci_bootstrap_e2e.py` initialises the DB and writes
+`deployment_state_local.json` so the test helpers find the admin credentials.
 
-### 1. Database-Only Reset
+Key env vars that make plain-HTTP CI work:
 
-Currently `--skip-rebuild` doesn't fully work because we don't have a standalone database init script. 
+| Var | Value | Purpose |
+|-----|-------|---------|
+| `FLASK_ENV` | `local_test` | Clears `SESSION_COOKIE_SECURE`, disables rate limiting |
+| `DEPLOYMENT_TARGET` | `local` | Selects local state-file path |
+| `NAF_VERIFY_DB_PATH` | `ci-deploy/netcup_filter.db` | Directs `verification.py` channel A to the CI DB |
+| `UI_BASE_URL` | `http://127.0.0.1:5100` | Playwright base URL |
 
-**TODO:** Create `tooling/init-database.sh` to:
-- Initialize empty database schema
-- Seed default admin account
-- Seed backend providers
-- Optionally seed demo data
+**Failure artifacts**: on failure the job uploads `gunicorn.log`, `mailpit-messages.json`,
+and `tmp/ui-screenshots` for debugging.
 
-### 2. Test Markers
-
-Add pytest markers for different test categories:
+To tag a test for the `e2e-smoke` job:
 
 ```python
-@pytest.mark.installation  # Fresh installation tests
-@pytest.mark.upgrade       # Upgrade/migration tests
-@pytest.mark.integration   # Integration tests with real services
-@pytest.mark.unit          # Unit tests
+@pytest.mark.ci_smoke
+async def test_my_feature(browser):
+    ...
 ```
 
-### 3. Parallel Testing
+Tests should be fast, hermetic, and not require mock-netcup or other external services
+beyond Mailpit.
 
-Flask manager could support multiple instances:
+---
 
-```bash
-# Start Flask on different ports for parallel tests
-./tooling/flask-manager.sh start --port 5100 --pid flask1.pid
-./tooling/flask-manager.sh start --port 5101 --pid flask2.pid
-```
+## Verification channels (`ui_tests/verification.py`)
 
-### 4. Container-based Testing
+Three independent backend-truth channels for E2E round-trip assertions — see
+[`TESTING_LESSONS_LEARNED.md`](TESTING_LESSONS_LEARNED.md) § 4 for the full pattern.
 
-Move Flask into its own container for better isolation:
+| Channel | API | Reads |
+|---------|-----|-------|
+| A | `verification.get_account()`, `get_token()`, `count_activity()`, `wait_for()`, … | Read-only sqlite (mode=ro) |
+| B | `verification.admin_api_accounts()`, `account_api_realms()`, … | Authed JSON endpoints via browser session |
+| C | `verification.dns_api_list_records()`, `mock_netcup_records()` | DNS API (Bearer) / mock Netcup backend |
 
-```bash
-# Flask in container, tests in Playwright container
-docker compose -f tooling/testing/docker-compose.yml up -d
-pytest ui_tests/tests -v
-```
+Channel A uses `NAF_VERIFY_DB_PATH` (env override) or the default `deploy-local/netcup_filter.db`.
+Call `verification.require_db()` at the top of tests that need Channel A; it calls
+`pytest.skip` automatically if no DB file is accessible.
+
+---
+
+## Cross-role round-trip tests
+
+`ui_tests/tests/test_cross_role_*.py` verify that an admin action propagates to the user's
+API/portal experience via independent channels:
+
+| File | What it tests |
+|------|---------------|
+| `test_cross_role_account_lifecycle.py` | disable/enable account (401+error_code), invite+approval, password reset link |
+| `test_cross_role_realm_propagation.py` | realm approval/rejection/revocation + token behavior |
+| `test_cross_role_token_lifecycle.py` | admin revoke, user self-revoke, read-only scope enforcement |
+
+See `test_cross_role_account_lifecycle.py` — it is the **pattern file** for all cross-role
+suites (channel use, `wait_for`, state cleanup in `finally`).
+
+`ui_tests/cross_role_helpers.py` provides shared helpers (login, account creation via
+invite form, realm/token creation).
+
+---
 
 ## Troubleshooting
 
-### Flask Won't Start
+### App won't start
 
 ```bash
 # Check logs
@@ -257,39 +156,37 @@ pytest ui_tests/tests -v
 # Check if port is in use
 netstat -tuln | grep 5100
 
-# Check deploy directory exists
-ls -la deploy/
-
-# Check database exists
-ls -la deploy/netcup_filter.db
+# Rebuild from scratch
+./deploy.sh local
 ```
 
-### Tests Fail with "Connection Refused"
+### Tests fail with "Connection Refused"
 
 ```bash
-# Verify Flask is running
-./tooling/flask-manager.sh status
+# Verify the app is running
+curl http://localhost:5100/health
 
-# Check Flask is listening on correct port
-curl -s http://localhost:5100/admin/login | head -5
-
-# Check reverse proxy if using HTTPS
-docker ps | grep reverse-proxy
+# Check which port deploy-local is using (deploy.sh sets this)
+grep PORT deploy-local/.env 2>/dev/null || echo "not set, using default 5100"
 ```
 
-### Stale Database State
+### Channel A (sqlite) fails in tests
 
-```bash
-# Reset to fresh state
-./tooling/reset-local-deployment.sh
+- Ensure `NAF_VERIFY_DB_PATH` points to the actual DB, or that `deploy-local/netcup_filter.db` exists.
+- If running against webhosting (no direct DB access), Channel-A tests will auto-skip via `require_db()`.
 
-# Or rebuild from scratch
-rm -rf deploy/ && python3 build_deployment.py --target local
-```
+### CI e2e-smoke fails
 
-## Related Documentation
+1. Download the `e2e-smoke-debug` artifact from the failed Actions run.
+2. Check `gunicorn.log` for startup errors.
+3. Check `mailpit-messages.json` for email delivery issues.
+4. Screenshots are in `tmp/ui-screenshots`.
 
-- `LOCAL_TESTING_GUIDE.md` - Comprehensive local testing guide
-- `TESTING_STRATEGY.md` - Overall testing strategy
-- `PLAYWRIGHT_CONTAINER.md` - Playwright container setup
-- `MAILPIT_CONFIGURATION.md` - Mailpit SMTP testing setup
+---
+
+## Related documentation
+
+- [`TESTING_LESSONS_LEARNED.md`](TESTING_LESSONS_LEARNED.md) — patterns for flakiness-free E2E tests (read before writing Playwright tests).
+- [`JOURNEY_CONTRACTS.md`](JOURNEY_CONTRACTS.md) — end-to-end journey definitions.
+- [`MAILPIT_CONFIGURATION.md`](MAILPIT_CONFIGURATION.md) — SMTP capture for email tests.
+- [`PLAYWRIGHT_CONTAINER.md`](../PLAYWRIGHT_CONTAINER.md) — Playwright container architecture.

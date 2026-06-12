@@ -2447,13 +2447,14 @@ We do NOT use visual regression testing (screenshot comparison). Instead:
 | test_accessibility.py | 22 | ✅ Pass | WCAG 2.1 AA |
 | test_performance.py | 15 | ✅ Pass | Load time, resources |
 | test_visual_regression.py | 13 | ✅ Pass | Screenshot baselines |
-| test_mobile_responsive.py | 12 | ✅ Pass | Mobile viewport |
-| test_ui_comprehensive.py | Various | ✅ Pass | Full UI flows |
-| **test_ui_interactive.py** | **28** | ✅ Pass | **Interactive UI, CSS, JS** |
-| **test_user_journeys.py** | **15** | ✅ Pass | **End-to-end user workflows** |
-| test_e2e_*.py | Various | ⏭️ Skip | Require mock services |
+| test_route_smoke.py | 86 | ✅ Pass | Route smoke (all routes, auto-discovered) |
+| test_ui_widgets.py | 19 | ✅ Pass | UI widget smoke |
 
-**Total: 239 passed, 58 skipped**
+> **Note**: `test_ui_comprehensive.py`, `test_ui_interactive.py`, `test_user_journeys.py`,
+> `test_mobile_responsive.py` and several others were consolidated into `test_route_smoke.py`,
+> `test_config_pages.py`, `test_audit_logs.py`, and `test_admin_ui.py` during the T12 smoke
+> consolidation. The test counts above are a snapshot; see `deploy.sh` for the current suite
+> list.
 
 ### 12.1.1 Comprehensive UI Test Coverage (NEW)
 

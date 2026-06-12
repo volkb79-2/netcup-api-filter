@@ -330,6 +330,107 @@ When updating tests to use these patterns:
 
 ---
 
+---
+
+## 4. Verification-Channel Pattern: Round-Trip Assertions
+
+### Why naive E2E assertions fail
+
+An E2E test that checks only the UI layer can be **permanently green even when the feature
+is broken**. Examples of false-green assertions:
+
+```python
+# ❌ WRONG: scraping UI feedback, not backend state
+assert "Account disabled" in await page.inner_text(".flash-message")
+
+# ❌ WRONG: soft assertion inside if-found guard
+if elem := await page.query_selector(".realm-status"):
+    assert "approved" in elem.inner_text()
+
+# ❌ WRONG: or-chained tolerant assertion
+assert status_code == 200 or status_code == 204
+
+# ❌ WRONG: pytest.skip when an element is merely missing
+if not await page.query_selector("#token-list"):
+    pytest.skip("token list not visible")
+```
+
+### The three independent verification channels
+
+`ui_tests/verification.py` provides read-only backend truth via three channels. Use the
+**lowest-latency channel that can verify the specific claim**.
+
+| Channel | What it is | When to use |
+|---------|-----------|-------------|
+| **A — read-only sqlite** | Direct file read of `netcup_filter.db`, mode=ro + `PRAGMA query_only` | Account/realm/token/activity rows, DB-column values. Only available when the test runner has direct DB file access (local + CI). Skip gracefully with `require_db()` otherwise. |
+| **B — authed JSON endpoints** | `GET /admin/api/*` or `/account/api/*` via the logged-in Playwright session | What the UI role actually sees through its authenticated API; useful for cross-role checks where the UI doesn't directly expose the underlying row. |
+| **C — DNS API / mock backend state** | Bearer-token DNS API calls (`dns_api_list_records`) or mock Netcup state (`mock_netcup_records`) | DNS record mutations: verify the record is really present/absent at the backend, not just reflected in the UI. |
+
+### The `wait_for` poller — never sleep
+
+After a UI submit, the backend processes the request asynchronously. Never `time.sleep`:
+
+```python
+# ❌ WRONG: arbitrary sleep
+await browser.click("#disable-btn")
+await asyncio.sleep(2)
+assert verification.get_account("bob")["is_active"] == 0
+
+# ✅ CORRECT: poll until the DB reflects the change (or timeout)
+await browser.click("#disable-btn")
+verification.wait_for(
+    lambda: verification.get_account("bob")["is_active"] == 0,
+    timeout=10.0,
+    message="Account was not disabled in DB within 10 s",
+)
+```
+
+`wait_for` polls every 250 ms up to the timeout, then raises `AssertionError` with the
+message you supply. The timeout surfaces a real failure; it does NOT mask it.
+
+### Anti-false-green rules (non-negotiable)
+
+1. **No `if found: assert`** — an assertion inside an `if` block is never executed when the
+   element is absent; the test stays green while the feature is broken. Assert unconditionally
+   or use `require_db()` / a skip guard that ties to a *feature flag*, not element presence.
+2. **No `or`-chained assertions** — `assert status == 200 or status == 204` is green for any
+   2xx; pin the exact status the implementation promises.
+3. **No skip-to-green** — `pytest.skip` is only correct when a feature is *intentionally
+   disabled by config* and the skip is gated on that config flag, not on a UI element being absent.
+4. **Never assert from the UI layer alone** — every mutating action gets at least one
+   Channel-A or Channel-C assertion confirming the backend state changed.
+
+### Example: admin disables account → DNS API returns 401
+
+```python
+# 1. Admin action via UI
+await browser.goto(f"/admin/accounts/{account_id}/disable")
+await browser.click("button[type='submit']")
+
+# 2. Channel A: DB immediately reflects the change
+verification.wait_for(
+    lambda: verification.get_account(username)["is_active"] == 0,
+    timeout=10.0, message="Account not disabled in DB",
+)
+
+# 3. Channel C: DNS API returns 401 for a token belonging to the disabled account
+status, _ = await verification.dns_api_list_records(token, "example.com")
+assert status == 401  # exact, not "400-level"
+
+# 4. Channel A: activity_log has the error_code (not just the HTTP status)
+entries = verification.latest_activity(action="api_auth_failed", account_username=username)
+assert entries and entries[0]["error_code"] == "account_disabled"
+```
+
+### Pattern file
+
+See [`ui_tests/tests/test_cross_role_account_lifecycle.py`](../ui_tests/tests/test_cross_role_account_lifecycle.py)
+for the full pattern: account lifecycle (disable/enable, invite+approval, password reset),
+with Channel A + B + C assertions and `finally`-block state cleanup. New round-trip tests
+should copy this structure.
+
+---
+
 ## Related Documentation
 
 - [UI Testing Guide](UI_TESTING_GUIDE.md) - Comprehensive UI testing strategy

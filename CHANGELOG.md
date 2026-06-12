@@ -1,5 +1,63 @@
 # Changelog
 
+## [Unreleased] — Testing overhaul (T01–T13) — 2026-06-12
+
+End-to-end testing overhaul across 13 sequential tasks. No functional app changes;
+all changes are tests, tooling, CI, and test infrastructure.
+
+### Added
+
+- **Unit test suite** (`tests/`) now covers the previously untested security-critical
+  paths: `token_auth.check_permission()` / `authenticate_token()` / `check_ip_allowed()`,
+  `AccountRealm.matches_domain()`, `run_lightweight_migrations()`, DDNS hostname parsing,
+  netcup client response-envelope helpers, `utils` validators, recovery codes, and
+  password entropy — 200+ new cases across T02–T06.
+- **`tests/conftest.py`** — shared app/client/db fixtures and `make_account` / `make_realm` /
+  `make_token` factories so new unit tests can be written without boilerplate.
+- **`ui_tests/verification.py`** — three independent backend-truth channels for round-trip
+  E2E assertions: Channel A (read-only sqlite), Channel B (authed admin/account JSON
+  endpoints), Channel C (Bearer DNS API / mock Netcup state). Includes `wait_for` poller;
+  never use `time.sleep` to wait for a DB effect.
+- **12 cross-role round-trip tests** (`test_cross_role_account_lifecycle.py`,
+  `test_cross_role_realm_propagation.py`, `test_cross_role_token_lifecycle.py`) — each
+  verifies that an admin or user action propagates to the other role's API/portal experience
+  via independent backend channels. `test_cross_role_account_lifecycle.py` is the pattern
+  file for all new round-trip suites.
+- **`ui_tests/tests/test_route_smoke.py`** (86 tests) — parametrized over every Flask route
+  at import time; automatically covers new routes without any manual update.
+- **`ui_tests/tests/test_ui_widgets.py`** (19 tests) — widget-level smoke for shared UI
+  components.
+- **DNS/DDNS round-trip extensions** (`test_api_dns_crud_success_with_mock_backend.py`,
+  `test_ddns_quick_update.py`, `test_admin_security_api_contracts.py`) — verify records at
+  the mock Netcup backend and assert security events surface in `/admin/api/security/events`.
+- **CI `e2e-smoke` job** (`.github/workflows/ci.yml`) — boots the app on the GitHub Actions
+  runner and runs 93 `@pytest.mark.ci_smoke` tests on every push/PR. Bootstrap via
+  `scripts/ci_bootstrap_e2e.py`. Failure artifacts: gunicorn log, Mailpit message dump,
+  screenshots.
+- **`ui_tests/cross_role_helpers.py`** — shared helpers for cross-role test suites.
+- **Mock netcup API** — added `/_test/records/<domain>` and `/_test/reset` routes for fast
+  test-only state inspection without a full CCP login cycle.
+
+### Fixed
+
+- **Broken journey 09** and **broken 2FA functional fixture** — see T01 entry below for
+  details.
+- **Stale CI `--ignore`** — removed from `.github/workflows/ci.yml` (T01).
+
+### Removed
+
+- **Dead runner scripts**: `run-screenshot-tests.sh`, `test_installation_workflow.sh`,
+  `test-https-deployment.sh` (T01).
+- **9 overlapping smoke test files** — consolidated into `test_route_smoke.py`,
+  `test_config_pages.py`, `test_audit_logs.py`, `test_admin_ui.py` (T12):
+  `test_ui_comprehensive.py`, `test_ui_regression.py`, `test_ui_ux_validation.py`,
+  `test_ui_interactive.py`, `test_ui_functional.py`, `test_user_journeys.py`,
+  `test_mobile_responsive.py`, `test_account_portal_complete.py`,
+  `test_admin_portal_complete.py`, plus `test_console_errors.py` (legacy `/client/` routes).
+- **Journey 03 DB-write seeding** — retired in favour of UI-driven setup (T09).
+
+---
+
 ## [Unreleased] — T01: Cleanup & quick fixes — 2026-06-12
 
 ### Fixed

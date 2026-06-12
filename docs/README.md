@@ -55,8 +55,8 @@ the architecture overview, then dive into the relevant guide below.
 ## Testing
 
 - [`plans/testing-overhaul/PLAN.md`](plans/testing-overhaul/PLAN.md) — **active testing-overhaul plan**: audit findings + sequential agent task queue (T01–T14); check task status here before starting testing work.
-- [`TESTING_LESSONS_LEARNED.md`](TESTING_LESSONS_LEARNED.md) — **read before writing Playwright auth/2FA tests**.
-- [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md) — flask-manager / reset / installation-test tooling.
+- [`TESTING_LESSONS_LEARNED.md`](TESTING_LESSONS_LEARNED.md) — **read before writing Playwright auth/2FA/round-trip tests**: patterns for 2FA, URL detection, and the verification-channel (round-trip) pattern.
+- [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md) — suite layout, local runners, route-smoke suite, CI jobs (`unit-tests` + `e2e-smoke`), verification channels.
 - [`JOURNEY_CONTRACTS.md`](JOURNEY_CONTRACTS.md) — end-to-end journey definitions.
 - [`PARALLEL_SESSION_STRATEGY.md`](PARALLEL_SESSION_STRATEGY.md) — multi-session test harness.
 - [`UI_TESTING_GUIDE.md`](UI_TESTING_GUIDE.md) · [`WEBHOSTING_TESTING_GUIDE.md`](WEBHOSTING_TESTING_GUIDE.md) — screenshot/UX validation and HTTPS-target testing.

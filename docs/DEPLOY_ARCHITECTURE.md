@@ -96,51 +96,32 @@ This starts:
 
 ## Test Categorization
 
+> **Note**: the authoritative suite list is maintained in `deploy.sh`. The snapshot below
+> reflects the state after the T12 smoke consolidation. For the current list, read `deploy.sh`
+> directly.
+
 ### Always Run (both modes)
 - test_admin_ui.py
 - test_api_proxy.py
-- test_client_ui.py
 - test_audit_logs.py
 - test_config_pages.py
-- test_ui_comprehensive.py
-- test_ui_regression.py
-- test_ui_ux_validation.py
-- test_console_errors.py
 - test_create_and_login.py
 - test_isolated_sessions.py
-- test_accessibility.py
-- test_mobile_responsive.py
-- test_performance.py
 - test_security.py
-- test_visual_regression.py
-- test_user_journeys.py
-- test_ui_functional.py
-- test_ui_interactive.py
-- test_bulk_operations.py
-- test_audit_export.py
-- test_recovery_codes.py
-- test_registration_e2e.py
+- test_route_smoke.py
+- test_ui_widgets.py
+- test_cross_role_account_lifecycle.py
+- test_cross_role_realm_propagation.py
+- test_cross_role_token_lifecycle.py
 
 ### Mock Mode Only
 - test_mock_api_standalone.py
 - test_e2e_with_mock_api.py
-- test_client_scenarios_mock.py
 - test_mock_smtp.py
 - test_mock_geoip.py
-- test_e2e_email.py
 - test_ddns_quick_update.py
-
-### Skip (broken/deprecated)
-- test_ui_visual_regression.py.broken
-- test_ui_ux_validation.py.broken
-- test_e2e_dns.py.backup
-- test_ui_comprehensive.py.backup
-
-### Live API Required (run only with real Netcup API)
-- test_e2e_dns.py
-- test_end_to_end.py
-- test_ui_flow_e2e.py
-- test_api_security.py
+- test_api_dns_crud_success_with_mock_backend.py
+- test_admin_security_api_contracts.py
 
 ## Usage Examples
 
