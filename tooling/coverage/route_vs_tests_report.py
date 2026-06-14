@@ -3,7 +3,7 @@
 
 Goal
 - Inventory all Flask routes from app.url_map.
-- Extract URL paths referenced by UI tests (tests/ and journeys/).
+- Extract URL paths referenced by UI tests (ui_tests/tests/).
 - Produce a gap report highlighting routes not referenced by tests.
 
 Notes
@@ -140,8 +140,12 @@ _LITERAL_PATH_RE = re.compile(r"(?P<q>['\"])(/(?:(?!\1).){0,400})\1")
 
 
 def _iter_test_files(workspace_root: Path) -> Iterable[Path]:
-    """Yield all Python test files from ui_tests/tests/ and ui_tests/journeys/."""
-    for rel in [Path("ui_tests") / "tests", Path("ui_tests") / "journeys"]:
+    """Yield all Python test files from ui_tests/tests/.
+
+    (The legacy ui_tests/journeys/ tree was removed in the testing-hardening
+    plan — see docs/plans/testing-hardening/AUDIT.md; it was orphaned/superseded.)
+    """
+    for rel in [Path("ui_tests") / "tests"]:
         root = workspace_root / rel
         if not root.exists():
             continue
