@@ -180,3 +180,14 @@ mutant as equivalent/acceptable with a one-line justification.
   tests (+~3 equivalent-mutant regression guards), ~193 equivalents documented. Reviewer found+killed the
   matches_hostname and→or gap and reviewed all 22 killing tests (correct, no weakening). These were TEST gaps
   (source already correct), not source bugs. 355 unit tests green. mutmut stays out of CI/pytest.ini.
+- 2026-06-14 — E3a landed (commits 0ef1334, 29a2239). Security-core round-trips, each verified PASS +
+  fail-on-break against the live stack: IP-allowlist enforcement (new, Channel-A ip_denied/critical/is_attack);
+  recovery-code one-time use (audit #1, consumed hash removed); TOTP-disable clears totp_secret; 2FA lockout
+  counter. **Fixed a real source bug** (dns_api.py logged permission denials without error_code → activity_log
+  error_code always NULL). verification.py gained count_recovery_codes/get_2fa_failure_data. Stack note:
+  run-local-tests.sh must source tooling/mailpit/.env for MAILPIT creds. E3b (API or-chain fix, audit,
+  session, rate-limit, DDNS Channel-C) still pending.
+- 2026-06-14 — E3 merges landed (commit 10272ee). Consolidated 9 duplicate root-level files into bucket
+  targets: 21 unique tests ported, 39 dropped-as-dup (per-test ledger in the commit). Collection 485→446,
+  no import errors; target smoke-runs pass. (Note a pre-existing flaky target test
+  test_security_scenarios::test_forgot_password_form_accessible, unrelated to the merge.)
