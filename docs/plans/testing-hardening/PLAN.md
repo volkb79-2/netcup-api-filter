@@ -1,6 +1,6 @@
 # Testing Hardening — Plan & Task Index
 
-**Status: IN PROGRESS.** Phase-2 follow-on to the completed [`testing-overhaul`](../testing-overhaul/PLAN.md)
+**Status: COMPLETE.** All 10 tasks landed 2026-06-14. Phase-2 follow-on to the completed [`testing-overhaul`](../testing-overhaul/PLAN.md)
 (T01–T14, landed 2026-06-12). That overhaul explicitly **deferred** three things; this plan executes them:
 
 1. **Property-based testing (Hypothesis)** for parsers/validators — already pre-scoped in
@@ -45,8 +45,8 @@ Created 2026-06-14.
 | [x] | [E0](AUDIT.md) | E2E estate audit & classification → `AUDIT.md` | — | Explore (sonnet) + Opus synthesis | M |
 | [x] | [E1](tasks/E1-delete-legacy.md) | Delete legacy/dead test files (orphaned journeys dir + audit-flagged) | E0 | Opus (direct) | M |
 | [x] | [E2](tasks/E2-schema-reorg.md) | Apply modern dir + marker schema; move/rename; fix wiring (deploy.sh, runner, CI, docs) | E0, E1 | **Sonnet/high → Opus review** | L |
-| [ ] | [E3](tasks/E3-roundtrip-upgrades.md) | Upgrade top security-critical files to round-trip grade + new backend-truth journeys | E0, E2, P-stream | **Sonnet/high → Opus review** | L |
-| [ ] | [E4](tasks/E4-docs-sync.md) | Docs sync: schema, PBT, mutation; mark deferred gaps done | P*, M*, E* | Sonnet / medium | S |
+| [x] | [E3](tasks/E3-roundtrip-upgrades.md) | Upgrade top security-critical files to round-trip grade + new backend-truth journeys | E0, E2, P-stream | **Sonnet/high → Opus review** | L |
+| [x] | [E4](tasks/E4-docs-sync.md) | Docs sync: schema, PBT, mutation; mark deferred gaps done | P*, M*, E* | Sonnet / medium | S |
 
 P-stream and M-stream are independent of the E-stream and can land first. Within E, order is strict
 (E0 → E1 → E2 → E3 → E4).
@@ -191,3 +191,14 @@ mutant as equivalent/acceptable with a one-line justification.
   targets: 21 unique tests ported, 39 dropped-as-dup (per-test ledger in the commit). Collection 485→446,
   no import errors; target smoke-runs pass. (Note a pre-existing flaky target test
   test_security_scenarios::test_forgot_password_form_accessible, unrelated to the merge.)
+- 2026-06-14 — E3b landed (commit 7c6092d). Remaining round-trip upgrades, each PASS + fail-on-break:
+  API authz (exact 403 + Channel-A domain_denied, killing the `in [403,500]` or-chain); session/CSRF
+  (removed 2 skip-to-green + the impossible-to-fail `or "email"/"password" in page_html`; exact logout
+  redirect); rate-limit setting persistence; audit-trail (count_activity + ODS export row count); DDNS
+  Channel-C (mock_netcup_records confirms backend record + notfqdn/!yours). Ground truth discovered:
+  error_code=domain_denied, key=admin_rate_limit, export is ODS, mock-netcup at 172.17.0.1:5555.
+  src/ clean. Collection 446→450. **E3 complete.**
+- 2026-06-14 — E4 landed (commit d214c0f). Docs synced to reality: bucket+marker schema, counts (unit 355,
+  ui_tests 450, ci_smoke 102), PBT/mutation gaps marked done, §6 Mutation added. Stale-ref sweep fixed
+  deploy.sh/AGENTS.md/UI_TESTING_GUIDE/DEPLOY_ARCHITECTURE (deleted/renamed paths); history left as-is.
+  **PLAN COMPLETE — all 10 tasks landed and reviewed.**
