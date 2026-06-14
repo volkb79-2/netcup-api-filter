@@ -3,6 +3,7 @@ Tests for multi-backend DNS management UI.
 
 Tests the backend services and domain roots management pages.
 """
+import anyio
 import pytest
 
 from ui_tests import workflows
@@ -320,14 +321,69 @@ async def test_user_backends_stats_display(active_profile):
     """Test that user backend stats cards display correctly."""
     async with browser_session() as browser:
         await workflows.ensure_user_dashboard(browser)
-        
+
         # Navigate directly (more reliable than clicking responsive navbar)
         await browser.goto(settings.url("/account/backends"))
-        
+
         # Verify stats cards exist
         page_content = await browser.text("main")
         assert "Total Backends" in page_content or "Total" in page_content
-        
+
         # Take screenshot showing stats
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-user-backends-stats")
         assert screenshot_path.endswith((".png", ".webp"))
+
+
+# ============================================================================
+# Detail-page coverage (merged from test_multi_backend_dns.py)
+#
+# These exercise pages NOT covered by the list/create/stats tests above or by
+# any other suite: the backend *detail* page (test-connection button) and the
+# realm *detail* DNS-records section. Both skip gracefully when no seeded
+# backend/realm is available.
+# ============================================================================
+
+
+async def test_backend_detail_shows_test_button(active_profile):
+    """Verify backend detail page has test connection button."""
+    async with browser_session() as browser:
+        await workflows.ensure_admin_dashboard(browser)
+
+        # Navigate to backends list
+        await browser.goto(settings.url("/admin/backends"))
+        await anyio.sleep(0.5)
+
+        # Try to click on a backend if one exists
+        try:
+            await browser._page.click("table tbody tr:first-child a[href*='/admin/backends/']", timeout=3000)
+            await anyio.sleep(0.5)
+
+            # Check for test button
+            page_html = await browser.html("body")
+            has_test = "test" in page_html.lower() or "connection" in page_html.lower()
+            assert has_test
+        except Exception:
+            # No backends available
+            pytest.skip("No backends available for testing")
+
+
+async def test_dns_records_page_accessible_via_realm(active_profile):
+    """Verify DNS records page is accessible via realm detail."""
+    async with browser_session() as browser:
+        await workflows.ensure_user_dashboard(browser)
+
+        # Navigate to realms
+        await browser.goto(settings.url("/account/realms"))
+        await anyio.sleep(0.5)
+
+        # Try to find a realm with DNS management
+        try:
+            await browser._page.click("a[href*='/realms/']", timeout=3000)
+            await anyio.sleep(0.5)
+
+            # Check for DNS records section
+            page_html = await browser.html("body")
+            has_dns = "dns" in page_html.lower() or "record" in page_html.lower()
+            assert has_dns or "/account" in browser._page.url
+        except Exception:
+            pytest.skip("No realms available for DNS testing")

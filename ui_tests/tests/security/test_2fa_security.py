@@ -18,6 +18,7 @@ import sqlite3
 import pytest
 
 from ui_tests import verification
+from ui_tests import workflows
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
 from ui_tests.mailpit_client import MailpitClient
@@ -504,12 +505,157 @@ class TestAdminAuthentication:
         _clear_auth_lockouts_for_username("admin")
         async with browser_session() as browser:
             from ui_tests import workflows
-            
+
             # Login as admin
             await workflows.ensure_admin_dashboard(browser)
-            
+
             # Verify we reached dashboard (means login worked)
             h1 = await browser.text("h1")
             assert "Dashboard" in h1 or "Password" in h1
-            
+
             print("✓ Admin login successful (session regeneration applied)")
+
+
+# ============================================================================
+# Complete email-2FA login flow (merged verbatim from test_2fa_enabled_flows.py)
+#
+# End-to-end: login triggers 2FA email -> Mailpit receives it -> code extracted
+# and submitted -> dashboard loads. Requires Mailpit + NO ADMIN_2FA_SKIP.
+# ============================================================================
+
+
+async def test_complete_2fa_flow_with_mailpit():
+    """Test complete 2FA flow: login → 2FA code → dashboard.
+
+    This is an end-to-end test that verifies:
+    1. Login triggers 2FA email
+    2. Mailpit receives the email
+    3. Code can be extracted and submitted
+    4. Dashboard loads after successful 2FA
+
+    Requires Mailpit running on localhost:8025 or MAILPIT_API_URL.
+    """
+    mailpit = MailpitClient()
+
+    try:
+        # Ensure we use the latest admin credentials (other tests may have
+        # changed the password and persisted it to deployment_state_local.json).
+        settings.refresh_credentials()
+
+        # Clear any existing messages
+        messages = mailpit.list_messages()
+        for msg in messages.messages:
+            mailpit.delete_message(msg.id)
+
+        async with browser_session() as browser:
+            # This is an auth-flow test and must not reuse an existing session.
+            # `browser_session()` loads persisted Playwright storage state by default,
+            # so explicitly clear cookies + origin storage to ensure /admin/login
+            # actually renders the login form.
+            try:
+                await browser._page.context.clear_cookies()
+            except Exception:
+                pass
+            try:
+                await browser.evaluate(
+                    """
+                    () => {
+                        try { window.localStorage?.clear?.(); } catch (e) {}
+                        try { window.sessionStorage?.clear?.(); } catch (e) {}
+                    }
+                    """
+                )
+            except Exception:
+                pass
+
+            # Login with admin credentials
+            await browser.goto(settings.url("/admin/login"))
+            await browser._page.wait_for_load_state('domcontentloaded')
+
+            await browser.fill("#username", "admin")
+            await browser.fill("#password", settings.admin_password)
+
+            # Wait for login navigation to complete
+            async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
+                await browser.click("button[type='submit']")
+
+            # Check if redirected to 2FA page
+            current_url = browser._page.url
+
+            if "/2fa" not in current_url:
+                print("ℹ️  No 2FA challenge (may be disabled or already set up)")
+                return
+
+            # Wait for 2FA email
+            msg = mailpit.wait_for_message(
+                predicate=lambda m: "verification" in m.subject.lower() or "2fa" in m.subject.lower(),
+                timeout=10.0
+            )
+
+            assert msg is not None, "No 2FA email received in Mailpit"
+            print(f"✓ Received 2FA email: {msg.subject}")
+
+            # Extract code from email
+            full_msg = mailpit.get_message(msg.id)
+            code_match = re.search(r'\b(\d{6})\b', full_msg.text)
+
+            assert code_match is not None, "Could not extract 6-digit code from email"
+            code = code_match.group(1)
+            print(f"✓ Extracted code: {code}")
+
+            # Submit code via JavaScript (avoid race with auto-submit)
+            await browser.evaluate(f"""
+                (function() {{
+                    const input = document.getElementById('code');
+                    const form = document.getElementById('twoFaForm');
+                    if (input && form) {{
+                        input.value = '{code}';
+                        form.submit();
+                    }}
+                }})();
+            """)
+
+            # Wait for navigation to complete
+            try:
+                await browser._page.wait_for_url(
+                    lambda url: "/2fa" not in url and url != current_url,
+                    timeout=10000
+                )
+            except Exception as e:
+                raise AssertionError("2FA navigation did not complete") from e
+
+            # Wait for page to be ready
+            await browser._page.wait_for_load_state('networkidle')
+
+            # Verify we're on dashboard
+            h1 = await browser.text("h1")
+            assert "Dashboard" in h1 or "Change Password" in h1, \
+                f"Expected dashboard or password change, got: {h1}"
+
+            # Clean up
+            mailpit.delete_message(msg.id)
+
+            print("✓ Complete 2FA flow test PASSED")
+
+    finally:
+        mailpit.close()
+
+
+# ============================================================================
+# Admin TOTP setup page-load (merged from test_admin_totp_and_recovery_codes.py)
+#
+# The generic /admin route smoke loads /admin/security/totp, but this preserves
+# the stronger "Authenticator" content assertion.
+# ============================================================================
+
+
+class TestAdminTotpPage:
+    async def test_admin_totp_setup_page_loads(self, active_profile):
+        async with browser_session() as browser:
+            await workflows.ensure_admin_dashboard(browser)
+
+            nav = await browser.goto(settings.url("/admin/security/totp"), wait_until="domcontentloaded")
+            assert nav.get("status") == 200
+
+            body = await browser.html("body")
+            assert "Authenticator" in body

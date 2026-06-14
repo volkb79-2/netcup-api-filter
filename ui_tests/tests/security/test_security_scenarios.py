@@ -377,7 +377,116 @@ class TestXSSPrevention:
             await browser._page.context.clear_cookies()
             await browser.goto(settings.url(xss_url))
             await anyio.sleep(0.5)
-            
+
             # Should be escaped
             body_html = await browser.html("body")
             assert "<script>alert" not in body_html or "&lt;script" in body_html or "error" not in body_html.lower()
+
+
+# ============================================================================
+# Security Header / Cookie / Misconfiguration checks
+# (merged verbatim from test_security.py — these are the genuinely-unique
+#  checks not covered by the scenarios above: X-Content-Type-Options header,
+#  session-cookie HttpOnly/SameSite flags, and no-debug-mode indicators.
+#  These use the `browser` fixture rather than browser_session() — moved
+#  unchanged to preserve their assertions.)
+# ============================================================================
+
+
+class TestSecurityResponseHeaders:
+    """X-Content-Type-Options header check (merged from test_security.py)."""
+
+    @staticmethod
+    def _split_header_values(header_value: str) -> list[str]:
+        # Playwright may return multiple header instances joined by newlines.
+        # Also tolerate comma-joined values.
+        values: list[str] = []
+        for line in (header_value or "").splitlines():
+            for part in line.split(","):
+                value = part.strip()
+                if value:
+                    values.append(value)
+        return values
+
+    @pytest.mark.asyncio
+    async def test_x_content_type_options(self, browser):
+        """Verify X-Content-Type-Options header is set."""
+        from ui_tests.config import settings
+
+        # Ensure we land on the actual login page (not an authenticated redirect)
+        await browser._page.context.clear_cookies()
+        response = await browser._page.goto(settings.url("/admin/login"))
+
+        xcto = response.headers.get('x-content-type-options', '')
+        # Flask doesn't set this by default, but good practice to check
+        if xcto:
+            values = self._split_header_values(xcto)
+            assert values, f"X-Content-Type-Options present but empty: '{xcto}'"
+            assert all(v.lower() == 'nosniff' for v in values), (
+                "X-Content-Type-Options should be 'nosniff' (tolerating duplicates), "
+                f"got values={values!r} from raw={xcto!r}"
+            )
+        else:
+            pytest.skip("X-Content-Type-Options header not set (recommended)")
+
+
+class TestSessionCookieSecurity:
+    """Session cookie flag checks (merged from test_security.py)."""
+
+    @pytest.mark.asyncio
+    async def test_session_cookie_httponly(self, browser):
+        """Verify session cookie has HttpOnly flag (when using HTTPS)."""
+        from ui_tests.config import settings
+
+        await browser._page.context.clear_cookies()
+        await browser.goto(settings.url("/admin/login"))
+
+        await browser._page.wait_for_selector("#username")
+
+        # Get cookies
+        cookies = await browser._page.context.cookies()
+        session_cookie = next((c for c in cookies if 'session' in c['name'].lower()), None)
+
+        if session_cookie:
+            assert session_cookie.get('httpOnly', False), \
+                "Session cookie should have HttpOnly flag"
+        else:
+            pytest.skip("No session cookie found on login page")
+
+    @pytest.mark.asyncio
+    async def test_session_cookie_samesite(self, browser):
+        """Verify session cookie has SameSite attribute."""
+        from ui_tests.config import settings
+
+        await browser._page.context.clear_cookies()
+        await browser.goto(settings.url("/admin/login"))
+
+        await browser._page.wait_for_selector("#username")
+
+        cookies = await browser._page.context.cookies()
+        session_cookie = next((c for c in cookies if 'session' in c['name'].lower()), None)
+
+        if session_cookie:
+            samesite = session_cookie.get('sameSite', 'None')
+            assert samesite in ['Strict', 'Lax'], \
+                f"Session cookie SameSite should be Strict or Lax, got {samesite}"
+        else:
+            pytest.skip("No session cookie found")
+
+
+class TestSecurityMisconfigurationChecks:
+    """Debug-mode disclosure check (merged from test_security.py)."""
+
+    @pytest.mark.asyncio
+    async def test_no_debug_mode_indicators(self, browser):
+        """Verify no debug mode indicators in response."""
+        from ui_tests.config import settings
+
+        await browser._page.context.clear_cookies()
+        await browser.goto(settings.url("/admin/login"))
+
+        page_content = await browser._page.content()
+
+        # Should not contain debug indicators
+        assert 'DEBUG = True' not in page_content
+        assert 'werkzeug debugger' not in page_content.lower()

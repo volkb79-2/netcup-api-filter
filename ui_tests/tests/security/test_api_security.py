@@ -298,5 +298,27 @@ class TestRateLimiting:
                     f"Expected 401 or 429, got {status}"
 
 
+class TestDDNSEndpoint:
+    """DDNS endpoint existence check (merged from test_api_proxy.py)."""
+
+    async def test_api_ddns_endpoint_exists(self):
+        """Test that DDNS endpoint exists and handles requests."""
+        import httpx
+
+        # DDNS endpoint is /api/ddns/<domain>/<hostname>
+        url = settings.url(f"/api/ddns/{settings.client_domain}/test")
+        headers = {
+            "Authorization": f"Bearer {settings.client_token}",
+        }
+
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.get(url, headers=headers)
+
+            # Could be 200, 403 (permission), or 500 (Netcup not configured)
+            # 401 means token issue, 404 means route doesn't exist
+            assert response.status_code in [200, 403, 500], \
+                f"Unexpected status for DDNS endpoint: {response.status_code}: {response.text[:200]}"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

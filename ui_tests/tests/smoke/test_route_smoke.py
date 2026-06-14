@@ -279,3 +279,164 @@ async def test_unknown_route_404():
         assert "404" in body or "not found" in body.lower(), (
             f"Expected 404 page, got body starting with: {body[:200]}"
         )
+
+
+# ============================================================================
+# 7. Public/misc route redirect & static-asset checks
+#    (merged from test_public_misc_routes.py — behaviors not covered by the
+#     PUBLIC_ROUTES generic smoke: the "/" -> /account/login redirect target,
+#     and the /theme-demo2/<path:filename> static-asset route which is not in
+#     any discovered route list.)
+# ============================================================================
+
+
+class TestPublicMiscRoutes:
+    async def test_root_redirects_to_account_login(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            nav = await browser.goto(settings.url("/"), wait_until="domcontentloaded")
+            assert nav.get("status") == 200
+
+            current_path = await browser.evaluate("() => window.location.pathname")
+            assert current_path.startswith("/account/login")
+
+    async def test_theme_demo2_static_asset_serves(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            # This file exists under src/netcup_api_filter/demos/theme-demo2/.
+            resp = await browser.request_get_bytes(settings.url("/theme-demo2/bootstrap.min.css"))
+            assert resp["status"] == 200
+            assert resp["bytes"].startswith(b"/*") or resp["bytes"].startswith(b"@") or len(resp["bytes"]) > 100
+
+
+# ============================================================================
+# 8. Account 2FA route redirect/auth checks
+#    (merged from test_account_2fa_routes.py — these routes are EXCLUDED from
+#     the smoke/protected-redirect parametrize: /account/login/2fa is in
+#     _EXCLUDE, /account/2fa/setup is removed from _PROTECTED_RULES, and the
+#     verify/resend/disable endpoints are POST-only so are not GET-discovered.)
+# ============================================================================
+
+
+class TestAccount2FARoutesRequirePendingState:
+    async def test_account_login_2fa_redirects_without_pending_state(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            # Merged into the smoke suite: clear the persisted (possibly
+            # authenticated) account session so this truly tests the
+            # no-pending-2FA redirect, matching the admin-login sibling below.
+            await browser._page.context.clear_cookies()
+            nav = await browser.goto(settings.url("/account/login/2fa"), wait_until="domcontentloaded")
+            assert nav.get("status") == 200
+
+            # With no pending 2FA session, the route should redirect to /account/login.
+            current_url = await browser.evaluate("() => window.location.pathname")
+            assert current_url.startswith("/account/login")
+
+    async def test_account_2fa_verify_redirects_without_pending_state(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            # Get a CSRF token from the login page (shared session token).
+            await browser.goto(settings.url("/account/login"), wait_until="domcontentloaded")
+            await browser._page.wait_for_selector('input[name="csrf_token"]', state="attached")
+            csrf_token = await browser.get_attribute('input[name="csrf_token"]', "value")
+            assert csrf_token
+
+            resp = await browser.request_post_form(
+                settings.url("/account/2fa/verify"),
+                data={"code": "000000", "csrf_token": csrf_token},
+            )
+            # Flask redirect to /account/login if no pending state.
+            assert resp["status"] in (200, 302)
+
+    async def test_account_2fa_resend_redirects_without_pending_state(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            await browser.goto(settings.url("/account/login"), wait_until="domcontentloaded")
+            await browser._page.wait_for_selector('input[name="csrf_token"]', state="attached")
+            csrf_token = await browser.get_attribute('input[name="csrf_token"]', "value")
+            assert csrf_token
+
+            resp = await browser.request_post_form(
+                settings.url("/account/2fa/resend"),
+                data={"method": "email", "csrf_token": csrf_token},
+            )
+            assert resp["status"] in (200, 302)
+
+
+class TestAccount2FASetupRequiresAuth:
+    async def test_account_2fa_setup_requires_login(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            # Merged into the smoke suite: clear the persisted (possibly
+            # authenticated) account session so this truly tests the
+            # requires-login redirect.
+            await browser._page.context.clear_cookies()
+            nav = await browser.goto(settings.url("/account/2fa/setup"), wait_until="domcontentloaded")
+            assert nav.get("status") == 200
+
+            current_url = await browser.evaluate("() => window.location.pathname")
+            assert current_url.startswith("/account/login")
+
+    async def test_account_disable_2fa_requires_login(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            await browser.goto(settings.url("/account/login"), wait_until="domcontentloaded")
+            await browser._page.wait_for_selector('input[name="csrf_token"]', state="attached")
+            csrf_token = await browser.get_attribute('input[name="csrf_token"]', "value")
+            assert csrf_token
+
+            resp = await browser.request_post_form(
+                settings.url("/account/security/2fa/disable"),
+                data={"password": "not-used", "csrf_token": csrf_token},
+            )
+            assert resp["status"] in (200, 302)
+
+
+# ============================================================================
+# 9. Admin login 2FA route redirect checks
+#    (merged from test_admin_login_2fa_routes.py — /admin/login/2fa is in
+#     _EXCLUDE and the resend endpoint is POST-only; neither is covered by the
+#     smoke/protected-redirect parametrize.)
+# ============================================================================
+
+
+class TestAdminLogin2FARoutesRequirePendingState:
+    async def test_admin_login_2fa_redirects_without_pending_state(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            nav = await browser.goto(settings.url("/admin/login/2fa"), wait_until="domcontentloaded")
+            assert nav.get("status") == 200
+
+            current_path = await browser.evaluate("() => window.location.pathname")
+            # Without a pending admin login, the 2FA page should bounce back to /admin/login.
+            assert current_path.startswith("/admin/login")
+
+    async def test_admin_login_2fa_resend_redirects_without_pending_state(self, active_profile):
+        async with browser_session() as browser:
+            await browser.reset()
+            await browser._page.context.clear_cookies()
+
+            # CSRF is generally enforced for POST requests.
+            await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
+            await browser._page.wait_for_selector('input[name="csrf_token"]', state="attached")
+            csrf_token = await browser.get_attribute('input[name="csrf_token"]', "value")
+            assert csrf_token
+
+            resp = await browser.request_post_form(
+                settings.url("/admin/login/2fa/resend"),
+                data={"csrf_token": csrf_token},
+            )
+            assert resp["status"] in (200, 302)
