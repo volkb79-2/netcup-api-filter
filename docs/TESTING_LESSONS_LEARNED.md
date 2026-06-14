@@ -431,6 +431,176 @@ should copy this structure.
 
 ---
 
+## 5. Property-based Testing with Hypothesis
+
+### Why Hypothesis
+
+Hand-written parametrize lists (`@pytest.mark.parametrize`) cover the cases the developer
+*thought of*. Hypothesis generates thousands of examples automatically, guided by shrinking
+— when it finds a failure it reduces the input to the smallest possible reproducer. For
+parsing and validation code (both security-adjacent), this finds bugs that are essentially
+unreachable by intuition.
+
+### Integration plan
+
+1. Add `hypothesis>=6.0` to `requirements-dev.txt`.
+2. Create `tests/test_ddns_property.py` — hostname parsing invariants (Example 1 below).
+3. Create `tests/test_validators_property.py` — IP-range validator contracts (Example 2 below).
+4. Run once with `--hypothesis-seed=0` in CI to pin a reproducible seed; add
+   `hypothesis` to the existing `unit-tests` job (no extra services required).
+5. Optionally add a `@settings(max_examples=500)` profile for local deep-runs and
+   `@settings(max_examples=50)` for CI to keep the job fast.
+
+No app context, no DB, no browser — Hypothesis tests are pure unit tests.
+
+---
+
+### Example 1 — DDNS hostname parsing: the "never crash" and "structure invariant"
+
+`validate_hostname_format` (in `api/ddns_protocols.py`) accepts arbitrary user-supplied
+strings. The hand-written tests in `test_ddns_parsing_unit.py` cover ~29 explicit cases.
+Hypothesis explores the entire string space and finds the gaps.
+
+**Why this matters**: DDNS hostnames arrive from untrusted external clients. A crash
+or misparse here propagates to the Netcup API call. Three invariants are worth pinning:
+
+1. The function always returns `True` or `False` — never raises.
+2. Every accepted hostname survives a round-trip: split on `.`, all parts ≤ 63 chars,
+   alphanumeric + hyphen only, no empty labels.
+3. `parse_hostname` on any accepted hostname always returns a non-None pair.
+
+```python
+# tests/test_ddns_property.py
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from netcup_api_filter.api.ddns_protocols import validate_hostname_format, parse_hostname
+
+
+@given(st.text(max_size=300))
+def test_validate_hostname_format_never_raises(s):
+    """Any string input must return bool, never raise."""
+    result = validate_hostname_format(s)
+    assert isinstance(result, bool)
+
+
+@given(st.text(max_size=300))
+def test_parse_hostname_never_raises(s):
+    """parse_hostname must return a 2-tuple, never raise."""
+    domain, record = parse_hostname(s)
+    # Both None or both str — never a mixed partial result
+    assert (domain is None) == (record is None)
+
+
+# Build valid hostnames from the DNS character alphabet
+_label = st.from_regex(r'[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?', fullmatch=True)
+_hostname = st.lists(_label, min_size=2, max_size=5).map('.'.join)
+
+
+@given(_hostname)
+def test_accepted_hostname_structural_invariants(hostname):
+    """Anything validate_hostname_format accepts must satisfy DNS label rules."""
+    if not validate_hostname_format(hostname):
+        return  # Not our problem — testing the accepted set only
+    labels = hostname.split('.')
+    for label in labels:
+        assert label, "empty label must not be accepted"
+        assert len(label) <= 63, "label exceeds DNS 63-char limit"
+        assert label[0].isalnum() and label[-1].isalnum()
+        assert all(c.isalnum() or c == '-' for c in label)
+
+
+@given(_hostname)
+def test_accepted_hostname_parse_roundtrip(hostname):
+    """Every hostname validate_hostname_format accepts must parse to a non-None pair."""
+    if not validate_hostname_format(hostname):
+        return
+    domain, record = parse_hostname(hostname)
+    assert domain is not None
+    assert record is not None
+    assert '.' in domain
+```
+
+Hypothesis will try strings like `"\x00"`, `"a" * 300`, `"--foo.bar"`, `".foo"`,
+`"foo..bar"` — cases the 29 explicit tests do not cover. If any of those raise, the
+failure message includes the minimal reproducer.
+
+---
+
+### Example 2 — IP-range validator: format contract invariants
+
+`validate_ip_range` (in `utils.py`) accepts four formats: single IP, CIDR, dash-range,
+and wildcard. The hand-written tests in `test_validators_unit.py` cover ~12 explicit
+cases. The function contains manual string splitting that is easy to get wrong at the
+boundaries.
+
+**Why this matters**: IP allowlisting is a security control. A false-positive (accepting
+a malformed range as valid) can silently whitelist an unintended address block.
+
+Two invariants worth pinning:
+
+1. Any input Python's `ipaddress` module accepts as a valid network must be accepted.
+2. Any input our function accepts as a valid single IP must be parseable by
+   `ipaddress.ip_address()` — no phantom IPs.
+
+```python
+# tests/test_validators_property.py
+import ipaddress
+from hypothesis import given, assume
+from hypothesis import strategies as st
+from hypothesis.strategies import ip_addresses
+from netcup_api_filter.utils import validate_ip_range
+
+
+@given(st.text(max_size=100))
+def test_validate_ip_range_never_raises(s):
+    """Any string must return bool, never raise."""
+    result = validate_ip_range(s)
+    assert isinstance(result, bool)
+
+
+@given(ip_addresses(v=4).map(str))
+def test_valid_ipv4_always_accepted(ip):
+    """Any IPv4 address Python accepts must pass our validator."""
+    assert validate_ip_range(ip) is True
+
+
+@given(ip_addresses(v=6).map(str))
+def test_valid_ipv6_always_accepted(ip):
+    """Any IPv6 address Python accepts must pass our validator."""
+    assert validate_ip_range(ip) is True
+
+
+@given(
+    ip_addresses(v=4),
+    st.integers(min_value=0, max_value=32),
+)
+def test_valid_cidr_always_accepted(base_ip, prefix):
+    """Any valid CIDR block must pass our validator."""
+    network = ipaddress.ip_network(f"{base_ip}/{prefix}", strict=False)
+    assert validate_ip_range(str(network)) is True
+
+
+@given(
+    ip_addresses(v=4).map(str),
+    ip_addresses(v=4).map(str),
+)
+def test_accepted_dash_range_both_ips_parseable(ip1, ip2):
+    """A dash-range accepted by our validator must consist of two valid IPs."""
+    candidate = f"{ip1}-{ip2}"
+    if not validate_ip_range(candidate):
+        return  # only checking the accepted set
+    # Both halves must parse cleanly
+    left, right = candidate.split('-', 1)
+    ipaddress.ip_address(left.strip())   # raises if wrong — surfaced as Hypothesis failure
+    ipaddress.ip_address(right.strip())
+```
+
+The CIDR test in particular will find the edge case where `prefix=0` or `prefix=32`
+produces unusual network strings that our manual `'/' in ip_range` branch might
+mishandle. Hypothesis shrinks any failure to the smallest prefix that triggers the bug.
+
+---
+
 ## Related Documentation
 
 - [UI Testing Guide](UI_TESTING_GUIDE.md) - Comprehensive UI testing strategy

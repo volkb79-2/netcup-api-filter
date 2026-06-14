@@ -7,6 +7,25 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 ---
 
+## Testing types at a glance
+
+| Type | What it checks | Framework | Count | Speed |
+|---|---|---|---|---|
+| Unit | Single function in isolation, no I/O | pytest + pytest-cov | 239 | <1 min (total) |
+| Integration | Multi-component DB round-trips | pytest | 5 | Fast |
+| Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
+| Widget | Individual UI components in isolation | Playwright | 19 | Medium |
+| Round-trip | UI action → backend state via 3 channels | Playwright | 12 | Medium |
+| E2E domain | Full feature workflows (auth, DNS, 2FA, etc.) | Playwright | ~250 | Slow |
+| Journey | Multi-step stateful scenario suites | Playwright | ~20 | Slow |
+| **Total** | | | **~631** | |
+
+The unit suite runs in CI on every push (<60 s). A tagged `@pytest.mark.ci_smoke` subset
+of 93 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
+See **CI jobs** below.
+
+---
+
 ## Suite layout
 
 ### `tests/` — unit/integration (no browser)
@@ -181,6 +200,63 @@ grep PORT deploy-local/.env 2>/dev/null || echo "not set, using default 5100"
 2. Check `gunicorn.log` for startup errors.
 3. Check `mailpit-messages.json` for email delivery issues.
 4. Screenshots are in `tmp/ui-screenshots`.
+
+---
+
+## Coverage report
+
+Running `python -m pytest tests/ --cov=src/netcup_api_filter` against the unit suite alone
+(last measured: 2026-06-14):
+
+| Module group | Key files | Unit coverage | Notes |
+|---|---|---|---|
+| Security-critical pure functions | `token_auth.py` (63%), `recovery_codes.py` (80%) | 63–80% | Intentionally targeted; high-value |
+| Data models | `models.py` | 75% | ORM model helpers covered by factory tests |
+| Config / realm templates | `config_defaults.py` (83%), `realm_templates.py` (100%) | 83–100% | Fully covered |
+| Telegram service | `telegram_service.py` | 96% | Driven by `test_telegram_*.py` |
+| App factory + DB migration | `app.py` (59%), `database.py` (50%) | 50–59% | Integration-level coverage |
+| Shared utilities | `utils.py` | 50% | Validators partially covered; Hypothesis target |
+| DDNS protocols | `api/ddns_protocols.py` | 42% | Parsing logic; Hypothesis target |
+| Flask route handlers | `api/account.py` (14%), `api/admin.py` (13%), `api/dns_api.py` (15%) | 13–15% | Covered by E2E, not unit tests — expected |
+| Backend adapters | `backends/*.py` | 0% | Require running backend; covered by E2E |
+| Deploy / infra artefacts | `passenger_wsgi.py`, `filter_proxy.py`, `example_client.py` | 0% | Not unit-testable by design |
+
+**TOTAL (unit suite against full source package): 24% (9 097 stmts, 6 942 not hit)**
+
+The 24% headline is intentional and expected. It reflects:
+
+1. Flask route handlers (~3 000 lines) are covered by the Playwright E2E suite, not unit tests — running
+   the Flask app inside a unit test provides no value over a real request cycle.
+2. Backend adapters require a running DNS backend; their coverage comes from E2E with mock backends.
+3. The unit suite targets *pure functions* where a single isolated test exercises one deterministic path.
+
+Per-file detail is in the CI artifact `coverage.xml` uploaded by the `unit-tests` job on every run.
+
+### Coverage floor
+
+`pytest.ini` does not currently enforce a minimum. Recommended addition to lock in the current level:
+
+```ini
+# in pytest.ini addopts:
+--cov-fail-under=22
+```
+
+Set 2 points below the current 24% so the floor rises naturally as unit tests are added without
+false-failing from ±1% variance across Python minor versions.
+
+---
+
+## Gaps and next steps
+
+Known gaps — none are blockers; documented here for future prioritisation.
+
+| Gap | Effort | Value |
+|---|---|---|
+| Add `--cov-fail-under=22` to `pytest.ini` | 5 min | Prevents silent backslide |
+| Property-based testing (Hypothesis) for parsers/validators | 1–2 days | Finds edge cases unreachable by hand-written parametrize lists — see [`TESTING_LESSONS_LEARNED.md` § 5](TESTING_LESSONS_LEARNED.md) |
+| Visual regression baseline (Playwright `to_have_screenshot`) | 1 day | Catches unintended CSS/layout regressions |
+| Mutation testing spot-check (`mutmut` on `token_auth.py`) | 2–4 h | Validates that unit tests assert the right thing, not just achieve line coverage |
+| Performance budget in CI (`test_performance.py` tagged `ci_smoke`) | 1 day | Pins per-endpoint p95 latency to prevent quiet regressions |
 
 ---
 
