@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] — Testing hardening (E1–E4, P1–P4, M1–M2) — 2026-06-14
+
+Testing infrastructure hardened in six areas. No functional app changes except one bug fix.
+
+### Added
+
+- **Property-based testing (Hypothesis)** — three new modules: `tests/test_ddns_property.py`,
+  `tests/test_validators_property.py`, `tests/test_token_model_property.py` (~86 properties
+  total). Default Hypothesis profile `ci` (50 examples); set `HYPOTHESIS_PROFILE=dev` for 500.
+  Profiles registered in `tests/conftest.py`. `hypothesis>=6.100` added to
+  `requirements-dev.txt`. Runs in the existing `unit-tests` CI job (no new services required).
+- **New security round-trip tests** — `ui_tests/tests/security/test_ip_allowlist_enforcement.py`
+  (new). `test_recovery_codes.py`, `test_account_2fa_disable.py`, `test_2fa_security.py`,
+  `test_api_security.py`, `test_security_scenarios.py`, and several `features/` tests now carry
+  Channel-A/C backend-truth assertions (DB-row checks + DNS API / mock-backend state).
+- **Mutation spot-check tooling** — `tooling/mutation/run.sh` wraps mutmut 3.6.0 for periodic
+  single-module mutation testing. Local-only; NOT wired into CI or `pytest.ini`. Results and
+  22 new killing tests from the M2 run (5 modules, ~1 637 mutants) documented in
+  `docs/plans/testing-hardening/MUTATION_REPORT.md`.
+
+### Changed
+
+- **E2E bucket schema (E2)** — `ui_tests/tests/` is now organised into eight named bucket
+  subdirectories (`smoke/ roundtrip/ security/ features/ journeys/ nonfunctional/ live/ mocks/`).
+  Each test module carries a `pytestmark` bucket marker. Markers registered in `pytest.ini`:
+  `smoke roundtrip security feature journey nonfunctional mock_selftest` (plus the existing
+  `live ci_smoke e2e_local installation`). Select any bucket with `-m <marker>`.
+  Total `ui_tests` collection: **450** tests; `pytest tests/` unit suite: **355**.
+
+### Fixed
+
+- **`dns_api.py` error_code logging** — permission-denied branches now log `error_code` in
+  the activity log so Channel-A assertions can verify the exact refusal reason.
+
+### Removed
+
+- **Legacy `ui_tests/journeys/` directory** (E1) — `test_00`–`test_09` and the legacy conftest
+  deleted. Journey tests now live exclusively under `ui_tests/tests/journeys/` (j1/j2/j3 +
+  `test_journey_master.py`).
+- **`ui_tests/tests/test_registration_2fa_complete.py`** (E1) — superseded by
+  `features/test_registration_e2e.py`.
+- **Nine duplicate test files merged into bucket targets** (E3): `test_security.py`,
+  `test_api_proxy.py`, `test_multi_backend_dns.py`, `test_2fa_enabled_flows.py`,
+  `test_admin_totp_and_recovery_codes.py`, `test_account_2fa_routes.py`,
+  `test_admin_login_2fa_routes.py`, `test_admin_audit_and_logs.py`,
+  `test_public_misc_routes.py`. Also `test_holistic_coverage.py` renamed to
+  `smoke/test_screenshot_capture_and_ux.py`.
+
+---
+
 ## [Unreleased] — Testing overhaul (T01–T13) — 2026-06-12
 
 End-to-end testing overhaul across 13 sequential tasks. No functional app changes;

@@ -177,10 +177,20 @@ executes at `WARNING` level so you can verify what was applied.
 
 - `./run-local-tests.sh` – Full pytest suite against the locally extracted deployment.
 - `bash tooling/run-ui-validation.sh` – Spins up Gunicorn, TLS proxy, and Playwright to exercise the UI end-to-end.
-- `pytest ui_tests/tests -m "not e2e_local"` – Browser tests that do not require the mock Netcup services (useful against staging/prod).
-- `pytest ui_tests/tests -m e2e_local` – Requires the mock API + SMTP stack and is intended for local full-stack validation.
+- `pytest tests/` – Unit + property-based tests (355 tests, no app/browser required, <60 s).
+- `pytest ui_tests/tests` – Full Playwright suite (450 tests; requires running deployment).
+- `pytest ui_tests/tests -m smoke` – Route-smoke + widget smoke only (fast subset).
+- `pytest ui_tests/tests -m roundtrip` – Backend-truth round-trip tests.
+- `pytest ui_tests/tests -m security` – Auth, 2FA, recovery codes, IP allowlist tests.
+- `pytest ui_tests/tests -m ci_smoke` – The 102-test CI subset (tagged `@pytest.mark.ci_smoke`).
+- `pytest ui_tests/tests -m "not e2e_local"` – Browser tests that do not require mock services.
+- `HYPOTHESIS_PROFILE=dev pytest tests/` – Run Hypothesis with 500 examples per property.
 
-See `OPERATIONS_GUIDE.md` for environment variables and troubleshooting tips.
+The `ui_tests/tests/` directory uses a **bucket schema**: `smoke/ roundtrip/ security/ features/
+journeys/ nonfunctional/ live/ mocks/`. Select any bucket with `-m <marker>` regardless of path.
+
+See `docs/TESTING_INFRASTRUCTURE.md` for full details and `OPERATIONS_GUIDE.md` for environment
+variables and troubleshooting tips.
 
 ## Security Expectations
 

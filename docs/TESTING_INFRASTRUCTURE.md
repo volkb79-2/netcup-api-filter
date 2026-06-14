@@ -11,17 +11,19 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit | Single function in isolation, no I/O | pytest + pytest-cov | 239 | <1 min (total) |
-| Integration | Multi-component DB round-trips | pytest | 5 | Fast |
+| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 355 | <1 min (total) |
 | Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
-| Round-trip | UI action → backend state via 3 channels | Playwright | 12 | Medium |
-| E2E domain | Full feature workflows (auth, DNS, 2FA, etc.) | Playwright | ~250 | Slow |
-| Journey | Multi-step stateful scenario suites | Playwright | ~20 | Slow |
-| **Total** | | | **~631** | |
+| Round-trip | UI action → backend state via 3 channels | Playwright | ~30 | Medium |
+| Security | Auth, 2FA, recovery codes, IP allowlist | Playwright | ~60 | Medium |
+| Feature E2E | Full feature workflows (registration, DNS, audit, etc.) | Playwright | ~200 | Slow |
+| Journey | Multi-step stateful scenario suites (j1/j2/j3) | Playwright | ~20 | Slow |
+| Nonfunctional | Accessibility + performance | Playwright | ~20 | Slow |
+| Mocks / live | Mock-service self-tests + real-backend tests | Playwright | ~15 | Varies |
+| **Total (ui_tests)** | | | **450** | |
 
 The unit suite runs in CI on every push (<60 s). A tagged `@pytest.mark.ci_smoke` subset
-of 93 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
+of 102 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
 See **CI jobs** below.
 
 ---
@@ -69,9 +71,6 @@ ui_tests/tests/
   live/           # @live — require real external dependencies
   mocks/          # Mock-service self-tests (test the mock, not the app)
 ```
-
-Files under `ui_tests/tests/` root (not in a subdir) are merge-then-delete sources
-awaiting E3 consolidation. Do not move them.
 
 **Marker taxonomy** (registered in `pytest.ini`):
 
@@ -136,7 +135,7 @@ Uploads `coverage.xml` as an artifact on every run.
 ### `e2e-smoke`
 
 Boots the full app in the CI runner (gunicorn, plain HTTP :5100) and runs all tests
-tagged `@pytest.mark.ci_smoke` (93 tests). Services: Mailpit on ports 1025/8025.
+tagged `@pytest.mark.ci_smoke` (102 tests). Services: Mailpit on ports 1025/8025.
 
 **Bootstrap**: `scripts/ci_bootstrap_e2e.py` initialises the DB and writes
 `deployment_state_local.json` so the test helpers find the admin credentials.
@@ -253,8 +252,8 @@ Running `python -m pytest tests/ --cov=src/netcup_api_filter` against the unit s
 | Config / realm templates | `config_defaults.py` (83%), `realm_templates.py` (100%) | 83–100% | Fully covered |
 | Telegram service | `telegram_service.py` | 96% | Driven by `test_telegram_*.py` |
 | App factory + DB migration | `app.py` (59%), `database.py` (50%) | 50–59% | Integration-level coverage |
-| Shared utilities | `utils.py` | 50% | Validators partially covered; Hypothesis target |
-| DDNS protocols | `api/ddns_protocols.py` | 42% | Parsing logic; Hypothesis target |
+| Shared utilities | `utils.py` | 50% | Validators covered by `test_validators_unit.py` + `test_validators_property.py` (Hypothesis) |
+| DDNS protocols | `api/ddns_protocols.py` | 42% | Parsing logic covered by `test_ddns_parsing_unit.py` + `test_ddns_property.py` (Hypothesis) |
 | Flask route handlers | `api/account.py` (14%), `api/admin.py` (13%), `api/dns_api.py` (15%) | 13–15% | Covered by E2E, not unit tests — expected |
 | Backend adapters | `backends/*.py` | 0% | Require running backend; covered by E2E |
 | Deploy / infra artefacts | `passenger_wsgi.py`, `filter_proxy.py`, `example_client.py` | 0% | Not unit-testable by design |
@@ -324,7 +323,7 @@ Known gaps — none are blockers; documented here for future prioritisation.
 | Gap | Effort | Value |
 |---|---|---|
 | Add `--cov-fail-under=22` to `pytest.ini` | 5 min | Prevents silent backslide |
-| Property-based testing (Hypothesis) for parsers/validators | 1–2 days | Finds edge cases unreachable by hand-written parametrize lists — see [`TESTING_LESSONS_LEARNED.md` § 5](TESTING_LESSONS_LEARNED.md) |
+| ~~Property-based testing (Hypothesis) for parsers/validators~~ DONE (2026-06-14) | — | `tests/test_ddns_property.py`, `tests/test_validators_property.py`, `tests/test_token_model_property.py` (~86 properties). Default profile `ci` (50 examples); set `HYPOTHESIS_PROFILE=dev` for 500 — see [`TESTING_LESSONS_LEARNED.md` § 5](TESTING_LESSONS_LEARNED.md) |
 | Visual regression baseline (Playwright `to_have_screenshot`) | 1 day | Catches unintended CSS/layout regressions |
 | ~~Mutation testing spot-check (`mutmut` on `token_auth.py`)~~ DONE (2026-06-14) | — | See `docs/plans/testing-hardening/MUTATION_REPORT.md` |
 | Performance budget in CI (`test_performance.py` tagged `ci_smoke`) | 1 day | Pins per-endpoint p95 latency to prevent quiet regressions |

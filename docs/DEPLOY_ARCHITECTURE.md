@@ -97,31 +97,31 @@ This starts:
 ## Test Categorization
 
 > **Note**: the authoritative suite list is maintained in `deploy.sh`. The snapshot below
-> reflects the state after the T12 smoke consolidation. For the current list, read `deploy.sh`
-> directly.
+> reflects the post-hardening (E1–E4, 2026-06-14) bucket layout. For the full current list,
+> read `deploy.sh` directly.
 
 ### Always Run (both modes)
-- test_admin_ui.py
-- test_api_proxy.py
-- test_audit_logs.py
-- test_config_pages.py
-- test_create_and_login.py
-- test_isolated_sessions.py
-- test_security.py
-- test_route_smoke.py
-- test_ui_widgets.py
-- test_cross_role_account_lifecycle.py
-- test_cross_role_realm_propagation.py
-- test_cross_role_token_lifecycle.py
+
+`ui_tests/tests/` is now organized into named bucket subdirectories. The `-m <marker>` flag
+selects any bucket regardless of path.
+
+- `smoke/test_route_smoke.py` — 86 route-smoke tests (auto-discovered from Flask URL map)
+- `smoke/test_ui_widgets.py` — widget smoke
+- `smoke/test_admin_ui.py` — admin UI smoke
+- `smoke/test_backends_ui.py` — backends UI smoke
+- `features/test_audit_logs.py`, `test_audit_export.py`, `test_config_pages.py`, `test_bulk_operations.py`
+- `security/` — auth, 2FA, recovery codes, IP allowlist (all files)
+- `roundtrip/test_cross_role_account_lifecycle.py`, `test_cross_role_realm_propagation.py`, `test_cross_role_token_lifecycle.py`
+- `nonfunctional/test_accessibility.py`, `test_performance.py`
 
 ### Mock Mode Only
-- test_mock_api_standalone.py
-- test_e2e_with_mock_api.py
-- test_mock_smtp.py
-- test_mock_geoip.py
-- test_ddns_quick_update.py
-- test_api_dns_crud_success_with_mock_backend.py
-- test_admin_security_api_contracts.py
+- `mocks/test_mock_api_standalone.py`
+- `mocks/test_mock_smtp.py`
+- `mocks/test_mock_geoip.py`
+- `roundtrip/test_ddns_quick_update.py`
+- `roundtrip/test_api_dns_crud_success_with_mock_backend.py`
+- `roundtrip/test_admin_security_api_contracts.py`
+- `features/test_ddns_protocols.py`
 
 ## Usage Examples
 

@@ -4,6 +4,15 @@
 > Tests in `ui_tests/tests/journeys/` MUST implement these contracts exactly.
 > When contract and code disagree, **update the code to match the contract**.
 
+> **Note on the legacy `ui_tests/journeys/` directory**: The old top-level
+> `ui_tests/journeys/` directory (which contained `test_00`–`test_09` plus a conftest)
+> has been deleted as part of the E2 bucket-schema migration (2026-06-14). The live
+> journey files now reside exclusively under `ui_tests/tests/journeys/`.
+>
+> **Round-trip security tests** (auth, 2FA, recovery codes, IP allowlist) are NOT journeys
+> and do not live here. They are in `ui_tests/tests/security/` (marked `@pytest.mark.security`)
+> and `ui_tests/tests/roundtrip/` (marked `@pytest.mark.roundtrip`).
+
 ## Design Principles
 
 1. **Sequential State Building**: Each journey builds on previous journey's state

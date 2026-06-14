@@ -10,7 +10,7 @@ The testing framework has three layers:
 |-------|------|---------|-------|
 | **Capture** | `capture_ui_screenshots.py` | Screenshot all routes + inline UX validation | Fast (~30s) |
 | **Validation** | `test_ux_theme_validation.py` | Automated theme/CSS compliance checking | Medium (~2m) |
-| **Coverage** | `test_holistic_coverage.py` | Data setup + interweaved screenshots + validation | Slow (~5m) |
+| **Coverage** | `smoke/test_screenshot_capture_and_ux.py` | Data setup + interweaved screenshots + validation | Slow (~5m) |
 
 ## Quick Start
 
@@ -46,7 +46,7 @@ This validates:
 ### 3. Run Full Holistic Coverage
 
 ```bash
-pytest ui_tests/tests/test_holistic_coverage.py -v
+pytest ui_tests/tests/smoke/test_screenshot_capture_and_ux.py -v
 ```
 
 This performs complete coverage:
@@ -71,10 +71,10 @@ covered by the smoke suite and by domain-specific E2E files:
 
 - `/account/dashboard`, `/account/tokens`, `/account/settings` — `test_account_remaining_routes.py`
 - `/admin/accounts/<id>`, `/admin/realms/<id>` — `test_admin_ui.py`
-- `/account/settings/totp/setup`, `/account/settings/recovery-codes` — `test_recovery_codes.py`, `test_2fa_enabled_flows.py`
+- `/account/settings/totp/setup`, `/account/settings/recovery-codes` — `security/test_recovery_codes.py`, `security/test_account_2fa_disable.py`
 
 If a route still lacks a *round-trip* test (UI action → backend state via Channel A/B/C),
-add one following the pattern in `test_cross_role_account_lifecycle.py`.
+add one following the pattern in `roundtrip/test_cross_role_account_lifecycle.py`.
 
 ## UX Validation Reference
 
@@ -105,8 +105,7 @@ The BS5 component demo at `/component-demo-bs5` serves as the canonical referenc
 | File | Purpose |
 |------|---------|
 | `ui_tests/capture_ui_screenshots.py` | Enhanced with UX validation and comprehensive coverage |
-| `ui_tests/tests/test_ux_theme_validation.py` | Automated theme compliance tests |
-| `ui_tests/tests/test_holistic_coverage.py` | Full data-driven coverage tests |
+| `ui_tests/tests/smoke/test_screenshot_capture_and_ux.py` | Full data-driven coverage tests (renamed from `test_holistic_coverage.py`) |
 | `docs/ROUTE_COVERAGE.md` | Complete route matrix |
 | `docs/UI_TESTING_GUIDE.md` | This document |
 

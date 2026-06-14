@@ -129,7 +129,7 @@ The standard runner builds a production-parity deployment and runs the suite:
 ./run-local-tests.sh                       # build + run ui_tests against deploy-local
 ./run-local-tests.sh --with-mocks          # also start Mailpit / GeoIP / Netcup-API mocks
 ./run-local-tests.sh --skip-build          # reuse existing deploy-local
-./run-local-tests.sh --with-mocks ui_tests/tests/test_security.py   # a subset
+./run-local-tests.sh --with-mocks ui_tests/tests/security/   # a subset
 ```
 
 Playwright runs in a dedicated container (consistent fonts/emoji, clean devcontainer):
@@ -139,7 +139,7 @@ cd tooling/playwright && docker compose up -d
 ./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
 ```
 
-**Route-smoke suite (`ui_tests/tests/test_route_smoke.py`)**: parametrized over every app
+**Route-smoke suite (`ui_tests/tests/smoke/test_route_smoke.py`)**: parametrized over every app
 route discovered at import time — 86 tests, automatically cover new routes as they are added.
 Contributors get smoke coverage for free; they must still add round-trip tests that assert
 backend state changes for any new behavior (smoke only checks status codes and basic page
@@ -147,7 +147,7 @@ loading).
 
 **CI `e2e-smoke` job** (`.github/workflows/ci.yml`): boots the app on the GitHub Actions
 runner, seeds a fresh DB via `scripts/ci_bootstrap_e2e.py`, and runs all tests tagged
-`@pytest.mark.ci_smoke` (93 tests). This gives PRs E2E regression coverage without needing a
+`@pytest.mark.ci_smoke` (102 tests). This gives PRs E2E regression coverage without needing a
 full Playwright container. Tag new tests `ci_smoke` when they are fast, hermetic, and do not
 require external services beyond Mailpit.
 

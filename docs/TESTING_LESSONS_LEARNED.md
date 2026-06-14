@@ -424,10 +424,15 @@ assert entries and entries[0]["error_code"] == "account_disabled"
 
 ### Pattern file
 
-See [`ui_tests/tests/test_cross_role_account_lifecycle.py`](../ui_tests/tests/test_cross_role_account_lifecycle.py)
+See [`ui_tests/tests/roundtrip/test_cross_role_account_lifecycle.py`](../ui_tests/tests/roundtrip/test_cross_role_account_lifecycle.py)
 for the full pattern: account lifecycle (disable/enable, invite+approval, password reset),
 with Channel A + B + C assertions and `finally`-block state cleanup. New round-trip tests
 should copy this structure.
+
+Additional examples of Channel-A/C backend-truth assertions now also appear in
+`ui_tests/tests/security/` (e.g., `test_ip_allowlist_enforcement.py`,
+`test_recovery_codes.py`, `test_2fa_security.py`) and `ui_tests/tests/features/`
+(e.g., `test_audit_logs.py`, `test_ddns_protocols.py`).
 
 ---
 
@@ -441,15 +446,34 @@ Hand-written parametrize lists (`@pytest.mark.parametrize`) cover the cases the 
 parsing and validation code (both security-adjacent), this finds bugs that are essentially
 unreachable by intuition.
 
-### Integration plan
+### Status: DONE (2026-06-14)
 
-1. Add `hypothesis>=6.0` to `requirements-dev.txt`.
-2. Create `tests/test_ddns_property.py` — hostname parsing invariants (Example 1 below).
-3. Create `tests/test_validators_property.py` — IP-range validator contracts (Example 2 below).
-4. Run once with `--hypothesis-seed=0` in CI to pin a reproducible seed; add
-   `hypothesis` to the existing `unit-tests` job (no extra services required).
-5. Optionally add a `@settings(max_examples=500)` profile for local deep-runs and
-   `@settings(max_examples=50)` for CI to keep the job fast.
+Property-based testing is fully integrated. Three test modules have been created:
+
+- **`tests/test_ddns_property.py`** — hostname parsing invariants (never-raises, structural
+  invariants, parse round-trip) — see Example 1 below.
+- **`tests/test_validators_property.py`** — IP-range validator contracts (never-raises, valid
+  IPv4/v6 accepted, valid CIDR accepted, accepted dash-ranges consist of two valid IPs) — see
+  Example 2 below.
+- **`tests/test_token_model_property.py`** — token model property invariants.
+
+Together these contribute ~86 property-based tests to the unit suite.
+
+**Running Hypothesis:**
+
+```bash
+# CI default: 50 examples per property (fast)
+pytest tests/
+
+# Local deep-run: 500 examples per property
+HYPOTHESIS_PROFILE=dev pytest tests/
+
+# Reproduce a specific failure seed
+pytest tests/ --hypothesis-seed=<seed>
+```
+
+Profiles (`ci` and `dev`) are registered in `tests/conftest.py`. The `unit-tests` CI job
+uses the `ci` profile by default. `hypothesis>=6.100` is in `requirements-dev.txt`.
 
 No app context, no DB, no browser — Hypothesis tests are pure unit tests.
 
@@ -598,6 +622,51 @@ def test_accepted_dash_range_both_ips_parseable(ip1, ip2):
 The CIDR test in particular will find the edge case where `prefix=0` or `prefix=32`
 produces unusual network strings that our manual `'/' in ip_range` branch might
 mishandle. Hypothesis shrinks any failure to the smallest prefix that triggers the bug.
+
+---
+
+---
+
+## 6. Mutation Testing (local-only spot-check)
+
+### Why mutation testing
+
+Line coverage tells you which code was *executed*; it does not tell you whether the tests
+actually *assert the right outcomes*. A test can hit every line of `token_auth.py` and still
+silently pass after a logic inversion (`==` → `!=`). Mutation testing injects such changes
+one at a time and checks whether the existing tests catch them. Survivors indicate either a
+real gap in assertions or an equivalent mutation (cosmetic, logger text, etc.).
+
+### The runner
+
+`tooling/mutation/run.sh` wraps [mutmut 3.6.0](https://mutmut.readthedocs.io/) in
+single-module mode. It is **NOT wired into CI or `pytest.ini`** — it is a periodic
+spot-check invoked manually.
+
+```bash
+# Run one module (takes 2–17 min depending on size):
+./tooling/mutation/run.sh run src/netcup_api_filter/token_auth.py
+
+# Inspect a surviving mutant from the last-run module:
+source .venv/bin/activate
+mutmut show 'netcup_api_filter.token_auth.x_check_ip_allowed__mutmut_15'
+```
+
+### How to read survivors
+
+A survivor is not automatically a bug. Classify each one:
+
+| Classification | What it means | Action |
+|---|---|---|
+| **Real gap** | The mutated logic would change real behavior but no test catches it | Add a deterministic assertion targeting the exact condition |
+| **Equivalent** | The mutant is semantically identical (e.g. swapping `True` to `not False`) | Annotate and skip in `mutmut_config` |
+| **Acceptable** | Logger messages, human-facing error strings, notification side-channels — wrong output doesn't break correctness | Document in MUTATION_REPORT.md; no test needed |
+
+### Report
+
+The M2 spot-check (five security-critical modules, ~1 637 mutants) results and the 22 new
+killing tests are in
+[`docs/plans/testing-hardening/MUTATION_REPORT.md`](plans/testing-hardening/MUTATION_REPORT.md).
 
 ---
 
