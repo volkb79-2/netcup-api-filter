@@ -41,7 +41,7 @@ Created 2026-06-14.
 | [x] | [P3](tasks/P3-pbt-validators.md) | PBT: IP-range / domain / email / `check_ip_allowed` invariants | P1 | Sonnet / high | M |
 | [x] | [P4](tasks/P4-pbt-token-model.md) | PBT: token round-trip + realm scope (`matches_hostname`) invariants | P1 | Sonnet / high | M |
 | [x] | [M1](tasks/M1-mutation-tooling.md) | Mutation tooling: `mutmut` dep + config + **toggleable** local runner (no CI) | — | Sonnet / high | M |
-| [ ] | [M2](tasks/M2-mutation-spotcheck.md) | Run spot-check over the pure-logic core; triage survivors; fix or document | M1, P2–P4 | **Sonnet/high impl → Opus/xhigh triage review** | M |
+| [x] | [M2](tasks/M2-mutation-spotcheck.md) | Run spot-check over the pure-logic core; triage survivors; fix or document | M1, P2–P4 | **Sonnet/high impl → Opus/xhigh triage review** | M |
 | [x] | [E0](AUDIT.md) | E2E estate audit & classification → `AUDIT.md` | — | Explore (sonnet) + Opus synthesis | M |
 | [x] | [E1](tasks/E1-delete-legacy.md) | Delete legacy/dead test files (orphaned journeys dir + audit-flagged) | E0 | Opus (direct) | M |
 | [x] | [E2](tasks/E2-schema-reorg.md) | Apply modern dir + marker schema; move/rename; fix wiring (deploy.sh, runner, CI, docs) | E0, E1 | **Sonnet/high → Opus review** | L |
@@ -175,3 +175,8 @@ mutant as equivalent/acceptable with a one-line justification.
   run-2fa-security-tests.sh, .vscode/*, docs). Parity: collect 483→483 no errors, ci_smoke 93/93 same nodes,
   -m roundtrip=25/security=43/smoke=147. Content diffs confirmed pytestmark-only (+ required sys.path depth
   fix in the 3 deeper-moved files). Merge-then-delete sources left at root for E3.
+- 2026-06-14 — M2 landed (commit 5031b0a). Ran mutmut over all 5 modules (~1637 mutants, ~215 survivors).
+  [`MUTATION_REPORT.md`](MUTATION_REPORT.md): ~18-19 genuine behavioral gaps killed by new deterministic
+  tests (+~3 equivalent-mutant regression guards), ~193 equivalents documented. Reviewer found+killed the
+  matches_hostname and→or gap and reviewed all 22 killing tests (correct, no weakening). These were TEST gaps
+  (source already correct), not source bugs. 355 unit tests green. mutmut stays out of CI/pytest.ini.
