@@ -36,10 +36,10 @@ Created 2026-06-14.
 
 | ✓ | ID | Task | Depends | Model / effort | Size |
 |---|----|------|---------|----------------|------|
-| [ ] | [P1](tasks/P1-hypothesis-bootstrap.md) | Hypothesis bootstrap: dep + profiles + conftest registration | — | Sonnet / high | S |
-| [ ] | [P2](tasks/P2-pbt-ddns.md) | PBT: DDNS hostname parse/validate invariants | P1 | Sonnet / high | M |
-| [ ] | [P3](tasks/P3-pbt-validators.md) | PBT: IP-range / domain / email / `check_ip_allowed` invariants | P1 | Sonnet / high | M |
-| [ ] | [P4](tasks/P4-pbt-token-model.md) | PBT: token round-trip + realm scope (`matches_hostname`) invariants | P1 | Sonnet / high | M |
+| [x] | [P1](tasks/P1-hypothesis-bootstrap.md) | Hypothesis bootstrap: dep + profiles + conftest registration | — | Sonnet / high | S |
+| [x] | [P2](tasks/P2-pbt-ddns.md) | PBT: DDNS hostname parse/validate invariants | P1 | Sonnet / high | M |
+| [x] | [P3](tasks/P3-pbt-validators.md) | PBT: IP-range / domain / email / `check_ip_allowed` invariants | P1 | Sonnet / high | M |
+| [x] | [P4](tasks/P4-pbt-token-model.md) | PBT: token round-trip + realm scope (`matches_hostname`) invariants | P1 | Sonnet / high | M |
 | [ ] | [M1](tasks/M1-mutation-tooling.md) | Mutation tooling: `mutmut` dep + config + **toggleable** local runner (no CI) | — | Sonnet / high | M |
 | [ ] | [M2](tasks/M2-mutation-spotcheck.md) | Run spot-check over the pure-logic core; triage survivors; fix or document | M1, P2–P4 | **Sonnet/high impl → Opus/xhigh triage review** | M |
 | [x] | [E0](AUDIT.md) | E2E estate audit & classification → `AUDIT.md` | — | Explore (sonnet) + Opus synthesis | M |
@@ -130,6 +130,18 @@ mutant as equivalent/acceptable with a one-line justification.
    broken locally (e.g. comment out the IP-allowlist check) — the anti-false-green gate from the overhaul.
 5. **After E4:** docs match reality per AGENTS.md definition-of-done.
 
+## Findings (source issues surfaced by this work — for maintainer decision)
+
+- **P4 / token-level scope setters coerce `[]` → `None`** (`APIToken.set_allowed_operations` /
+  `set_allowed_record_types` in `models.py` use `json.dumps(x) if x else None`). This collapses an intended
+  **deny-all** (`[]`) into **inherit-from-realm** (`None`) — a potential privilege-escalation if any caller/UI
+  expresses "no operations" via the setter. The getter/effective layer is correct (`is not None`); only the
+  setter loses the distinction, and it's **inconsistent with the realm-level setter** which stores `[]`
+  verbatim. Characterized by `tests/test_token_model_property.py::test_effective_scope_setter_coerces_empty_list_to_none`
+  (asserts current behavior; will go red when fixed). **Not fixed** (P4 is a test-only task). Decide: fix the
+  setter to store `json.dumps(operations)` unconditionally (matching the realm setter) + flip the test, or
+  confirm `[]`-at-token-level is unsupported by design.
+
 ## Worklog
 
 - 2026-06-14 — Plan created. Source audit done (mutation/PBT targets identified). Legacy journeys dir
@@ -138,3 +150,15 @@ mutant as equivalent/acceptable with a one-line justification.
   pure-delete + 9 merge-then-delete; concrete bucket→dir assignment; ranked top-8 upgrade list. Confirmed
   brute-force attribution already round-trip-covered (dropped from E3); found two or-chained and several
   skip-to-green anti-patterns to fix in E3. E1/E3 specs reconciled to the audit.
+- 2026-06-14 — P1 landed (commit 125c912). hypothesis>=6.100 + ci/dev profiles in tests/conftest.py
+  (guarded). 239 unit tests green on both profiles; no flags leaked into pytest.ini. No spec discrepancies.
+- 2026-06-14 — P2 landed (commit 65513e1). tests/test_ddns_property.py (42 properties). validate↔parse
+  consistency, never-raises, accepted-set structural, case idempotence, valid-IP acceptance. No bugs found
+  under ci/dev. Reviewer trimmed two unused imports. 281 total unit tests green.
+- 2026-06-14 — P3 landed (commit 0d9a64d). tests/test_validators_property.py (20 properties). check_ip_allowed
+  soundness run against real transient APIToken; CIDR prefix edges; phantom-range guard; wildcard octet bounds.
+  No bugs found. Reviewer simplified the out-of-network construction + dropped an unused import. 301 total green.
+- 2026-06-14 — P4 landed (commit ac92003). tests/test_token_model_property.py (23 properties). Scope
+  monotonicity boundaries pinned for the M2 mutation pass; token round-trip; effective-scope sentinels;
+  is_expired. **Surfaced a real source finding** (token setter `[]`→`None` coercion — see Findings above).
+  Reviewer trimmed 3 unused imports. 324 total unit tests green. P-stream complete.
