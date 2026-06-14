@@ -187,6 +187,11 @@ tmp/*
 # VS Code Copilot execution plan files
 .vscode/copilot-plan.sh
 
+# Mutation testing (mutmut 3.x) working directory and temp files
+mutants/
+.mutmut-cache/
+.setup.cfg.mutation-backup
+
 # Playwright artifacts
 tooling/playwright/screenshots/
 tooling/playwright/vol-playwright-screenshots/
