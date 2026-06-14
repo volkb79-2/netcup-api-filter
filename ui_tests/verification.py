@@ -194,10 +194,26 @@ def get_token(
         return None
 
 
+def now_utc_watermark() -> str:
+    """Return a UTC timestamp string usable as a ``since`` watermark.
+
+    The app writes ``activity_log.created_at`` with ``datetime.utcnow()`` in the
+    ``YYYY-MM-DD HH:MM:SS.ffffff`` format, which string-compares correctly. Tests
+    capture this immediately BEFORE the action under test so later
+    ``count_activity(..., since=watermark)`` only counts rows the action produced.
+    """
+    from datetime import datetime, timezone
+    # The app stores NAIVE UTC strings (datetime.utcnow()); produce the same
+    # naive UTC representation without the utcnow() deprecation warning.
+    return datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S.%f")
+
+
 def count_activity(
     *,
     action: str | None = None,
+    operation: str | None = None,
     status: str | None = None,
+    error_code: str | None = None,
     account_username: str | None = None,
     since: str | None = None,
 ) -> int:
@@ -209,9 +225,15 @@ def count_activity(
         if action is not None:
             filters.append("l.action = ?")
             params.append(action)
+        if operation is not None:
+            filters.append("l.operation = ?")
+            params.append(operation)
         if status is not None:
             filters.append("l.status = ?")
             params.append(status)
+        if error_code is not None:
+            filters.append("l.error_code = ?")
+            params.append(error_code)
         if account_username is not None:
             filters.append(
                 "l.account_id = (SELECT id FROM accounts WHERE username = ?)"
@@ -230,7 +252,11 @@ def count_activity(
 def latest_activity(
     *,
     action: str | None = None,
+    operation: str | None = None,
+    status: str | None = None,
+    error_code: str | None = None,
     account_username: str | None = None,
+    since: str | None = None,
     limit: int = 5,
 ) -> list[dict]:
     """Return the most recent activity_log rows, newest first."""
@@ -241,11 +267,23 @@ def latest_activity(
         if action is not None:
             filters.append("l.action = ?")
             params.append(action)
+        if operation is not None:
+            filters.append("l.operation = ?")
+            params.append(operation)
+        if status is not None:
+            filters.append("l.status = ?")
+            params.append(status)
+        if error_code is not None:
+            filters.append("l.error_code = ?")
+            params.append(error_code)
         if account_username is not None:
             filters.append(
                 "l.account_id = (SELECT id FROM accounts WHERE username = ?)"
             )
             params.append(account_username)
+        if since is not None:
+            filters.append("l.created_at >= ?")
+            params.append(since)
 
         where = f"WHERE {' AND '.join(filters)}" if filters else ""
         params.append(limit)

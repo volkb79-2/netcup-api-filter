@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ui_tests.config import settings, require_readonly_token
+from ui_tests import verification
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.security]
@@ -25,27 +26,49 @@ class TestTokenDomainScopeEnforcement:
     """Test that tokens are restricted to their realm's domain scope."""
     
     async def test_token_cannot_access_other_domain(self):
-        """Token authorized for domain A cannot access domain B."""
+        """Token authorized for domain A cannot access domain B.
+
+        Round-trip grade: pins the EXACT 403 the impl returns for a
+        domain-scope violation (no tolerant 403/500 or-chain) and confirms via
+        Channel A that the denial was logged with error_code='domain_denied'
+        (the structured taxonomy code from token_auth.check_permission).
+        """
         import httpx
-        
+
+        verification.require_db()
+        watermark = verification.now_utc_watermark()
+
         # Use the configured client token (bound to client_domain)
         url = settings.url("/api/dns/unauthorized-domain.example.com/records")
         headers = {
             "Authorization": f"Bearer {settings.client_token}",
         }
-        
+
         async with httpx.AsyncClient(verify=False) as client:
             response = await client.get(url, headers=headers)
-            
-            # Should get 403 Forbidden for unauthorized domain
-            # May get 500 if Netcup API not configured
-            assert response.status_code in [403, 500], \
-                f"Expected 403/500 for unauthorized domain, got {response.status_code}"
-            
-            # If 403, verify error message mentions scope/permission
-            if response.status_code == 403:
-                result = response.json()
-                assert "error" in result or "message" in result
+
+        # EXACT status: a domain-scope violation is a permission failure (403).
+        assert response.status_code == 403, \
+            f"Expected exact 403 for unauthorized domain, got {response.status_code}: {response.text[:200]}"
+
+        result = response.json()
+        assert "error" in result or "message" in result
+
+        # Channel A: the denial is recorded as a 'denied' api_call with the
+        # structured error_code 'domain_denied' (not just an HTTP status).
+        verification.wait_for(
+            lambda: verification.count_activity(
+                action="api_call", status="denied",
+                error_code="domain_denied", since=watermark,
+            ) >= 1,
+            timeout=10.0,
+            message="no api_call/denied/domain_denied row logged for cross-domain access",
+        )
+        rows = verification.latest_activity(
+            action="api_call", error_code="domain_denied", since=watermark, limit=3,
+        )
+        assert rows, "expected a domain_denied activity_log row"
+        assert rows[0]["status"] == "denied"
     
     async def test_token_can_access_allowed_domain(self):
         """Token can access domain in its realm scope."""
@@ -74,6 +97,8 @@ class TestTokenOperationScopeEnforcement:
         import httpx
 
         readonly_token = require_readonly_token()
+        verification.require_db()
+        watermark = verification.now_utc_watermark()
         url = settings.url(f"/api/dns/{settings.client_domain}/records")
         headers = {
             "Authorization": f"Bearer {readonly_token}",
@@ -84,32 +109,54 @@ class TestTokenOperationScopeEnforcement:
             "type": "A",
             "destination": "1.2.3.4"
         }
-        
+
         async with httpx.AsyncClient(verify=False) as client:
             response = await client.post(url, headers=headers, json=data)
-            
-            # Demo token should be read-only, so CREATE should be denied
-            # 403 = permission denied (correct)
-            # 500 = Netcup API not configured
-            assert response.status_code in [403, 500], \
-                f"Expected 403/500 for write attempt, got {response.status_code}"
+
+        # EXACT status: a read-only token attempting CREATE is denied at the
+        # permission layer (403), not a backend/config error (500).
+        assert response.status_code == 403, \
+            f"Expected exact 403 for read-only write attempt, got {response.status_code}: {response.text[:200]}"
+
+        # Channel A: the create attempt is recorded as a denied api_call/create.
+        verification.wait_for(
+            lambda: verification.count_activity(
+                action="api_call", operation="create", status="denied",
+                since=watermark,
+            ) >= 1,
+            timeout=10.0,
+            message="no api_call/create/denied row logged for read-only create attempt",
+        )
     
     async def test_readonly_token_cannot_delete(self):
         """Read-only token cannot delete records."""
         import httpx
 
         readonly_token = require_readonly_token()
+        verification.require_db()
+        watermark = verification.now_utc_watermark()
         url = settings.url(f"/api/dns/{settings.client_domain}/records/1")
         headers = {
             "Authorization": f"Bearer {readonly_token}",
         }
-        
+
         async with httpx.AsyncClient(verify=False) as client:
             response = await client.delete(url, headers=headers)
-            
-            # DELETE should be denied for read-only token
-            assert response.status_code in [403, 500], \
-                f"Expected 403/500 for delete attempt, got {response.status_code}"
+
+        # EXACT status: read-only token DELETE is denied at the permission
+        # layer (403), not a backend/config error (500).
+        assert response.status_code == 403, \
+            f"Expected exact 403 for read-only delete attempt, got {response.status_code}: {response.text[:200]}"
+
+        # Channel A: the delete attempt is recorded as a denied api_call/delete.
+        verification.wait_for(
+            lambda: verification.count_activity(
+                action="api_call", operation="delete", status="denied",
+                since=watermark,
+            ) >= 1,
+            timeout=10.0,
+            message="no api_call/delete/denied row logged for read-only delete attempt",
+        )
 
 
 class TestTokenLifecycleEnforcement:

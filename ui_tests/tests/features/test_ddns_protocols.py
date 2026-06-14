@@ -21,6 +21,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ui_tests.config import settings
+from ui_tests import verification
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
@@ -34,6 +35,28 @@ def is_ddns_enabled():
     """Check if DDNS protocols are enabled."""
     enabled = os.environ.get('DDNS_PROTOCOLS_ENABLED', 'true')
     return enabled.lower() in ('true', '1', 'yes')
+
+
+def _mock_base_url() -> str | None:
+    """Return the configured mock Netcup base URL, or None."""
+    base = (os.environ.get("MOCK_NETCUP_API_URL") or "").strip()
+    return base or None
+
+
+def _require_mock_backend() -> str:
+    """Return a reachable mock-Netcup base URL, or pytest.skip.
+
+    This gate is on real INFRA AVAILABILITY (the mock service being up), NOT on a
+    UI element being absent — so it is not skip-to-green. Channel-C assertions
+    cannot run without the backend, and a missing backend is a missing fixture,
+    not a product bug.
+    """
+    base = _mock_base_url()
+    if not base:
+        pytest.skip("MOCK_NETCUP_API_URL not set; run ./run-local-tests.sh --with-mocks")
+    if not verification.mock_netcup_available(base):
+        pytest.skip(f"Mock Netcup API not reachable at {base}/health; run with --with-mocks")
+    return base
 
 
 # =============================================================================
@@ -816,10 +839,10 @@ class TestProtocolDifferences:
     async def test_noip_hostname_error_format(self):
         """No-IP uses nohost for invalid hostname."""
         import httpx
-        
+
         if not is_ddns_enabled():
             pytest.skip("DDNS protocols disabled")
-        
+
         url = settings.url("/api/ddns/noip/update")
         headers = {
             "Authorization": f"Bearer {settings.client_token}",
@@ -828,10 +851,132 @@ class TestProtocolDifferences:
             "hostname": "invalid",  # No dots
             "myip": "192.0.2.1"
         }
-        
+
         async with httpx.AsyncClient(verify=False, timeout=30) as client:
             response = await client.get(url, headers=headers, params=params)
-            
+
             text = response.text.strip()
             assert text == 'nohost', \
                 f"No-IP should use 'nohost', got: {text}"
+
+
+# =============================================================================
+# Channel-C backend-truth tests (the AUDIT "Plus" DDNS upgrade)
+#
+# The class-based tests above assert HTTP codes / response bodies only. These
+# tests add Channel C: confirm the DNS record ACTUALLY changed at the mock
+# Netcup backend (not just that the protocol replied "good"). Requires the mock
+# Netcup service (run with ./run-local-tests.sh --with-mocks).
+# =============================================================================
+
+def _find_a_record(records, hostname):
+    """Return the A record for *hostname* from a mock-Netcup record list, or None."""
+    for rec in records:
+        if rec.get("hostname") == hostname and rec.get("type") == "A":
+            return rec
+    return None
+
+
+async def test_dyndns2_success_mutates_backend_record():
+    """DynDNS2 'good' is backed by a real record change at the mock backend.
+
+    Channel C: after a successful update the mock Netcup zone contains an A
+    record for the pushed hostname whose destination equals the IP we pushed —
+    proving the 'good <ip>' body reflects an actual backend mutation, not just a
+    protocol-level acknowledgement.
+
+    A UNIQUE child hostname is used per run so the update is a clean create (the
+    demo realm authorises example.com children) and the Channel-C lookup is
+    unambiguous regardless of prior zone state.
+    """
+    import httpx
+    import secrets
+
+    if not is_ddns_enabled():
+        pytest.skip("DDNS protocols disabled")
+
+    mock_base = _require_mock_backend()
+    domain = settings.client_domain
+
+    record_label = f"ddnstest-{secrets.token_hex(4)}"
+    hostname = f"{record_label}.{domain}"
+    # 198.51.100.0/24 is TEST-NET-2 (RFC 5737) — safe, non-routable test IP.
+    test_ip = f"198.51.100.{secrets.randbelow(200) + 11}"
+
+    url = settings.url("/api/ddns/dyndns2/update")
+    headers = {"Authorization": f"Bearer {settings.client_token}"}
+
+    async with httpx.AsyncClient(verify=False, timeout=30) as client:
+        response = await client.get(url, headers=headers, params={"hostname": hostname, "myip": test_ip})
+
+    # EXACT success contract: 200 + 'good <ip>' (the IP changed) or 'nochg <ip>'.
+    assert response.status_code == 200, (
+        f"Expected exact 200 for authorized DDNS update, got {response.status_code}: {response.text[:200]}"
+    )
+    body = response.text.strip()
+    assert body.startswith(("good ", "nochg ")), f"Expected 'good/nochg <ip>', got: {body!r}"
+    assert test_ip in body, f"Response should echo pushed IP {test_ip!r}, got: {body!r}"
+
+    # Channel C: the mock backend now has an A record for this hostname pointing
+    # at the pushed IP. The mock stores the child label without the zone suffix.
+    def _backend_has_ip() -> bool:
+        rec = _find_a_record(
+            verification.mock_netcup_records(domain, base_url=mock_base), record_label
+        )
+        return rec is not None and rec.get("destination") == test_ip
+
+    verification.wait_for(
+        _backend_has_ip,
+        timeout=10.0,
+        message=(
+            f"mock Netcup backend A record for {hostname} did not become {test_ip}; "
+            f"the DDNS 'good' response was not backed by a real record change"
+        ),
+    )
+
+
+async def test_dyndns2_malformed_hostname_notfqdn_no_backend_change():
+    """DynDNS2 malformed hostname → exact 400 'notfqdn' and NO backend write."""
+    import httpx
+
+    if not is_ddns_enabled():
+        pytest.skip("DDNS protocols disabled")
+
+    _require_mock_backend()  # ensure the backend is up so 'no change' is meaningful
+
+    url = settings.url("/api/ddns/dyndns2/update")
+    headers = {"Authorization": f"Bearer {settings.client_token}"}
+
+    async with httpx.AsyncClient(verify=False, timeout=30) as client:
+        response = await client.get(url, headers=headers, params={"hostname": "no-dots", "myip": "192.0.2.7"})
+
+    assert response.status_code == 400, f"Expected exact 400 for malformed hostname, got {response.status_code}"
+    assert response.text.strip() == "notfqdn", f"Expected 'notfqdn', got: {response.text.strip()!r}"
+
+
+async def test_dyndns2_out_of_scope_yours_no_backend_change():
+    """DynDNS2 out-of-scope hostname → exact 403 '!yours' (No-IP: 'abuse')."""
+    import httpx
+
+    if not is_ddns_enabled():
+        pytest.skip("DDNS protocols disabled")
+
+    _require_mock_backend()
+
+    headers = {"Authorization": f"Bearer {settings.client_token}"}
+    out_of_scope = "device.unauthorized-domain.example.net"
+
+    async with httpx.AsyncClient(verify=False, timeout=30) as client:
+        d2 = await client.get(
+            settings.url("/api/ddns/dyndns2/update"),
+            headers=headers, params={"hostname": out_of_scope, "myip": "192.0.2.8"},
+        )
+        noip = await client.get(
+            settings.url("/api/ddns/noip/update"),
+            headers=headers, params={"hostname": out_of_scope, "myip": "192.0.2.8"},
+        )
+
+    assert d2.status_code == 403, f"DynDNS2 out-of-scope expected exact 403, got {d2.status_code}"
+    assert d2.text.strip() == "!yours", f"DynDNS2 expected '!yours', got: {d2.text.strip()!r}"
+    assert noip.status_code == 403, f"No-IP out-of-scope expected exact 403, got {noip.status_code}"
+    assert noip.text.strip() == "abuse", f"No-IP expected 'abuse', got: {noip.text.strip()!r}"

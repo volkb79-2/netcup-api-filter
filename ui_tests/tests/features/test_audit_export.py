@@ -9,12 +9,29 @@ Tests:
 """
 
 import pytest
-from ui_tests import workflows
+from ui_tests import verification, workflows
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
+
+
+def _count_ods_data_rows(ods_bytes: bytes) -> int:
+    """Return the number of DATA rows in the exported audit ODS.
+
+    The export (admin.create_audit_ods_export) writes one header row plus one
+    <table:table-row> per ActivityLog entry into content.xml inside a zip. We
+    unzip, count the table rows, and subtract the single header row.
+    """
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(ods_bytes)) as zf:
+        content = zf.read("content.xml").decode("utf-8")
+    total_rows = content.count("<table:table-row>")
+    assert total_rows >= 1, "ODS content.xml has no table rows (missing header?)"
+    return total_rows - 1  # drop the header row
 
 
 class TestAuditExportUI:
@@ -106,6 +123,57 @@ class TestAuditExportEndpoint:
         if response.status_code == 302:
             location = (response.headers.get("location") or "").lower()
             assert "login" in location, f"Expected redirect to login, got location={location!r}"
+
+    async def test_export_row_count_matches_db(self, active_profile):
+        """Round-trip: the exported file's data-row count equals the DB count.
+
+        We trigger a known event (so there is at least one row), then export with
+        an explicit filter (range=all + a specific action/status, which hits the
+        export's no-time-window branch). The data-row count parsed out of the ODS
+        must equal verification.count_activity(...) for the SAME filter — proving
+        the export reflects real backend rows, not a stubbed/partial dataset.
+        """
+        import httpx
+
+        verification.require_db()
+
+        # 1. Trigger a deterministic api_call/success row so the set is non-empty.
+        dns_url = settings.url(f"/api/dns/{settings.client_domain}/records")
+        watermark = verification.now_utc_watermark()
+        async with httpx.AsyncClient(verify=False) as client:
+            r = await client.get(dns_url, headers={"Authorization": f"Bearer {settings.client_token}"})
+        assert r.status_code == 200, f"seed DNS read must succeed, got {r.status_code}"
+        verification.wait_for(
+            lambda: verification.count_activity(
+                action="api_call", status="success", since=watermark,
+            ) >= 1,
+            timeout=10.0,
+            message="seed api_call/success row not visible in DB",
+        )
+
+        async with browser_session() as browser:
+            await workflows.ensure_admin_dashboard(browser)
+
+            # 2. Export with range=all (no time filter) + the exact action/status.
+            #    Read the DB count immediately around the export to bound any
+            #    concurrent writes to a 1-row window.
+            count_before = verification.count_activity(action="api_call", status="success")
+            resp = await browser.request_get_bytes(
+                settings.url("/admin/audit/export"),
+                params={"range": "all", "action": "api_call", "status": "success"},
+            )
+            assert resp["status"] == 200, f"export must return 200, got {resp['status']}"
+            count_after = verification.count_activity(action="api_call", status="success")
+
+            ods_rows = _count_ods_data_rows(resp["bytes"])
+
+        # 3. The exported data-row count must equal the DB count for this filter.
+        #    (count_before == count_after in the common no-concurrency case; the
+        #    range tolerates a single interleaved write without false-failing.)
+        assert count_before <= ods_rows <= count_after, (
+            f"exported ODS data rows ({ods_rows}) do not match DB api_call/success "
+            f"count (between {count_before} and {count_after})"
+        )
 
 
 class TestAuditStats:

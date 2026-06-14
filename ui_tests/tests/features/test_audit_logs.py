@@ -8,7 +8,7 @@ import anyio
 import httpx
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
-from ui_tests import workflows
+from ui_tests import verification, workflows
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
@@ -53,32 +53,40 @@ async def test_audit_logs_not_empty_on_fresh_install(active_profile):
 
 
 async def test_audit_logs_record_api_requests(active_profile):
-    """API requests made against the DNS endpoint appear in the audit log."""
+    """API requests made against the DNS endpoint appear in the audit log.
+
+    Round-trip grade: instead of (only) scraping the UI table, assert via
+    Channel A that the GET actually produced a new api_call/success row in the
+    activity_log. The successful read is the authoritative audit-trail event.
+    """
+    verification.require_db()
+    watermark = verification.now_utc_watermark()
+
     url = settings.url(f"/api/dns/{settings.client_domain}/records")
     headers = {"Authorization": f"Bearer {settings.client_token}"}
 
     async with httpx.AsyncClient(verify=False) as client:
-        await client.get(url, headers=headers)
+        resp = await client.get(url, headers=headers)
+    assert resp.status_code == 200, (
+        f"baseline DNS read must succeed for this assertion, got {resp.status_code}"
+    )
 
-    # Brief wait for the log write to commit
-    await anyio.sleep(1)
+    # Channel A: a brand-new api_call/success audit row exists for THIS request.
+    verification.wait_for(
+        lambda: verification.count_activity(
+            action="api_call", status="success", since=watermark,
+        ) >= 1,
+        timeout=10.0,
+        message="GET /api/dns/<domain>/records did not produce an api_call/success audit row",
+    )
 
+    # The audit-log UI must also surface activity (kept as a secondary signal).
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
         table_text = await browser.text("table tbody")
-        # The DNS read request must produce an "api_request" or similar event
         assert table_text.strip(), "Audit log table is empty after API request"
-        found_api = (
-            "api_request" in table_text.lower()
-            or "dns" in table_text.lower()
-            or "Api" in table_text
-        )
-        assert found_api, (
-            f"Expected API/DNS activity in audit log after GET /api/dns/…, "
-            f"got: {table_text[:400]!r}"
-        )
 
 
 async def test_audit_logs_has_filter_controls(active_profile):

@@ -11,6 +11,8 @@ This test file covers security edge cases and error handling:
 - CSRF protection
 """
 
+import re
+
 import pytest
 
 import anyio
@@ -158,34 +160,66 @@ class TestInputValidation:
     """Tests for input validation."""
     
     async def test_registration_email_validation(self, active_profile):
-        """Verify registration validates email format."""
+        """Verify registration validates email format.
+
+        Self-service registration is an always-on feature of this deployment, so
+        the page MUST render an email input. The previous skip-to-green (skip
+        when 'registration'/'email' text was absent) would have hidden a broken
+        or removed registration form; assert unconditionally instead.
+        """
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/register"))
-            
-            # Check if registration is available
-            page_html = await browser.html("body")
-            if "registration" not in page_html.lower() and "email" not in page_html.lower():
-                pytest.skip("Registration not available")
-            
-            # Try invalid email format
+            # A persisted account session would redirect /account/register to the
+            # dashboard; clear cookies so we land on the real registration form.
+            await browser._page.context.clear_cookies()
+            await browser.goto(settings.url("/account/register"), wait_until="domcontentloaded")
+            assert browser._page.url.rstrip("/").endswith("/account/register"), (
+                f"expected the registration form, landed at {browser._page.url}"
+            )
+
+            # The email field must exist and be an HTML5 email input (server-side
+            # validation is also enforced, but the type drives client validation).
+            await browser._page.wait_for_selector("#email", timeout=10_000)
             email_field = await browser.query_selector("#email")
-            if email_field:
-                await browser.fill("#email", "invalid-email-format")
-                
-                # Check for HTML5 validation or custom validation
-                email_type = await browser.get_attribute("#email", "type")
-                assert email_type == "email" or "email" in page_html.lower()
+            assert email_field is not None, "registration form must expose an #email field"
+
+            email_type = await browser.get_attribute("#email", "type")
+            assert email_type == "email", (
+                f"#email must be a type='email' input for format validation, got {email_type!r}"
+            )
+
+            # The field must actually accept input (not disabled/readonly): read
+            # the LIVE DOM value property (not the static value attribute).
+            await browser.fill("#email", "invalid-email-format")
+            value = await browser.evaluate(
+                "() => document.getElementById('email').value"
+            )
+            assert value == "invalid-email-format", (
+                f"#email did not accept input (got {value!r}); field may be disabled/readonly"
+            )
 
     async def test_password_strength_indicator(self, active_profile):
-        """Verify password fields have strength validation."""
+        """Verify password fields have strength validation.
+
+        The registration form is always present in this deployment and enforces
+        a password policy client-side via minlength/pattern. The previous
+        skip-to-green (skip when 'password' text was absent) plus the
+        ``or "password" in page_html`` fallback made this assertion impossible
+        to fail; assert the policy attributes unconditionally instead.
+        """
         async with browser_session() as browser:
-            await browser.goto(settings.url("/account/register"))
-            
+            await browser._page.context.clear_cookies()
+            await browser.goto(settings.url("/account/register"), wait_until="domcontentloaded")
+            assert browser._page.url.rstrip("/").endswith("/account/register"), (
+                f"expected the registration form, landed at {browser._page.url}"
+            )
+
+            await browser._page.wait_for_selector("#password", timeout=10_000)
+            password_field = await browser.query_selector("#password")
+            assert password_field is not None, "registration form must expose a #password field"
+
             page_html = await browser.html("body")
-            if "password" not in page_html.lower():
-                pytest.skip("Password field not found")
-            
-            # Check for password strength indicators or requirements
+            # The form must signal password requirements via at least one of the
+            # recognised mechanisms (HTML5 minlength/pattern or a strength meter).
             has_validation = any([
                 "strength" in page_html.lower(),
                 "entropy" in page_html.lower(),
@@ -193,8 +227,10 @@ class TestInputValidation:
                 "pattern" in page_html.lower(),
                 "requirement" in page_html.lower(),
             ])
-            # Some pages may not have visible strength indicator
-            assert has_validation or "password" in page_html.lower()
+            assert has_validation, (
+                "registration password field must advertise a strength/requirement "
+                "indicator (minlength, pattern, strength meter, ...)"
+            )
 
 
 # ============================================================================
@@ -205,26 +241,40 @@ class TestSessionSecurity:
     """Tests for session security."""
     
     async def test_logout_clears_session(self, active_profile):
-        """Verify logout properly clears session."""
+        """Verify logout actually invalidates the session.
+
+        Behavioral (not UI-scraping) assertion: after logout, the SAME browser
+        context can no longer reach a protected admin page — it is force-redirected
+        to /admin/login. The previous version used or-chained assertions
+        (``"/login" in url or "/admin" in url``) that were green for any admin
+        URL, so a logout that left the session intact still passed. Admin sessions
+        are Flask-cookie-based (no account_sessions DB row), so the session-revoke
+        proof is the enforced redirect, asserted exactly.
+        """
         async with browser_session() as browser:
             await workflows.ensure_admin_dashboard(browser)
-            
-            # Navigate to logout
-            await browser.goto(settings.url("/admin/logout"))
-            await anyio.sleep(1.0)
-            
-            # Should redirect to login
-            current_url = browser._page.url
-            assert "/login" in current_url or "/admin" in current_url
-            
-            # Try to access protected page
-            await browser.goto(settings.url("/admin/accounts"))
-            await anyio.sleep(0.5)
-            
-            # Should redirect to login
-            current_url = browser._page.url
-            body_text = await browser.text("body")
-            assert "/login" in current_url or "Sign In" in body_text
+
+            # Sanity: while logged in, the protected page is reachable.
+            await browser.goto(settings.url("/admin/accounts"), wait_until="domcontentloaded")
+            assert "/admin/login" not in browser._page.url, (
+                f"precondition failed: admin not authenticated, at {browser._page.url}"
+            )
+
+            # Log out.
+            await browser.goto(settings.url("/admin/logout"), wait_until="domcontentloaded")
+            await browser._page.wait_for_url(
+                re.compile(r".*/admin/login(?:\?.*)?$"), timeout=10_000
+            )
+
+            # The cleared session must NOT reach the protected page anymore: the
+            # request is bounced to the login form (exact landing URL).
+            await browser.goto(settings.url("/admin/accounts"), wait_until="domcontentloaded")
+            await browser._page.wait_for_url(
+                re.compile(r".*/admin/login(?:\?.*)?$"), timeout=10_000
+            )
+            assert browser._page.url.rstrip("/").endswith("/admin/login"), (
+                f"logged-out session still reached protected page, at {browser._page.url}"
+            )
 
     async def test_admin_pages_require_authentication(self, active_profile):
         """Verify admin pages require authentication."""
