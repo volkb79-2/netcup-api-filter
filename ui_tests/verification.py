@@ -295,6 +295,53 @@ def get_setting_value(key: str) -> Any:
             return raw
 
 
+def get_2fa_failure_data(username: str) -> dict | None:
+    """Return the settings value for 2fa_failures:<account_id>, or None if not set.
+
+    The 2FA lockout counter is stored in the settings table under the key
+    '2fa_failures:<account_id>' as a JSON dict: {'count': N, 'last_failure': ISO}.
+    Returns None if the key is absent (no failures or counter cleared).
+    """
+    import json as _json
+    acct = get_account(username)
+    if acct is None:
+        return None
+    account_id = acct["id"]
+    key = f"2fa_failures:{account_id}"
+    with ro_connection() as conn:
+        cur = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (key,),
+        )
+        row = cur.fetchone()
+        if row is None or row["value"] is None:
+            return None
+        try:
+            return _json.loads(row["value"])
+        except (_json.JSONDecodeError, TypeError):
+            return None
+
+
+def count_recovery_codes(username: str) -> int:
+    """Return the number of remaining (unconsumed) recovery code hashes for ``username``.
+
+    Recovery codes are stored as a JSON array of hashes in ``accounts.recovery_codes``.
+    Returns 0 when the column is NULL (no codes generated) or the JSON list is empty.
+    """
+    import json as _json
+    acct = get_account(username)
+    if acct is None:
+        return 0
+    raw = acct.get("recovery_codes")
+    if not raw:
+        return 0
+    try:
+        hashes = _json.loads(raw)
+        return len(hashes) if isinstance(hashes, list) else 0
+    except (_json.JSONDecodeError, TypeError):
+        return 0
+
+
 def wait_for(predicate, *, timeout: float = 5.0, interval: float = 0.25, message: str = "") -> None:
     """Poll until predicate() is truthy; raise AssertionError(message) on timeout.
 

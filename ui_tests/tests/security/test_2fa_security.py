@@ -17,6 +17,7 @@ import sqlite3
 
 import pytest
 
+from ui_tests import verification
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
 from ui_tests.mailpit_client import MailpitClient
@@ -141,7 +142,14 @@ class Test2FAFailureTracking:
                 )
                 
                 assert msg is not None, "No 2FA email received"
-                
+
+                # Channel A oracle gate: require direct DB access for this target.
+                # When the DB is present (local mock stack), the per-attempt and
+                # lockout failure-counter assertions below run UNCONDITIONALLY —
+                # no silent skip-to-green. require_db() skips the whole test only
+                # when there is genuinely no DB to read.
+                verification.require_db()
+
                 # Step 2: Enter wrong code 5 times
                 for attempt in range(1, 6):
                     wrong_code = "000000"  # Invalid code
@@ -181,6 +189,18 @@ class Test2FAFailureTracking:
                         # Intermediate failures should keep the user on the 2FA challenge.
                         assert "/2fa" in new_url, f"Attempt {attempt}: Expected to remain on 2FA page, got URL: {new_url}"
                         assert "locked" not in alert_text_lower, f"Attempt {attempt}: Unexpected lockout before max failures: {alert_text!r}"
+                        # Channel A FIRST: the persisted failure counter is the
+                        # backend truth. Assert it BEFORE the UI "attempts remaining"
+                        # text so this backend-truth check is the load-bearing gate
+                        # (the UI string is derived from this counter).
+                        failure_data = verification.get_2fa_failure_data("admin")
+                        assert failure_data is not None, (
+                            f"Attempt {attempt}: expected settings 2fa_failures entry, got None"
+                        )
+                        assert failure_data.get("count") == attempt, (
+                            f"Attempt {attempt}: DB failure count={failure_data.get('count')!r}, expected {attempt}"
+                        )
+                        # UI text must agree with the backend counter.
                         expected_left = 5 - attempt
                         assert "invalid" in alert_text_lower and "attempt" in alert_text_lower, (
                             f"Attempt {attempt}: Expected invalid-code message with attempts counter, got: {alert_text!r}"
@@ -190,13 +210,23 @@ class Test2FAFailureTracking:
                         )
                         print(f"✓ Attempt {attempt}/5: Still on 2FA page")
                     else:
-                        # On 5th failure, should see lockout message
+                        # On 5th failure, should see lockout.
                         assert "/2fa" in new_url, f"Attempt {attempt}: Expected to remain on 2FA page, got URL: {new_url}"
+                        # Channel A FIRST: the persisted counter must have reached the
+                        # lockout threshold. Assert the backend truth BEFORE the UI
+                        # lockout text so this is the load-bearing assertion.
+                        failure_data = verification.get_2fa_failure_data("admin")
+                        assert failure_data is not None, (
+                            "Expected settings 2fa_failures entry at lockout, got None"
+                        )
+                        assert failure_data.get("count") >= 5, (
+                            f"Lockout reached but DB count={failure_data.get('count')!r} (expected >=5)"
+                        )
+                        # UI must show the lockout message.
                         assert "too many" in alert_text_lower and "locked" in alert_text_lower, (
                             f"Expected lockout message after 5 failures, got: {alert_text!r}"
                         )
                         print("✓ Account locked after 5 failed attempts")
-                        break
                 
                 # Step 3: Verify we cannot try again (should be locked)
                 new_url = browser._page.url

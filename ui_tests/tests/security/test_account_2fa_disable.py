@@ -15,7 +15,7 @@ import re
 import pyotp
 import pytest
 
-from ui_tests import workflows
+from ui_tests import verification, workflows
 from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.env_defaults import get_env_default
@@ -139,6 +139,27 @@ async def test_account_totp_enable_then_disable(active_profile, session_manager)
     lowered = (body2 or "").lower()
     assert "two-factor authentication has been disabled" in lowered or "disabled" in lowered
     assert "enable 2fa" in lowered
+
+    # Channel A: totp_secret is NULL and totp_enabled is 0 after disable.
+    # This is the backend-truth assertion that proves the TOTP credential was
+    # actually cleared — not just that the UI says "disabled".
+    # require_db() gates the assertion on direct DB access: if the DB is present
+    # (it is in the local mock stack) the assertion below ALWAYS runs — no silent
+    # skip-to-green. It only skips when there is genuinely no DB to read.
+    verification.require_db()
+    verification.wait_for(
+        lambda: verification.get_account(demo_username) is not None
+        and verification.get_account(demo_username)["totp_secret"] is None,
+        timeout=10.0,
+        message=f"totp_secret not cleared in DB after disable for {demo_username!r}",
+    )
+    acct_row = verification.get_account(demo_username)
+    assert acct_row["totp_secret"] is None, (
+        f"Expected totp_secret=None after disable, got {acct_row['totp_secret']!r}"
+    )
+    assert acct_row["totp_enabled"] == 0, (
+        f"Expected totp_enabled=0 after disable, got {acct_row['totp_enabled']!r}"
+    )
 
     # Prove TOTP no longer works for login after disable.
     await browser.goto(settings.url("/account/logout"), wait_until="domcontentloaded")
