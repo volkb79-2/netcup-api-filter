@@ -6,6 +6,16 @@ and update every place that references test paths — without changing what any 
 **Model/effort:** Sonnet/high implement → **Opus 4.8/xhigh review** (mechanical but high-blast-radius: a
 wrong move silently drops a suite from CI). **Depends:** E0 (`AUDIT.md` bucket assignments), E1. **Size:** L.
 
+## Scope boundary (read first)
+**E2 is purely structural: moves + markers + wiring. ZERO content changes.** Do **not** merge, consolidate,
+delete, or edit any test body. The merge-then-delete consolidations and the round-trip upgrades from
+`AUDIT.md` are **E3's** job. Concretely:
+- Move only the files listed in `AUDIT.md` "Bucket assignment for kept files" into their bucket dirs.
+- **Leave the `AUDIT.md` "Merge-then-delete" source files where they are** (at `ui_tests/tests/` root) — E3
+  merges their unique tests into the (already-moved) targets and deletes them. Do not move or touch them here.
+- The collected-test count must be **identical before and after** (483 under `ui_tests/tests`). Nothing is
+  added or removed; only path prefixes change. This exactness is the review gate.
+
 ## Schema (from PLAN.md "Modern E2E schema")
 Directories under `ui_tests/tests/`: `smoke/ roundtrip/ security/ features/ journeys/ nonfunctional/ live/
 mocks/`. Markers registered in `pytest.ini`: `smoke roundtrip security feature journey nonfunctional

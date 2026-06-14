@@ -40,11 +40,11 @@ Created 2026-06-14.
 | [x] | [P2](tasks/P2-pbt-ddns.md) | PBT: DDNS hostname parse/validate invariants | P1 | Sonnet / high | M |
 | [x] | [P3](tasks/P3-pbt-validators.md) | PBT: IP-range / domain / email / `check_ip_allowed` invariants | P1 | Sonnet / high | M |
 | [x] | [P4](tasks/P4-pbt-token-model.md) | PBT: token round-trip + realm scope (`matches_hostname`) invariants | P1 | Sonnet / high | M |
-| [ ] | [M1](tasks/M1-mutation-tooling.md) | Mutation tooling: `mutmut` dep + config + **toggleable** local runner (no CI) | — | Sonnet / high | M |
+| [x] | [M1](tasks/M1-mutation-tooling.md) | Mutation tooling: `mutmut` dep + config + **toggleable** local runner (no CI) | — | Sonnet / high | M |
 | [ ] | [M2](tasks/M2-mutation-spotcheck.md) | Run spot-check over the pure-logic core; triage survivors; fix or document | M1, P2–P4 | **Sonnet/high impl → Opus/xhigh triage review** | M |
 | [x] | [E0](AUDIT.md) | E2E estate audit & classification → `AUDIT.md` | — | Explore (sonnet) + Opus synthesis | M |
-| [ ] | [E1](tasks/E1-delete-legacy.md) | Delete legacy/dead test files (orphaned journeys dir + audit-flagged) | E0 | Sonnet / high | M |
-| [ ] | [E2](tasks/E2-schema-reorg.md) | Apply modern dir + marker schema; move/rename; fix wiring (deploy.sh, runner, CI, docs) | E0, E1 | **Sonnet/high → Opus review** | L |
+| [x] | [E1](tasks/E1-delete-legacy.md) | Delete legacy/dead test files (orphaned journeys dir + audit-flagged) | E0 | Opus (direct) | M |
+| [x] | [E2](tasks/E2-schema-reorg.md) | Apply modern dir + marker schema; move/rename; fix wiring (deploy.sh, runner, CI, docs) | E0, E1 | **Sonnet/high → Opus review** | L |
 | [ ] | [E3](tasks/E3-roundtrip-upgrades.md) | Upgrade top security-critical files to round-trip grade + new backend-truth journeys | E0, E2, P-stream | **Sonnet/high → Opus review** | L |
 | [ ] | [E4](tasks/E4-docs-sync.md) | Docs sync: schema, PBT, mutation; mark deferred gaps done | P*, M*, E* | Sonnet / medium | S |
 
@@ -162,3 +162,16 @@ mutant as equivalent/acceptable with a one-line justification.
   monotonicity boundaries pinned for the M2 mutation pass; token round-trip; effective-scope sentinels;
   is_expired. **Surfaced a real source finding** (token setter `[]`→`None` coercion — see Findings above).
   Reviewer trimmed 3 unused imports. 324 total unit tests green. P-stream complete.
+- 2026-06-14 — M1 landed (commit 410ebdd). mutmut==3.6.0 (works on Python 3.14), setup.cfg [mutmut] over the
+  5 target modules, tooling/mutation/run.sh (toggleable, the only trigger), README. Config keys validated
+  against mutmut 3.6 source. Hard constraints pass (no mutmut in CI/pytest.ini; 324 still green). Smoke:
+  recovery_codes.py 82 mutants / 20 survived / ~2 min.
+- 2026-06-14 — E1 landed (commit a852f87, done directly during the M2 mutmut run). Deleted ui_tests/journeys/
+  (12 files) + test_registration_2fa_complete.py (17 smoke tests). ui_tests/tests collects clean 500→483,
+  no import errors. Dropped dead journeys scan from tooling/coverage/route_vs_tests_report.py. Confirmed env
+  CAN collect ui_tests locally (playwright present) so E2/E3 structural gates are verifiable here.
+- 2026-06-14 — E2 landed (commit a09db41). Structural-only: moved ~40 kept files into 8 bucket dirs via
+  git mv + module pytestmark + 9 new markers in pytest.ini. Wiring updated (deploy.sh, build_deployment_lib.sh,
+  run-2fa-security-tests.sh, .vscode/*, docs). Parity: collect 483→483 no errors, ci_smoke 93/93 same nodes,
+  -m roundtrip=25/security=43/smoke=147. Content diffs confirmed pytestmark-only (+ required sys.path depth
+  fix in the 3 deeper-moved files). Merge-then-delete sources left at root for E3.

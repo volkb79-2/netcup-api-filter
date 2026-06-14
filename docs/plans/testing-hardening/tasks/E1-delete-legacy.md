@@ -34,8 +34,8 @@ live estate only.
 The 13 pure-delete files + the merge-then-delete set are enumerated in
 [`AUDIT.md`](../AUDIT.md) "Delete list" and "Merge-then-delete". **This task does the pure-delete set only**
 (the 10 legacy `test_0X` + `journeys/conftest.py` + `journeys/__init__.py` + `test_registration_2fa_complete.py`).
-The merge-then-delete set (which must preserve unique coverage first) belongs to **E2** (it's part of the
-move/consolidate pass), not here.
+The merge-then-delete set (which must preserve unique coverage first) belongs to **E3** (content-touching
+consolidation pass), not here and not E2 (E2 is purely structural moves).
 
 ## Verify
 - `python -m pytest ui_tests/tests --collect-only -q` succeeds with **no import/collection errors** and the
