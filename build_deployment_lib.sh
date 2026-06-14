@@ -291,7 +291,7 @@ run_auth_test() {
     echo "[TESTS] Running authentication test to set password..."
     
     # Verify test file exists (fail-fast policy)
-    local test_file="${REPO_ROOT:?REPO_ROOT must be set}/ui_tests/tests/test_admin_ui.py"
+    local test_file="${REPO_ROOT:?REPO_ROOT must be set}/ui_tests/tests/smoke/test_admin_ui.py"
     if [[ ! -f "$test_file" ]]; then
         echo "[TESTS] ✗ ERROR: Test file not found: $test_file" >&2
         echo "[TESTS] ✗ Cannot proceed without authentication test" >&2
@@ -325,7 +325,7 @@ run_auth_test() {
 
         # Run test inside container
         "${REPO_ROOT}/tooling/playwright/playwright-exec.sh" \
-            pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
+            pytest ui_tests/tests/smoke/test_admin_ui.py::test_admin_authentication_flow -v
 
     else
         echo "[TESTS] Using local execution for auth test"
@@ -335,10 +335,10 @@ run_auth_test() {
         set -a
         source "$env_file"
         set +a
-        
+
         # Run only the auth flow test (from REPO_ROOT for correct path resolution)
         cd "${REPO_ROOT}"
-        pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
+        pytest ui_tests/tests/smoke/test_admin_ui.py::test_admin_authentication_flow -v
     fi
     
     local exit_code=$?

@@ -92,7 +92,7 @@ docker exec \
     -e MAILPIT_PASSWORD="${MAILPIT_PASSWORD}" \
     -e MAILPIT_API_URL="${MAILPIT_API_URL:-http://naf-dev-mailpit:8025}" \
     naf-dev-playwright \
-    pytest /workspaces/netcup-api-filter/ui_tests/tests/test_2fa_security.py $PYTEST_ARGS
+    pytest /workspaces/netcup-api-filter/ui_tests/tests/security/test_2fa_security.py $PYTEST_ARGS
 
 EXIT_CODE=$?
 

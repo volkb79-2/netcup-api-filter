@@ -1110,7 +1110,7 @@ phase_journey() {
     pytest_extra_args=$(build_pytest_extra_args)
 
     if [[ "$FAILFAST" == "true" ]]; then
-        if run_in_playwright pytest ui_tests/tests/test_journey_master.py ${pytest_extra_args} -v --timeout=300; then
+        if run_in_playwright pytest ui_tests/tests/journeys/test_journey_master.py ${pytest_extra_args} -v --timeout=300; then
             log_success "Journey tests passed - admin authenticated"
             JOURNEY_TESTS_RESULT="PASSED"
             if [[ -f "$STATE_FILE" ]]; then
@@ -1126,7 +1126,7 @@ phase_journey() {
         return 1
     fi
 
-    if run_in_playwright pytest ui_tests/tests/test_journey_master.py ${pytest_extra_args} -v --timeout=300 2>&1 | tail -20; then
+    if run_in_playwright pytest ui_tests/tests/journeys/test_journey_master.py ${pytest_extra_args} -v --timeout=300 2>&1 | tail -20; then
         log_success "Journey tests passed - admin authenticated"
         JOURNEY_TESTS_RESULT="PASSED"
         if [[ -f "$STATE_FILE" ]]; then
@@ -1189,36 +1189,36 @@ phase_tests() {
     # Note: Admin UI excludes auth_flow test since Journey Tests handle authentication
     local test_suites=(
         # Core UI validation tests (always run)
-        "Route Smoke|ui_tests/tests/test_route_smoke.py|all"
-        "UI Widgets|ui_tests/tests/test_ui_widgets.py|all"
-        "Admin UI|ui_tests/tests/test_admin_ui.py --deselect=ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow|all"
+        "Route Smoke|ui_tests/tests/smoke/test_route_smoke.py|all"
+        "UI Widgets|ui_tests/tests/smoke/test_ui_widgets.py|all"
+        "Admin UI|ui_tests/tests/smoke/test_admin_ui.py --deselect=ui_tests/tests/smoke/test_admin_ui.py::test_admin_authentication_flow|all"
         "API Proxy|ui_tests/tests/test_api_proxy.py|all"
-        "Audit Logs|ui_tests/tests/test_audit_logs.py|all"
-        "Audit Export|ui_tests/tests/test_audit_export.py|all"
-        "Config Pages|ui_tests/tests/test_config_pages.py|all"
-        "Backends UI|ui_tests/tests/test_backends_ui.py|all"
-        "Bulk Operations|ui_tests/tests/test_bulk_operations.py|all"
-        "Accessibility|ui_tests/tests/test_accessibility.py|all"
-        "Performance|ui_tests/tests/test_performance.py|all"
+        "Audit Logs|ui_tests/tests/features/test_audit_logs.py|all"
+        "Audit Export|ui_tests/tests/features/test_audit_export.py|all"
+        "Config Pages|ui_tests/tests/features/test_config_pages.py|all"
+        "Backends UI|ui_tests/tests/smoke/test_backends_ui.py|all"
+        "Bulk Operations|ui_tests/tests/features/test_bulk_operations.py|all"
+        "Accessibility|ui_tests/tests/nonfunctional/test_accessibility.py|all"
+        "Performance|ui_tests/tests/nonfunctional/test_performance.py|all"
         "Security|ui_tests/tests/test_security.py|all"
-        "Recovery Codes|ui_tests/tests/test_recovery_codes.py|all"
-        "Registration E2E|ui_tests/tests/test_registration_e2e.py|all"
-        "Cross-Role Accounts|ui_tests/tests/test_cross_role_account_lifecycle.py|all"
-        "Cross-Role Realms|ui_tests/tests/test_cross_role_realm_propagation.py|all"
-        "Cross-Role Tokens|ui_tests/tests/test_cross_role_token_lifecycle.py|all"
+        "Recovery Codes|ui_tests/tests/security/test_recovery_codes.py|all"
+        "Registration E2E|ui_tests/tests/features/test_registration_e2e.py|all"
+        "Cross-Role Accounts|ui_tests/tests/roundtrip/test_cross_role_account_lifecycle.py|all"
+        "Cross-Role Realms|ui_tests/tests/roundtrip/test_cross_role_realm_propagation.py|all"
+        "Cross-Role Tokens|ui_tests/tests/roundtrip/test_cross_role_token_lifecycle.py|all"
 
         # Mock-only tests (require mock services)
-        "Mock API Standalone|ui_tests/tests/test_mock_api_standalone.py|mock"
-        "Mock SMTP|ui_tests/tests/test_mock_smtp.py|mock"
-        "Mock GeoIP|ui_tests/tests/test_mock_geoip.py|mock"
-        "DDNS Quick Update|ui_tests/tests/test_ddns_quick_update.py|mock"
-        "DDNS Protocols|ui_tests/tests/test_ddns_protocols.py|mock"
+        "Mock API Standalone|ui_tests/tests/mocks/test_mock_api_standalone.py|mock"
+        "Mock SMTP|ui_tests/tests/mocks/test_mock_smtp.py|mock"
+        "Mock GeoIP|ui_tests/tests/mocks/test_mock_geoip.py|mock"
+        "DDNS Quick Update|ui_tests/tests/roundtrip/test_ddns_quick_update.py|mock"
+        "DDNS Protocols|ui_tests/tests/features/test_ddns_protocols.py|mock"
 
         # Live API tests (require real Netcup API configured)
-        "UI Flow E2E|ui_tests/tests/test_ui_flow_e2e.py|live"
-        "API Security|ui_tests/tests/test_api_security.py|all"
-        "Live DNS Verification|ui_tests/tests/test_live_dns_verification.py|live"
-        "Live Email Verification|ui_tests/tests/test_live_email_verification.py|live"
+        "UI Flow E2E|ui_tests/tests/live/test_ui_flow_e2e.py|live"
+        "API Security|ui_tests/tests/security/test_api_security.py|all"
+        "Live DNS Verification|ui_tests/tests/live/test_live_dns_verification.py|live"
+        "Live Email Verification|ui_tests/tests/live/test_live_email_verification.py|live"
     )
     
     for suite in "${test_suites[@]}"; do
@@ -1579,7 +1579,7 @@ main() {
     echo "  ./deploy.sh --stop"
     echo ""
     echo "  # Run specific test:"
-    echo "  DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET pytest ui_tests/tests/test_admin_ui.py -v"
+    echo "  DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET pytest ui_tests/tests/smoke/test_admin_ui.py -v"
     echo ""
     echo "  # Recapture screenshots:"
     echo "  DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET python3 ui_tests/capture_ui_screenshots.py"

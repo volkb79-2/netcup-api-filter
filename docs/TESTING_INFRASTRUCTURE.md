@@ -56,6 +56,43 @@ Or via the standard runner (builds a fresh deployment first):
 ./run-local-tests.sh --skip-build    # reuse existing deploy-local
 ```
 
+**Directory layout** under `ui_tests/tests/` (E2 schema — applied 2026-06-14):
+
+```
+ui_tests/tests/
+  smoke/          # Route-smoke + widget smoke: page-loads/status/element checks
+  roundtrip/      # Independent-channel backend-truth (cross_role_*, dns crud, ddns)
+  security/       # Auth, 2FA, recovery codes, IP allowlist, attack attribution
+  features/       # Feature E2E: registration, email, backends, config, audit, etc.
+  journeys/       # Stateful multi-step sequences (j1/j2/j3 + test_journey_master)
+  nonfunctional/  # Accessibility and performance
+  live/           # @live — require real external dependencies
+  mocks/          # Mock-service self-tests (test the mock, not the app)
+```
+
+Files under `ui_tests/tests/` root (not in a subdir) are merge-then-delete sources
+awaiting E3 consolidation. Do not move them.
+
+**Marker taxonomy** (registered in `pytest.ini`):
+
+| Marker | Selects |
+|--------|---------|
+| `smoke` | Route and widget smoke tests |
+| `roundtrip` | Backend-truth round-trip tests |
+| `security` | Security/auth/2FA tests |
+| `feature` | Feature E2E tests |
+| `journey` | Stateful journey tests |
+| `nonfunctional` | Accessibility + performance |
+| `mock_selftest` | Mock-service self-tests |
+| `accessibility` | Accessibility-specific (subset of nonfunctional) |
+| `performance` | Performance-specific (subset of nonfunctional) |
+| `live` | Requires real external dependencies |
+| `ci_smoke` | Runs in CI against live gunicorn + Mailpit |
+| `installation` | Requires default credentials |
+| `e2e_local` | Requires local deployment with mock services |
+
+Use `-m <marker>` to select by bucket regardless of path.
+
 ---
 
 ## Standard local runner
@@ -77,13 +114,13 @@ test additions and deletions so the two stay in sync.
 
 ## Route-smoke suite
 
-**`ui_tests/tests/test_route_smoke.py`** (86 tests) — parametrized over every route
+**`ui_tests/tests/smoke/test_route_smoke.py`** (86 tests) — parametrized over every route
 discovered at import time via Flask's URL map. New routes added to any blueprint are
 automatically smoke-tested without any manual update. Smoke checks: correct status codes,
 no unhandled exceptions, basic page structure for HTML routes.
 
 Contributors get smoke for free; they must still add round-trip tests for new behavior
-(see `test_cross_role_account_lifecycle.py` for the pattern).
+(see `roundtrip/test_cross_role_account_lifecycle.py` for the pattern).
 
 ---
 
@@ -148,14 +185,14 @@ Call `verification.require_db()` at the top of tests that need Channel A; it cal
 
 ## Cross-role round-trip tests
 
-`ui_tests/tests/test_cross_role_*.py` verify that an admin action propagates to the user's
+`ui_tests/tests/roundtrip/test_cross_role_*.py` verify that an admin action propagates to the user's
 API/portal experience via independent channels:
 
 | File | What it tests |
 |------|---------------|
-| `test_cross_role_account_lifecycle.py` | disable/enable account (401+error_code), invite+approval, password reset link |
-| `test_cross_role_realm_propagation.py` | realm approval/rejection/revocation + token behavior |
-| `test_cross_role_token_lifecycle.py` | admin revoke, user self-revoke, read-only scope enforcement |
+| `roundtrip/test_cross_role_account_lifecycle.py` | disable/enable account (401+error_code), invite+approval, password reset link |
+| `roundtrip/test_cross_role_realm_propagation.py` | realm approval/rejection/revocation + token behavior |
+| `roundtrip/test_cross_role_token_lifecycle.py` | admin revoke, user self-revoke, read-only scope enforcement |
 
 See `test_cross_role_account_lifecycle.py` — it is the **pattern file** for all cross-role
 suites (channel use, `wait_for`, state cleanup in `finally`).

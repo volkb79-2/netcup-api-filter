@@ -3,4 +3,4 @@
 set -euo pipefail
 export UI_PYTEST_ARGS="-x"
 exec "$(dirname "$0")/run-tests.sh" \
-  "ui_tests/tests/test_email_notifications.py::TestSecurityAlertEmails::test_failed_login_alert"
+  "ui_tests/tests/features/test_email_notifications.py::TestSecurityAlertEmails::test_failed_login_alert"

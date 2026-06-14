@@ -3,4 +3,4 @@
 set -euo pipefail
 export UI_PYTEST_ARGS="-x"
 exec "$(dirname "$0")/run-tests.sh" \
-  "ui_tests/tests/test_domain_roots_lifecycle.py::test_admin_domain_roots_lifecycle_journey"
+  "ui_tests/tests/features/test_domain_roots_lifecycle.py::test_admin_domain_roots_lifecycle_journey"
