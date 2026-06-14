@@ -6,6 +6,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import pytest
 from datetime import datetime
 
+# Hypothesis profiles — guarded so a missing install never breaks non-PBT test collection.
+# Select via HYPOTHESIS_PROFILE env var (default: "ci").
+# ci  — 50 examples, fast; used in the CI unit-tests job.
+# dev — 500 examples; run locally with: HYPOTHESIS_PROFILE=dev pytest tests/
+try:
+    from hypothesis import settings, HealthCheck
+    settings.register_profile("ci", max_examples=50, deadline=None,
+                              suppress_health_check=[HealthCheck.too_slow])
+    settings.register_profile("dev", max_examples=500, deadline=None)
+    settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "ci"))
+except ImportError:
+    pass
+
 from netcup_api_filter.app import create_app
 from netcup_api_filter.database import db as _db
 from netcup_api_filter.models import (

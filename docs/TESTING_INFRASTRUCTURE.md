@@ -37,6 +37,7 @@ Run with `python -m pytest tests/` (or plain `pytest tests/`). No running app re
 - Unit modules cover: token auth (`authenticate_token`, `check_permission`, `check_ip_allowed`),
   realm matching, validators, password policy, recovery codes, DDNS parsing, netcup client
   envelope helpers, and lightweight migrations.
+- Hypothesis property tests live in `tests/test_*_property.py`, default profile `ci` (50 examples), set `HYPOTHESIS_PROFILE=dev` for 500.
 - CI runs this suite on every push/PR (see **`unit-tests` job** below).
 
 ### `ui_tests/` — Playwright E2E (browser required)

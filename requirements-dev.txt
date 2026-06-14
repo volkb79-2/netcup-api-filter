@@ -8,6 +8,7 @@
 pytest>=9.0
 pytest-asyncio>=1.3
 pytest-cov>=6.0  # Coverage reporting (term-missing + xml for CI)
+hypothesis>=6.100  # Property-based testing (parsers/validators) — see TESTING_LESSONS_LEARNED §5
 
 # WSGI server for local testing
 gunicorn>=21.0.0
