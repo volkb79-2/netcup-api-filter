@@ -119,15 +119,16 @@ def list_records(domain):
             domain=domain,
             source_ip=client_ip,
             status='denied',
+            error_code=perm.error_code,
             status_reason=perm.reason
         )
         return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
-    
+
     # Get Netcup client
     netcup = get_netcup_client()
     if not netcup:
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
-    
+
     try:
         # Fetch records from Netcup (list or Netcup-style envelope)
         result = netcup.info_dns_records(domain)
@@ -220,16 +221,17 @@ def create_record(domain):
             record_name=hostname,
             source_ip=client_ip,
             status='denied',
+            error_code=perm.error_code,
             status_reason=perm.reason,
             request_data=data
         )
         return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
-    
+
     # Get Netcup client
     netcup = get_netcup_client()
     if not netcup:
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
-    
+
     try:
         # Build record
         record = {
@@ -332,16 +334,17 @@ def update_record(domain, record_id):
             record_name=hostname,
             source_ip=client_ip,
             status='denied',
+            error_code=perm.error_code,
             status_reason=perm.reason,
             request_data=data
         )
         return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
-    
+
     # Get Netcup client
     netcup = get_netcup_client()
     if not netcup:
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
-    
+
     try:
         # Build record with ID for update
         record = {
@@ -427,15 +430,16 @@ def delete_record(domain, record_id):
             domain=domain,
             source_ip=client_ip,
             status='denied',
+            error_code=perm.error_code,
             status_reason=perm.reason
         )
         return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
-    
+
     # Get Netcup client
     netcup = get_netcup_client()
     if not netcup:
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
-    
+
     try:
         # Delete record by marking deleterecord=True
         record = {
@@ -536,15 +540,16 @@ def ddns_update(domain, hostname):
             record_name=hostname,
             source_ip=client_ip,
             status='denied',
+            error_code=perm.error_code,
             status_reason=perm.reason
         )
         return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
-    
+
     # Get Netcup client
     netcup = get_netcup_client()
     if not netcup:
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
-    
+
     try:
         # First, try to find existing record
         info_result = netcup.info_dns_records(domain)
