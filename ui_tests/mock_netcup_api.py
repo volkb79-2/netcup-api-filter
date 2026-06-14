@@ -15,7 +15,7 @@ from __future__ import annotations
 import secrets
 import time
 from typing import Any, Dict, List
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 
 # Mock data storage
 SESSIONS: Dict[str, Dict[str, Any]] = {}  # session_id -> {customer_id, api_key, created_at}
@@ -29,6 +29,10 @@ MOCK_API_PASSWORD = "test-api-password"
 
 # Session timeout (seconds)
 SESSION_TIMEOUT = 300
+
+# Error injection state — set via /_test/set-error-mode for resilience testing.
+# Modes: "off" (normal), "500", "invalid_json", "empty", "missing_keys"
+_ERROR_STATE: Dict[str, str] = {"mode": "off"}
 
 
 def create_mock_api_app() -> Flask:
@@ -55,6 +59,16 @@ def create_mock_api_app() -> Flask:
     @app.route('/run/webservice/servers/endpoint.php', methods=['POST'])
     def api_endpoint():
         """Main API endpoint that handles all Netcup API actions."""
+        mode = _ERROR_STATE["mode"]
+        if mode == "500":
+            return Response("Internal Server Error", status=500, content_type="text/plain")
+        if mode == "invalid_json":
+            return Response("not-json-at-all", status=200, content_type="text/plain")
+        if mode == "empty":
+            return Response("", status=200, content_type="text/plain")
+        if mode == "missing_keys":
+            return jsonify({"status": "success"}), 200
+
         try:
             data = request.get_json()
             if not data:
@@ -363,7 +377,31 @@ def create_mock_api_app() -> Flask:
                 "dnsrecords": updated_records
             }
         }), 200
-    
+
+    # ---- Test-only inspection and control routes ----
+
+    @app.route('/_test/records/<domain>', methods=['GET'])
+    def _test_records(domain):
+        """Return current in-memory DNS records for *domain* (test inspection only)."""
+        return jsonify({"domain": domain, "records": DNS_RECORDS.get(domain, [])}), 200
+
+    @app.route('/_test/set-error-mode', methods=['POST'])
+    def _test_set_error_mode():
+        """Set error injection mode for resilience testing.
+
+        Accepted modes: "off", "500", "invalid_json", "empty", "missing_keys".
+        """
+        data = request.get_json(silent=True) or {}
+        _ERROR_STATE["mode"] = data.get("mode", "off")
+        return jsonify({"status": "ok", "mode": _ERROR_STATE["mode"]}), 200
+
+    @app.route('/_test/reset', methods=['POST'])
+    def _test_reset():
+        """Reset all mock state (sessions, zones, records) and clear error mode."""
+        reset_mock_state()
+        _ERROR_STATE["mode"] = "off"
+        return jsonify({"status": "reset"}), 200
+
     return app
 
 
@@ -415,21 +453,6 @@ def seed_test_domain(domain: str, records: List[Dict[str, Any]] | None = None):
 # Create app instance for gunicorn (e.g., gunicorn mock_netcup_api:app)
 app = create_mock_api_app()
 seed_test_domain("test.example.com")
-
-
-# ---- Test-only inspection routes (appended after app creation) ----
-
-@app.route('/_test/records/<domain>', methods=['GET'])
-def _test_records(domain):
-    """Return current in-memory DNS records for *domain* (test inspection only)."""
-    return jsonify({"domain": domain, "records": DNS_RECORDS.get(domain, [])}), 200
-
-
-@app.route('/_test/reset', methods=['POST'])
-def _test_reset():
-    """Reset all mock state (sessions, zones, records) for test isolation."""
-    reset_mock_state()
-    return jsonify({"status": "reset"}), 200
 
 
 if __name__ == '__main__':

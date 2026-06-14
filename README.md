@@ -173,24 +173,42 @@ If a release note mentions one of those operations, apply the migration manually
 immediately after) restarting the app. The lightweight migrator logs every `ALTER TABLE` it
 executes at `WARNING` level so you can verify what was applied.
 
-## Testing & Validation Cheatsheet
+## Testing
 
-- `./run-local-tests.sh` – Full pytest suite against the locally extracted deployment.
-- `bash tooling/run-ui-validation.sh` – Spins up Gunicorn, TLS proxy, and Playwright to exercise the UI end-to-end.
-- `pytest tests/` – Unit + property-based tests (355 tests, no app/browser required, <60 s).
-- `pytest ui_tests/tests` – Full Playwright suite (450 tests; requires running deployment).
-- `pytest ui_tests/tests -m smoke` – Route-smoke + widget smoke only (fast subset).
-- `pytest ui_tests/tests -m roundtrip` – Backend-truth round-trip tests.
-- `pytest ui_tests/tests -m security` – Auth, 2FA, recovery codes, IP allowlist tests.
-- `pytest ui_tests/tests -m ci_smoke` – The 102-test CI subset (tagged `@pytest.mark.ci_smoke`).
-- `pytest ui_tests/tests -m "not e2e_local"` – Browser tests that do not require mock services.
-- `HYPOTHESIS_PROFILE=dev pytest tests/` – Run Hypothesis with 500 examples per property.
+Two independent test suites; run them separately:
+
+| Type | What it checks | Framework | Count | Speed |
+|---|---|---|---|---|
+| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 355 | <1 min total |
+| Route smoke | Every Flask route returns the correct HTTP status | Playwright | 86 | Medium |
+| Widget | Individual UI components in isolation | Playwright | 19 | Medium |
+| Round-trip | UI action → backend state verified via 3 independent channels | Playwright | ~30 | Medium |
+| Security | Auth, 2FA, recovery codes, IP allowlist, attack attribution | Playwright | ~60 | Medium |
+| Feature E2E | Full feature workflows (registration, DNS, email, audit) | Playwright | ~200 | Slow |
+| Journey | Multi-step stateful scenario suites (j1/j2/j3) | Playwright | ~20 | Slow |
+| Nonfunctional | Accessibility + performance | Playwright | ~20 | Slow |
+| Upstream resilience | netcup_client / filter_proxy bad-response paths | pytest + mock | ~15 | <30 s |
+| Mocks / live | Mock-service self-tests + real-backend tests | Playwright | ~15 | Varies |
+| **Total (ui_tests)** | | | **450** | |
+
+**Key commands:**
+
+```bash
+pytest tests/                                  # unit + property (355 tests, no app needed)
+HYPOTHESIS_PROFILE=dev pytest tests/           # Hypothesis with 500 examples/property
+pytest ui_tests/tests                          # full Playwright suite (requires running deployment)
+pytest ui_tests/tests -m smoke                 # route-smoke + widget smoke (fast)
+pytest ui_tests/tests -m roundtrip             # backend-truth round-trip tests
+pytest ui_tests/tests -m security              # auth, 2FA, recovery, allowlist
+pytest ui_tests/tests -m ci_smoke              # 93-test CI subset
+pytest ui_tests/tests -m upstream_resilience   # bad upstream-response paths
+./run-local-tests.sh --with-mocks              # full local run: build + deploy + all tests
+```
 
 The `ui_tests/tests/` directory uses a **bucket schema**: `smoke/ roundtrip/ security/ features/
 journeys/ nonfunctional/ live/ mocks/`. Select any bucket with `-m <marker>` regardless of path.
 
-See `docs/TESTING_INFRASTRUCTURE.md` for full details and `OPERATIONS_GUIDE.md` for environment
-variables and troubleshooting tips.
+See `docs/TESTING_INFRASTRUCTURE.md` for full suite details and CI job configuration.
 
 ## Security Expectations
 

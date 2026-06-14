@@ -81,13 +81,15 @@ class NetcupClient:
         try:
             response = requests.post(self.api_url, json=payload, timeout=self.timeout)
             response.raise_for_status()
-            data = response.json()
-            
-            # Check for API-level errors
+            try:
+                data = response.json()
+            except ValueError as e:
+                raise NetcupAPIError(f"Invalid JSON from API: {e}")
+            if not isinstance(data, dict):
+                raise NetcupAPIError(f"Unexpected response shape: {type(data).__name__}")
             if data.get("status") != "success":
                 error_msg = data.get("longmessage", data.get("statuscode", "Unknown error"))
                 raise NetcupAPIError(f"API error: {error_msg}")
-                
             return data
         except requests.RequestException as e:
             logger.error(f"Request failed: {e}")
@@ -102,7 +104,10 @@ class NetcupClient:
         }
         
         response = self._make_request("login", param)
-        self.session_id = response["responsedata"]["apisessionid"]
+        try:
+            self.session_id = response["responsedata"]["apisessionid"]
+        except KeyError as e:
+            raise NetcupAPIError(f"Missing key in login response: {e}")
         logger.info("Successfully logged in to Netcup API")
         return self.session_id
     
@@ -136,7 +141,10 @@ class NetcupClient:
         }
         
         response = self._make_request("infoDnsZone", param)
-        return response["responsedata"]
+        try:
+            return response["responsedata"]
+        except KeyError as e:
+            raise NetcupAPIError(f"Missing key in infoDnsZone response: {e}")
     
     def info_dns_records(self, domain: str) -> List[Dict[str, Any]]:
         """Get all DNS records for a domain"""
@@ -151,7 +159,10 @@ class NetcupClient:
         }
         
         response = self._make_request("infoDnsRecords", param)
-        return response["responsedata"]["dnsrecords"]
+        try:
+            return response["responsedata"]["dnsrecords"]
+        except KeyError as e:
+            raise NetcupAPIError(f"Missing key in infoDnsRecords response: {e}")
     
     def update_dns_records(self, domain: str, dns_records: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Update DNS records for a domain"""
@@ -169,7 +180,10 @@ class NetcupClient:
         }
         
         response = self._make_request("updateDnsRecords", param)
-        return response["responsedata"]
+        try:
+            return response["responsedata"]
+        except KeyError as e:
+            raise NetcupAPIError(f"Missing key in updateDnsRecords response: {e}")
     
     def __enter__(self):
         """Context manager entry"""

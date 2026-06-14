@@ -202,6 +202,7 @@ A change is not done until its docs match the code **in the same change**. Befor
 - **API/DDNS endpoint, param, or response shape** → [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) / [`docs/DDNS_PROTOCOLS.md`](docs/DDNS_PROTOCOLS.md).
 - **New `.env.defaults` key or config behaviour** → [`docs/CONFIGURATION_GUIDE.md`](docs/CONFIGURATION_GUIDE.md) / [`docs/TOML_CONFIGURATION.md`](docs/TOML_CONFIGURATION.md).
 - **Deploy/ops flow or script flags** → [`docs/DEPLOYMENT_WORKFLOW.md`](docs/DEPLOYMENT_WORKFLOW.md).
+- **Test suite structure, type, or count change** → update [`docs/TESTING_INFRASTRUCTURE.md`](docs/TESTING_INFRASTRUCTURE.md) (table row + counts) **and** the suite-type table in the `README.md` Testing section.
 
 Rules: don't invent doc claims the code doesn't back; if you find a doc describing something
 that isn't implemented, either fix the doc or move it to the roadmap — never leave an

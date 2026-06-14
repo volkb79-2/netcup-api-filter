@@ -86,11 +86,13 @@ def call_netcup_api(action: str, params: dict[str, Any]) -> dict[str, Any]:
         logger.error(f"Netcup API error: {e}")
         raise NetcupAPIError(f"API error: {e}", 500)
     
+    if not isinstance(data, dict):
+        raise NetcupAPIError(f"Unexpected response shape: {type(data).__name__}", 502)
     if data.get("status") != "success":
         msg = data.get("longmessage") or data.get("shortmessage") or "Unknown error"
         logger.warning(f"Netcup API error: {msg}")
         raise NetcupAPIError(msg, 400)
-    
+
     return data.get("responsedata", {})
 
 

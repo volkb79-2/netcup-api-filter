@@ -19,11 +19,12 @@ the local runners, the CI jobs, and the tooling that supports them.
 | Feature E2E | Full feature workflows (registration, DNS, audit, etc.) | Playwright | ~200 | Slow |
 | Journey | Multi-step stateful scenario suites (j1/j2/j3) | Playwright | ~20 | Slow |
 | Nonfunctional | Accessibility + performance | Playwright | ~20 | Slow |
+| Upstream resilience | netcup_client / filter_proxy bad-response paths | pytest + unittest.mock | 24 | <30 s |
 | Mocks / live | Mock-service self-tests + real-backend tests | Playwright | ~15 | Varies |
 | **Total (ui_tests)** | | | **450** | |
 
 The unit suite runs in CI on every push (<60 s). A tagged `@pytest.mark.ci_smoke` subset
-of 102 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
+of 93 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
 See **CI jobs** below.
 
 ---
@@ -135,7 +136,7 @@ Uploads `coverage.xml` as an artifact on every run.
 ### `e2e-smoke`
 
 Boots the full app in the CI runner (gunicorn, plain HTTP :5100) and runs all tests
-tagged `@pytest.mark.ci_smoke` (102 tests). Services: Mailpit on ports 1025/8025.
+tagged `@pytest.mark.ci_smoke` (93 tests). Services: Mailpit on ports 1025/8025.
 
 **Bootstrap**: `scripts/ci_bootstrap_e2e.py` initialises the DB and writes
 `deployment_state_local.json` so the test helpers find the admin credentials.
