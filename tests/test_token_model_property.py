@@ -229,6 +229,27 @@ def test_strict_child_matches_subdomain_and_subdomain_only_but_not_host(
     )
 
 
+@given(domain=_domain, realm_value=_realm_value, other=_domain)
+def test_unrelated_hostname_matches_no_realm_type(domain, realm_value, other):
+    """A hostname outside the realm's zone must match NONE of host/subdomain/subdomain_only.
+
+    Regression for a mutation-surfaced gap: `subdomain_only` was
+    `endswith('.'+fqdn) and hostname != fqdn`; flipping `and`→`or` made an
+    UNRELATED hostname (endswith False, != fqdn True) match — a scope bypass.
+    This pins that an unrelated hostname is rejected by every realm type.
+    """
+    fqdn = _make_realm(domain, "host", realm_value).get_fqdn()
+    # Make `other` provably unrelated: not equal to fqdn and not a child of it.
+    assume(other != fqdn)
+    assume(not other.endswith("." + fqdn))
+    assume(not fqdn.endswith("." + other))
+    for rtype in ("host", "subdomain", "subdomain_only"):
+        realm = _make_realm(domain, rtype, realm_value)
+        assert realm.matches_hostname(other) is False, (
+            f"{rtype} realm (fqdn={fqdn!r}) must NOT match unrelated host {other!r}"
+        )
+
+
 # =============================================================================
 # Property 3 — matches_hostname never raises; unknown realm_type ⇒ False
 # =============================================================================

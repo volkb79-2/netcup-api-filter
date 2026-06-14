@@ -530,3 +530,90 @@ def test_check_permission_success(app, make_account, make_realm, make_token):
     )
     assert result.granted is True
     assert result.error_code is None
+
+
+# =============================================================================
+# Mutation-killing tests — added by M2 spot-check
+# =============================================================================
+
+
+def test_extract_bearer_token_space_in_token_value_preserved():
+    """Token value that contains a space must not be truncated by rsplit.
+
+    Kills x_extract_bearer_token__mutmut_7: split(' ', 1) → rsplit(' ', 1).
+    With rsplit the last space is split on, turning "Bearer part1 part2" into
+    scheme="Bearer part1", token="part2".  With split (left-to-right) it
+    correctly gives scheme="Bearer", token="part1 part2".
+    """
+    # A hypothetical header where something appends an extra segment after the token.
+    header = "Bearer naf_abc_123 extra"
+    result = extract_bearer_token(header)
+    # split(' ', 1) returns 'naf_abc_123 extra'; rsplit would return 'extra'.
+    assert result == "naf_abc_123 extra"
+
+
+def test_resolve_fqdn_trailing_dot_on_record_name_stripped():
+    """A record_name with trailing '.' must be normalised via rstrip, not lstrip.
+
+    Kills x__resolve_fqdn__mutmut_10: rstrip('.') → lstrip('.').
+    With lstrip, 'vpn.' would stay as 'vpn.' (the dot is at the end, not the
+    start), so the FQDN would be computed as 'vpn..example.com' rather than
+    'vpn.example.com'.
+    """
+    assert _resolve_fqdn("example.com", "vpn.") == "vpn.example.com"
+
+
+def test_check_ip_allowed_cidr_with_host_bits_set_strict_false():
+    """CIDR range with host bits set must be accepted (strict=False).
+
+    Kills x_check_ip_allowed__mutmut_15: strict=False → strict=True.
+    With strict=True, ip_network('192.168.1.100/24') raises ValueError (host
+    bits are set), so the entry is skipped and the IP appears denied.  With
+    strict=False the network mask is applied and the entry parses correctly.
+    """
+    tok = _bare_token_with_ranges(["192.168.1.100/24"])
+    # The host ip 192.168.1.42 falls inside the /24 network 192.168.1.0/24.
+    assert check_ip_allowed(tok, "192.168.1.42") is True
+
+
+def test_check_permission_no_client_ip_skips_ip_check(app, make_account, make_realm, make_token):
+    """check_permission with client_ip=None must skip IP whitelist check.
+
+    Kills x_check_permission__mutmut_19: 'if client_ip and not check_ip_allowed...'
+    → 'if client_ip or not check_ip_allowed(...)'.
+    With 'or', client_ip=None still triggers the check (check_ip_allowed is
+    called with None as client_ip, which raises ValueError → returns False),
+    causing a spurious ip_denied.  The correct guard 'and' short-circuits when
+    client_ip is falsy.
+    """
+    account = make_account("no_ip_skip_user")
+    realm = make_realm(account, operations=("read",))
+    # Token with an IP restriction.
+    _tok, plain = make_token(realm, ip_ranges=["10.0.0.1"])
+    auth = authenticate_token(plain)
+    assert auth.success is True
+
+    # No client IP provided — IP check must be skipped entirely.
+    result = check_permission(auth, "read", "example.com", client_ip=None)
+    assert result.granted is True
+    assert result.error_code is None
+
+
+def test_check_permission_valid_ip_passes_check(app, make_account, make_realm, make_token):
+    """Passing a valid whitelisted IP must use that IP (not None) for check_ip_allowed.
+
+    Kills x_check_permission__mutmut_22: check_ip_allowed(token, client_ip)
+    → check_ip_allowed(token, None).
+    If None is passed, ip_address(None) raises TypeError (caught as ValueError),
+    returning False and causing a spurious ip_denied even for a whitelisted IP.
+    """
+    account = make_account("valid_ip_user")
+    realm = make_realm(account, operations=("read",))
+    _tok, plain = make_token(realm, ip_ranges=["10.0.0.5"])
+    auth = authenticate_token(plain)
+    assert auth.success is True
+
+    # Exact whitelisted IP — must be granted.
+    result = check_permission(auth, "read", "example.com", client_ip="10.0.0.5")
+    assert result.granted is True
+    assert result.error_code is None

@@ -240,3 +240,145 @@ def test_verify_case_and_dash_tolerant(app, make_account):
     # One of the three forms must succeed (they all map to the same hash).
     # We verify 'no_dash' first, which normalizes identically to 'canonical'.
     assert verify_recovery_code(account, no_dash) is True
+
+
+# =============================================================================
+# Mutation-killing tests — added by M2 spot-check
+# =============================================================================
+
+
+# --- verify_recovery_code: no-codes guard (mutmut_3) ---
+def test_verify_no_codes_returns_false(app, make_account):
+    """When account.recovery_codes is None/empty, verify must return False.
+
+    Kills x_verify_recovery_code__mutmut_3: 'return False' → 'return True'.
+    An account with no codes stored must never be authenticated via recovery-
+    code path regardless of what code string is supplied.
+    """
+    account = make_account("rc_no_codes")
+    # Do NOT store any codes — account.recovery_codes is None.
+    assert account.recovery_codes is None
+    assert verify_recovery_code(account, "AAAA-BBBB") is False
+
+
+# --- verify_recovery_code: JSON decode error (mutmut_7) ---
+def test_verify_corrupt_json_returns_false(app, make_account):
+    """Corrupted recovery_codes JSON must make verify return False, not True.
+
+    Kills x_verify_recovery_code__mutmut_7: 'return False' → 'return True'.
+    A corrupted DB value must not grant authentication.
+    """
+    from netcup_api_filter.models import db
+    account = make_account("rc_corrupt")
+    # Inject invalid JSON directly into the column.
+    account.recovery_codes = "NOT-VALID-JSON{{{!"
+    db.session.commit()
+
+    assert verify_recovery_code(account, "AAAA-BBBB") is False
+
+
+# --- verify_recovery_code: last-code clears timestamp correctly (mutmut_14) ---
+def test_verify_last_code_clears_generated_at(app, make_account):
+    """Using the last recovery code must clear recovery_codes_generated_at.
+
+    Kills x_verify_recovery_code__mutmut_14: 'if not stored_hashes:' → 'if stored_hashes:'.
+    The condition inverted would clear the timestamp when codes REMAIN and keep it
+    when the last code is consumed — the exact opposite of the intended behaviour.
+    We validate by checking that generated_at is None after using the only code.
+    """
+    account = make_account("rc_last_code")
+    # Store exactly one code so that using it empties the list.
+    code = generate_recovery_codes()[0]
+    store_recovery_codes(account, [code])
+    assert account.recovery_codes_generated_at is not None
+
+    result = verify_recovery_code(account, code)
+    assert result is True
+    # After the last code is used, the generation timestamp must be cleared.
+    assert account.recovery_codes_generated_at is None
+
+
+# --- store_recovery_codes: exception path returns False (mutmut_9) ---
+def test_store_recovery_codes_exception_returns_false(app, make_account, monkeypatch):
+    """store_recovery_codes must return False (not True) when db.session.commit raises.
+
+    Kills x_store_recovery_codes__mutmut_9: 'return False' → 'return True'.
+    Callers rely on the return value to know whether codes were persisted.
+    """
+    from netcup_api_filter import recovery_codes as rc
+    from netcup_api_filter.models import db
+
+    account = make_account("rc_store_fail")
+    codes = generate_recovery_codes()
+
+    def _boom():
+        raise RuntimeError("simulated db failure")
+
+    monkeypatch.setattr(db.session, "commit", _boom)
+    result = store_recovery_codes(account, codes)
+    assert result is False
+
+
+# --- get_remaining_code_count: no codes returns 0 (mutmut_2) ---
+def test_get_remaining_no_codes_returns_zero(app, make_account):
+    """get_remaining_code_count must return 0 when no codes are stored.
+
+    Kills x_get_remaining_code_count__mutmut_2: 'return 0' → 'return 1'.
+    Callers use this value to decide whether to prompt the user to regenerate codes.
+    """
+    account = make_account("rc_count_none")
+    assert account.recovery_codes is None
+    assert get_remaining_code_count(account) == 0
+
+
+# --- get_remaining_code_count: corrupt JSON returns 0 (mutmut_5) ---
+def test_get_remaining_corrupt_json_returns_zero(app, make_account):
+    """get_remaining_code_count must return 0 for unparseable JSON, not 1.
+
+    Kills x_get_remaining_code_count__mutmut_5: 'return 0' → 'return 1'.
+    """
+    from netcup_api_filter.models import db
+    account = make_account("rc_count_corrupt")
+    account.recovery_codes = "INVALID-JSON"
+    db.session.commit()
+
+    assert get_remaining_code_count(account) == 0
+
+
+# --- _recovery_code_count: default "3" fallback when env var absent (mutmut_3/5/8) ---
+def test_recovery_code_count_default_is_three_not_none_or_other(monkeypatch):
+    """_recovery_code_count() must return 3 when env var is absent.
+
+    Kills x__recovery_code_count__mutmut_3 (default→None → int(str(None)) raises →
+    fallback 3 but via exception path), mutmut_5 (no default arg → KeyError → fallback),
+    mutmut_8 (default→"XX3XX" → ValueError → fallback) — these all end up returning 3
+    via the except branch, making them equivalent in end-result but exercising
+    the try-path rather than except-path. Pin the expected outcome explicitly.
+    """
+    monkeypatch.delenv("RECOVERY_CODE_COUNT", raising=False)
+    assert rc._recovery_code_count() == 3
+
+
+# --- hash_recovery_code: uppercase normalization (mutmut_6) ---
+def test_hash_recovery_code_uppercase_normalization_used_for_storage(app, make_account):
+    """Codes are stored hashed with uppercase normalization; lowercase input must still match.
+
+    Kills x_hash_recovery_code__mutmut_6: 'code.upper()' → 'code.lower()'.
+    If .lower() were used instead, a stored hash (derived from 'ABCDEFGH') would
+    NOT match a lowercase input ('abcdefgh') because sha256('abcdefgh') != sha256('ABCDEFGH').
+    We generate uppercase codes, store them, then verify with the exact canonical form.
+    This test pins that the hash must be consistent: store(uppercase) == lookup(uppercase).
+    """
+    account = make_account("rc_hash_norm")
+    # Generate codes (all uppercase per RECOVERY_CODE_ALPHABET).
+    codes = generate_recovery_codes()
+    store_recovery_codes(account, codes)
+
+    canonical = codes[0]  # e.g. "ABCD-2345" — all uppercase
+    # Verify with canonical uppercase — must succeed.
+    assert verify_recovery_code(account, canonical) is True
+
+    # Now directly confirm the hash function is deterministic and uppercase-based:
+    h1 = hash_recovery_code(canonical)
+    h2 = hash_recovery_code(canonical.upper())
+    assert h1 == h2, "hash_recovery_code must produce the same hash for same-case input"

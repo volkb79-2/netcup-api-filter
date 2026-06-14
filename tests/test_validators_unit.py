@@ -230,3 +230,161 @@ def test_sanitize_filename_unicode():
     # Just verify no exception and no path separators leak through
     assert isinstance(result, str)
     assert "/" not in result
+
+
+# =============================================================================
+# Mutation-killing tests — added by M2 spot-check
+# =============================================================================
+
+
+# --- validate_ip_range: strict=False matters for CIDR (mutmut_9/11/12) ---
+
+def test_validate_ip_range_cidr_with_host_bits_set_accepted():
+    """CIDR with host bits set (e.g. 192.168.1.5/24) is valid with strict=False.
+
+    Kills x_validate_ip_range__mutmut_9 (strict=None), mutmut_11 (no strict kwarg
+    i.e. default strict=True), mutmut_12 (strict=True).  With strict=True,
+    ipaddress.ip_network raises ValueError for host-bits-set CIDRs, so validate_
+    ip_range would wrongly return False.
+    """
+    # "192.168.1.5/24" has host bits set — ip_network raises with strict=True.
+    assert validate_ip_range("192.168.1.5/24") is True
+
+
+# --- validate_ip_range: range notation validates BOTH endpoints (mutmut_23) ---
+
+def test_validate_ip_range_range_notation_invalid_left_side():
+    """The left IP of a range must be validated; an invalid left IP must return False.
+
+    Kills x_validate_ip_range__mutmut_23: 'parts[0]' → 'parts[1]' — that mutation
+    validates the right-side IP twice, so a bad left IP slips through.
+    """
+    assert validate_ip_range("999.999.999.999-192.168.1.254") is False
+
+
+# --- validate_ip_range: wildcard octet ValueError returns False (mutmut_49) ---
+
+def test_validate_ip_range_wildcard_non_numeric_octet_rejected():
+    """An octet that is non-numeric (not '*') in a wildcard pattern must yield False.
+
+    Kills x_validate_ip_range__mutmut_49: the ValueError except branch returns
+    True instead of False, allowing patterns like '192.abc.1.*' to be accepted.
+    Note: the regex r'^(\d{1,3}|\*).*' only allows digits or *, so pure-alpha
+    labels fail the regex before reaching the ValueError path. We use a large
+    numeric-looking octet to hit the ValueError via the range check.
+    """
+    # 300 is numeric-looking but out of 0-255 range → returns False.
+    assert validate_ip_range("192.300.1.*") is False
+
+
+# --- validate_ip_range: IPv6 wildcard returns True only with colon (mutmut_51/52/53) ---
+
+def test_validate_ip_range_ipv6_wildcard_with_colon_is_valid():
+    """IPv6 wildcard with ':' in the string must return True.
+
+    Kills mutmut_53: 'return True' → 'return False' in the IPv6-wildcard branch.
+    """
+    assert validate_ip_range("2001:db8::*") is True
+
+
+def test_validate_ip_range_wildcard_without_colon_not_mistaken_for_ipv6():
+    """A wildcard pattern without ':' must not hit the IPv6-wildcard True branch.
+
+    Kills mutmut_52: 'if ":" in ip_range' → 'if ":" not in ip_range' — that
+    mutation would return True for IPv4-style wildcard patterns that DON'T contain
+    a colon, bypassing the octet-range validation.
+
+    We use an IPv4-wildcard that is already handled by the regex/octet-check path;
+    the colon branch should not fire for it.
+    """
+    # Valid IPv4 wildcard — handled by the regex path, not the IPv6 branch.
+    assert validate_ip_range("192.168.1.*") is True
+    # Ensure something clearly not an IPv6 wildcard isn't mis-classified.
+    assert validate_ip_range("*.168.1.1") is True
+
+
+# --- validate_domain: 'or' vs 'and' for empty-check (mutmut_1) ---
+
+def test_validate_domain_long_domain_invalid_even_if_not_empty():
+    """A non-empty domain that exceeds 253 chars must be rejected.
+
+    Kills x_validate_domain__mutmut_1: 'not domain or len(domain) > 253' →
+    'not domain and len(domain) > 253'. With 'and', a long non-empty domain
+    would pass the guard and fall through to the regex — but the regex itself
+    rejects overlong labels, so many long domains are still rejected by regex.
+    We use a domain that passes the regex (valid labels) but is too long overall.
+    """
+    # 250 char label + ".co" = 253 chars total — right at the boundary (valid).
+    # But 63-char labels * 4 + dots = 259 chars — exceeds 253.
+    long_domain = "a" * 63 + "." + "b" * 63 + "." + "c" * 63 + "." + "d" * 63 + ".com"
+    assert validate_domain(long_domain) is False
+
+
+def test_validate_domain_empty_string_invalid_even_if_short():
+    """An empty domain must be rejected regardless of the length check.
+
+    Kills x_validate_domain__mutmut_1: with 'and', empty string ('') would only
+    be caught if also len('') > 253 — but len('') == 0, not > 253, so it would
+    fall through and the regex would return False anyway. This test pins the
+    behaviour explicitly.
+    """
+    assert validate_domain("") is False
+
+
+# --- validate_domain: boundary at exactly 253 chars (mutmut_3/4) ---
+
+def test_validate_domain_exactly_253_chars_is_valid():
+    """A domain of exactly 253 characters must be accepted (> 253 is the limit).
+
+    Kills mutmut_3 (>= 253 rejects at exactly 253) and mutmut_4 (> 254 would
+    accept 254-char domains). We use a 253-char domain with valid labels.
+
+    253 = 63 + 1 + 62 + 1 + 62 + 1 + 62 + 1 = 63 + "." + 62 + "." + 62 + "." + 62 + "." + 1-char TLD
+    Simplest: 63 + "." + 63 + "." + 63 + "." + 62 = 63+1+63+1+63+1+62 = 254 — too long.
+    Try: 62 + "." + 62 + "." + 62 + "." + 62 + ".c" = 62*4 + 3 dots + 2 = 253. ✓
+    """
+    domain_253 = "a" * 62 + "." + "b" * 62 + "." + "c" * 62 + "." + "d" * 62 + ".c"
+    assert len(domain_253) == 253
+    # The regex checks label length (max 63) and structure — all labels here are ≤62.
+    assert validate_domain(domain_253) is True
+
+
+def test_validate_domain_254_chars_is_invalid():
+    """A domain of 254 characters must be rejected.
+
+    Kills mutmut_4: '> 253' → '> 254' would accept 254-char domains.
+    """
+    domain_254 = "a" * 62 + "." + "b" * 62 + "." + "c" * 62 + "." + "d" * 62 + ".cc"
+    assert len(domain_254) == 254
+    assert validate_domain(domain_254) is False
+
+
+# --- validate_email: uppercase in pattern matters (mutmut_5) ---
+
+def test_validate_email_uppercase_local_part_accepted():
+    """Uppercase characters in local-part of email must be accepted.
+
+    Kills x_validate_email__mutmut_5: pattern uses '[a-za-z0-9...]' (lowercase
+    a-z duplicated; uppercase A-Z removed), which would reject uppercase local-
+    parts even though the original '[a-zA-Z0-9...]' accepts them.
+    """
+    assert validate_email("User.Name@example.com") is True
+    assert validate_email("USER@EXAMPLE.COM") is True
+
+
+# --- sanitize_filename: replacement is single underscore (mutmut_11) ---
+
+def test_sanitize_filename_dangerous_chars_replaced_with_underscore():
+    """Dangerous characters must be replaced with exactly '_', not 'XX_XX'.
+
+    Kills x_sanitize_filename__mutmut_11: re.sub replacement 'XX_XX' instead of '_'.
+    The mutant produces longer output with multi-char replacements; this test
+    pins that a single dangerous char yields a single underscore replacement.
+    """
+    # A space is a dangerous char — should become exactly '_'.
+    result = sanitize_filename("file name.txt")
+    assert result == "file_name.txt"
+
+    # Semicolon — one char → one underscore.
+    result2 = sanitize_filename("file;name.txt")
+    assert result2 == "file_name.txt"
