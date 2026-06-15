@@ -854,12 +854,23 @@ phase_build() {
     cd "$REPO_ROOT"
 
     if [[ "$DEPLOYMENT_TARGET" == "webhosting" ]]; then
-        # Build one bundle per target Python version so both can be tested.
-        # Primary zip (3.11) is used for the actual upload in phase_deploy.
+        # Build one bundle per target Python version.
+        #
+        # deploy-py311.zip  — PRIMARY artifact; uploaded + tested in phase_deploy.
+        # deploy-py39.zip   — build artifact for the webhoster's Python-3.9
+        #                     environment; produced here for completeness but NOT
+        #                     deployed by this script (which targets the 3.11 zip).
+        #
+        # The non-primary (3.9) build is non-fatal: a cross-build failure
+        # should warn but must never block the 3.11 deploy.
         local extra_args=""
         if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
             extra_args="--bundle-app-config"
         fi
+
+        # Primary Python version is last in PYTHON_TARGETS (3.11); non-primary
+        # versions are wrapped in a non-fatal subshell.
+        local primary_pyver="${PYTHON_TARGETS[-1]}"
 
         for pyver in "${PYTHON_TARGETS[@]}"; do
             local safe_ver="${pyver//.}"  # "3.9" -> "39"
@@ -867,12 +878,29 @@ phase_build() {
             local bdir="deploy-webhosting-py${safe_ver}"
             local build_args="--target webhosting --build-dir ${bdir} --output ${out} --seed-demo --python-version ${pyver} ${extra_args}"
             log_step "Building for Python ${pyver}: python3 build_deployment.py ${build_args}..."
-            if [[ "$FAILFAST" == "true" ]]; then
-                python3 build_deployment.py ${build_args}
+
+            if [[ "$pyver" != "$primary_pyver" ]]; then
+                # Non-primary build: non-fatal — log a warning on failure and continue
+                local build_exit=0
+                if [[ "$FAILFAST" == "true" ]]; then
+                    python3 build_deployment.py ${build_args} || build_exit=$?
+                else
+                    python3 build_deployment.py ${build_args} 2>&1 | tail -20 || build_exit=$?
+                fi
+                if [[ $build_exit -ne 0 ]]; then
+                    log_warning "Python ${pyver} build failed (exit ${build_exit}) — non-primary build, continuing"
+                else
+                    log_success "Built (non-primary): ${out}"
+                fi
             else
-                python3 build_deployment.py ${build_args} 2>&1 | tail -20
+                # Primary build: fatal on failure (3.11 zip is what gets deployed)
+                if [[ "$FAILFAST" == "true" ]]; then
+                    python3 build_deployment.py ${build_args}
+                else
+                    python3 build_deployment.py ${build_args} 2>&1 | tail -20
+                fi
+                log_success "Built (primary): ${out}"
             fi
-            log_success "Built: ${out}"
         done
 
         # Primary deploy artifact is the 3.11 bundle
