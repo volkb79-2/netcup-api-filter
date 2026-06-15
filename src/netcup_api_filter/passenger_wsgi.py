@@ -2,6 +2,8 @@
 WSGI Application Entry Point for Phusion Passenger
 Account → Realms → Tokens with Bearer token authentication
 """
+from __future__ import annotations
+
 import sys
 import os
 import logging

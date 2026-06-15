@@ -35,6 +35,8 @@ Error Codes (for security analytics):
     - operation_denied: Operation not allowed
     - record_type_denied: Record type not allowed
 """
+from __future__ import annotations
+
 import ipaddress
 import logging
 from datetime import datetime

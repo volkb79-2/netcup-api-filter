@@ -1,0 +1,21 @@
+# Ruff configuration for netcup-api-filter.
+#
+# target-version = "py39" ensures UP (pyupgrade) and other rules flag syntax
+# that is only valid on Python 3.10+, catching dev↔prod version skew early.
+# The project supports Python 3.9 and 3.11 on webhosting (Phusion Passenger).
+
+target-version = "py39"
+
+[lint]
+# E/F: pycodestyle errors + pyflakes (basic correctness)
+# UP: pyupgrade — flags 3.10+-only syntax (X | Y unions, match/case, etc.)
+select = ["E", "F", "UP"]
+
+# Ignore line-length (E501) — handled by formatter if needed; not enforced here.
+# W291/W293 (trailing whitespace) are style-only; leave to formatter.
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Tests may use assert statements and broad exception patterns freely.
+"tests/**" = ["F841"]
+"ui_tests/**" = ["F841"]

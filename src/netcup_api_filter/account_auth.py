@@ -14,6 +14,8 @@ Handles:
 4. User submits code
 5. If valid, session created
 """
+from __future__ import annotations
+
 import logging
 import os
 import random

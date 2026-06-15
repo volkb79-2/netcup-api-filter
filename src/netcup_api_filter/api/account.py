@@ -11,6 +11,8 @@ Routes:
 - /account/realms/<id>/tokens/new - Create token
 - /account/tokens/<id>/activity - Token activity
 """
+from __future__ import annotations
+
 import logging
 import os
 from datetime import datetime, timedelta

@@ -15,6 +15,8 @@ In-memory storage breaks when gunicorn uses multiple workers because each
 worker has its own memory space - tokens created by one worker are invisible
 to other workers.
 """
+from __future__ import annotations
+
 import hashlib
 import logging
 import os

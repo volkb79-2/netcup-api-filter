@@ -15,6 +15,8 @@ Token Format: naf_<user_alias>_<random64>
 Security: user_alias protects username from exposure in API tokens.
 Authentication: Bearer token only for API, bcrypt hashed storage
 """
+from __future__ import annotations
+
 import json
 import logging
 import os

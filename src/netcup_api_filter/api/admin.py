@@ -14,6 +14,8 @@ Routes:
 - /admin/config/email - Email config
 - /admin/system - System info
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta
 from flask import (

@@ -19,15 +19,19 @@ concurrency:
 
 jobs:
   lint:
-    name: Lint / compile
+    name: Lint / compile (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11" # matches deploy target (.venv pyvenv.cfg -> 3.11.2)
+          python-version: "${{ matrix.python-version }}"
 
       # Byte-compile the whole package: a cheap, dependency-free syntax gate
       # that fails fast on broken Python before we bother installing anything.
@@ -35,8 +39,8 @@ jobs:
         run: python -m compileall -q src/netcup_api_filter
 
       # ruff is run only as an advisory step and only when it is actually a dev
-      # dependency. It is NOT currently in requirements-dev.txt, so this is a
-      # no-op gate today; it will start linting automatically if ruff is added.
+      # dependency. If ruff is present in requirements-dev.txt, it lints with
+      # target-version=py39 (from ruff.toml) so 3.10+-only syntax is flagged.
       - name: Ruff (if available)
         run: |
           if grep -qiE '^ruff([<>=!~ ]|$)' requirements-dev.txt; then
@@ -48,15 +52,19 @@ jobs:
           fi
 
   unit-tests:
-    name: Unit tests (tests/)
+    name: Unit tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11" # matches deploy target (.venv pyvenv.cfg -> 3.11.2)
+          python-version: "${{ matrix.python-version }}"
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
@@ -75,7 +83,7 @@ jobs:
         if: always() # keep the report even if a test failed
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml
+          name: coverage-py${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
 

@@ -82,27 +82,37 @@ def create_directory_structure(deploy_dir):
     return deploy_path, vendor_dir
 
 
-def download_and_extract_dependencies(vendor_dir, requirements_file):
+def download_and_extract_dependencies(vendor_dir, requirements_file, python_version="3.11"):
     """Download all dependencies and extract them to vendor directory."""
-    logger.info("Downloading dependencies...")
-    
+    logger.info(f"Downloading dependencies (target Python {python_version})...")
+
     with tempfile.TemporaryDirectory() as temp_dir:
         # Download all packages as wheels
         logger.info(f"Running pip download for {requirements_file}...")
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "download", 
-             "-d", temp_dir, 
+            [sys.executable, "-m", "pip", "download",
+             "-d", temp_dir,
              "-r", requirements_file,
              "--only-binary", ":all:",
-             "--python-version", "3.11",  # Match webhosting Python 3.11
+             "--python-version", python_version,
              "--platform", "manylinux2014_x86_64",
              "--platform", "any"],
             capture_output=True,
             text=True
         )
-        
+
         if result.returncode != 0:
-            logger.warning("Binary-only download failed, retrying with source packages...")
+            logger.warning(
+                f"Binary-only download failed for Python {python_version}, "
+                "retrying with source packages..."
+            )
+            if python_version != "3.11":
+                logger.warning(
+                    f"WARNING: source (sdist) fallback for target Python {python_version} "
+                    "is UNSAFE — sdists are built for the host Python, not the target. "
+                    "Cross-version source builds may produce wrong-version artifacts. "
+                    "Ensure all deps have binary wheels for the target version."
+                )
             # Retry without binary-only restriction
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "download",
@@ -744,7 +754,11 @@ def main():
     parser.add_argument("--local", action="store_true", help="Build for local testing (sets target=local)")
     parser.add_argument("--target", choices=["local", "webhosting"], default=None,
                         help="Deployment target (local or webhosting). --local sets this to 'local'")
-    parser.add_argument("--seed-demo", action="store_true", 
+    parser.add_argument("--python-version", default="3.11",
+                        help="Target Python version for vendored wheel download (default: 3.11). "
+                             "Cross-resolves binary wheels for the given version via pip download. "
+                             "Example: --python-version 3.9 produces a 3.9-compatible vendor/ dir.")
+    parser.add_argument("--seed-demo", action="store_true",
                         help="Seed comprehensive demo data for UI screenshots")
     parser.add_argument("--bundle-app-config", action="store_true",
                         help="Include app-config.toml in deployment if it exists (WARNING: contains secrets)")
@@ -762,6 +776,7 @@ def main():
     logger.info("=" * 60)
     logger.info("Netcup API Filter - Deployment Package Builder")
     logger.info(f"Target: {deployment_target}")
+    logger.info(f"Python: {args.python_version}")
     logger.info("=" * 60)
     
     requirements_path = "./requirements.webhosting.txt"
@@ -786,7 +801,7 @@ def main():
         deploy_path, vendor_dir = create_directory_structure(deploy_dir)
         
         # Download and extract dependencies
-        download_and_extract_dependencies(vendor_dir, requirements_path)
+        download_and_extract_dependencies(vendor_dir, requirements_path, python_version=args.python_version)
         
         # Copy application files
         copy_application_files(deploy_dir)

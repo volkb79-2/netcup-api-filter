@@ -14,6 +14,8 @@ The new schema replaces the old Client model with:
 - RegistrationRequest: Pending registrations
 - Settings: Key-value configuration
 """
+from __future__ import annotations
+
 import logging
 import os
 from datetime import datetime

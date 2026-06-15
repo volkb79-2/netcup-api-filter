@@ -3,6 +3,7 @@ PowerDNS Authoritative Server Backend Implementation.
 
 Implements DNSBackend interface for PowerDNS HTTP API.
 """
+from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List

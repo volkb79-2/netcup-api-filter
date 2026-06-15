@@ -11,6 +11,8 @@ Usage:
 3. If user loses 2FA device, they can use a recovery code to login
 4. Used codes are invalidated immediately
 """
+from __future__ import annotations
+
 import hashlib
 import json
 import logging

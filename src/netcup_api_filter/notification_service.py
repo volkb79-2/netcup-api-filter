@@ -15,6 +15,8 @@ Notification triggers (from UI_REQUIREMENTS.md P7.5):
 Each email includes a reference ID in the footer for traceability.
 Format: NAF-{type}-{timestamp}-{random}
 """
+from __future__ import annotations
+
 import logging
 import os
 import threading

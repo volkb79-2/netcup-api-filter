@@ -18,6 +18,8 @@ Type codes:
 - NTF: Notification (account approved, rejected, etc.)
 - ALR: Security alert
 """
+from __future__ import annotations
+
 import secrets
 import string
 from datetime import datetime

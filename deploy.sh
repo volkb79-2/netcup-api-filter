@@ -353,11 +353,6 @@ case "$DEPLOYMENT_TARGET" in
             UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:${LOCAL_FLASK_PORT}"
         fi
         
-        # Same deploy.zip for both targets - reduces drift
-        BUILD_ARGS="--target local --build-dir deploy-local --output deploy-local.zip --seed-demo"
-        if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
-            BUILD_ARGS="${BUILD_ARGS} --bundle-app-config"
-        fi
         ZIP_FILE="${REPO_ROOT}/deploy-local.zip"
         ;;
     webhosting)
@@ -366,11 +361,10 @@ case "$DEPLOYMENT_TARGET" in
         SCREENSHOT_DIR="${DEPLOY_DIR}/screenshots"
         LOG_DIR="${REPO_ROOT}/tmp"
         UI_BASE_URL="${WEBHOSTING_URL}"
-        BUILD_ARGS="--target webhosting --build-dir deploy-webhosting --output deploy.zip --seed-demo"
-        if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
-            BUILD_ARGS="${BUILD_ARGS} --bundle-app-config"
-        fi
-        ZIP_FILE="${REPO_ROOT}/deploy.zip"
+        # PYTHON_TARGETS: versions for which we cross-resolve wheels and produce per-version zips
+        PYTHON_TARGETS=(3.9 3.11)
+        # The primary zip (used for upload/deploy steps) is the 3.11 bundle
+        ZIP_FILE="${REPO_ROOT}/deploy-py311.zip"
         
         # Webhosting connection details (must be set in .env)
         WEBHOSTING_SSH_USER="${WEBHOSTING_SSH_USER:?WEBHOSTING_SSH_USER not set - check .env}"
@@ -851,21 +845,52 @@ phase_infrastructure() {
 
 phase_build() {
     log_phase "1" "Build Deployment Package"
-    
+
     if [[ "$SKIP_BUILD" == "true" ]]; then
         log_warning "Skipping build (--skip-build or --tests-only)"
         return 0
     fi
-    
-    log_step "Running build_deployment.py $BUILD_ARGS..."
+
     cd "$REPO_ROOT"
-    if [[ "$FAILFAST" == "true" ]]; then
-        python3 build_deployment.py $BUILD_ARGS
+
+    if [[ "$DEPLOYMENT_TARGET" == "webhosting" ]]; then
+        # Build one bundle per target Python version so both can be tested.
+        # Primary zip (3.11) is used for the actual upload in phase_deploy.
+        local extra_args=""
+        if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
+            extra_args="--bundle-app-config"
+        fi
+
+        for pyver in "${PYTHON_TARGETS[@]}"; do
+            local safe_ver="${pyver//.}"  # "3.9" -> "39"
+            local out="deploy-py${safe_ver}.zip"
+            local bdir="deploy-webhosting-py${safe_ver}"
+            local build_args="--target webhosting --build-dir ${bdir} --output ${out} --seed-demo --python-version ${pyver} ${extra_args}"
+            log_step "Building for Python ${pyver}: python3 build_deployment.py ${build_args}..."
+            if [[ "$FAILFAST" == "true" ]]; then
+                python3 build_deployment.py ${build_args}
+            else
+                python3 build_deployment.py ${build_args} 2>&1 | tail -20
+            fi
+            log_success "Built: ${out}"
+        done
+
+        # Primary deploy artifact is the 3.11 bundle
+        log_success "Webhosting builds complete. Primary: ${ZIP_FILE}"
     else
-        python3 build_deployment.py $BUILD_ARGS 2>&1 | tail -20
+        # Local target: single bundle with current Python (no cross-version needed)
+        local BUILD_ARGS="--target local --build-dir deploy-local --output deploy-local.zip --seed-demo"
+        if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
+            BUILD_ARGS="${BUILD_ARGS} --bundle-app-config"
+        fi
+        log_step "Running build_deployment.py ${BUILD_ARGS}..."
+        if [[ "$FAILFAST" == "true" ]]; then
+            python3 build_deployment.py ${BUILD_ARGS}
+        else
+            python3 build_deployment.py ${BUILD_ARGS} 2>&1 | tail -20
+        fi
+        log_success "Build complete: ${ZIP_FILE}"
     fi
-    
-    log_success "Build complete: $ZIP_FILE"
 }
 
 # ============================================================================
@@ -936,13 +961,15 @@ phase_deploy() {
             fi
             
             log_step "Uploading to ${WEBHOSTING_SSH_SERVER}..."
+            local zip_basename
+            zip_basename="$(basename "${ZIP_FILE}")"
             scp "$ZIP_FILE" "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}:/"
-            
+
             log_step "Extracting and restarting on server..."
             ssh "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_SERVER}" \
                 "cd / && rm -rf ${WEBHOSTING_REMOTE_DIR}/* ${WEBHOSTING_REMOTE_DIR}/.[!.]* ${WEBHOSTING_REMOTE_DIR}/..?* && \
                  mkdir -p ${WEBHOSTING_REMOTE_DIR}/tmp/ && \
-                 unzip -o -u deploy.zip -d ${WEBHOSTING_REMOTE_DIR}/ && \
+                 unzip -o -u \"${zip_basename}\" -d ${WEBHOSTING_REMOTE_DIR}/ && \
                  touch ${WEBHOSTING_REMOTE_DIR}/tmp/restart.txt"
             
             # Restore SECRET_KEY to new database if it was extracted

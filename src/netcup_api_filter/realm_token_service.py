@@ -12,6 +12,8 @@ Realm Types:
 - subdomain: Apex + children (iot.example.com, *.iot.example.com)
 - subdomain_only: Children only, NOT apex (*.client.vxxu.de)
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime
 from typing import Any, NamedTuple, Optional
