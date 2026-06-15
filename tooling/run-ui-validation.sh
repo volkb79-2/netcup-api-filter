@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-### renders the local nginx proxy config, stages certs, starts gunicorn, launches the TLS proxy, brings up the Playwright MCP container, 
-### installs requirements.txt, sets UI_BASE_URL/UI_MCP_URL, and finally executes pytest ui_tests/tests -vv. That script is the “one command” 
-### prerequisite handler you’re looking for; just ensure your .env has the right host overrides before invoking it.
-
+### Renders the local nginx proxy config, stages certs, starts gunicorn,
+### launches the TLS proxy, installs ui_tests/requirements.txt, sets
+### UI_BASE_URL, and executes pytest ui_tests/tests -vv.
+###
+### Browser connection:
+###   Default (in-process): requires 'playwright install --with-deps chromium'
+###   Remote service: export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
+###                   (no browser binaries needed on client)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROXY_DIR="${ROOT_DIR}/tooling/reverse-proxy"
 PROXY_LIB="${PROXY_DIR}/_proxy_lib.sh"
-PLAYWRIGHT_DIR="${ROOT_DIR}/tooling/playwright"
 UI_TEST_DIR="${ROOT_DIR}/ui_tests"
 TMP_DIR="${ROOT_DIR}/tmp"
 PROXY_ENV="${PROXY_DIR}/proxy.env"
@@ -27,11 +30,6 @@ fi
 # shellcheck source=/dev/null
 source "${PROXY_LIB}"
 
-if [[ ! -d "${PLAYWRIGHT_DIR}" ]]; then
-    echo "Missing Playwright directory ${PLAYWRIGHT_DIR}." >&2
-    exit 1
-fi
-
 mkdir -p "${TMP_DIR}"
 
 # shellcheck disable=SC1091
@@ -44,9 +42,6 @@ if [[ -f "${ROOT_DIR}/.env.services" ]]; then
     # shellcheck source=/dev/null
     source "${ROOT_DIR}/.env.services"
 fi
-
-# Fail-fast: require service name
-: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
 
 LOCAL_APP_PORT="${LOCAL_APP_PORT:-5100}"
 LOCAL_PROXY_NETWORK="${LOCAL_PROXY_NETWORK:-naf-local}"
@@ -65,7 +60,6 @@ HOST_GATEWAY_IP="${HOST_GATEWAY_IP:-$(ip route | awk '/default/ {print $3; exit}
 HOST_GATEWAY_IP="${HOST_GATEWAY_IP// /}"
 HOST_GATEWAY_IP="${HOST_GATEWAY_IP:-172.17.0.1}"
 
-DEFAULT_BASE="https://${HOST_GATEWAY_IP}:${LOCAL_TLS_BIND_HTTPS}"
 export UI_BASE_URL="${UI_BASE_URL:?UI_BASE_URL must be set}"
 export UI_ADMIN_USERNAME="${UI_ADMIN_USERNAME:?UI_ADMIN_USERNAME must be set}"
 export UI_ADMIN_PASSWORD="${UI_ADMIN_PASSWORD:?UI_ADMIN_PASSWORD must be set}"
@@ -76,9 +70,7 @@ export UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX:?UI_SCREENSHOT_PREFIX must b
 export PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS:?PLAYWRIGHT_HEADLESS must be set}"
 
 PROXY_COMPOSE_ARGS=(-f "${PROXY_DIR}/docker-compose.yml" --env-file "${PROXY_ENV}")
-PLAYWRIGHT_COMPOSE_ARGS=(-f "${PLAYWRIGHT_DIR}/docker-compose.yml")
 PROXY_STARTED=0
-PLAYWRIGHT_STARTED=0
 GUNICORN_PID=""
 
 log_step() {
@@ -105,7 +97,6 @@ ensure_devcontainer_on_network() {
 
     container_name="$(docker inspect --format '{{.Name}}' "${container_id}" 2>/dev/null | sed 's#^/##')"
     if [[ -z "${container_name}" ]]; then
-        # fall back to container id which docker also accepts
         container_name="${container_id}"
     fi
 
@@ -125,7 +116,7 @@ ensure_devcontainer_on_network() {
 cleanup() {
     local exit_code=$?
     if [[ "${KEEP_UI_STACK:?KEEP_UI_STACK must be set (0 or 1)}" == "1" ]]; then
-        echo "[WARN] KEEP_UI_STACK=1; leaving gunicorn, proxy, and Playwright running for manual debugging" >&2
+        echo "[WARN] KEEP_UI_STACK=1; leaving gunicorn and proxy running for manual debugging" >&2
         return
     fi
     if [[ -n "${GUNICORN_PID}" ]] && kill -0 "${GUNICORN_PID}" 2>/dev/null; then
@@ -134,9 +125,6 @@ cleanup() {
     fi
     if [[ "${PROXY_STARTED}" == "1" ]]; then
         docker compose "${PROXY_COMPOSE_ARGS[@]}" down >/dev/null 2>&1 || true
-    fi
-    if [[ "${PLAYWRIGHT_STARTED}" == "1" ]]; then
-        (cd "${PLAYWRIGHT_DIR}" && docker compose down) >/dev/null 2>&1 || true
     fi
     exit "${exit_code}"
 }
@@ -174,7 +162,7 @@ proxy_render_nginx_conf "${PROXY_ENV}"
 proxy_stage_inputs "${PROXY_ENV}"
 
 if [[ "${SKIP_UI_TEST_DEPS:?SKIP_UI_TEST_DEPS must be set (0 or 1)}" != "1" ]]; then
-    pip install --user -r "${ROOT_DIR}/requirements-dev.txt"
+    pip install --user -r "${ROOT_DIR}/ui_tests/requirements.txt"
 fi
 
 cd "${ROOT_DIR}"
@@ -188,38 +176,16 @@ gunicorn tooling.local_proxy.local_app:app \
 GUNICORN_PID=$!
 sleep 2
 
-wait_for_http "Flask backend" "http://127.0.0.1:${LOCAL_APP_PORT}/admin/login"
+wait_for_http "Flask backend" "http://127.0.0.1:${LOCAL_APP_PORT}/admin/login" 0 30 1 0
 
 docker compose "${PROXY_COMPOSE_ARGS[@]}" up -d
 PROXY_STARTED=1
 
-wait_for_http "Local TLS proxy" "https://${HOST_GATEWAY_IP}:${LOCAL_TLS_BIND_HTTPS}/admin/login" 1
+wait_for_http "Local TLS proxy" "https://${HOST_GATEWAY_IP}:${LOCAL_TLS_BIND_HTTPS}/admin/login" 1 30 1 1
 
-pushd "${PLAYWRIGHT_DIR}" >/dev/null
-docker compose up -d
-PLAYWRIGHT_STARTED=1
-popd >/dev/null
-
-# Wait for Playwright container to be ready
-log_step "Waiting for Playwright container to be ready..."
-for attempt in $(seq 1 30); do
-    if docker exec "${SERVICE_PLAYWRIGHT}" python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
-        echo "[ready] Playwright container"
-        break
-    fi
-    sleep 1
-done
-
-# Run tests inside Playwright container
+# Run tests in-process.
+# Set PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/ to connect to a remote
+# Playwright-as-a-Service container instead (address by container name, never localhost).
 PYTEST_CMD="${UI_PYTEST_CMD:?UI_PYTEST_CMD must be set}"
-docker exec \
-    -e UI_BASE_URL="${UI_BASE_URL}" \
-    -e UI_ADMIN_USERNAME="${UI_ADMIN_USERNAME}" \
-    -e UI_ADMIN_PASSWORD="${UI_ADMIN_PASSWORD}" \
-    -e UI_CLIENT_ID="${UI_CLIENT_ID}" \
-    -e UI_CLIENT_TOKEN="${UI_CLIENT_TOKEN}" \
-    -e UI_CLIENT_DOMAIN="${UI_CLIENT_DOMAIN}" \
-    -e UI_SCREENSHOT_PREFIX="${UI_SCREENSHOT_PREFIX}" \
-    -e PLAYWRIGHT_HEADLESS="${PLAYWRIGHT_HEADLESS}" \
-    "${SERVICE_PLAYWRIGHT}" \
-    bash -c "cd /workspaces/netcup-api-filter && ${PYTEST_CMD}"
+cd "${ROOT_DIR}"
+eval "${PYTEST_CMD}"

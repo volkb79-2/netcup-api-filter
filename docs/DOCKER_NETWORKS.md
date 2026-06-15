@@ -133,7 +133,7 @@ network_mode: host
 ### Network: `naf-dev-network` (Bridge Driver)
 
 ```yaml
-# tooling/playwright/docker-compose.yml
+# tooling/<service>/docker-compose.yml
 networks:
   default:
     name: ${DOCKER_NETWORK_INTERNAL:-naf-dev-network}
@@ -252,7 +252,7 @@ networks:
 ### Example: Our MCP Setup
 
 ```yaml
-# tooling/playwright/docker-compose.yml
+# tooling/<service>/docker-compose.yml
 networks:
   default:
     name: ${DOCKER_NETWORK_INTERNAL:-naf-dev-network}

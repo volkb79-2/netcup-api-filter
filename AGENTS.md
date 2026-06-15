@@ -132,11 +132,12 @@ The standard runner builds a production-parity deployment and runs the suite:
 ./run-local-tests.sh --with-mocks ui_tests/tests/security/   # a subset
 ```
 
-Playwright runs in a dedicated container (consistent fonts/emoji, clean devcontainer):
+Playwright runs in-process by default.  To offload to an external
+Playwright-as-a-Service container, set `PLAYWRIGHT_SERVER_WS`:
 
 ```bash
-cd tooling/playwright && docker compose up -d
-./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
+export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
+pytest ui_tests/tests -v
 ```
 
 **Route-smoke suite (`ui_tests/tests/smoke/test_route_smoke.py`)**: parametrized over every app
@@ -170,7 +171,6 @@ state (e.g. the admin `netcup_config`) you mutate.
 
   | Container | Tooling dir | Purpose |
   |-----------|-------------|---------|
-  | `naf-playwright` | `tooling/playwright/` | Browser automation + screenshots |
   | `naf-mailpit` | `tooling/mailpit/` | SMTP capture ([`docs/MAILPIT_CONFIGURATION.md`](docs/MAILPIT_CONFIGURATION.md)) |
   | `naf-mock-geoip` | `tooling/geoip-mock/` | GeoIP API mock |
   | `naf-mock-netcup-api` | `tooling/netcup-api-mock/` | Netcup CCP API mock |

@@ -43,7 +43,6 @@ Generated content example:
 # Purpose: Provides workspace variables to scripts running outside post-create.sh
 # 
 # Used by:
-#   - tooling/playwright/start-mcp.sh (needs SHARED_DOCKER_NETWORK, PHYSICAL_REPO_ROOT)
 #   - .vscode/deploy-test-fix-loop.sh (needs all workspace paths)
 #   - .vscode/ensure-mcp-connection.sh (needs SHARED_DOCKER_NETWORK)
 #   - Any other scripts that need workspace configuration
@@ -62,24 +61,7 @@ export DOCKER_NETWORK_INTERNAL="naf-dev-network"
 
 ## Who Uses It?
 
-### 1. `tooling/playwright/start-mcp.sh`
-**Needs**: `DOCKER_NETWORK_INTERNAL`, `PHYSICAL_REPO_ROOT`
-
-```bash
-# Load workspace environment if available
-if [[ -f "$REPO_ROOT/.env.workspace" ]]; then
-    source "$REPO_ROOT/.env.workspace"
-    echo "✓ Loaded workspace configuration from .env.workspace"
-fi
-
-# Use loaded variables
-export DOCKER_NETWORK_INTERNAL="${DOCKER_NETWORK_INTERNAL:-naf-dev-network}"
-export PHYSICAL_REPO_ROOT="${PHYSICAL_REPO_ROOT:-$REPO_ROOT}"
-```
-
-**Why**: Docker compose needs to know which network to use (from global-config.active.toml) and where to mount volumes from the host filesystem.
-
-### 2. `.vscode/deploy-test-fix-loop.sh`
+### 1. `.vscode/deploy-test-fix-loop.sh`
 **Needs**: All workspace paths for deployment operations
 
 ```bash
@@ -231,5 +213,5 @@ bash .devcontainer/post-create.sh
 
 - `.devcontainer/post-create.sh` - Generation logic
 - `SHARED_NETWORK.md` - Network configuration details
-- `tooling/playwright/README.md` - Playwright container setup
+- `tooling/PLAYWRIGHT-TESTING.md` - Playwright testing guide
 - `.vscode/README.md` - VS Code MCP configuration

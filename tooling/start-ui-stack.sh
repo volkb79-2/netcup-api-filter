@@ -45,18 +45,14 @@ log_error() {
 
 # Fail-fast: require essential variables
 : "${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (run post-create.sh)}"
-: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
 
 # Configuration with defaults allowed (not critical paths)
 FLASK_PORT="${FLASK_PORT:-8000}"
 FLASK_HOST="${FLASK_HOST:-0.0.0.0}"
 DATABASE_PATH="${DATABASE_PATH:-/workspaces/netcup-api-filter/netcup_filter.db}"
-MCP_HTTP_PORT="${MCP_HTTP_PORT:-8765}"
-MCP_WS_PORT="${MCP_WS_PORT:-3000}"
 GATEWAY_IP=$(ip route | awk '/default/ {print $3; exit}' || echo "172.17.0.1")
 
 FLASK_PID=""
-MCP_STARTED=0
 
 cleanup() {
     log_info "Cleaning up..."
@@ -65,10 +61,7 @@ cleanup() {
         kill "${FLASK_PID}" 2>/dev/null || true
         wait "${FLASK_PID}" 2>/dev/null || true
     fi
-    if [[ "${MCP_STARTED}" == "1" ]]; then
-        log_info "Stopping Playwright"
-        (cd tooling/playwright && docker compose down) >/dev/null 2>&1 || true
-    fi
+    # Playwright now runs in-process; no container to stop here
 }
 
 trap cleanup EXIT INT TERM
@@ -123,29 +116,6 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Start Playwright
-log_info "Starting Playwright container"
-cd tooling/playwright
-
-# Start container
-docker compose up -d
-MCP_STARTED=1
-cd "${ROOT_DIR}"
-
-# Wait for Playwright to be ready
-log_info "Waiting for Playwright container to be ready..."
-for i in {1..30}; do
-    if docker exec "${SERVICE_PLAYWRIGHT}" python3 -c "from playwright.async_api import async_playwright; print('OK')" >/dev/null 2>&1; then
-        log_success "Playwright container is ready"
-        break
-    fi
-    if [[ $i -eq 30 ]]; then
-        log_error "Playwright container failed to start"
-        exit 1
-    fi
-    sleep 1
-done
-
 log_success "======================================"
 log_success "UI Validation Stack is Ready!"
 log_success "======================================"
@@ -153,14 +123,14 @@ echo
 log_info "Flask Backend:    http://127.0.0.1:${FLASK_PORT}"
 log_info "                  http://${GATEWAY_IP}:${FLASK_PORT}"
 echo
-log_info "Playwright:       Ready for exec-based testing"
-log_info "                  docker exec ${SERVICE_PLAYWRIGHT} pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
+log_info "Run tests (in-process browser):"
+log_info "  pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
+log_info "Run tests (remote Playwright-as-a-Service):"
+log_info "  PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/ pytest ui_tests/tests -v"
 echo
 log_info "Default Login:    admin / admin"
 log_info "Test Client:      test_qweqweqwe_vi"
 log_info "Test Token:       qweqweqwe-vi-readonly"
-echo
-log_success "Run tests: docker exec ${SERVICE_PLAYWRIGHT} pytest /workspaces/netcup-api-filter/ui_tests/tests -v"
 echo
 log_info "Press Ctrl+C to stop all services"
 echo

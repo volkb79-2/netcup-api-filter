@@ -15,8 +15,7 @@ backend). Everything in T08–T12 builds on this module.
 
 - **DB facts (verified):** the local deployment DB is `deploy-local/netcup_filter.db`
   (`NETCUP_FILTER_DB_PATH` is set in `deploy.sh:536`; `DEPLOY_DIR=${REPO_ROOT}/deploy-local`).
-  The Playwright container mounts the repo at the **same absolute path**
-  (`tooling/playwright/docker-compose.yml:130`), so the file is reachable from tests.
+  Tests run in-process with access to the same filesystem, so the file is reachable from tests.
   Journal mode is DELETE (not WAL): concurrent reads are safe; a writer's commit briefly takes
   an exclusive lock → use `busy_timeout` + retry on `database is locked`. **Writes from tests
   are forbidden by construction** (`mode=ro` + `PRAGMA query_only=ON`).

@@ -670,10 +670,8 @@ html.density-compact {
    ./deploy.sh local --skip-tests
    ```
 
-2. **Start Playwright:**
-   ```bash
-   cd tooling/playwright && docker compose up -d
-   ```
+2. **Playwright** runs in-process by default (no container needed).
+   Set `PLAYWRIGHT_SERVER_WS=ws://<service>:3000/` for remote mode.
 
 3. **For each theme, verify:**
    - Card background matches `--color-bg-secondary`

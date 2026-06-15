@@ -249,7 +249,6 @@ setup_repository_paths() {
     # - Scripts run OUTSIDE post-create.sh context (start-mcp.sh, deploy-test-fix-loop.sh, etc.)
     #   need these variables but don't have access to our current shell environment
     # - New terminal sessions need these values before manual export
-    # - Docker compose in tooling/playwright/ needs PHYSICAL_REPO_ROOT and DOCKER_NETWORK_INTERNAL
     # - Provides single source of truth for workspace configuration across all tools
     cat > "$WORKSPACE_DIR/.env.workspace" << EOF
 # ============================================================================
@@ -259,7 +258,6 @@ setup_repository_paths() {
 # Purpose: Provides workspace variables to scripts running outside post-create.sh
 # 
 # Used by:
-#   - tooling/playwright/start-mcp.sh (needs DOCKER_NETWORK_INTERNAL, PHYSICAL_REPO_ROOT)
 #   - .vscode/deploy-test-fix-loop.sh (needs all workspace paths)
 #   - .vscode/ensure-mcp-connection.sh (needs DOCKER_NETWORK_INTERNAL)
 #   - Any other scripts that need workspace configuration

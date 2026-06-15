@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# netcup-api-filter specific test runner using generic Playwright container
+# netcup-api-filter UI test runner — runs pytest in the current process.
+#
+# Browser connection mode (playwright_client.py reads PLAYWRIGHT_SERVER_WS):
+#   unset / empty  -> in-process browser (requires 'playwright install --with-deps chromium')
+#   ws://<name>:3000/ -> connect to external Playwright-as-a-Service container
+#                        (address the service by container name on the shared Docker network)
 
 set -euo pipefail
 
@@ -12,15 +17,6 @@ if [[ -f "${PROJECT_ROOT}/.env.workspace" ]]; then
     source "${PROJECT_ROOT}/.env.workspace"
 fi
 
-# Load service names
-if [[ -f "${PROJECT_ROOT}/.env.services" ]]; then
-    # shellcheck source=/dev/null
-    source "${PROJECT_ROOT}/.env.services"
-fi
-
-# Fail-fast: require essential variables
-: "${SERVICE_PLAYWRIGHT:?SERVICE_PLAYWRIGHT must be set (source .env.services)}"
-
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,19 +27,10 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
-# Ensure container is running
-if ! docker ps --filter "name=${SERVICE_PLAYWRIGHT}" | grep -q "${SERVICE_PLAYWRIGHT}"; then
-    log_info "Starting Playwright container..."
-    cd tooling/playwright
-    ./setup.sh
-    cd "$PROJECT_ROOT"
-fi
+log_info "Running UI tests..."
 
-log_info "Running tests inside Playwright container..."
-
-# Run pytest with project-specific tests
-docker exec "${SERVICE_PLAYWRIGHT}" \
-    pytest /workspaces/netcup-api-filter/ui_tests/tests -v --tb=short
+cd "${PROJECT_ROOT}"
+pytest ui_tests/tests -v --tb=short
 
 EXIT_CODE=$?
 

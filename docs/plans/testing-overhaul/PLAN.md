@@ -45,8 +45,8 @@ mutation testing, visual regression.
      with a separate review pass afterwards.
 3. **Review gate**: every diff is reviewed (Opus 4.8 @ xhigh or better) before commit.
    One commit per task. Do not push unless asked.
-4. **E2E tasks (T07–T12) need a running local deployment** (`./deploy.sh local`, mock mode)
-   and the Playwright container (`tooling/playwright/`). The task files say so.
+4. **E2E tasks (T07–T12) need a running local deployment** (`./deploy.sh local`, mock mode).
+   Playwright runs in-process by default; set `PLAYWRIGHT_SERVER_WS` for a remote service.
 5. When a task lands: tick its checkbox below, add a worklog line (date, task, commit, notes).
 6. **Specs are hints where they cite counts/line numbers, contracts where they state rules.**
    Audit-derived details (number of failures, line refs, "this script is broken") can be
@@ -128,7 +128,7 @@ Fable 5 $10/$50 plus a ~30%-hungrier tokenizer (≈2.6× Opus, ≈4× Sonnet eff
 - 2026-06-12 — T01 landed (working tree, not committed). Fixed journey 09 method names, 2FA
   functional fixture (monkeypatch+tmp_path, correct model fields, outdated assertions updated to
   current behavior). Removed CI --ignore. Deleted 9 dead files. Three conditional tooling scripts
-  kept: `tooling/run-tests.sh` (setup.sh exists in tooling/playwright/), `tooling/setup-playwright.sh`,
+  kept: `tooling/run-tests.sh`, `tooling/setup-playwright.sh`,
   `tooling/start-ui-stack.sh` (unreferenced but not provably broken). All 30 unit tests green.
 - 2026-06-12 — T14 landed (commit 7dfa8f3). Updated TESTING_LESSONS_LEARNED (verification-channel section), AGENTS.md Testing, TESTING_INFRASTRUCTURE.md (full rewrite), DEPLOY_ARCHITECTURE.md, UI_REQUIREMENTS.md, README, CHANGELOG. Stale-reference check clean.
 - 2026-06-12 — T13 landed (commit 9ebcb5b). scripts/ci_bootstrap_e2e.py, e2e-smoke job in ci.yml, ci_smoke marker (93 tests collected). Key findings: FLASK_ENV=local_test needed for plain HTTP; initialize_database overrides MOCK_SMTP_HOST so bootstrap re-seeds email_config. CI run triggered on branch testing-overhaul-t13-ci — verify at github.com/volkb79-2/netcup-api-filter/actions.

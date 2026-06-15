@@ -135,13 +135,13 @@ check_prerequisites() {
         fi
     fi
 
-    # Check 6: Playwright docker-compose.yml exists
-    log_info "Checking Playwright docker-compose.yml..."
-    if [[ ! -f "tooling/playwright/docker-compose.yml" ]]; then
-        log_error "tooling/playwright/docker-compose.yml not found"
+    # Check 6: playwright_client.py exists
+    log_info "Checking playwright_client.py..."
+    if [[ ! -f "ui_tests/playwright_client.py" ]]; then
+        log_error "ui_tests/playwright_client.py not found"
         all_checks_passed=false
     else
-        log_success "✓ Playwright docker-compose.yml exists"
+        log_success "✓ playwright_client.py exists"
     fi
 
     # Check 7: UI tests directory exists
@@ -305,23 +305,10 @@ run_ui_tests() {
         log_info "Using PHYSICAL_REPO_ROOT: ${PHYSICAL_REPO_ROOT}"
     fi
     
-    pushd tooling/playwright >/dev/null
-
-    local existing_playwright
-    existing_playwright=$(docker ps -q --filter "name=^${PLAYWRIGHT_CONTAINER_NAME}$")
-    if [[ -n "$existing_playwright" ]]; then
-        log_info "Reusing existing Playwright container '$PLAYWRIGHT_CONTAINER_NAME'"
-    else
-        log_info "Starting Playwright container '$PLAYWRIGHT_CONTAINER_NAME'"
-        if docker compose up -d; then
-            log_success "Playwright container started"
-            PLAYWRIGHT_STARTED_BY_SCRIPT=true
-        else
-            log_error "Failed to start Playwright container"
-            popd >/dev/null
-            return 1
-        fi
-    fi
+    # Playwright runs in-process; no container to start.
+    # Set PLAYWRIGHT_SERVER_WS=ws://<service>:3000/ for remote mode.
+    log_info "Playwright runs in-process (no container required)"
+    PLAYWRIGHT_STARTED_BY_SCRIPT=false
 
     popd >/dev/null
     if [[ "$KEEP_PLAYWRIGHT_RUNNING" == "1" ]]; then
@@ -406,15 +393,8 @@ cleanup() {
         stop_mock_servers
     fi
 
-    if [[ "$KEEP_PLAYWRIGHT_RUNNING" != "1" && "$PLAYWRIGHT_STARTED_BY_SCRIPT" == "true" ]]; then
-        log_info "Stopping Playwright container..."
-        pushd tooling/playwright >/dev/null
-        docker compose down >/dev/null 2>&1 || true
-        popd >/dev/null
-        PLAYWRIGHT_STARTED_BY_SCRIPT=false
-    elif [[ "$KEEP_PLAYWRIGHT_RUNNING" == "1" ]]; then
-        log_info "KEEP_PLAYWRIGHT_RUNNING=1 - leaving Playwright container running"
-    fi
+    # Playwright runs in-process; no container to stop.
+    log_info "Playwright in-process cleanup complete"
 
     log_info "Cleanup complete"
 }
@@ -464,7 +444,7 @@ main() {
         log_info ""
         log_info "Agent workflow:"
         log_info "  1. Analyze pytest output and error messages"
-        log_info "  2. Analyze screenshots in: tooling/playwright/vol-playwright-screenshots/"
+        log_info "  2. Analyze screenshots in: deploy-local/screenshots/"
         log_info "  3. Apply fixes to code/templates/config"
         log_info "  4. Re-run this script: ./.vscode/deploy-test-fix-loop.sh"
         log_info ""

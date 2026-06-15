@@ -1,23 +1,37 @@
 """
-Direct Playwright Client (No Server Required)
-==============================================
+Playwright Client — in-process or remote-server mode
+=====================================================
 
-This client uses Playwright's Python API directly, bypassing MCP server limitations.
+This client wraps Playwright's Python API directly, providing full browser
+automation without MCP server limitations (form submissions, JS evaluation,
+storage_state, page.request all work unchanged in both modes).
 
-Key Features:
-- Full Playwright API access
-- Form submissions work correctly
-- JavaScript execution available
-- Type-safe async interface
-- No server dependency (runs Playwright directly)
+Connection modes
+----------------
+1. In-process (default / CI):
+   Playwright launches a local Chromium/Firefox/WebKit process.
+   Requires browser binaries installed via ``playwright install``.
+
+2. Remote Playwright-as-a-Service (set ``PLAYWRIGHT_SERVER_WS``):
+   The client connects to an external ``playwright run-server`` endpoint
+   over WebSocket instead of launching a local browser.  The server controls
+   headless mode; the client ``headless`` flag is ignored when connecting
+   remotely.  Address the service by container name on the shared Docker
+   network — never "localhost" — e.g.::
+
+       export PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/
+
+   The rest of ``connect()`` (context creation, storage_state, default page)
+   runs identically in both modes because ``bt.connect()`` returns a real
+   ``Browser`` object with the same API as ``bt.launch()``.
 
 Usage:
     from ui_tests.playwright_client import playwright_session
-    
+
     async with playwright_session() as page:
         await page.goto("https://naf.vxxu.de")
         await page.fill("#username", "admin")
-        await page.click("button[type='submit']")  # ✅ Works!
+        await page.click("button[type='submit']")
 
 Author: netcup-api-filter project
 Date: 2025-11-22
@@ -87,16 +101,43 @@ class PlaywrightClient:
         await self.close()
     
     async def connect(self):
-        """Launch Playwright browser directly."""
+        """Connect to a browser — either in-process or via a remote server.
+
+        Two modes, selected by the ``PLAYWRIGHT_SERVER_WS`` environment variable:
+
+        * **Remote** (``PLAYWRIGHT_SERVER_WS`` is set):
+          Connects to an external Playwright ``run-server`` endpoint over
+          WebSocket.  Use the container name as the host on the shared Docker
+          network, e.g. ``ws://naf-dev-playwright:3000/``.  Never use
+          ``localhost`` here — the server lives in a separate container.
+          The server controls headless mode; the client ``self.headless``
+          flag is silently ignored in this mode.
+
+        * **In-process** (``PLAYWRIGHT_SERVER_WS`` absent / empty, default):
+          Launches a local browser process.  Requires browser binaries
+          installed via ``playwright install``.  This is the default for
+          local development and CI.
+
+        In both cases the returned ``_browser`` is a standard Playwright
+        ``Browser`` object, so ``new_context`` / ``new_page`` / ``page.request``
+        work identically downstream.
+        """
         self._playwright = await async_playwright().start()
-        
-        # Launch browser directly (no server needed)
-        if self.browser_type == 'firefox':
-            self._browser = await self._playwright.firefox.launch(headless=self.headless)
-        elif self.browser_type == 'webkit':
-            self._browser = await self._playwright.webkit.launch(headless=self.headless)
+
+        server_ws = os.environ.get("PLAYWRIGHT_SERVER_WS", "").strip()
+        if server_ws:
+            # Remote mode: connect to Playwright-as-a-Service container.
+            # bt.connect() returns a real Browser with the full Playwright API.
+            bt = getattr(self._playwright, self.browser_type, self._playwright.chromium)
+            self._browser = await bt.connect(server_ws)
         else:
-            self._browser = await self._playwright.chromium.launch(headless=self.headless)
+            # In-process mode: launch a local browser (requires installed binaries).
+            if self.browser_type == 'firefox':
+                self._browser = await self._playwright.firefox.launch(headless=self.headless)
+            elif self.browser_type == 'webkit':
+                self._browser = await self._playwright.webkit.launch(headless=self.headless)
+            else:
+                self._browser = await self._playwright.chromium.launch(headless=self.headless)
         
         # Create default context
         storage_state_path = self.storage_state_path

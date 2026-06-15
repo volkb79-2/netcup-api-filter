@@ -54,12 +54,8 @@ else
     exit 1
 fi
 
-# Check if Playwright container is running
-if ! docker ps | grep -q naf-dev-playwright; then
-    log_error "Playwright container (naf-dev-playwright) is not running"
-    log_info "Start it with: cd tooling/playwright && docker compose up -d"
-    exit 1
-fi
+# Playwright now runs in-process by default (no container required).
+# Set PLAYWRIGHT_SERVER_WS=ws://<service>:3000/ to use a remote service.
 
 # Check if Mailpit is running
 if ! docker ps | grep -q naf-dev-mailpit; then

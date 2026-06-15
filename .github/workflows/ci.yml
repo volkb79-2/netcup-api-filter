@@ -134,6 +134,9 @@ jobs:
           pip install -r requirements-dev.txt -r ui_tests/requirements.txt playwright pytest-timeout
 
       - name: Install Playwright Chromium
+        # In-process mode: installs browser binaries for local launch.
+        # To offload to a Playwright-as-a-Service container instead, set
+        # PLAYWRIGHT_SERVER_WS=ws://<service>:3000/ and skip this step.
         run: python -m playwright install --with-deps chromium
 
       - name: Bootstrap deployment (DB + state file)

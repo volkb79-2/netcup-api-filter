@@ -641,7 +641,7 @@ assert 'Account created successfully' in response.text
 **Test:**
 ```bash
 # Capture screenshots
-./tooling/playwright/playwright-exec.sh python3 ui_tests/capture_ui_screenshots.py
+python3 ui_tests/capture_ui_screenshots.py
 
 # Compare to baseline (if tool available)
 # ./tooling/compare-screenshots.sh deploy-local/screenshots/ baseline/

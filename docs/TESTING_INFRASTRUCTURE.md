@@ -45,11 +45,15 @@ Run with `python -m pytest tests/` (or plain `pytest tests/`). No running app re
 
 ### `ui_tests/` — Playwright E2E (browser required)
 
-Requires a running deployment and the Playwright container.
+Requires a running deployment.  Browser runs in-process by default (requires
+`playwright install --with-deps chromium`), or remotely via `PLAYWRIGHT_SERVER_WS`.
 
 ```bash
-cd tooling/playwright && docker compose up -d
-./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
+# In-process (default)
+pytest ui_tests/tests -v
+
+# Remote Playwright-as-a-Service
+PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/ pytest ui_tests/tests -v
 ```
 
 Or via the standard runner (builds a fresh deployment first):

@@ -85,7 +85,7 @@ Conditional (delete only if your grep confirms unreferenced and broken):
 
 - `tooling/run-tests.sh` (reportedly calls a nonexistent `setup.sh`),
   `tooling/setup-playwright.sh`, `tooling/start-ui-stack.sh`, `tooling/run-ui-validation.sh`
-  (all superseded by `tooling/playwright/start-playwright.sh` + deploy.sh). If one turns out
+  (now updated to in-process / remote-service model). If one turns out
   to be referenced or working, leave it and note that in your summary.
 
 Do **not** delete: `run-2fa-tests.sh` (its target exists), `run-local-tests.sh`,

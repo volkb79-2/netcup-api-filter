@@ -21,12 +21,10 @@ requirements-dev.txt (development)
 ├── Testing (pytest, pytest-asyncio)
 └── WSGI server (gunicorn - for local testing)
 
-tooling/playwright/requirements.root.txt (Playwright container)
-├── Browser automation (playwright, chromium)
+ui_tests/requirements.txt (UI test dependencies)
+├── Browser automation (playwright)
 ├── Testing frameworks (pytest with xdist, timeout, rerunfailures)
 ├── Visual regression (Pillow, pixelmatch)
-├── Code quality (ruff, black, mypy)
-├── Debugging (ipython, ipdb, rich)
 └── HTTP clients (httpx, requests)
 ```
 
@@ -66,29 +64,30 @@ pip install --user -r requirements-dev.txt
 - `pytest-asyncio` - Async test support
 - `gunicorn` - WSGI server for local testing
 
-**UI testing in dedicated Playwright container:**
-- **Browser automation**: playwright, chromium
+**UI testing (`ui_tests/requirements.txt`):**
+- **Browser automation**: playwright (no local binaries needed when using remote service)
 - **Testing**: pytest with parallel execution (xdist), timeouts, retries (rerunfailures)
 - **Visual regression**: Pillow (images), pixelmatch (comparison)
-- **Code quality**: ruff (linter), black (formatter), mypy (types)
-- **Debugging**: ipython (REPL), ipdb (debugger), rich (output)
 - **HTTP clients**: httpx (async), requests (sync)
 
 **UI validation workflow:**
 ```bash
-# Start Playwright container (one-time setup)
-cd tooling/playwright && ./start-playwright.sh
+# Install UI test deps and browser binaries (in-process mode)
+pip install -r ui_tests/requirements.txt
+playwright install --with-deps chromium
 
-# Run UI tests in container
-# Run tests in container
-./tooling/playwright/playwright-exec.sh pytest ui_tests/tests -v
+# Run UI tests (in-process browser, default)
+pytest ui_tests/tests -v
+
+# Or with external Playwright-as-a-Service (no browser binaries needed)
+export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
+pytest ui_tests/tests -v
 
 # Or use automated validation script
 ./tooling/run-ui-validation.sh
-# (Installs from requirements-dev.txt automatically unless SKIP_UI_TEST_DEPS=1)
 ```
 
-See `tooling/playwright/README.md` for complete container documentation.
+See `tooling/PLAYWRIGHT-TESTING.md` for the full guide.
 
 ## Why Two Files?
 
@@ -106,11 +105,10 @@ See `tooling/playwright/README.md` for complete container documentation.
 - Used only in devcontainer and CI/CD
 - **NOTE**: Playwright moved to dedicated container (keeps devcontainer clean)
 
-**`tooling/playwright/requirements.root.txt` (Playwright container):**
-- Browser automation and UI testing tools
-- Isolated from devcontainer for cleaner separation
-- Comprehensive tooling for testing, debugging, visual regression
-- See "UI Testing with Playwright Container" section in AGENTS.md
+**`ui_tests/requirements.txt` (UI test dependencies):**
+- Browser automation and UI testing tools installed in the devcontainer
+- `playwright` package must match the server version when using remote mode
+- See `tooling/PLAYWRIGHT-TESTING.md` for connection mode details
 
 ## Adding Dependencies
 

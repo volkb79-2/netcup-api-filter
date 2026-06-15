@@ -171,46 +171,53 @@ Automated UI coverage using a multi-layer testing strategy:
 
 ```bash
 # Journey tests (fresh deployment)
-docker exec naf-playwright pytest ui_tests/tests/test_journey_master.py -v
+pytest ui_tests/tests/test_journey_master.py -v
 
 # User journeys (existing system)
-docker exec naf-playwright pytest ui_tests/tests/test_user_journeys.py -v
+pytest ui_tests/tests/test_user_journeys.py -v
 
 # UI interactive tests
-docker exec naf-playwright pytest ui_tests/tests/test_ui_interactive.py -v
+pytest ui_tests/tests/test_ui_interactive.py -v
 
 # All validation tests
-docker exec naf-playwright pytest ui_tests/tests -v --ignore=ui_tests/tests/test_journey_master.py
+pytest ui_tests/tests -v --ignore=ui_tests/tests/test_journey_master.py
 ```
 
 ## Prerequisites
 
-1. Start the Playwright container:
-   ```bash
-   cd tooling/playwright
-   docker compose up -d
-   ```
-2. Install the test dependencies (this intentionally lives in a standalone file
+1. Install the test dependencies (this intentionally lives in a standalone file
    so production dependencies are untouched):
    ```bash
    pip install -r ui_tests/requirements.txt
    ```
+2. Install Playwright browser binaries (in-process mode, the default):
+   ```bash
+   playwright install --with-deps chromium
+   ```
+   Skip this step if using a remote Playwright-as-a-Service container
+   (`PLAYWRIGHT_SERVER_WS=ws://<service>:3000/`).
 3. Export any environment overrides before running the suite. Defaults cover
    the current deployment documented in `AGENTS.md`.
 
 ## One-command local validation
 
-When you need to spin up the seeded backend, TLS proxy, Playwright container,
-and the pytest suite in one go, run `tooling/run-ui-validation.sh` from the
-repository root. The script will:
+When you need to spin up the seeded backend, TLS proxy, and the pytest suite in
+one go, run `tooling/run-ui-validation.sh` from the repository root. The script will:
 
 - Render/stage the nginx config and cert bundle under `/tmp/netcup-local-proxy`.
 - Start gunicorn on port `LOCAL_APP_PORT` (default 5100) with a seeded SQLite
    database inside `tmp/local-netcup.db`.
-- Launch the nginx proxy + Playwright container via docker compose.
+- Launch the nginx proxy via docker compose.
 - Install `ui_tests/requirements.txt` (skip via `SKIP_UI_TEST_DEPS=1`).
 - Export sensible defaults for `UI_BASE_URL` (`https://<host-gateway>:443`).
-- Execute `pytest ui_tests/tests -vv` inside the Playwright container and tear everything down afterwards.
+- Execute `pytest ui_tests/tests -vv` and tear everything down afterwards.
+
+To use a remote Playwright-as-a-Service container instead of in-process launch:
+
+```bash
+export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
+tooling/run-ui-validation.sh
+```
 
 Override `UI_BASE_URL`, `PLAYWRIGHT_HEADLESS`, `UI_ADMIN_PASSWORD`, and similar
 variables before running the helper if you need to target a different host or
@@ -241,19 +248,20 @@ against production.
 ## Running the suite
 
 ```bash
-# All tests
-docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests -q
+# All tests (in-process browser, default)
+pytest ui_tests/tests -q
 
 # Specific test file
-docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py -v
+pytest ui_tests/tests/test_ui_functional.py -v
 
 # Specific test class
-docker exec playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_functional.py::TestThemeAndCSS -v
+pytest ui_tests/tests/test_ui_functional.py::TestThemeAndCSS -v
+
+# Remote browser (Playwright-as-a-Service)
+PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ pytest ui_tests/tests -q
 ```
 
-Screenshots stay inside the Playwright container under `/screenshots`; copy any
-artifacts out with `docker cp playwright:/screenshots/<file> ./screenshots/`
-if you need to attach them to an issue or PR.
+Screenshots are saved to `SCREENSHOT_DIR` (defaults to `deploy-local/screenshots`).
 
 ## Test Organization
 

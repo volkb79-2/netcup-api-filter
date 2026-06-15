@@ -329,7 +329,7 @@ async def test_api_auth_invalid_token():
 **Test:**
 ```bash
 # Capture screenshots
-./tooling/playwright/playwright-exec.sh python3 ui_tests/capture_ui_screenshots.py
+python3 ui_tests/capture_ui_screenshots.py
 
 # Screenshots saved to deploy-local/screenshots/
 ls -l deploy-local/screenshots/

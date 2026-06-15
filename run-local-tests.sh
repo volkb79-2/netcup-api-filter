@@ -107,45 +107,28 @@ cd "${WORKSPACE_DIR}"
 # Set deployment target for the test config module
 export DEPLOYMENT_TARGET="local"
 
-# Set environment variables for the test suite itself
-if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwright"; then
-    # When running in container, connect to devcontainer hostname and use container's mount path
-    DEVCONTAINER_HOSTNAME=$(hostname)
-    export UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:5100"
-    export SCREENSHOT_DIR="/screenshots"
-else
-    # When running locally, connect to localhost and use local path
-    export UI_BASE_URL="http://127.0.0.1:5100"
-    export SCREENSHOT_DIR="${DEPLOY_LOCAL_DIR}/screenshots"
+# Browser connection mode
+# -----------------------------------------------------------------------
+# By default tests launch an in-process browser (requires 'playwright install').
+# To use an external Playwright-as-a-Service container instead, set:
+#
+#   export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
+#
+# Address the service by its container name on the shared Docker network
+# (never localhost).  playwright_client.py checks this variable and
+# connects remotely when it is set, falling back to in-process otherwise.
+# -----------------------------------------------------------------------
+export UI_BASE_URL="http://127.0.0.1:5100"
+export SCREENSHOT_DIR="${DEPLOY_LOCAL_DIR}/screenshots"
+
+# Optional extra pytest args (space-delimited). Keep empty by default.
+EXTRA_ARGS=()
+if [ -n "${UI_PYTEST_ARGS:-}" ]; then
+    # shellcheck disable=SC2206
+    EXTRA_ARGS=(${UI_PYTEST_ARGS})
 fi
 
-# Check if Playwright container is running
-if docker ps --filter "name=playwright" --format "{{.Names}}" | grep -q "playwright"; then
-    echo -e "${GREEN}✓ Playwright container detected. Running tests inside container...${NC}"
-    
-    # Use the canonical executor script to run tests
-    # The workspace is mounted at /workspaces/netcup-api-filter in the container
-    # We use the wrapper script which handles user permissions and environment variables
-    echo -e "${BLUE}Running tests in Playwright container...${NC}"
-    # Optional extra pytest args (space-delimited). Keep empty by default.
-    EXTRA_ARGS=()
-    if [ -n "${UI_PYTEST_ARGS:-}" ]; then
-        # shellcheck disable=SC2206
-        EXTRA_ARGS=(${UI_PYTEST_ARGS})
-    fi
-
-    "${WORKSPACE_DIR}/tooling/playwright/playwright-exec.sh" pytest "${TEST_PATH:-ui_tests/tests}" -v "${EXTRA_ARGS[@]}"
-
-else
-    echo -e "${YELLOW}Playwright container not running. Running tests locally...${NC}"
-    # Run tests locally if Playwright container is not available
-    EXTRA_ARGS=()
-    if [ -n "${UI_PYTEST_ARGS:-}" ]; then
-        # shellcheck disable=SC2206
-        EXTRA_ARGS=(${UI_PYTEST_ARGS})
-    fi
-    pytest "${TEST_PATH:-ui_tests/tests}" -v --tb=short "${EXTRA_ARGS[@]}"
-fi
+pytest "${TEST_PATH:-ui_tests/tests}" -v --tb=short "${EXTRA_ARGS[@]}"
 
 TEST_EXIT_CODE=$?
 

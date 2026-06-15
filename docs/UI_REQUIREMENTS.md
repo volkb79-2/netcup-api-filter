@@ -2541,12 +2541,9 @@ Two new test files provide deep UI testing with use-case-driven exploratory appr
 ### 12.1.2 Running UI Tests
 
 ```bash
-# Start Playwright container
-cd tooling/playwright && docker compose up -d
-
-# Run interactive UI tests (28 tests)
-docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
-  playwright pytest /workspaces/netcup-api-filter/ui_tests/tests/test_ui_interactive.py -v --timeout=180
+# Run interactive UI tests (in-process browser, default)
+UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \
+  pytest ui_tests/tests/test_ui_interactive.py -v --timeout=180
 
 # Run user journey tests (15 tests)
 docker exec -e UI_BASE_URL="http://netcup-api-filter-devcontainer-vb:5100" \

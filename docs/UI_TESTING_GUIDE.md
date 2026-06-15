@@ -135,17 +135,17 @@ When issues are detected:
 
 ### Manual Inspection
 
-For complex issues, use Playwright MCP for interactive debugging:
+For complex issues, launch a headed browser session directly:
 
 ```bash
-# Navigate to page
-mcp_playwright_navigate --url "http://localhost:5100/admin/"
+PLAYWRIGHT_HEADLESS=false pytest ui_tests/tests/smoke/test_admin_ui.py -v -s
+```
 
-# Take screenshot
-mcp_playwright_screenshot --path "debug.png"
+Or connect to a remote Playwright service (if running):
 
-# Evaluate CSS
-mcp_playwright_evaluate --script "getComputedStyle(document.querySelector('.card')).backgroundColor"
+```bash
+export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
+pytest ui_tests/tests/smoke/test_admin_ui.py -v -s
 ```
 
 ---

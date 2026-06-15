@@ -19,7 +19,7 @@ echo "Checking network connectivity..."
 # Check if network exists
 if ! docker network inspect "$NETWORK" &>/dev/null; then
     echo "❌ Network '$NETWORK' does not exist"
-    echo "   Start Playwright first: cd tooling/playwright && MCP_ENABLED=true docker compose up -d"
+    echo "   Ensure the Docker network exists (created by post-create.sh)"
     exit 1
 fi
 

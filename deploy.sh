@@ -54,7 +54,6 @@ fi
 export REPO_ROOT
 
 # Map service names to container names (from .env.services)
-CONTAINER_PLAYWRIGHT="${SERVICE_PLAYWRIGHT:?missing SERVICE_PLAYWRIGHT}"
 CONTAINER_REVERSE_PROXY="${SERVICE_REVERSE_PROXY:?missing SERVICE_REVERSE_PROXY}"
 CONTAINER_MAILPIT="${SERVICE_MAILPIT:?missing SERVICE_MAILPIT}"
 
@@ -447,10 +446,6 @@ build_pytest_extra_args() {
     echo "${extra[@]}"
 }
 
-check_playwright_container() {
-    docker ps --filter "name=${CONTAINER_PLAYWRIGHT}" --filter "status=running" | grep -q "${CONTAINER_PLAYWRIGHT}"
-}
-
 get_devcontainer_hostname() {
     hostname
 }
@@ -561,51 +556,57 @@ start_flask_local() {
 }
 
 run_in_playwright() {
+    # Run a pytest / python3 command in the current process.
+    #
+    # Browser connection mode is controlled by PLAYWRIGHT_SERVER_WS:
+    #   unset / empty  -> in-process browser (requires 'playwright install')
+    #   ws://<name>:3000/ -> connect to external Playwright-as-a-Service container
+    #                        (address by container name on the shared Docker network)
+    #
+    # playwright_client.py reads PLAYWRIGHT_SERVER_WS automatically.
     local cmd="$*"
-    
-    if check_playwright_container; then
-        local devcontainer_hostname
-        devcontainer_hostname=$(get_devcontainer_hostname)
-        
-        # Export environment for container (config-driven URLs)
-        if [[ "$USE_HTTPS" == "true" ]]; then
-            export UI_BASE_URL="${UI_BASE_URL}"  # Already set to HTTPS URL
-        else
-            export UI_BASE_URL="http://${devcontainer_hostname}:${LOCAL_FLASK_PORT}"
-        fi
-        [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="${WEBHOSTING_URL}"
-        export SCREENSHOT_DIR="$SCREENSHOT_DIR"
-        export DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
-        export DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
-        export DEPLOYMENT_STATE_FILE="$STATE_FILE"
-        
-        # Source service names from .env.services for tests
-        # Tests need SERVICE_MAILPIT to restore correct hostname after email config tests
-        if [[ -f "${REPO_ROOT}/.env.services" ]]; then
-            set -a
-            source "${REPO_ROOT}/.env.services"
-            set +a
-            export SERVICE_MAILPIT
-        fi
-        
-        # Source Mailpit credentials from container config (NO HARDCODED DEFAULTS)
-        if [[ -f "${REPO_ROOT}/tooling/mailpit/.env" ]]; then
-            set -a  # Export all variables
-            source "${REPO_ROOT}/tooling/mailpit/.env"
-            set +a
-            # Explicitly export Mailpit variables for docker exec
-            export MAILPIT_USERNAME
-            export MAILPIT_PASSWORD
-            # MAILPIT_API_URL from .env.services (centralized service names)
-            export MAILPIT_API_URL
-        fi
-        
-        # Load credentials from state file
-        if [[ -f "$STATE_FILE" ]]; then
-            export DEPLOYED_ADMIN_USERNAME=$(read_state_value "admin.username")
-            export DEPLOYED_ADMIN_PASSWORD=$(read_state_value "admin.password")
-            local primary_client
-            primary_client=$(python3 -c "
+
+    local devcontainer_hostname
+    devcontainer_hostname=$(get_devcontainer_hostname)
+
+    if [[ "$USE_HTTPS" == "true" ]]; then
+        export UI_BASE_URL="${UI_BASE_URL}"  # Already set to HTTPS URL
+    else
+        export UI_BASE_URL="http://${devcontainer_hostname}:${LOCAL_FLASK_PORT}"
+    fi
+    [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="${WEBHOSTING_URL}"
+    export SCREENSHOT_DIR="$SCREENSHOT_DIR"
+    export DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+    export DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
+    export DEPLOYMENT_STATE_FILE="$STATE_FILE"
+
+    # Source service names from .env.services for tests
+    # Tests need SERVICE_MAILPIT to restore correct hostname after email config tests
+    if [[ -f "${REPO_ROOT}/.env.services" ]]; then
+        set -a
+        source "${REPO_ROOT}/.env.services"
+        set +a
+        export SERVICE_MAILPIT
+    fi
+
+    # Source Mailpit credentials from container config (NO HARDCODED DEFAULTS)
+    if [[ -f "${REPO_ROOT}/tooling/mailpit/.env" ]]; then
+        set -a  # Export all variables
+        source "${REPO_ROOT}/tooling/mailpit/.env"
+        set +a
+        # Explicitly export Mailpit variables
+        export MAILPIT_USERNAME
+        export MAILPIT_PASSWORD
+        # MAILPIT_API_URL from .env.services (centralized service names)
+        export MAILPIT_API_URL
+    fi
+
+    # Load credentials from state file
+    if [[ -f "$STATE_FILE" ]]; then
+        export DEPLOYED_ADMIN_USERNAME=$(read_state_value "admin.username")
+        export DEPLOYED_ADMIN_PASSWORD=$(read_state_value "admin.password")
+        local primary_client
+        primary_client=$(python3 -c "
 import json
 with open('$STATE_FILE') as f:
     data = json.load(f)
@@ -614,54 +615,17 @@ primary = next((c for c in clients if c.get('is_primary')), clients[0] if client
 print(primary.get('client_id', ''))
 print(primary.get('secret_key', ''))
 " 2>/dev/null | head -2)
-            export DEPLOYED_CLIENT_ID=$(echo "$primary_client" | head -1)
-            export DEPLOYED_CLIENT_SECRET_KEY=$(echo "$primary_client" | tail -1)
-        fi
-        
-        "${REPO_ROOT}/tooling/playwright/playwright-exec.sh" $cmd
-    else
-        log_warning "Playwright container not running - using local execution"
-        
-        export UI_BASE_URL="http://localhost:${LOCAL_FLASK_PORT}"
-        [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="${WEBHOSTING_URL}"
-        export SCREENSHOT_DIR="$SCREENSHOT_DIR"
-        export DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
-        export DEPLOYMENT_STATE_FILE="$STATE_FILE"
-        
-        cd "$REPO_ROOT"
-        $cmd
+        export DEPLOYED_CLIENT_ID=$(echo "$primary_client" | head -1)
+        export DEPLOYED_CLIENT_SECRET_KEY=$(echo "$primary_client" | tail -1)
     fi
+
+    cd "$REPO_ROOT"
+    $cmd
 }
 
 # ============================================================================
 # Phase 0: Infrastructure Setup
 # ============================================================================
-
-start_playwright_container() {
-    log_step "Starting Playwright container..."
-    if check_playwright_container; then
-        log_success "Playwright container already running"
-        return 0
-    fi
-    
-    if [[ -f "${REPO_ROOT}/tooling/playwright/start-playwright.sh" ]]; then
-        (cd "${REPO_ROOT}/tooling/playwright" && ./start-playwright.sh)
-        
-        # Wait for container to be ready
-        for i in {1..30}; do
-            if check_playwright_container; then
-                log_success "Playwright container ready"
-                return 0
-            fi
-            sleep 1
-        done
-        log_error "Playwright container failed to start"
-        return 1
-    else
-        log_error "Playwright start script not found"
-        return 1
-    fi
-}
 
 start_mock_services() {
     log_step "Starting mock services (Mailpit, Mock Netcup API, Mock GeoIP)..."
@@ -857,15 +821,7 @@ phase_infrastructure() {
         log_warning "Skipping infrastructure setup (--skip-infra)"
         return 0
     fi
-    
-    # Always start Playwright for tests and screenshots
-    if [[ "$SKIP_TESTS" == "false" ]] || [[ "$SKIP_SCREENSHOTS" == "false" ]]; then
-        start_playwright_container || {
-            log_error "Failed to start Playwright - tests and screenshots will fail"
-            return 1
-        }
-    fi
-    
+
     # Start mock services BEFORE TLS proxy (nginx config references naf-dev-mailpit)
     if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_mock_services
@@ -1445,10 +1401,6 @@ stop_all_services() {
     else
         log_step "PowerDNS not configured (${powerdns_dir} not found)"
     fi
-    
-    # 7. Stop Playwright container
-    log_step "Stopping Playwright container..."
-    docker stop "${CONTAINER_PLAYWRIGHT}" 2>/dev/null && log_success "Playwright stopped" || log_step "Playwright not running"
     
     # Show remaining naf- containers (if any)
     echo ""
