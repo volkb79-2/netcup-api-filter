@@ -1,11 +1,17 @@
 // this is JSONC format, so you can add comments
 {
+  // In VS Code: "Dev Containers: Rebuild Container"
+  // manually:  `docker build --no-cache -f .devcontainer/Dockerfile .`
+  // # 3. Clean up old containers/images: `docker system prune -a --volumes`
+
   // Display name in VS Code UI (includes username for uniqueness)
-  //"name": "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
-  "name": "naf-devcontainer-${localEnv:USER}",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
+  "name": "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
+  // Use pre-built image from GHCR (private - requires docker login ghcr.io)
+  // To build locally instead, uncomment the "build" section below
+  "image": "ghcr.io/volkb79-2/modern-debian-tools-python-debug-vsc-devcontainer:latest",
+  // "build": {
+  //   "dockerfile": "Dockerfile"
+  // },
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false,
@@ -17,8 +23,13 @@
   "mounts": [
     // Mount Docker socket for container management
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
-    // Mount SSH keys for Git access
-    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh-host,type=bind,consistency=cached"
+    // make local letsencrypt certificates available inside container (readonly), might be security issue depending on certs available on host
+    "source=/etc/letsencrypt,target=/etc/letsencrypt,type=bind,consistency=cached,readonly",
+    // Mount SSH keys for Git access (readonly — keys are used via ssh-agent, not modified)
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh-host,type=bind,consistency=cached,readonly",
+    // Mount sibling repos for cross-repo browsing / MCP context (readonly)
+    "source=${localWorkspaceFolder}/../vbpub,target=/workspaces/vbpub,type=bind,consistency=cached,readonly",
+    "source=${localWorkspaceFolder}/../dstdns,target=/workspaces/dstdns,type=bind,consistency=cached,readonly"
   ],
   "containerEnv": {
     "DOCKER_HOST": "unix:///var/run/docker.sock"
@@ -28,30 +39,55 @@
     "--hostname", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
     // Set Docker container name (visible in docker ps)
     "--name", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
-    // Enable FUSE for sshfs support
+    // NOTE: DOCKER_GID is needed so devcontainer can access `/var/run/docker-host.sock`; needs to be set or devcontainer won't start
+    // must be set in the host VS Code/SSH environment (non-interactive shells won't load ~/.config/environment.d)
+    // e.g. add to `.zshrc` at top *before* stopping for non-interactive shells: `export DOCKER_GID=$(getent group docker | cut -d: -f3 2>/dev/null)`
+    // `--group-add` will cause the user `vscode` to be added to the Docker group inside the container
+    "--group-add", "${localEnv:DOCKER_GID}",
+    // SSHFS support (required for mount(2) inside container)
     "--cap-add", "SYS_ADMIN",
     "--device", "/dev/fuse",
-    // Relax Docker security profiles so fusermount3 can call mount(2)
+    // needed related to Docker-in-Docker and security for sshfs
     "--security-opt", "apparmor=unconfined",
     "--security-opt", "seccomp=unconfined"
   ],
-  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postCreateCommand": "bash .devcontainer/post-create.sh 2>&1 | tee .devcontainer/post-create-$(date +%Y%m%d-%H%M%S).log",
   "customizations": {
     "vscode": {
       "settings": {
         "terminal.integrated.defaultProfile.linux": "bash",
-        "python.defaultInterpreterPath": "/usr/local/bin/python3.13"
+        // Use the project venv created by post-create.sh (Python 3.11 via uv).
+        // Falls back gracefully if venv hasn't been created yet.
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python"
       },
       "extensions": [
+        // Extensions listed here are installed inside the devcontainer
+        // (remote side). Use this list for any tooling Copilot/VS Code
+        // needs to run in the container rather than on the host.
+        //
+        // How to decide:
+        // - If the extension provides language tooling or CLI helpers used
+        //   inside the container, include it here.
+        // - If it is purely UI/Theme on the host, keep it out.
+        //
+        // Missing extensions? Check required tooling in docs and add only
+        // those that are necessary for container-side workflows.
+        //
+        // in devcontainer: `code-insiders  --list-extensions --show-versions`
+        // on host: `ls ~/.vscode-server/extensions`
         "ms-python.python",
         "ms-python.black-formatter",
         "ms-vscode.docker",
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
         "samuelcolvin.jinjahtml",
-        "github.vscode-github-actions"
+        "github.vscode-github-actions",
+        "mechatroner.rainbow-csv",
+        "janisdd.vscode-edit-csv",
+        "GrapeCity.gc-excelviewer",
+        "bierner.markdown-mermaid",
+        "bpruitt-goddard.mermaid-markdown-syntax-highlighting"
       ]
     }
   }
 }
-
