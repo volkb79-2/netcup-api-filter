@@ -264,3 +264,6 @@ deployment_state_*.json
 geoIP.conf
 
 .app_startup
+
+# Claude Code local config
+.claude/
