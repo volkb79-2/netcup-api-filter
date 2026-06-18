@@ -27,6 +27,8 @@
     "source=/etc/letsencrypt,target=/etc/letsencrypt,type=bind,consistency=cached,readonly",
     // Mount SSH keys for Git access (readonly — keys are used via ssh-agent, not modified)
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh-host,type=bind,consistency=cached,readonly",
+    // Mount Claude Code state (settings, memory, sessions, history) so rebuilds don't wipe it
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     // Mount sibling repos for cross-repo browsing / MCP context (readonly)
     "source=${localWorkspaceFolder}/../vbpub,target=/workspaces/vbpub,type=bind,consistency=cached,readonly",
     "source=${localWorkspaceFolder}/../dstdns,target=/workspaces/dstdns,type=bind,consistency=cached,readonly"

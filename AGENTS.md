@@ -123,6 +123,16 @@ Two distinct layers:
   - `tests/conftest.py` provides `app`/`client`/`db` fixtures and `make_account`/`make_realm`/`make_token` factories. New unit tests should use these rather than building their own fixtures.
 - **`ui_tests/`** — **Playwright** end-to-end tests against a running deployment (`ui_tests/tests/`, plus multi-step `ui_tests/tests/journeys/`).
 
+> **Cockpit vs. ship-gate (base-image doctrine).** The devcontainer is a *cockpit*: use it to
+> *inspect* the running app + mock services (`http`/`curl`/`httpie`, `dig`, `redis-cli` if used,
+> `w3m` for static HTML, quick `python` with `httpx`/`requests`) and to *drive* deploys — never treat
+> an ad-hoc run in the devcontainer as a ship signal. Fidelity here comes from the **production-parity
+> deployment**: `deploy-local`/`deploy-webhosting` build and run the *same package, same DB, same
+> entry point* (`run-local-tests.sh` tests that parity tree, not the bare devcontainer). For
+> JS-rendered UI, drive **pwmcp** via `PLAYWRIGHT_SERVER_WS` — never install a browser engine in the
+> devcontainer. Base-image rationale and what belongs in this file:
+> `modern-debian-tools-python-debug` → `docs/CONTAINER-DOCTRINE.md` and `docs/CONSUMER-AI-GUIDANCE.md`.
+
 The standard runner builds a production-parity deployment and runs the suite:
 
 ```bash
