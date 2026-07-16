@@ -1,0 +1,25 @@
+# ciu descriptor for the gating test-runner (mirrors dstdns tools/test-runner/ciu.toml).
+#
+# The workspace mount is the HOST path (DooD) — same value as PHYSICAL_REPO_ROOT in the
+# auto-generated .env.workspace. Keep them in sync; .env.workspace is authoritative for
+# scripts, this file for ciu-driven compose.
+
+[test_runner]
+name = "test-runner"
+image_name = "netcup-api-filter/test-runner"
+image_tag = "local"
+
+[test_runner.mounts]
+workspace = "/home/vb/volkb79-2/netcup-api-filter"
+
+[test_runner.hooks]
+pre_compose = []
+post_compose = []
+
+# The browser is ALWAYS external: no engine is installed in the gate image. The e2e gate
+# drives the Playwright-as-a-Service container over PLAYWRIGHT_SERVER_WS.
+[test_runner.pwmcp]
+required = false
+ws_url = "ws://pwmcp:3000/"
+lease_seconds = 1800
+session_label = "naf-test-runner"
