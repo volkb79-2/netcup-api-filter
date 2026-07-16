@@ -73,7 +73,7 @@ docker compose -f tooling/test-runner/docker-compose.yml up -d
 
 `testing-exec.sh` deliberately does **not** source `.env.services`: that file expands
 `${PUBLIC_FQDN}` unconditionally and aborts every `set -u` consumer when post-create has
-not written it (see `docs/FOLLOWUP_REVIEW_2026-07-16.md` §P0-8). The gate must not
+not written it (see `docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md` §P0-8). The gate must not
 inherit that breakage.
 
 `PHYSICAL_REPO_ROOT` is a **host** path: the docker socket is the host's daemon (DooD),
