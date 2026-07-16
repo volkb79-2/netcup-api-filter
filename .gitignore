@@ -270,3 +270,8 @@ geoIP.conf
 
 # curl cookie jar written by ui_tests helpers (runtime artifact)
 ui_tests/cookies.txt
+
+# nyxloom attempt checkouts (worktree_root in nyxloom-trove/nyxloom.toml).
+# Inside the repo on purpose: the daemon binds this repo, so worktrees are reachable
+# by both the daemon and the gate containers via that single mount.
+.worktrees/

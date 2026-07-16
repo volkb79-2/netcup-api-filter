@@ -82,8 +82,23 @@ case "${CMD}" in
     unit)
         # The PRIMARY gate: hermetic, no services, no browser. pytest.ini sets
         # `pythonpath = . src`. -p no:cacheprovider keeps the bind mount clean.
-        ensure_image
-        run_ephemeral "${VENV}" -m pytest tests/ -p no:cacheprovider "$@"
+        #
+        # Runs BOTH Passenger targets (deploy.sh PYTHON_TARGETS=(3.9 3.11)). 3.11 is
+        # primary, but a 3.10+ construct passes there and breaks the 3.9 build, so a
+        # single-interpreter gate would ship it. Set GATE_PYTHON=3.11 to run just one.
+        rc=0
+        for target in ${GATE_PYTHON:-3.11 3.9}; do
+            if [ "${target}" = "3.11" ]; then
+                IMAGE="${TEST_RUNNER_IMAGE}"
+            else
+                IMAGE="${TEST_RUNNER_IMAGE%:*}:py${target//./}"
+            fi
+            PYTHON_VERSION="${target}"
+            echo "[gate] === python ${target} (${IMAGE}) ===" >&2
+            ensure_image
+            run_ephemeral "${VENV}" -m pytest tests/ -p no:cacheprovider "$@" || rc=$?
+        done
+        exit "${rc}"
         ;;
     trove)
         # Validates every nyxloom handoff's YAML frontmatter against the canonical

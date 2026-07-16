@@ -27,7 +27,12 @@ archive_dir     = "nyxloom-trove/archive"
 archive_keep_visible = 10
 agent_logs      = "nyxloom-trove/agent-logs"
 
-worktree_root = "../.worktrees-naf"
+# Worktrees live INSIDE the repo, which is what makes the gates work: nyxloomd binds
+# this repo at /workspaces/netcup-api-filter, so an attempt checkout at
+# .worktrees/<id> is automatically reachable both by the daemon AND inside a gate
+# container that mounts the same repo root. A worktree_root outside the repo would need
+# its own daemon bind and its own gate mount. Gitignored — see .gitignore.
+worktree_root = ".worktrees"
 
 # --- [refs]: docs nyxloom READS but never edits ------------------------------
 [refs]
@@ -39,28 +44,40 @@ testing       = "docs/TESTING_INFRASTRUCTURE.md"
 gate_doctrine = "tooling/test-runner/README.md"
 
 # --- gates: NEVER the devcontainer (cockpit doctrine) ------------------------
-# The devcontainer is python 3.14; the Passenger deploy target is 3.11. "Green in the
-# cockpit" is not a ship signal — see tooling/test-runner/README.md. {worktree} is the
-# attempt checkout, bind-mounted by HOST path (DooD).
+# The devcontainer is python 3.14; the Passenger deploy targets are 3.11 (primary) and
+# 3.9. "Green in the cockpit" is not a ship signal — see tooling/test-runner/README.md.
+#
+# {worktree} SUBSTITUTION — read before editing an argv:
+#   {worktree} expands to a path as the DAEMON sees it, e.g.
+#   /workspaces/netcup-api-filter/.worktrees/<id>. The docker socket is the HOST's
+#   daemon (DooD), so `-v` SOURCES must be HOST paths. Never write
+#   `-v {worktree}:/somewhere` — docker would treat a container path as a host path and
+#   silently bind an empty dir. Instead: mount the HOST repo root at the same container
+#   path the daemon uses, then `cd {worktree}` INSIDE. Because worktree_root is inside
+#   the repo, the attempt checkout resolves within that single mount. This mirrors
+#   nyxloom's own tester-unified gate.
 
 # PRIMARY gate: hermetic unit/integration suite, no services, no browser.
+# Runs BOTH Passenger targets: 3.11 (primary) and 3.9 (secondary). A 3.10+ construct
+# passes on 3.11 and breaks the 3.9 build, so a single-interpreter gate would ship it.
 [gates.unit]
-argv = ["bash", "-c", "docker run --rm -v {worktree}:/workspaces/netcup-api-filter:rw -w /workspaces/netcup-api-filter netcup-api-filter/test-runner:local /opt/tester-venv/bin/python -m pytest tests/ -q -p no:cacheprovider"]
+argv = ["bash", "-c", "set -e; for img in netcup-api-filter/test-runner:local netcup-api-filter/test-runner:py39; do echo \"--- gate: $img ---\"; docker run --rm -v /home/vb/volkb79-2/netcup-api-filter:/workspaces/netcup-api-filter:rw $img bash -c 'cd {worktree} && /opt/tester-venv/bin/python -m pytest tests/ -q -p no:cacheprovider --no-cov'; done"]
 phase = "implementation"
-timeout_seconds = 1800
+timeout_seconds = 2400
 environment = "test-runner"
 
-# Trove hygiene: handoff frontmatter + L1 + gate-id resolution.
+# Trove hygiene: handoff frontmatter + L1 + gate-id resolution. Interpreter-agnostic.
 [gates.trove]
-argv = ["bash", "-c", "docker run --rm -v {worktree}:/workspaces/netcup-api-filter:rw -w /workspaces/netcup-api-filter netcup-api-filter/test-runner:local /opt/tester-venv/bin/python tooling/test-runner/lint_trove.py"]
+argv = ["bash", "-c", "docker run --rm -v /home/vb/volkb79-2/netcup-api-filter:/workspaces/netcup-api-filter:rw netcup-api-filter/test-runner:local bash -c 'cd {worktree} && /opt/tester-venv/bin/python tooling/test-runner/lint_trove.py'"]
 phase = "implementation"
 timeout_seconds = 300
 environment = "test-runner"
 
 # E2E: Playwright against a deployed app + mocks. Browser is ALWAYS external (pwmcp);
 # no engine is installed in the gate image. Requires the naf network + a deploy-local.
+# 3.11 only: this exercises a DEPLOYED app, and the primary artifact is deploy-py311.zip.
 [gates.e2e]
-argv = ["bash", "-c", "docker run --rm --network naf-dev-network -e PLAYWRIGHT_SERVER_WS -v {worktree}:/workspaces/netcup-api-filter:rw -w /workspaces/netcup-api-filter netcup-api-filter/test-runner:local /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider"]
+argv = ["bash", "-c", "docker run --rm --network naf-dev-network -e PLAYWRIGHT_SERVER_WS -v /home/vb/volkb79-2/netcup-api-filter:/workspaces/netcup-api-filter:rw netcup-api-filter/test-runner:local bash -c 'cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider --no-cov'"]
 phase = "implementation"
 timeout_seconds = 3600
 environment = "test-runner"

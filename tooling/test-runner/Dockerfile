@@ -49,10 +49,27 @@ RUN apt-get update \
 # One venv under /opt built with --copies (a real interpreter binary), so a runtime
 # HOME bind at /home/tester can never shadow it. Deps come from the repo's own
 # requirements files — copied alone first so this layer caches independently of source.
+#
+# WHY THE 3.9 BRANCH EXISTS (and why it is not a violation of the SSOT rule above):
+#   requirements-dev.txt pins `pytest>=9.0`, and pytest 9 requires python>=3.10 — so the
+#   dev/test toolchain simply CANNOT install on the 3.9 secondary target. What must work
+#   on 3.9 is the RUNTIME closure (requirements.webhosting.txt), and that stays derived
+#   from the repo exactly like the 3.11 image. Only the TEST pins diverge, because
+#   upstream forces it. Keep the runtime line identical between the branches; if they
+#   ever drift, the 3.9 gate stops proving anything about the 3.9 artifact.
 COPY requirements.webhosting.txt requirements-dev.txt /tmp/reqs/
 RUN python -m venv --copies /opt/tester-venv \
  && /opt/tester-venv/bin/pip install --no-cache-dir --upgrade pip \
- && /opt/tester-venv/bin/pip install --no-cache-dir -r /tmp/reqs/requirements-dev.txt \
+ && if /opt/tester-venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then \
+        echo "[build] python >=3.10: full dev toolchain" ; \
+        /opt/tester-venv/bin/pip install --no-cache-dir -r /tmp/reqs/requirements-dev.txt ; \
+    else \
+        echo "[build] python 3.9: runtime closure + a 3.9-compatible test toolchain" ; \
+        /opt/tester-venv/bin/pip install --no-cache-dir \
+            -r /tmp/reqs/requirements.webhosting.txt \
+            "pytest<9" "pytest-asyncio<1" "pytest-cov" "hypothesis>=6.100" \
+            "gunicorn>=21.0.0" "dnspython>=2.4.0" ; \
+    fi \
  && rm -rf /tmp/reqs \
  && /opt/tester-venv/bin/python -c "import flask, sqlalchemy, bcrypt, pyotp, geoip2, httpx, pytest, hypothesis; print('netcup test-runner closure OK on python ${PYTHON_VERSION}')"
 
