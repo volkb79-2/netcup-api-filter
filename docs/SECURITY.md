@@ -66,8 +66,10 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   (they don't use cookies).
 - **Session cookies** are config-driven (`FLASK_SESSION_COOKIE_*`); `SECURE=auto` resolves to
   Secure over HTTPS and relaxes only for explicit local HTTP testing.
-- **Rate limiting** (`flask_limiter`) is applied to the admin, account, and Telegram blueprints,
-  plus a global default. Values come from DB settings → env → defaults and are reloadable.
+- **Rate limiting** (`flask_limiter`) is applied to the admin, account, Telegram, **and the
+  DNS/DDNS data API** blueprints, plus a global default. Values come from DB settings → env →
+  defaults and are reloadable. Note the limiter uses in-memory storage, so limits are
+  **per worker process**: N gunicorn workers allow N× the configured budget.
 - **GeoIP** location checks (optional) flag logins/requests from unexpected locations.
 - **Audit trail**: `ActivityLog` records authentication outcomes, grant add/revoke, Telegram
   linking, and scoped API activity; the admin **security dashboard** surfaces attack-flagged events.
@@ -82,11 +84,14 @@ resets to a fresh, password-change-forced state. See `DEPLOYMENT_WORKFLOW.md`.
 
 Documented honestly so the doc and code stay in sync:
 
-- **Per-endpoint rate limiting on the DNS/DDNS data API** — `/api/dns/*` and `/api/ddns/*`
-  currently fall under only the global limiter, not a dedicated per-blueprint limit.
-- **2FA-lockout notifications** — lockout works but sends no alert to the user/admin
-  (`SECURITY_ISSUE_2FA_LOCKOUT_NOTIFICATIONS.md` is the spec).
 - **TOTP secret encryption at rest**, **password-history reuse checks**, and response
   **`Content-Security-Policy` / `Strict-Transport-Security`** headers.
+- **User-facing security alerts** — `token_auth._trigger_security_notification` only
+  logs; the `send_security_alert` call is commented out, so brute-force / `ip_denied` /
+  `token_revoked` events never reach the account owner despite
+  `SECURITY_ERROR_TAXONOMY.md` describing them as current.
+- **Notification preferences** — `notify_new_ip` / `notify_failed_auth` /
+  `notify_token_expiring` / `notification_email` are stored by the settings UI but no
+  sender reads them.
 
 Report a vulnerability privately to the maintainer rather than via a public issue.

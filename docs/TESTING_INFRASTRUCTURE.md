@@ -11,7 +11,7 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 355 | <1 min (total) |
+| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 373 | ~1 min (total) |
 | Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
 | Round-trip | UI action → backend state via 3 channels | Playwright | ~30 | Medium |

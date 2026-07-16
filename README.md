@@ -14,7 +14,7 @@ Netcup issues a single credential set with full control over every DNS record, d
 ## Highlights
 
 - Token-based auth with bcrypt storage.
-- Realm-based permission engine (host, subdomain, wildcard).
+- Realm-based permission engine (`host`, `subdomain`, `subdomain_only`).
 - Admin UI plus client portal backed by SQLite.
 - Config-driven email notifications, auditing, and IP/network allowlists.
 - Build + deployment scripts that mirror the production package.
@@ -130,10 +130,12 @@ See `tooling/backend-powerdns/README.md` for complete documentation.
 
 - `README.md` – High-level overview (this file).
 - `docs/README.md` – Overview of the documentation hub.
+- `docs/FEATURES.md` – Canonical capability + roadmap map.
+- `docs/SECURITY.md` – Security posture, and an honest list of known gaps.
 - `docs/CONFIGURATION_GUIDE.md` – How configuration, secrets, and fail-fast policies work.
-- `docs/OPERATIONS_GUIDE.md` – Day-to-day runbook for building, testing, and deploying.
+- `docs/DEPLOYMENT_WORKFLOW.md` – Day-to-day runbook for building, testing, and deploying.
 - `docs/ADMIN_GUIDE.md` – Admin UI walkthrough (user-oriented doc retained as-is).
-- `docs/CLIENT_USAGE.md` – Instructions for client token holders and API examples.
+- `CLIENT_TEMPLATES.md` – Realm presets available to client token holders.
 - `docs/DDNS_PROTOCOLS.md` – DynDNS2/No-IP protocol documentation with client configuration examples.
 - `docs/API_REFERENCE.md` – Complete API reference including DDNS endpoints.
 - `PLAYWRIGHT_CONTAINER.md` – Dedicated Playwright container architecture and usage.
@@ -179,7 +181,7 @@ Two independent test suites; run them separately:
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 355 | <1 min total |
+| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 373 | ~1 min total |
 | Route smoke | Every Flask route returns the correct HTTP status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
 | Round-trip | UI action → backend state verified via 3 independent channels | Playwright | ~30 | Medium |
@@ -194,7 +196,7 @@ Two independent test suites; run them separately:
 **Key commands:**
 
 ```bash
-pytest tests/                                  # unit + property (355 tests, no app needed)
+pytest tests/                                  # unit + property (373 tests, no app needed)
 HYPOTHESIS_PROFILE=dev pytest tests/           # Hypothesis with 500 examples/property
 pytest ui_tests/tests                          # full Playwright suite (requires running deployment)
 pytest ui_tests/tests -m smoke                 # route-smoke + widget smoke (fast)

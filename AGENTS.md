@@ -87,8 +87,9 @@ Settings live in the `settings` table via `get_setting`/`set_setting` (JSON-enco
 ## Build, deploy, run
 
 **`deploy.sh` is the unified deployment script** (local and webhosting). `build_deployment.py`
-(+ `build_deployment_lib.sh`) builds the `deploy.zip`; `passenger_wsgi.py` is copied to the
-deploy root. Do **not** scp files by hand.
+builds the deployment zip (`deploy-local.zip` locally; `deploy-py311.zip` + `deploy-py39.zip`
+for webhosting); `passenger_wsgi.py` is copied to the deploy root. Do **not** scp files by hand.
+(`build_deployment_lib.sh` is **dead** — nothing sources it; see the backlog's B-OPS.)
 
 ```bash
 ./deploy.sh                     # local, mocked services (default)
@@ -131,7 +132,21 @@ Two distinct layers:
 > entry point* (`run-local-tests.sh` tests that parity tree, not the bare devcontainer). For
 > JS-rendered UI, drive **pwmcp** via `PLAYWRIGHT_SERVER_WS` — never install a browser engine in the
 > devcontainer. Base-image rationale and what belongs in this file:
-> `modern-debian-tools-python-debug` → `docs/CONTAINER-DOCTRINE.md` and `docs/CONSUMER-AI-GUIDANCE.md`.
+> `modern-debian-tools-python-debug` → `CONTAINER-DOCTRINE.md` and `CONSUMER-AI-GUIDANCE.md`
+> (in the **base-image repo**, not this one).
+>
+> **The gate is `tooling/test-runner/`, and it is the only ship signal.** The devcontainer runs
+> python **3.14**; the app deploys under Passenger on **3.11** (`deploy.sh` → `deploy-py311.zip`,
+> wheels vendored with `--python-version 3.11`). A 3.10+ construct, or a dep with a cp314 wheel but
+> no cp311 wheel, is green in the cockpit and a post-deploy 500 in production. Run:
+>
+> ```bash
+> ./tooling/test-runner/testing-exec.sh unit      # pytest tests/ on python 3.11 — the primary gate
+> ./tooling/test-runner/testing-exec.sh e2e       # ui_tests against a deployment + pwmcp
+> ./tooling/test-runner/testing-exec.sh trove     # nyxloom handoff frontmatter lint
+> ```
+>
+> Rationale and the 3.9 secondary-target rebuild: [`tooling/test-runner/README.md`](tooling/test-runner/README.md).
 
 The standard runner builds a production-parity deployment and runs the suite:
 
@@ -158,7 +173,7 @@ loading).
 
 **CI `e2e-smoke` job** (`.github/workflows/ci.yml`): boots the app on the GitHub Actions
 runner, seeds a fresh DB via `scripts/ci_bootstrap_e2e.py`, and runs all tests tagged
-`@pytest.mark.ci_smoke` (102 tests). This gives PRs E2E regression coverage without needing a
+`@pytest.mark.ci_smoke` (93 tests). This gives PRs E2E regression coverage without needing a
 full Playwright container. Tag new tests `ci_smoke` when they are fast, hermetic, and do not
 require external services beyond Mailpit.
 
@@ -206,7 +221,7 @@ don't treat them as current or update them. Must-reads by task: **capabilities/r
 A change is not done until its docs match the code **in the same change**. Before finishing:
 
 - **New/changed/removed capability** → update [`docs/FEATURES.md`](docs/FEATURES.md) (and move
-  the item out of the roadmap table if you just shipped it) **and** [`../CHANGELOG.md`](../CHANGELOG.md).
+  the item out of the roadmap table if you just shipped it) **and** [`CHANGELOG.md`](CHANGELOG.md).
 - **Auth / 2FA / rate-limit / secrets** → [`docs/SECURITY.md`](docs/SECURITY.md) (incl. its
   "Not yet implemented" list — keep it honest).
 - **API/DDNS endpoint, param, or response shape** → [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) / [`docs/DDNS_PROTOCOLS.md`](docs/DDNS_PROTOCOLS.md).

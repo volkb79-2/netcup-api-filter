@@ -10,8 +10,17 @@ the architecture overview, then dive into the relevant guide below.
 ## Architecture & onboarding
 
 - [`../AGENTS.md`](../AGENTS.md) — project orientation, architecture, conventions (read first).
+- [`FEATURES.md`](FEATURES.md) — **the canonical capability + roadmap map.**
 - [`../README.md`](../README.md) — top-level overview and quick start.
 - [`../CHANGELOG.md`](../CHANGELOG.md) — dated change history.
+
+## Reviews & follow-up work
+
+- [`FOLLOWUP_REVIEW_2026-07-16.md`](FOLLOWUP_REVIEW_2026-07-16.md) — deep-review backlog
+  (P0/P1/P2 with file:line). Working doc: retire it to [`deprecated/`](deprecated/) once
+  burned down. Its findings are carved into handoffs under
+  [`../nyxloom-trove/`](../nyxloom-trove/) — see `handoffs/` (ready work),
+  `backlog.md` (un-carved), `decisions.md` (open product/infra calls).
 
 ## Configuration
 
@@ -35,7 +44,7 @@ the architecture overview, then dive into the relevant guide below.
 - [`SECURITY_ERROR_TAXONOMY.md`](SECURITY_ERROR_TAXONOMY.md) — auth error codes, severities, attack attribution.
 - [`RATE_LIMITING.md`](RATE_LIMITING.md) — rate-limit configuration and hierarchy.
 - [`TELEGRAM_LINKING.md`](TELEGRAM_LINKING.md) · [`TELEGRAM_BOT_SETUP.md`](TELEGRAM_BOT_SETUP.md) — Telegram 2FA/notification linking and bot setup.
-- [`SECURITY_ISSUE_2FA_LOCKOUT_NOTIFICATIONS.md`](SECURITY_ISSUE_2FA_LOCKOUT_NOTIFICATIONS.md) — backlog spec (lockout alerts, not yet implemented).
+- [`SECURITY_ISSUE_2FA_LOCKOUT_NOTIFICATIONS.md`](SECURITY_ISSUE_2FA_LOCKOUT_NOTIFICATIONS.md) — the spec lockout alerts were built from (shipped: `notify_2fa_lockout`).
 
 ## Admin & UI
 
@@ -60,7 +69,7 @@ the architecture overview, then dive into the relevant guide below.
 - [`JOURNEY_CONTRACTS.md`](JOURNEY_CONTRACTS.md) — end-to-end journey definitions.
 - [`PARALLEL_SESSION_STRATEGY.md`](PARALLEL_SESSION_STRATEGY.md) — multi-session test harness.
 - [`UI_TESTING_GUIDE.md`](UI_TESTING_GUIDE.md) · [`WEBHOSTING_TESTING_GUIDE.md`](WEBHOSTING_TESTING_GUIDE.md) — screenshot/UX validation and HTTPS-target testing.
-- [`PLAYWRIGHT_MCP_SETUP.md`](PLAYWRIGHT_MCP_SETUP.md) · [`PLAYWRIGHT_WAITING_PATTERNS.md`](PLAYWRIGHT_WAITING_PATTERNS.md) · [`../PLAYWRIGHT_CONTAINER.md`](../PLAYWRIGHT_CONTAINER.md) — Playwright container and patterns.
+- [`PLAYWRIGHT_WAITING_PATTERNS.md`](PLAYWRIGHT_WAITING_PATTERNS.md) · [`../tooling/PLAYWRIGHT-TESTING.md`](../tooling/PLAYWRIGHT-TESTING.md) — Playwright patterns and the external Playwright-as-a-Service setup.
 - [`MAILPIT_CONFIGURATION.md`](MAILPIT_CONFIGURATION.md) — SMTP capture for email tests.
 
 ## Repository root
