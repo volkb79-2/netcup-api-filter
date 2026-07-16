@@ -267,3 +267,6 @@ geoIP.conf
 
 # Claude Code local config
 .claude/
+
+# curl cookie jar written by ui_tests helpers (runtime artifact)
+ui_tests/cookies.txt
