@@ -35,9 +35,12 @@ agent_logs      = "nyxloom-trove/agent-logs"
 worktree_root = ".worktrees"
 
 # --- [refs]: docs nyxloom READS but never edits ------------------------------
+# The 2026-07-16 deep review is deliberately NOT referenced here: its findings now live
+# in this trove (handoffs/ + backlog.md), so the trove is the truth and the review is an
+# archive (docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md). Handoffs still cite it in
+# `source.ref` as provenance — where a finding came from — not as a live document.
 [refs]
 agents        = "AGENTS.md"
-review        = "docs/FOLLOWUP_REVIEW_2026-07-16.md"
 features      = "docs/FEATURES.md"
 security      = "docs/SECURITY.md"
 testing       = "docs/TESTING_INFRASTRUCTURE.md"

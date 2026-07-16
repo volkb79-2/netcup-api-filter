@@ -1,8 +1,20 @@
-# Follow-up work — deep review (2026-07-16)
+# Follow-up work — deep review (2026-07-16) — ARCHIVED
 
-Destination: `docs/FOLLOWUP_REVIEW_2026-07-16.md` (link it from `docs/README.md` under a new
-"Reviews & plans" heading). This is a working backlog, not a canonical guide — retire it to
-`docs/deprecated/` once the items are burned down, the way the old `*_REVIEW.md` write-ups were.
+> **RETIRED 2026-07-16 — do not treat any status here as current.** Its findings were
+> carved into the nyxloom trove, which is now the source of truth:
+> [`../../nyxloom-trove/handoffs/`](../../nyxloom-trove/handoffs/) (ready work),
+> [`../../nyxloom-trove/backlog.md`](../../nyxloom-trove/backlog.md) (un-carved, same
+> file:line detail), [`../../nyxloom-trove/decisions.md`](../../nyxloom-trove/decisions.md)
+> (open calls), [`../../nyxloom-trove/roadmap.md`](../../nyxloom-trove/roadmap.md).
+>
+> Kept because a carved handoff is a *contract*, not an argument: this is where the
+> reasoning, the evidence, and the rejected alternatives behind each finding live.
+> Handoffs cite it in `source.ref` as provenance.
+>
+> **Already fixed since writing** (so the P0 list below is stale by design): P0-6 (the
+> Telegram bot-token/chat-id log leak), P0-4/P0-5 (the phantom `ActivityLog.details`
+> column and the undefined `log_activity` — audit writes), and the P1-C code-generation
+> and constant-time-compare items. See `git log` for what actually landed.
 
 Source: seven parallel read-only reviews (auth core, HTTP blueprints, DNS/backends/notifications,
 app/config/data, build/deploy/tooling, docs & hygiene, test-suite health). CI was out of scope by

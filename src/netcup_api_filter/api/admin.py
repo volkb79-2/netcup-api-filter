@@ -1531,14 +1531,26 @@ def realm_revoke(realm_id):
             token.revoked_by = g.admin.username
             token.revoked_reason = 'Realm revoked'
             revoked_count += 1
-    
+
+    # Audit the revoke in the SAME transaction as the revoke itself, so a revoke can
+    # never land without its audit row. (This used to call log_activity(), a name that
+    # is not defined or imported in this module — it lives in token_auth and is
+    # token-auth shaped — so the revoke committed above and then the request 500'd with
+    # NameError, leaving a destructive action with no audit trail.)
+    db.session.add(ActivityLog(
+        account_id=realm.account_id,
+        action='realm_revoked',
+        source_ip=request.remote_addr,
+        user_agent=request.headers.get('User-Agent'),
+        status='success',
+        severity='high',
+        status_reason=(
+            f'Admin {g.admin.username} revoked realm '
+            f'{realm.realm_value}.{realm.domain}, deactivated {revoked_count} tokens'
+        ),
+    ))
     db.session.commit()
-    
-    # Log the action
-    log_activity('realm_revoked', 'success', 
-                details=f'Revoked realm {realm.realm_value}.{realm.domain}, deactivated {revoked_count} tokens',
-                actor=g.admin.username)
-    
+
     flash(f'Realm revoked. {revoked_count} tokens deactivated.', 'success')
     return redirect(url_for('admin.realm_detail', realm_id=realm_id))
 
@@ -1584,18 +1596,28 @@ def token_revoke(token_id):
     token.is_active = 0
     token.revoked_at = datetime.utcnow()
     token.revoked_reason = revoke_reason
-    
+
+    # Audit in the SAME transaction as the revoke (see realm_revoke above: this used to
+    # call the undefined name log_activity and 500 after the revoke had committed).
+    db.session.add(ActivityLog(
+        account_id=account.id,
+        token_id=token.id,
+        action='token_revoked',
+        source_ip=request.remote_addr,
+        user_agent=request.headers.get('User-Agent'),
+        status='success',
+        severity='high',
+        status_reason=(
+            f'Admin {g.admin.username} revoked token {token.token_prefix} for realm '
+            f'{token.realm.realm_value}.{token.realm.domain} (reason: {revoke_reason})'
+        ),
+    ))
     db.session.commit()
-    
-    # Send notification to token owner
+
+    # Notify the owner only after the revoke + audit are durable.
     from ..notification_service import notify_token_revoked
     notify_token_revoked(account, token, g.admin.username, revoke_reason)
-    
-    # Log the action
-    log_activity('token_revoked', 'success', 
-                details=f'Revoked token {token.token_prefix} for realm {token.realm.realm_value}.{token.realm.domain}',
-                actor=g.admin.username)
-    
+
     flash('Token has been revoked', 'success')
     return redirect(url_for('admin.token_detail', token_id=token_id))
 

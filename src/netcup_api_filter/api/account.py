@@ -1204,16 +1204,21 @@ def realm_detail(realm_id):
         'errors': 0
     }
     
-    for token in tokens:
+    # Join on the indexed token_id FK. (This used to LIKE-match the token prefix into
+    # an ActivityLog.details column that does not exist, raising AttributeError and
+    # 500ing this page for any realm that had tokens.)
+    if tokens:
         logs = ActivityLog.query.filter(
-            ActivityLog.account_id == account.id,
+            ActivityLog.token_id.in_([t.id for t in tokens]),
             ActivityLog.created_at >= thirty_days_ago,
-            ActivityLog.details.like(f'%{token.token_prefix}%')
         ).all()
-        
+
         for log in logs:
             stats['total_calls'] += 1
-            if log.action in ('updateDnsRecords', 'createDnsRecords', 'deleteDnsRecords'):
+            # Match the operations token_auth.log_activity actually records. The old
+            # list ('updateDnsRecords', …) was Netcup API method names, which are
+            # never written as an action, so 'updates' was always 0.
+            if log.operation in ('update', 'create', 'delete'):
                 stats['updates'] += 1
             if log.status == 'success':
                 stats['successful'] += 1
@@ -1340,8 +1345,9 @@ def ddns_update(realm_id):
         log = ActivityLog(
             account_id=account.id,
             action='ddns_ui',
+            source_ip=client_ip,
             status='success',
-            details=f'{hostname}.{domain} {record_type} → {client_ip}'
+            status_reason=f'{hostname}.{domain} {record_type} → {client_ip}'
         )
         db.session.add(log)
         db.session.commit()
@@ -1355,8 +1361,9 @@ def ddns_update(realm_id):
         log = ActivityLog(
             account_id=account.id,
             action='ddns_ui',
+            source_ip=client_ip,
             status='error',
-            details=f'{hostname}.{domain}: {str(e)}'
+            status_reason=f'{hostname}.{domain}: {str(e)}'
         )
         db.session.add(log)
         db.session.commit()
@@ -1445,8 +1452,9 @@ def dns_records(realm_id):
             log = ActivityLog(
                 account_id=account.id,
                 action='dns_view',
+                source_ip=request.remote_addr,
                 status='success',
-                details=f'{realm.domain}: {len(records)} records'
+                status_reason=f'{realm.domain}: {len(records)} records'
             )
             db.session.add(log)
             db.session.commit()
@@ -1541,8 +1549,9 @@ def dns_record_create(realm_id):
             log = ActivityLog(
                 account_id=account.id,
                 action='dns_create',
+                source_ip=request.remote_addr,
                 status='success',
-                details=f'{hostname}.{realm.domain} {record_type}'
+                status_reason=f'{hostname}.{realm.domain} {record_type}'
             )
             db.session.add(log)
             db.session.commit()
@@ -1624,8 +1633,9 @@ def dns_record_edit(realm_id, record_id):
             log = ActivityLog(
                 account_id=account.id,
                 action='dns_update',
+                source_ip=request.remote_addr,
                 status='success',
-                details=f'{record.get("hostname")}.{realm.domain} {record.get("type")} → {destination}'
+                status_reason=f'{record.get("hostname")}.{realm.domain} {record.get("type")} → {destination}'
             )
             db.session.add(log)
             db.session.commit()
@@ -1700,8 +1710,9 @@ def dns_record_delete(realm_id, record_id):
         log = ActivityLog(
             account_id=account.id,
             action='dns_delete',
+            source_ip=request.remote_addr,
             status='success',
-            details=f'{record_to_delete.get("hostname")}.{realm.domain} {record_to_delete.get("type")}'
+            status_reason=f'{record_to_delete.get("hostname")}.{realm.domain} {record_to_delete.get("type")}'
         )
         db.session.add(log)
         db.session.commit()

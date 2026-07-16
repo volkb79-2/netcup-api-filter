@@ -1,7 +1,7 @@
 # Roadmap — netcup-api-filter
 
 Milestones, in dependency order. Sourced from the deep review
-(`docs/FOLLOWUP_REVIEW_2026-07-16.md`) and the operator's stated priorities: **portal &
+(`docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md`) and the operator's stated priorities: **portal &
 notifications, UI usability + correctness, testing framework, interesting features.**
 
 Handoffs reference these via `advances:`; the reviewer verifies the ratchet at merge.

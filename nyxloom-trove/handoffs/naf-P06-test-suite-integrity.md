@@ -7,7 +7,7 @@ tier: sonnet5-high
 input_revision: "adcba7d"
 depends_on: []
 session: fresh
-source: {kind: review, ref: "docs/FOLLOWUP_REVIEW_2026-07-16.md#P1-F"}
+source: {kind: review, ref: "docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md#P1-F"}
 scope:
   touch:
     - "ui_tests/route_discovery.py"

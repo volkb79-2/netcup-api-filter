@@ -16,11 +16,18 @@ the architecture overview, then dive into the relevant guide below.
 
 ## Reviews & follow-up work
 
-- [`FOLLOWUP_REVIEW_2026-07-16.md`](FOLLOWUP_REVIEW_2026-07-16.md) — deep-review backlog
-  (P0/P1/P2 with file:line). Working doc: retire it to [`deprecated/`](deprecated/) once
-  burned down. Its findings are carved into handoffs under
-  [`../nyxloom-trove/`](../nyxloom-trove/) — see `handoffs/` (ready work),
-  `backlog.md` (un-carved), `decisions.md` (open product/infra calls).
+Follow-up work lives in the **nyxloom trove** ([`../nyxloom-trove/`](../nyxloom-trove/)),
+which is the source of truth — not a prose doc that drifts:
+
+- `handoffs/` — carved, ready work packages (frontmatter + oracles + a real gate).
+- `backlog.md` — everything not yet carved, file:line-specific.
+- `decisions.md` — open product/infra calls (`D-NNN`).
+- `roadmap.md` — milestones in dependency order.
+
+The 2026-07-16 deep review that produced all of it has been **retired to
+[`deprecated/FOLLOWUP_REVIEW_2026-07-16.md`](deprecated/FOLLOWUP_REVIEW_2026-07-16.md)**
+now that its findings are carved: read it for the reasoning behind a finding, never as a
+current status. Handoffs cite it in `source.ref` as provenance only.
 
 ## Configuration
 

@@ -1,6 +1,6 @@
 # Backlog — un-carved ideas
 
-Everything from the deep review (`docs/FOLLOWUP_REVIEW_2026-07-16.md`, declared in
+Everything from the deep review (`docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md`, declared in
 `nyxloom.toml [refs]`) that is **not yet a handoff**. Each entry is specific enough that
 carving is mechanical: the file:line and the intended change are already named.
 

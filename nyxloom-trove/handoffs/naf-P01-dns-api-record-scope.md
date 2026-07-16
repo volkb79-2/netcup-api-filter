@@ -7,7 +7,7 @@ tier: sonnet5-high
 input_revision: "adcba7d"
 depends_on: []
 session: fresh
-source: {kind: review, ref: "docs/FOLLOWUP_REVIEW_2026-07-16.md#P0-1"}
+source: {kind: review, ref: "docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md#P0-1"}
 scope:
   touch:
     - "src/netcup_api_filter/api/dns_api.py"
@@ -39,7 +39,7 @@ escalate_if:
 # P01 — REST DNS API: record-level scope on delete + update-by-id
 
 > Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
-> Source: the deep review, finding **P0-1** (`docs/FOLLOWUP_REVIEW_2026-07-16.md`).
+> Source: the deep review, finding **P0-1** (`docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md`).
 > This is a **live authorization bypass**, not a cleanup: on a shared
 > `ManagedDomainRoot`, a host-scoped token can delete any record in the zone.
 

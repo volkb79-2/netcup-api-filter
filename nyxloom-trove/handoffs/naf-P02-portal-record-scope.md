@@ -7,7 +7,7 @@ tier: sonnet5-high
 input_revision: "adcba7d"
 depends_on: []
 session: fresh
-source: {kind: review, ref: "docs/FOLLOWUP_REVIEW_2026-07-16.md#P0-2"}
+source: {kind: review, ref: "docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md#P0-2"}
 scope:
   touch:
     - "src/netcup_api_filter/api/account.py"
