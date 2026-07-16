@@ -8,7 +8,17 @@ mechanical gap is a BLOCKED exit, not a decision (AUTHORING.md §5/§6).
 
 ## D-001 — nyxloomd cannot reach this repo (blocks ALL dispatch)
 
-**Status:** OPEN · raised 2026-07-16 · blocks: every handoff in this trove
+**Status:** CARVED UPSTREAM · raised 2026-07-16 · blocks: every handoff in this trove
+**Fix in flight:** `nyxloom-P27-project-mount-reachability` (vbpub commit `49abcaa`) —
+carved into nyxloom's own trove, since this is a defect in nyxloom's infrastructure, not
+ours. nyxloom is self-hosting (registry: dstdns, nyxloom, topos), so its daemon should
+dispatch P27 itself. Follow-up B11 there covers the principled fix: derive the daemon's
+project binds from the registry so `project add` cannot produce an unreachable project.
+
+**Still an operator step after P27 merges:** `ciu up --dir nyxloom/nyxloomd` to rebuild
+(the self-hosting caveat — a merge to daemon-core does not take effect until rebuild),
+then `nyxloom project add` for this trove. P27 explicitly forbids the agent from doing
+either, since it would be restarting the daemon that dispatches it.
 
 The running `nyxloom-prod-nyxloomd` container mounts only:
 
