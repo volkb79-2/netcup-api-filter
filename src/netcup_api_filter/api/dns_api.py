@@ -16,13 +16,10 @@ from flask import Blueprint, g, jsonify, request
 from ..models import db
 from ..netcup_client import extract_dns_records, mutation_failed, mutation_message
 from ..token_auth import (
-    authenticate_token,
     check_permission,
-    extract_bearer_token,
     filter_dns_records,
     log_activity,
     require_auth,
-    validate_dns_records_update,
 )
 from ..database import get_setting
 

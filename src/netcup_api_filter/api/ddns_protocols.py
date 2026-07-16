@@ -29,7 +29,6 @@ from ..database import get_setting
 from ..netcup_client import extract_dns_records, mutation_failed, mutation_message
 from ..token_auth import (
     check_permission,
-    extract_bearer_token,
     log_activity,
     require_auth,
 )

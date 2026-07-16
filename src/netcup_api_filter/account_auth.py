@@ -16,6 +16,7 @@ Handles:
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import random
@@ -94,8 +95,13 @@ class TwoFactorResult(NamedTuple):
 
 
 def generate_code(length: int = 6) -> str:
-    """Generate a random numeric code."""
-    return ''.join(random.choices(string.digits, k=length))
+    """Generate a cryptographically secure random numeric code.
+
+    Backs login 2FA, admin 2FA, and registration verification codes, so the
+    generator must not be predictable from observed outputs (`random` is a
+    Mersenne Twister and is).
+    """
+    return ''.join(secrets.choice(string.digits) for _ in range(length))
 
 
 def _generate_unique_user_alias() -> str:
@@ -247,8 +253,8 @@ def verify_registration(request_id: int, code: str) -> RegistrationResult:
     if reg_request.is_locked():
         return RegistrationResult(success=False, error="Too many verification attempts")
     
-    # Verify code
-    if reg_request.verification_code != code:
+    # Verify code (constant-time: AGENTS.md §5 — never `==` on a secret)
+    if not hmac.compare_digest(str(reg_request.verification_code), str(code)):
         reg_request.verification_attempts += 1
         db.session.commit()
         attempts_left = 5 - reg_request.verification_attempts
@@ -616,8 +622,8 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
             clear_2fa_session()
             return TwoFactorResult(success=False, error="Code has expired")
         
-        # Verify code
-        if code != expected_code:
+        # Verify code (constant-time: AGENTS.md §5 — never `==` on a secret)
+        if not hmac.compare_digest(str(code), str(expected_code)):
             increment_2fa_failures(account)
             attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(account)
             log_login_attempt(

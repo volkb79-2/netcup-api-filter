@@ -300,7 +300,6 @@ Ref: {email_ref}
         notifier._send_email_sync(email, subject, body, html_body)
         logger.info(f"Sent verification email to {email} [ref={email_ref}]")
         return True
-        return True
     except Exception as e:
         logger.error(f"Failed to send verification email to {email}: {e}")
         return False

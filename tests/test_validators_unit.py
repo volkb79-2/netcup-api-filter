@@ -265,7 +265,7 @@ def test_validate_ip_range_range_notation_invalid_left_side():
 # --- validate_ip_range: wildcard octet ValueError returns False (mutmut_49) ---
 
 def test_validate_ip_range_wildcard_non_numeric_octet_rejected():
-    """An octet that is non-numeric (not '*') in a wildcard pattern must yield False.
+    r"""An octet that is non-numeric (not '*') in a wildcard pattern must yield False.
 
     Kills x_validate_ip_range__mutmut_49: the ValueError except branch returns
     True instead of False, allowing patterns like '192.abc.1.*' to be accepted.

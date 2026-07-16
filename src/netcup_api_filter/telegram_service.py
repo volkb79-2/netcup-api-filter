@@ -138,6 +138,15 @@ __all__ = [
 ]
 
 
+def _chat_ref(chat_id: str) -> str:
+    """A log-safe reference to a chat id.
+
+    Chat ids are treated as secrets (AGENTS.md §4), but support needs to correlate
+    log lines with a user. A stable hash prefix does both.
+    """
+    return f"sha256:{sha256_hex(str(chat_id))[:12]}"
+
+
 def _get_http_client(timeout_seconds: float) -> httpx.Client:
     """Return the shared httpx client, creating it on first use (thread-safe)."""
     global _http_client
@@ -183,8 +192,21 @@ def send_telegram_message(*, chat_id: str, text: str) -> bool:
         data = resp.json()
         ok = bool(data.get("ok"))
         if not ok:
-            logger.warning(f"Telegram sendMessage returned ok=false for chat_id={chat_id}")
+            logger.warning(f"Telegram sendMessage returned ok=false for chat={_chat_ref(chat_id)}")
         return ok
+    except httpx.HTTPStatusError as exc:
+        # NEVER log this exception directly: its message embeds the request URL, which
+        # carries the bot token (https://api.telegram.org/bot<TOKEN>/sendMessage).
+        logger.error(
+            f"Telegram sendMessage failed for chat={_chat_ref(chat_id)}: "
+            f"HTTP {exc.response.status_code}"
+        )
+        return False
     except Exception as exc:
-        logger.error(f"Telegram sendMessage failed for chat_id={chat_id}: {exc}")
+        # Transport/JSON errors carry no token in their message, but log the type only
+        # rather than trusting every future exception class to stay token-free.
+        logger.error(
+            f"Telegram sendMessage failed for chat={_chat_ref(chat_id)}: "
+            f"{type(exc).__name__}"
+        )
         return False
