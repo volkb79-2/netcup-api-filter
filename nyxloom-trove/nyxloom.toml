@@ -1,0 +1,80 @@
+# =============================================================================
+# nyxloom project config — netcup-api-filter.
+#
+# Hand-scaffolded per nyxloom-trove/STANDARD.md: `exec-nyxloom init <project_folder>`
+# is NOT yet implemented (the running daemon's CLI exposes no `init` subcommand — it is
+# still the open handoff nyxloom-P23-init-command). Structure follows STANDARD.md
+# exactly; refresh from the canonical template once init ships.
+#
+# NOT YET REGISTERED WITH THE DAEMON — see decisions.md D-001: nyxloomd mounts only
+# vbpub + dstdns, so it cannot reach this folder. Until that mount + `nyxloom project
+# add` land, the trove is authored + linted locally (tooling/test-runner lint_trove.py).
+# =============================================================================
+
+[project]
+id = "naf"
+default_branch = "main"
+
+# --- the managed folder (visible, tracked, tool-named) -----------------------
+trove = "nyxloom-trove"
+
+handoff_globs   = ["nyxloom-trove/handoffs/*.md"]
+reports_dir     = "nyxloom-trove/reports"
+decisions_inbox = "nyxloom-trove/decisions.md"
+roadmap         = "nyxloom-trove/roadmap.md"
+backlog         = "nyxloom-trove/backlog.md"
+archive_dir     = "nyxloom-trove/archive"
+archive_keep_visible = 10
+agent_logs      = "nyxloom-trove/agent-logs"
+
+worktree_root = "../.worktrees-naf"
+
+# --- [refs]: docs nyxloom READS but never edits ------------------------------
+[refs]
+agents        = "AGENTS.md"
+review        = "docs/FOLLOWUP_REVIEW_2026-07-16.md"
+features      = "docs/FEATURES.md"
+security      = "docs/SECURITY.md"
+testing       = "docs/TESTING_INFRASTRUCTURE.md"
+gate_doctrine = "tooling/test-runner/README.md"
+
+# --- gates: NEVER the devcontainer (cockpit doctrine) ------------------------
+# The devcontainer is python 3.14; the Passenger deploy target is 3.11. "Green in the
+# cockpit" is not a ship signal — see tooling/test-runner/README.md. {worktree} is the
+# attempt checkout, bind-mounted by HOST path (DooD).
+
+# PRIMARY gate: hermetic unit/integration suite, no services, no browser.
+[gates.unit]
+argv = ["bash", "-c", "docker run --rm -v {worktree}:/workspaces/netcup-api-filter:rw -w /workspaces/netcup-api-filter netcup-api-filter/test-runner:local /opt/tester-venv/bin/python -m pytest tests/ -q -p no:cacheprovider"]
+phase = "implementation"
+timeout_seconds = 1800
+environment = "test-runner"
+
+# Trove hygiene: handoff frontmatter + L1 + gate-id resolution.
+[gates.trove]
+argv = ["bash", "-c", "docker run --rm -v {worktree}:/workspaces/netcup-api-filter:rw -w /workspaces/netcup-api-filter netcup-api-filter/test-runner:local /opt/tester-venv/bin/python tooling/test-runner/lint_trove.py"]
+phase = "implementation"
+timeout_seconds = 300
+environment = "test-runner"
+
+# E2E: Playwright against a deployed app + mocks. Browser is ALWAYS external (pwmcp);
+# no engine is installed in the gate image. Requires the naf network + a deploy-local.
+[gates.e2e]
+argv = ["bash", "-c", "docker run --rm --network naf-dev-network -e PLAYWRIGHT_SERVER_WS -v {worktree}:/workspaces/netcup-api-filter:rw -w /workspaces/netcup-api-filter netcup-api-filter/test-runner:local /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider"]
+phase = "implementation"
+timeout_seconds = 3600
+environment = "test-runner"
+
+[policy]
+max_active_tasks = 3
+ready_queue_target = 5
+max_attempts_per_task = 3
+merge_mode = "manual"
+retention_days = 60
+reconcile_interval_seconds = 30
+http_port = 8943
+
+[notify]
+ntfy_url = "https://nyxloom.gstammtisch.dchive.de"
+notifications_topic = "notifications"
+feedback_topic = "feedback"
