@@ -294,3 +294,6 @@ ciu.global.toml.j2
 
 # traefik basicauth credential (plaintext + bcrypt hash) — never commit
 .env.guard
+
+# operator-supplied infra facts (delegated DNS zone, ...) — never commit
+.env.operator
