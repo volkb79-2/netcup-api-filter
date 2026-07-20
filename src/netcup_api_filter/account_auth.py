@@ -19,7 +19,6 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-import random
 import secrets
 import string
 from datetime import datetime, timedelta
@@ -122,17 +121,6 @@ def _generate_unique_user_alias() -> str:
         if not Account.query.filter_by(user_alias=alias).first():
             return alias
     raise RuntimeError("Failed to generate unique user_alias after 10 attempts")
-
-
-def generate_secure_password(length: int = 16) -> str:
-    """Generate a secure random password.
-    
-    Uses safe printable ASCII characters that don't cause shell escaping issues.
-    Excludes: ! (shell history), ` (command substitution), ' " (quoting)
-    """
-    # Safe special chars: -=_+;:,.|/?@#$%^&*
-    alphabet = string.ascii_letters + string.digits + "-=_+;:,.|/?@#$%^&*"
-    return ''.join(random.choices(alphabet, k=length))
 
 
 # ============================================================================
@@ -597,13 +585,24 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
             import pyotp
             totp = pyotp.TOTP(account.totp_secret)
             if not totp.verify(code, valid_window=1):
+                increment_2fa_failures(account)
+                attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(account)
                 log_login_attempt(
                     username=account.username,
                     source_ip=source_ip,
                     success=False,
                     reason="Invalid TOTP code"
                 )
-                return TwoFactorResult(success=False, error="Invalid code")
+                if attempts_left > 0:
+                    return TwoFactorResult(
+                        success=False,
+                        error=f"Invalid code. {attempts_left} attempts remaining."
+                    )
+                else:
+                    return TwoFactorResult(
+                        success=False,
+                        error=f"Too many failed attempts. Account locked for {TFA_LOCKOUT_MINUTES} minutes."
+                    )
         except ImportError:
             logger.error("pyotp not installed for TOTP verification")
             return TwoFactorResult(success=False, error="TOTP not available")
@@ -851,32 +850,11 @@ def change_password(
     return True, None
 
 
-def request_password_reset(email: str) -> tuple[bool, str | None]:
-    """
-    Initiate password reset flow.
-    
-    Sends reset code to email if account exists.
-    Always returns success to prevent email enumeration.
-    """
-    account = Account.query.filter_by(email=email).first()
-    
-    if account and account.is_active:
-        # Generate reset code
-        code = generate_code(6)
-        expires_at = datetime.utcnow() + timedelta(minutes=30)
-        
-        # Store reset info on account (temporary)
-        account.password_reset_code = code
-        account.password_reset_expires = expires_at
-        db.session.commit()
-        
-        # Send reset email
-        from .notification_service import send_password_reset_email
-        send_password_reset_email(account.email, account.username, code, expires_minutes=30)
-        logger.info(f"Password reset requested for {email}")
-    
-    # Always return success to prevent enumeration
-    return True, None
+# NOTE: the dead plaintext-code reset path (request_password_reset) was removed
+# here (naf-P07) — it had zero callers; the live flow is the ResetToken model in
+# password_reset.py. The Account.password_reset_code / password_reset_expires
+# columns are now write-nowhere (dropping them needs a hand-written migration;
+# tracked as a separate backlog item).
 
 
 # ============================================================================
