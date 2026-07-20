@@ -92,6 +92,12 @@ run_networked() {
         -v "${PHYSICAL_REPO_ROOT}:/workspaces/netcup-api-filter:rw" \
         -w "${CONTAINER_WORKDIR}" \
         -e "PLAYWRIGHT_SERVER_WS=${PLAYWRIGHT_SERVER_WS:-}" \
+        -e "UI_BASE_URL=${UI_BASE_URL:-}" \
+        `# Ingress basicauth (naf-I04): the dev app is exposed through the host traefik` \
+        `# behind a basicauth guard, so the browser MUST authenticate or every e2e request` \
+        `# 401s before reaching the app. Playwright picks these up in _guard_credentials().` \
+        -e "NAF_GUARD_USER=${NAF_GUARD_USER:-}" \
+        -e "NAF_GUARD_PASSWORD=${NAF_GUARD_PASSWORD:-}" \
         "${IMAGE}" "$@"
 }
 

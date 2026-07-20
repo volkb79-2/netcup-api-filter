@@ -1,0 +1,81 @@
+# tooling/app-local/ciu.compose.yml.j2 — the containerized dev app
+# =============================================================================
+#   Rendered output: ciu.compose.yml  (GITIGNORED)
+#
+# Replaces the host `gunicorn` process deploy.sh used to spawn in the devcontainer.
+# Two networks on purpose:
+#   * {{ deploy.network_name }} — the project network, where the app reaches its backing
+#     services by name (mailpit, mock-geoip, mock-netcup-api, powerdns).
+#   * {{ topology.external.ingress_network }} — the SHARED ingress owned by the host
+#     tls-edge stack, where edge-traefik can see this container's labels.
+# Because the container is multi-homed, traefik.docker.network is set explicitly, else
+# traefik may pick the wrong address to route to.
+#
+# NO `ports:` — nothing is published to the host. Ingress is traefik's job. NO TLS material
+# and no certs here: traefik's `websecure` entrypoint carries certResolver=letsencrypt.
+# =============================================================================
+
+services:
+  {{ app_local.name }}:
+    image: {% if deploy.registry.url %}{{ deploy.registry.url }}/{% endif %}{{ deploy.registry.namespace }}/{{ app_local.image_name }}:{{ app_local.image_tag }}
+    container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}
+    hostname: {{ app_local.name }}
+    restart: unless-stopped
+    # Host-owned uid so the bind-mounted repo (and the SQLite db under deploy-local/)
+    # stay writable from both sides.
+    user: "${CONTAINER_UID}:${DOCKER_GID}"
+    working_dir: {{ ciu.repo_root }}/{{ app_local.deploy_dir }}
+    command:
+      - /opt/tester-venv/bin/gunicorn
+      - -c
+      - gunicorn.conf.py
+      - passenger_wsgi:application
+    environment:
+      {% for key, value in deploy.env.defaults.items() %}
+      - {{ key }}={{ value }}
+      {% endfor %}
+      - GUNICORN_BIND=0.0.0.0:{{ app_local.port }}
+    expose:
+      - "{{ app_local.port }}"
+    volumes:
+      # HOST path (DooD) — the daemon resolves bind sources on the host, not in here.
+      - ${PHYSICAL_REPO_ROOT}:{{ ciu.repo_root }}:rw
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:{{ app_local.port }}/admin/login', timeout=3).status==200 else 1)\""]
+      interval: {{ deploy.health.interval }}
+      timeout: {{ deploy.health.timeout }}
+      retries: {{ deploy.health.retries }}
+      start_period: {{ deploy.health.start_period }}
+    networks:
+      - {{ deploy.network_name }}
+      - {{ topology.external.ingress_network }}
+    labels:
+      - "{{ deploy.labels.prefix }}.component={{ app_local.name }}"
+      - "{{ deploy.labels.prefix }}.stack=app"
+      - "{{ deploy.labels.prefix }}.service-type=web"
+      - "{{ deploy.labels.prefix }}.managed-by=ciu"
+    {%- if app_local.external.enabled %}
+      # --- traefik ingress (host edge-traefik). TLS/cert inherited from the entrypoint. ---
+      - "traefik.enable=true"
+      - "traefik.docker.network={{ topology.external.ingress_network }}"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ app_local.name }}.rule=Host(`{{ app_local.external.subdomain }}.{{ topology.external.public_fqdn }}`)"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ app_local.name }}.entrypoints=websecure"
+      - "traefik.http.services.{{ deploy.project_name }}-{{ app_local.name }}.loadbalancer.server.port={{ app_local.port }}"
+    {%- if topology.guard.enabled %}
+      # basicauth: the product is not production ready and must not be publicly reachable.
+      # The e2e suite passes this via Playwright http_credentials (see .env.guard).
+      # The hash comes from the ENVIRONMENT at compose-up time, not from ciu config: a
+      # bcrypt hash begins "$2b$", which ciu's placeholder pass would reject as an
+      # unresolved "$2b". This also keeps the hash out of every rendered artifact.
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ app_local.name }}.middlewares={{ deploy.project_name }}-guard"
+      - "traefik.http.middlewares.{{ deploy.project_name }}-guard.basicauth.users={{ topology.guard.user }}:${NAF_GUARD_HTPASSWD:?NAF_GUARD_HTPASSWD not set — source .env.guard}"
+    {%- endif %}
+    {%- endif %}
+
+networks:
+  {{ deploy.network_name }}:
+    external: true
+    name: {{ deploy.network_name }}
+  {{ topology.external.ingress_network }}:
+    external: true
+    name: {{ topology.external.ingress_network }}

@@ -123,16 +123,57 @@ exempt_services = []
 # browser service the e2e gate connects to. Order matters: pwmcp must be up
 # before the e2e gate can reach ws://pwmcp:3000/.
 # =============================================================================
+# phase_0 — backing services the app and the suite talk to. These come up first.
 [deploy.phases.phase_0]
-name = "Test infrastructure"
-description = "Browser service + the gating test-runner peer"
+name = "Backing services"
+description = "Mocks, mail sink, DNS backend and the browser service"
 enabled = true
 
 [[deploy.phases.phase_0.services]]
+path = "tooling/mailpit"
+
+[[deploy.phases.phase_0.services]]
+path = "tooling/geoip-mock"
+
+[[deploy.phases.phase_0.services]]
+path = "tooling/netcup-api-mock"
+
+[[deploy.phases.phase_0.services]]
+path = "tooling/backend-powerdns"
+
+[[deploy.phases.phase_0.services]]
+path = "infra/pwmcp"
+
+# phase_1 — the app itself, then the gating peer. The app is a CONTAINER now (naf-I04):
+# it used to be a host gunicorn process in the devcontainer, which traefik's docker
+# provider could not discover because there were no container labels to read.
+[deploy.phases.phase_1]
+name = "Application and gate"
+description = "The containerized dev app + the gating test-runner peer"
+enabled = true
+
+[[deploy.phases.phase_1.services]]
+path = "tooling/app-local"
+
+[[deploy.phases.phase_1.services]]
 path = "tooling/test-runner"
 
 [deploy.profiles.test]
-stacks = ["tooling/test-runner"]
+stacks = ["infra/pwmcp", "tooling/test-runner"]
+
+[deploy.profiles.mocks]
+stacks = ["tooling/mailpit", "tooling/geoip-mock", "tooling/netcup-api-mock", "tooling/backend-powerdns"]
+
+[deploy.profiles.full]
+stacks = [
+    "tooling/mailpit",
+    "tooling/geoip-mock",
+    "tooling/netcup-api-mock",
+    "tooling/backend-powerdns",
+    "infra/pwmcp",
+    "tooling/app-local",
+    "tooling/test-runner",
+]
 
 # =============================================================================
 # Topology — declarative facts consumed by compose templates.
@@ -141,5 +182,39 @@ stacks = ["tooling/test-runner"]
 # detection in docs/FQDN_DETECTION.md. Do NOT guess a hostname.
 # =============================================================================
 [topology.external]
-public_fqdn = ""
+# NEVER hardcode the FQDN. ciu.env already detects PUBLIC_FQDN (reverse DNS of PUBLIC_IP),
+# so exposed stacks template their Host() rule from topology.external.public_fqdn:
+#     app            -> naf.<public_fqdn>
+#     PowerDNS edge  -> naf-pdns.<public_fqdn>
+# (Written without Jinja braces on purpose: '#' is NOT a Jinja comment, so a real
+# expression here would be evaluated while rendering THIS file and blow up.)
+# A wildcard record on that base points every <name>.<fqdn> at this host, and traefik's
+# letsencrypt resolver issues the cert on the `websecure` entrypoint — so consumers need
+# NO tls/certresolver labels of their own.
+public_fqdn = "$PUBLIC_FQDN"
 tls = true
+
+# The shared ingress network owned by the host-side tls-edge stack (edge-traefik).
+# Exposed containers join this IN ADDITION to the project network; backends stay
+# project-internal. naf terminates no TLS and holds no certs (naf-I04).
+ingress_network = "ingress_public"
+
+# ---------------------------------------------------------------------------
+# basicauth guard (operator decision 2026-07-20): the product is NOT production
+# ready and must not be publicly reachable, but e2e has to run through real TLS.
+# So EVERY exposed route sits behind a traefik basicauth middleware.
+#
+# guard_htpasswd is a bcrypt hash sourced from the environment — NEVER committed.
+# It lives with the plaintext in the gitignored .env.guard (see that file's header
+# for regeneration). The plaintext is what Playwright feeds to
+# browser.new_context(http_credentials=...) so the e2e gate can pass the guard;
+# enabling the guard without that would silently kill the very tests it protects.
+# ---------------------------------------------------------------------------
+#
+# NOTE the hash is deliberately NOT a key here. A bcrypt hash starts with "$2b$", and
+# ciu's env-placeholder pass reads that as an unresolved "$2b" placeholder and aborts.
+# So compose templates emit ${NAF_GUARD_HTPASSWD} and let DOCKER COMPOSE interpolate it
+# at up-time — which also keeps the hash out of every rendered artifact.
+[topology.guard]
+enabled = true
+user = "$NAF_GUARD_USER"

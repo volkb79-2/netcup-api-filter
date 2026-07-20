@@ -291,3 +291,6 @@ ciu.global.toml.j2
 **/ciu.toml
 **/ciu.toml.j2
 **/ciu.compose.yml
+
+# traefik basicauth credential (plaintext + bcrypt hash) — never commit
+.env.guard

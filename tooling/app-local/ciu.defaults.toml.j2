@@ -1,0 +1,40 @@
+# tooling/app-local/ciu.defaults.toml.j2 — STACK MARKER (containerized dev app)
+# =============================================================================
+#   Rendered output: ciu.toml  (GITIGNORED)
+#
+# WHY THIS STACK EXISTS (naf-I04): the dev app used to run as a HOST gunicorn process
+# inside the devcontainer (deploy.sh: `gunicorn -c gunicorn.conf.py passenger_wsgi:application`,
+# `pkill -9 gunicorn`). traefik's docker provider builds routes from CONTAINER LABELS, so a
+# host process is invisible to it — there is nothing to label. Containerizing the app makes
+# it label-discoverable, and simultaneously removes one more "the devcontainer is the
+# runtime" dependency, which is the whole point of this infra track.
+#
+# IMAGE REUSE: this deliberately runs the test-runner py311 image rather than building a
+# second app image. That image already carries the runtime closure at the PRIMARY Passenger
+# ABI (3.11) plus gunicorn, so the dev app executes against the same interpreter+closure the
+# gate proves — one image, one fidelity story. Production is unaffected: it ships to shared
+# webhosting under Passenger, not from this container.
+#
+# PREREQUISITE: `deploy.sh` must have produced `deploy-local/` (build + unzip). This stack
+# serves that directory over the mounted repo; it does not build the app itself.
+# =============================================================================
+
+[app_local]
+name = "app"
+# Same image the gate uses — see IMAGE REUSE above.
+image_name = "test-runner"
+image_tag = "local"
+
+# The port gunicorn binds inside the container. gunicorn.conf.py defaults GUNICORN_BIND to
+# 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.
+port = 5100
+
+# Directory (relative to the repo root) that deploy.sh unpacks the local build into.
+deploy_dir = "deploy-local"
+
+[app_local.external]
+# Exposed through the host edge-traefik. The hostname is NEVER hardcoded: it is
+# `<subdomain>.<topology.external.public_fqdn>`, and public_fqdn comes from the ciu.env
+# PUBLIC_FQDN fact. TLS/cert are inherited from traefik's `websecure` entrypoint.
+enabled = true
+subdomain = "naf"
