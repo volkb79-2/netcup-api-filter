@@ -1,0 +1,18 @@
+# tooling/netcup-api-mock/ciu.defaults.toml.j2 — STACK MARKER (naf mock-netcup-api)
+# =============================================================================
+#   Rendered output: ciu.toml  (GITIGNORED — never edit or commit the rendered file)
+#
+# Replaces the hand-written `docker-compose.yml` (INFRA-PLAN-B: "migrate ALL naf
+# containers to ciu" — tooling/{mailpit,geoip-mock,netcup-api-mock,backend-powerdns}).
+#
+# Netcup CCP API mock (mocks `ui_tests/mock_netcup_api.py`) used by the
+# mocks/roundtrip/e2e gate suites. The app under test resolves it by container
+# name — naf-dev-mock-netcup-api — via a seeded `api_url`; see
+# ui_tests/conftest_mock_api.py (mock_netcup_api_server fixture).
+# =============================================================================
+
+[netcup_api_mock]
+name = "mock-netcup-api"
+image = "python"
+tag = "3.11-slim"
+port = 80

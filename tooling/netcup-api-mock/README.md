@@ -4,21 +4,28 @@ Mock implementation of Netcup Customer Control Panel (CCP) API for testing DNS r
 
 ## Quick Start
 
+This stack is **ciu-managed** (naf-I01 / INFRA-PLAN-B: "migrate ALL naf containers to
+ciu"). There is no hand-written `docker-compose.yml` here anymore — edit
+`ciu.compose.yml.j2` / `ciu.defaults.toml.j2`; `ciu.compose.yml` is a RENDERED,
+gitignored artifact and is never edited directly. See
+`tooling/test-runner/README.md` for the `ciu render` / `ciu up` invocation
+(same repo-root caveats apply).
+
 ```bash
-cd tooling/netcup-api-mock
+# From the repo root, with the correct REPO_ROOT sourced:
+source ciu.env
+ciu render --define-root /workspaces/netcup-api-filter
+ciu up --dir tooling/netcup-api-mock --define-root /workspaces/netcup-api-filter
 
-# Ensure PHYSICAL_REPO_ROOT is set (from .env.workspace)
-source ../../.env.workspace
-
-# Start mock server
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Stop server
-docker compose down
+# View logs / stop (container_name is fixed, see ciu.defaults.toml.j2)
+docker logs -f naf-dev-mock-netcup-api
+docker stop naf-dev-mock-netcup-api
 ```
+
+Normally this isn't brought up standalone — it comes up as a peer alongside the
+gating test-runner and the other mocks (`deploy.sh` / `run-local-tests.sh` still
+shell out to `docker compose` in this directory as of this writing; that call
+site is tracked centrally, not fixed here).
 
 ## Access
 
@@ -28,14 +35,18 @@ docker compose down
 
 ## Configuration
 
-All settings in `.env`:
+Runtime env vars (from `.env.workspace` / shell env, read at container start):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOCKER_NETWORK_INTERNAL` | `naf-dev-network` | Docker network |
 | `NETCUP_MOCK_PORT` | `5555` | API port (host binding) |
 | `FLASK_ENV` | `development` | Flask environment |
 | `FLASK_DEBUG` | `false` | Enable Flask debug mode |
+
+The container name/image/tag and internal port are now stack scalars in
+`ciu.defaults.toml.j2` (`[netcup_api_mock]`); the network is resolved by ciu at
+render time (`deploy.network_name`, no longer a `DOCKER_NETWORK_INTERNAL` read
+by the container itself).
 
 ## API Endpoints
 
@@ -136,9 +147,11 @@ echo $PHYSICAL_REPO_ROOT
 # Check what's using port 5555
 lsof -i :5555
 
-# Change port in .env
-echo "NETCUP_MOCK_PORT=5554" >> .env
-docker compose down && docker compose up -d
+# Change the host binding (NETCUP_MOCK_PORT lives in .env.workspace, not a
+# per-service .env — this stack has no docker-compose.yml of its own anymore)
+echo "NETCUP_MOCK_PORT=5554" >> ../../.env.workspace
+docker stop naf-dev-mock-netcup-api
+ciu up --dir tooling/netcup-api-mock --define-root /workspaces/netcup-api-filter
 ```
 
 ## Related Documentation
