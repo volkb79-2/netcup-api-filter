@@ -17,6 +17,10 @@ hypothesis>=6.100  # Property-based testing (parsers/validators) — see TESTING
 gunicorn>=21.0.0
 
 websockets>=15.0  # Ensure WebSocket support to access playwright standalone service
+playwright==1.61.*  # Client for the pwmcp browser-offload path (e2e gate); pinned to the
+# ghcr.io/volkb79-2/pwmcp image's Playwright version. NO browser download (pwmcp owns the
+# engine). Only reaches the 3.11+ gate image — the Dockerfile's 3.9 branch installs a
+# runtime-only closure, and the unit gate runs tests/ (never imports playwright).
 
 # Live testing dependencies
 dnspython>=2.4.0  # DNS verification tests

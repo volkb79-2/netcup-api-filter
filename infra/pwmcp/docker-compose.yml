@@ -1,0 +1,70 @@
+# PWMCP — Playwright-as-a-Service for naf's e2e gate.
+#
+# WHY: the gate image (tooling/test-runner/Dockerfile) ships NO browser engine by
+# design. JS-rendered UI tests connect to THIS container over ws://pwmcp:3000/
+# (PLAYWRIGHT_SERVER_WS). This is the netcup equivalent of dstdns infra/pwmcp.
+#
+# The image is the shared, prebuilt, digest-tracked unified Playwright image
+# (Playwright run-server :3000 + @playwright/mcp :8931 under supervisord). naf uses
+# ONLY the :3000 connect() path; the raw `chromium.connect("ws://pwmcp:3000/")`
+# path needs no lease headers (the gateway falls back to the default lease).
+#
+# STATUS: hand-written compose (INFRA-2). INFRA-1 will template this under ciu
+# (infra/pwmcp/ciu.compose.yml.j2) with governance, mirroring dstdns. The pin is
+# `:latest` (the shared governed image); adopt a digest pin when ciu owns it.
+#
+# Bring up:  set -a; . ./.env.workspace; set +a; docker compose -f infra/pwmcp/docker-compose.yml up -d
+# The alias `pwmcp` on naf-dev-network is what ws://pwmcp:3000/ resolves to.
+#
+# EXPLICIT PROJECT NAME (load-bearing): dstdns's pwmcp stack also lives in a directory
+# named `pwmcp`, so both would default to compose project `pwmcp` and clobber each other's
+# container (observed: an `up` here recreated dstdns's `pwmcp-local-pwmcp`). Pinning the
+# project name keeps the two stacks isolated.
+name: naf-pwmcp
+
+services:
+  pwmcp:
+    image: ghcr.io/volkb79-2/pwmcp:latest
+    # `missing`, not `always`: this devcontainer's docker credential helper errors even
+    # on anonymous ghcr pulls, and the governed image is already present locally. ciu
+    # (INFRA-1) can restore `always` where creds work.
+    pull_policy: missing
+    container_name: naf-dev-pwmcp
+    # supervisord is the ENTRYPOINT — no command override.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    shm_size: "2gb"
+    restart: unless-stopped
+    environment:
+      # Only the :3000 WS path is used by naf; these keep the image's defaults explicit.
+      PWMCP_MCP_ALLOWED_HOSTS: "pwmcp:8931,naf-dev-pwmcp:8931"
+      PWMCP_RUN_SERVER_PORT: "3000"
+      PWMCP_RUN_SERVER_UPSTREAM_PORT: "3001"
+      PWMCP_RUN_SERVER_ADMIN_PORT: "8940"
+      PWMCP_RUN_SERVER_DEFAULT_LEASE_S: "1800"
+      PWMCP_RUN_SERVER_MAX_LEASE_S: "7200"
+      PWMCP_RUN_SERVER_MAX_CLIENTS: "2"
+      PWMCP_RUN_SERVER_IDLE_RECYCLE_S: "30"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      naf-network:
+        aliases:
+          - pwmcp
+    labels:
+      - "de.vxxu.volkb79.component=pwmcp"
+      - "de.vxxu.volkb79.stack=infra"
+      - "de.vxxu.volkb79.service-type=browser"
+      - "de.vxxu.volkb79.managed-by=manual"
+
+networks:
+  naf-network:
+    external: true
+    name: ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set (source .env.workspace)}

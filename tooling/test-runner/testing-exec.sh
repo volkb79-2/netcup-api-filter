@@ -127,9 +127,11 @@ case "${CMD}" in
         run_ephemeral "${VENV}" tooling/test-runner/lint_trove.py "$@"
         ;;
     e2e)
-        # Playwright E2E against a running deploy-local + mocks. Requires the browser
-        # to be OFFLOADED to pwmcp — never an engine in this image.
-        : "${PLAYWRIGHT_SERVER_WS:?PLAYWRIGHT_SERVER_WS not set — the e2e gate drives the external pwmcp service; a browser engine is never installed in the gate image}"
+        # Playwright E2E against a running deploy-local + mocks. The browser is OFFLOADED
+        # to the pwmcp container (infra/pwmcp) on naf-dev-network — never an engine in this
+        # image. Default to that container's alias; export PLAYWRIGHT_SERVER_WS to override.
+        # (INFRA-1 will let ciu own this via [test_runner.pwmcp].ws_url.)
+        PLAYWRIGHT_SERVER_WS="${PLAYWRIGHT_SERVER_WS:-ws://pwmcp:3000/}"
         ensure_image
         run_networked "${VENV}" -m pytest -p no:cacheprovider "${@:-ui_tests/tests}"
         ;;
