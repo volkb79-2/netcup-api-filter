@@ -61,6 +61,24 @@ CLIENT_ROUTES = sorted(
 )
 PUBLIC_ROUTES = sorted(r.rule for r in _REGISTRY.public_pages())
 
+# ---- Floor: refuse to run a silently-shrunken suite ----------------------------
+# discover_routes_from_app() now raises on import failure instead of falling back to a
+# stale static list, but a partial/misconfigured app could still return too few routes.
+# Assert a conservative floor at import time so a collapse fails collection loudly rather
+# than passing as a handful of green tests. The real app has ~30 admin + ~10 client
+# static GET routes; these floors are well below that but far above the old 21-route
+# fallback, so any regression toward it trips here. See naf-P06 / review §P1-F.
+_ADMIN_ROUTE_FLOOR = 15
+_CLIENT_ROUTE_FLOOR = 5
+assert len(ADMIN_ROUTES) >= _ADMIN_ROUTE_FLOOR, (
+    f"route discovery yielded only {len(ADMIN_ROUTES)} admin routes "
+    f"(floor {_ADMIN_ROUTE_FLOOR}) — discovery likely degraded; refusing a hollow suite"
+)
+assert len(CLIENT_ROUTES) >= _CLIENT_ROUTE_FLOOR, (
+    f"route discovery yielded only {len(CLIENT_ROUTES)} client routes "
+    f"(floor {_CLIENT_ROUTE_FLOOR}) — discovery likely degraded; refusing a hollow suite"
+)
+
 # ---- Error-body fragments that indicate a real failure -------------------------
 
 _BAD_BODY = {"Traceback", "Internal Server Error", "UndefinedError", "jinja2."}
