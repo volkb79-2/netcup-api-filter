@@ -8,8 +8,17 @@ Handoffs reference these via `advances:`; the reviewer verifies the ratchet at m
 
 ---
 
-## Landed status (updated 2026-07-20)
+## Landed status (updated 2026-07-20b)
 
+- **B-AUTH — auth hardening batch (2026-07-20b):** naf-P07 (TOTP 2FA lockout + dead-auth
+  removal) ✅, naf-P08 (trust ProxyFix `remote_addr`, not spoofable leftmost XFF) ✅, naf-P09
+  (reset/invite honor `validate_password`) ✅ — all merged, **433 unit tests on 3.11 + 3.9**
+  (was 422). Remaining B-AUTH items (dead second reset path already partly cleared by P07's
+  function removal; the `password_reset_code`/`_expires` column drop needs a migration).
+- **INFRA track (2026-07-20b):** `INFRA-PLAN-2026-07-20.md` — ciu adoption + pwmcp e2e +
+  containerized build + host-traefik exposure. INFRA-1/2 executing now; INFRA-3/4 carved for
+  operator review (they modify the deploy path). Decisions in D-006. INFRA-4 obsoletes
+  naf-P05 O2.
 - **M1 — authorization boundary:** M1.1 (naf-P01, REST delete/update scope) ✅ and M1.2
   (naf-P02, portal create/edit/delete scope) ✅ merged. M1.3 (read-scope leak) still open
   in backlog B-UI. The boundary is closed on the *mutation* paths.

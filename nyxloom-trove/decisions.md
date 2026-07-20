@@ -50,6 +50,36 @@ merges in any order.
 
 ---
 
+## D-006 — infra plan decisions (decided autonomously; interview was hook-blocked)
+
+**Status:** DECIDED (orchestrator, 2026-07-20) · shapes: INFRA-1..4 · **REVIEW-ME**
+
+I tried to interview the operator on the five open infra decisions; the interactive
+question was **denied by a hook** (background session, operator away). Per standing
+instruction ("make decisions on your own, don't wait for signoff; write them down for later
+review"), I decided them with the plan's recommended options. **All are open to reversal on
+review** — flagged REVIEW-ME. See `INFRA-PLAN-2026-07-20.md`.
+
+- **E · sequencing:** execute **INFRA-1 (ciu adoption) + INFRA-2 (pwmcp e2e) now** (additive,
+  validatable on this host); **carve INFRA-3 (containerized build) + INFRA-4 (host traefik) as
+  handoffs and PAUSE for operator review** before touching `deploy.sh`/`build_deployment.py`.
+  Rationale: 3+4 change the production artifact pipeline and dev edge and can't be validated by
+  the unit gate — they get a checkpoint; 1+2 don't touch the deploy path.
+- **A · traefik FQDN (INFRA-4):** deferred into the INFRA-4 handoff for operator confirmation;
+  default proposal = a subdomain under the **same wildcard base dstdns uses** (read from
+  dstdns `ciu.env` `PUBLIC_FQDN`), i.e. `naf.<base>`. Not committed until INFRA-4 review.
+- **B · pwmcp (INFRA-2):** **vendor naf's own `infra/pwmcp/` ciu stack** on `naf-dev-network`
+  (declarative, matches dstdns, self-contained) rather than attaching the dstdns-owned shared
+  `pwmcp-local-pwmcp` (which sits on dstdns's network and would couple naf's e2e to a foreign
+  runtime container).
+- **C · ciu depth (INFRA-1):** **full `.j2` template convention** (repo-root marker + stack
+  templates + gitignore rendered outputs), matching dstdns — not the minimal `--shipped` path,
+  which would leave the rendered-`ciu.toml`-as-source confusion in place.
+- **D · exposure (INFRA-4):** app (HTTPS UI/API) + PowerDNS API edge get public traefik routes;
+  Mailpit stays internal-only.
+
+---
+
 ## D-001 — nyxloomd cannot reach this repo (blocks ALL dispatch)
 
 **Status:** CARVED UPSTREAM · raised 2026-07-16 · blocks: every handoff in this trove
