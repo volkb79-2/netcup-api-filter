@@ -138,10 +138,11 @@ path = "tooling/geoip-mock"
 [[deploy.phases.phase_0.services]]
 path = "tooling/netcup-api-mock"
 
-# backend-powerdns is intentionally NOT registered yet: its conversion is on
-# REVIEW HOLD (wt/ciu-powerdns) because it replaced mandatory ${VAR:?} guards with
-# invented SOA/zone defaults. It re-enters here once reworked to source its zone from
-# [topology.dns].delegated_zone (D-007) instead of guessed values.
+# backend-powerdns: reworked to source its zone from [topology.dns].delegated_zone
+# (D-007) instead of invented SOA defaults; the zone-create hook needs a live `ciu up`
+# to validate the pdnsutil argument shapes.
+[[deploy.phases.phase_0.services]]
+path = "tooling/backend-powerdns"
 
 [[deploy.phases.phase_0.services]]
 path = "infra/pwmcp"
@@ -163,15 +164,15 @@ path = "tooling/test-runner"
 [deploy.profiles.test]
 stacks = ["infra/pwmcp", "tooling/test-runner"]
 
-# backend-powerdns omitted from both profiles until its reworked marker lands (see above).
 [deploy.profiles.mocks]
-stacks = ["tooling/mailpit", "tooling/geoip-mock", "tooling/netcup-api-mock"]
+stacks = ["tooling/mailpit", "tooling/geoip-mock", "tooling/netcup-api-mock", "tooling/backend-powerdns"]
 
 [deploy.profiles.full]
 stacks = [
     "tooling/mailpit",
     "tooling/geoip-mock",
     "tooling/netcup-api-mock",
+    "tooling/backend-powerdns",
     "infra/pwmcp",
     "tooling/app-local",
     "tooling/test-runner",
