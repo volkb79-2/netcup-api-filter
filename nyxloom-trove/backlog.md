@@ -315,3 +315,18 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
   supports it, and ciu's own gitignore notes a hand-written compose stays committed), but it
   is the one piece of the adoption not under the `.j2` convention. Templating it
   (`ciu.compose.yml.j2` + `ciu.defaults.toml.j2`) would bring it under governance too. S.
+- **Compose project-name collision clobbered dstdns's shared pwmcp (hit live, FIXED).**
+  naf's `infra/pwmcp/` and dstdns's `infra/pwmcp/` both default their compose project name
+  to the directory basename `pwmcp`, so `docker compose -f infra/pwmcp/docker-compose.yml
+  up -d` from naf adopted dstdns's `pwmcp-local-pwmcp` as its own service and **recreated
+  then removed it** — taking down shared browser infra. Restored with
+  `docker compose -f /workspaces/dstdns/infra/pwmcp/ciu.compose.yml up -d --pull never`.
+  Fixed permanently by pinning `name: naf-pwmcp` at the top of naf's compose (committed).
+  Lesson: any hand-written compose stack that shares a basename with a sibling repo MUST set
+  an explicit `name:`. Also: `pull_policy: always` fails in this devcontainer (the docker
+  credential helper errors even on anonymous ghcr pulls), so naf's compose uses `missing`
+  (the governed image is already local). ciu templating (item above) would make the project
+  name deterministic and remove this footgun. S. **Validation strengthened:** beyond the
+  co-worker's `http://pwmcp:3000/health`=200 peer check, the gate image (with the pinned
+  `playwright==1.61.*` client) was proven to `chromium.connect(ws://pwmcp:3000/)`, drive a
+  real Chromium (149.x), set + read page content — the full browser-offload path, live.
