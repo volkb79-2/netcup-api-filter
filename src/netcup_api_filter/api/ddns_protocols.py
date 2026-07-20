@@ -60,18 +60,13 @@ def is_ddns_enabled():
 
 def get_client_ip():
     """
-    Extract client IP from request, respecting X-Forwarded-For header.
-    
-    Returns the first IP in X-Forwarded-For if present, otherwise remote_addr.
+    Extract client IP from request.
+
+    ProxyFix (x_for=1, see app.py) already normalizes request.remote_addr to
+    the trusted client hop. Do NOT re-parse X-Forwarded-For here — the raw
+    header is attacker-controlled and re-parsing it defeats ProxyFix's
+    trusted-hop extraction.
     """
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    if forwarded_for:
-        # X-Forwarded-For can be: "client, proxy1, proxy2"
-        # First IP is the original client
-        client_ip = forwarded_for.split(',')[0].strip()
-        logger.debug(f"Client IP from X-Forwarded-For: {client_ip}")
-        return client_ip
-    
     client_ip = request.remote_addr or 'unknown'
     logger.debug(f"Client IP from remote_addr: {client_ip}")
     return client_ip

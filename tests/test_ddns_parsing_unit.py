@@ -5,7 +5,7 @@ Covers:
   - validate_hostname_format (~5 cases)
   - validate_ip_address (~6 cases)
   - should_auto_detect_ip (~6 cases)
-  - get_client_ip (~4 cases, requires Flask request context)
+  - get_client_ip (~4 cases, requires Flask request context; trusts remote_addr only)
 
 No DB is needed: parse_hostname uses a pure heuristic (last two labels = domain),
 not managed-domain roots. All DB/app-context fixtures are therefore omitted unless
@@ -227,14 +227,17 @@ def test_should_auto_detect_ip_custom_env_keyword(monkeypatch):
 # get_client_ip — 4 cases using Flask test request context
 #
 # Trust contract:
-#   get_client_ip() reads X-Forwarded-For and returns the FIRST (leftmost) IP in
-#   the comma-separated list. In the standard proxy chain
-#       X-Forwarded-For: <client>, <proxy1>, <proxy2>
-#   the leftmost IP is the original client as appended by the first trusted proxy.
-#   This means the function trusts the entire X-Forwarded-For header as written,
-#   including values that a client can forge when there is no hardened reverse
-#   proxy stripping/overwriting the header. Deployments behind an untrusted network
-#   must ensure the outermost proxy always overwrites (not appends) this header.
+#   get_client_ip() trusts request.remote_addr only. app.py installs
+#   ProxyFix(app.wsgi_app, x_for=1, ...), which normalizes remote_addr to the
+#   trusted (rightmost) X-Forwarded-For hop as part of the real WSGI stack.
+#   get_client_ip() itself does NOT re-parse X-Forwarded-For: the raw header is
+#   attacker-controlled, and re-parsing it (taking the leftmost value) would
+#   defeat ProxyFix's trusted-hop extraction and let a client forge its own IP.
+#   These test_request_context cases bypass the WSGI-level ProxyFix middleware
+#   (test_request_context does not invoke app.wsgi_app), so they exercise
+#   get_client_ip()'s own contract in isolation: whatever X-Forwarded-For says,
+#   only remote_addr is trusted. End-to-end ProxyFix normalization is covered
+#   separately in tests/test_client_ip_trust.py via the real test client.
 # =============================================================================
 
 
@@ -268,24 +271,27 @@ def test_get_client_ip_no_xff_header(app, monkeypatch):
     assert ip == "192.168.1.1"
 
 
-def test_get_client_ip_single_xff(app):
-    """A single X-Forwarded-For value is returned as-is (stripped of whitespace)."""
+def test_get_client_ip_single_xff_is_ignored(app):
+    """A single X-Forwarded-For value is NOT trusted; remote_addr wins.
+
+    (Outside the real WSGI stack, ProxyFix never runs here, so remote_addr is
+    exactly the test-supplied value — proving the header itself is ignored.)
+    """
     with app.test_request_context(
         "/",
         headers={"X-Forwarded-For": "  203.0.113.5  "},
         environ_base={"REMOTE_ADDR": "10.0.0.1"},
     ):
         ip = get_client_ip()
-    assert ip == "203.0.113.5"
+    assert ip == "10.0.0.1"
 
 
-def test_get_client_ip_multi_hop_xff(app):
-    """X-Forwarded-For: client, proxy1, proxy2 — the FIRST (leftmost) element is
-    returned. This is the original client IP as recorded by the first trusted proxy.
+def test_get_client_ip_multi_hop_xff_is_ignored(app):
+    """X-Forwarded-For: client, proxy1, proxy2 — none of it is trusted.
 
-    Trust contract: the implementation unconditionally trusts element [0] of the
-    comma-split list. Spoofing is possible when a client can inject arbitrary
-    X-Forwarded-For values before they reach the application.
+    A client-forgeable multi-hop header must not override remote_addr. The
+    leftmost element in particular (203.0.113.1) is exactly what an attacker
+    controls, and must NOT be returned.
     """
     with app.test_request_context(
         "/",
@@ -293,14 +299,13 @@ def test_get_client_ip_multi_hop_xff(app):
         environ_base={"REMOTE_ADDR": "10.0.0.2"},
     ):
         ip = get_client_ip()
-    # The FIRST element (index 0) is trusted — the original client IP.
-    assert ip == "203.0.113.1"  # NOT 10.0.0.1 (proxy1) or 10.0.0.2 (outermost proxy)
+    assert ip == "10.0.0.2"  # remote_addr, NOT the forged leftmost 203.0.113.1
 
 
-def test_get_client_ip_malformed_xff_returned_raw(app):
-    """A malformed (non-IP) X-Forwarded-For value is returned as the raw first token.
-    The function does not validate IP format — it delegates validation to
-    validate_ip_address() in the calling code.
+def test_get_client_ip_malformed_xff_is_ignored(app):
+    """A malformed (non-IP) X-Forwarded-For value has no effect; remote_addr
+    is still returned untouched. get_client_ip() no longer inspects the
+    header at all, so malformed content can't leak through it either.
     """
     with app.test_request_context(
         "/",
@@ -308,4 +313,4 @@ def test_get_client_ip_malformed_xff_returned_raw(app):
         environ_base={"REMOTE_ADDR": "10.0.0.1"},
     ):
         ip = get_client_ip()
-    assert ip == "not-an-ip"
+    assert ip == "10.0.0.1"
