@@ -33,6 +33,39 @@ def _hash_token(raw_token: str) -> str:
     """Hash a token with SHA256 for storage."""
     return hashlib.sha256(raw_token.encode()).hexdigest()
 
+
+def _get_smtp_config() -> dict | None:
+    """Resolve the SMTP configuration for outbound email.
+
+    Reads `smtp_config` (written by the admin UI and the TOML importer) and
+    falls back to `email_config` (written by the local Mailpit seeder), since
+    production deployments and local dev use different keys. Handles both
+    dict values (the normal case) and legacy/defensive str values that need
+    a json.loads.
+
+    Returns a dict, or None if no usable configuration is found.
+    """
+    import json
+
+    from .database import get_system_config
+
+    smtp_config = get_system_config('smtp_config') or get_system_config('email_config')
+    if not smtp_config:
+        return None
+
+    if isinstance(smtp_config, str):
+        try:
+            smtp_config = json.loads(smtp_config)
+        except json.JSONDecodeError:
+            logger.warning("SMTP configuration invalid JSON")
+            return None
+
+    if not isinstance(smtp_config, dict):
+        logger.warning("SMTP configuration has unexpected type")
+        return None
+
+    return smtp_config
+
 # Default token validity period (can be overridden by system settings)
 DEFAULT_TOKEN_EXPIRY_HOURS = 1
 
@@ -289,14 +322,12 @@ def send_password_reset_email(
     """
     from flask import url_for, current_app
     from .email_notifier import get_email_notifier_from_config
-    from .database import get_system_config
-    import json
-    
+
     # Check if account has an email
     if not account.email:
         logger.warning(f"No email address for account {account.username}")
         return False
-    
+
     # Generate token with expiry and IP binding
     raw_token, actual_expiry = generate_reset_token(
         account,
@@ -304,7 +335,7 @@ def send_password_reset_email(
         source_ip=source_ip,
         token_type='reset'
     )
-    
+
     # Build reset URL
     try:
         reset_url = url_for('account.reset_password', token=raw_token, _external=True)
@@ -312,22 +343,11 @@ def send_password_reset_email(
         # If we're outside request context, build manually
         base_url = os.environ.get('BASE_URL', 'http://localhost:5100')
         reset_url = f"{base_url}/account/reset-password/{raw_token}"
-    
+
     # Get email configuration
-    smtp_config = get_system_config('smtp_config') or get_system_config('email_config')
+    smtp_config = _get_smtp_config()
     if not smtp_config:
         logger.warning("SMTP configuration not set - cannot send password reset email")
-        return False
-
-    if isinstance(smtp_config, str):
-        try:
-            smtp_config = json.loads(smtp_config)
-        except json.JSONDecodeError:
-            logger.warning("SMTP configuration invalid JSON")
-            return False
-
-    if not isinstance(smtp_config, dict):
-        logger.warning("SMTP configuration has unexpected type")
         return False
 
     notifier = get_email_notifier_from_config(smtp_config)
@@ -425,8 +445,7 @@ def send_registration_verification_email(
     """
     from flask import url_for
     from .email_notifier import get_email_notifier_from_config
-    from .database import get_system_config
-    
+
     email = reg_request.email
     username = reg_request.username
     
@@ -456,12 +475,12 @@ def send_registration_verification_email(
         verify_url = f"{base_url}/account/register/verify/{raw_token}"
     
     # Get email configuration
-    email_config = get_system_config('email_config')
-    if not email_config:
-        logger.warning("Email configuration not set - cannot send verification email")
+    smtp_config = _get_smtp_config()
+    if not smtp_config:
+        logger.warning("SMTP configuration not set - cannot send verification email")
         return False
-    
-    notifier = get_email_notifier_from_config(email_config)
+
+    notifier = get_email_notifier_from_config(smtp_config)
     if not notifier:
         logger.warning("Failed to create email notifier from config")
         return False
@@ -555,13 +574,12 @@ def send_account_invite_email(
     """
     from flask import url_for
     from .email_notifier import get_email_notifier_from_config
-    from .database import get_system_config
-    
+
     # Check if account has an email
     if not account.email:
         logger.warning(f"No email address for account {account.username}")
         return False
-    
+
     # Invites have longer expiry by default (48 hours)
     if expiry_hours is None:
         expiry_hours = int(os.environ.get('ACCOUNT_INVITE_EXPIRY_HOURS', '48'))
@@ -583,12 +601,12 @@ def send_account_invite_email(
         invite_url = f"{base_url}/account/invite/{raw_token}"
     
     # Get email configuration
-    email_config = get_system_config('email_config')
-    if not email_config:
-        logger.warning("Email configuration not set - cannot send invite email")
+    smtp_config = _get_smtp_config()
+    if not smtp_config:
+        logger.warning("SMTP configuration not set - cannot send invite email")
         return False
-    
-    notifier = get_email_notifier_from_config(email_config)
+
+    notifier = get_email_notifier_from_config(smtp_config)
     if not notifier:
         logger.warning("Failed to create email notifier from config")
         return False

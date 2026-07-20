@@ -243,7 +243,7 @@ try:
                         'notify_security': smtp_config.get('notify_security', False),
                     }
                     
-                    set_setting('smtp_config', json.dumps(smtp_data))
+                    set_setting('smtp_config', smtp_data)
                     logger.info(f"  ✓ Set smtp_config (TOML field names)")
                     logger.info(f"    - smtp_host: {smtp_data['smtp_host']}")
                     logger.info(f"    - smtp_port: {smtp_data['smtp_port']}")
@@ -271,7 +271,7 @@ try:
                         'lifetime_seconds': session_config.get('lifetime_seconds', 3600),
                     }
                     
-                    set_setting('session_config', json.dumps(session_data))
+                    set_setting('session_config', session_data)
                     logger.info(f"  ✓ Set session_config")
                     logger.info(f"    - cookie_secure: {session_data['cookie_secure']}")
                     logger.info(f"    - cookie_httponly: {session_data['cookie_httponly']}")
@@ -298,7 +298,7 @@ try:
                         'require_2fa': admin_config.get('require_2fa', False),
                     }
                     
-                    set_setting('admin_security_config', json.dumps(admin_data))
+                    set_setting('admin_security_config', admin_data)
                     logger.info(f"  ✓ Set admin_security_config")
                     logger.info(f"    - ip_whitelist: {admin_data['ip_whitelist']}")
                     logger.info(f"    - bind_session_to_ip: {admin_data['bind_session_to_ip']}")
@@ -324,7 +324,7 @@ try:
                         'backup_count': logging_config.get('backup_count', 5),
                     }
                     
-                    set_setting('logging_config', json.dumps(logging_data))
+                    set_setting('logging_config', logging_data)
                     logger.info(f"  ✓ Set logging_config")
                     logger.info(f"    - level: {logging_data['level']}")
                     logger.info(f"    - max_size_mb: {logging_data['max_size_mb']}")
@@ -353,7 +353,7 @@ try:
                         'notify_token_expiring_days': notif_config.get('notify_token_expiring_days', 7),
                     }
                     
-                    set_setting('notifications_config', json.dumps(notif_data))
+                    set_setting('notifications_config', notif_data)
                     logger.info(f"  ✓ Set notifications_config")
                     logger.info(f"    - admin_email: {notif_data['admin_email']}")
                     logger.info(f"    - notify_new_account: {notif_data['notify_new_account']}")
@@ -380,7 +380,7 @@ try:
                         'timeout': netcup.get('timeout', 30),
                     }
                     
-                    set_setting('netcup_config', json.dumps(netcup_config))
+                    set_setting('netcup_config', netcup_config)
                     logger.info(f"  ✓ Set netcup_config as JSON object")
                     logger.info(f"    - customer_id: {netcup_config['customer_id']}")
                     logger.info(f"    - api_key: {netcup_config['api_key'][:8]}... (truncated)")
@@ -427,7 +427,7 @@ try:
                         logger.info(f"      - display_name: {display_name}")
                         logger.info(f"      - config keys: {list(config_dict.keys())}")
                     
-                    set_setting('backends_config', json.dumps(backends_data))
+                    set_setting('backends_config', backends_data)
                     logger.info(f"  ✓ Set backends_config ({len(backends_data)} backend(s))")
                 else:
                     logger.info("No [[backends]] arrays found in app-config.toml")
@@ -488,7 +488,7 @@ try:
                         logger.info(f"      - display_name: {display_name}")
                         logger.info(f"      - max_hosts_per_user: {max_hosts_per_user}")
                     
-                    set_setting('domain_roots_config', json.dumps(domain_roots_data))
+                    set_setting('domain_roots_config', domain_roots_data)
                     logger.info(f"  ✓ Set domain_roots_config ({len(domain_roots_data)} domain(s))")
                 else:
                     logger.info("No [[domain_roots]] arrays found in app-config.toml")
@@ -547,7 +547,7 @@ try:
                         logger.info(f"      - must_change_password: {must_change_password}")
                         logger.info(f"      - is_admin: {is_admin}")
                     
-                    set_setting('users_config', json.dumps(users_data))
+                    set_setting('users_config', users_data)
                     logger.info(f"  ✓ Set users_config ({len(users_data)} user(s))")
                 else:
                     logger.info("No [[users]] arrays found in app-config.toml")
@@ -565,7 +565,7 @@ try:
                         'edition_ids': geoip.get('edition_ids', 'GeoLite2-ASN GeoLite2-City GeoLite2-Country'),
                     }
                     
-                    set_setting('geoip_config', json.dumps(geoip_data))
+                    set_setting('geoip_config', geoip_data)
                     logger.info(f"  ✓ Set geoip_config (TOML field names)")
                     logger.info(f"    - account_id: {geoip_data['account_id']}")
                     logger.info(f"    - license_key: ***")
@@ -587,7 +587,7 @@ try:
                         'require_email_verification': free_domains.get('require_email_verification', True),
                     }
                     
-                    set_setting('free_domains_config', json.dumps(free_domains_data))
+                    set_setting('free_domains_config', free_domains_data)
                     logger.info(f"  ✓ Set free_domains_config")
                     logger.info(f"    - enabled: {free_domains_data['enabled']}")
                     logger.info(f"    - domains: {free_domains_data['domains']}")
@@ -607,7 +607,7 @@ try:
                         'netcup_platform_backend': platform_backends.get('netcup_platform_backend', False),
                     }
                     
-                    set_setting('platform_backends_config', json.dumps(platform_backends_data))
+                    set_setting('platform_backends_config', platform_backends_data)
                     logger.info(f"  ✓ Set platform_backends_config")
                     logger.info(f"    - powerdns_enabled: {platform_backends_data['powerdns_enabled']}")
                     logger.info(f"    - powerdns_api_url: {platform_backends_data['powerdns_api_url'] or 'auto-detect'}")
