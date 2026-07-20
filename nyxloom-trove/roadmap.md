@@ -8,6 +8,22 @@ Handoffs reference these via `advances:`; the reviewer verifies the ratchet at m
 
 ---
 
+## Landed status (updated 2026-07-20)
+
+- **M1 — authorization boundary:** M1.1 (naf-P01, REST delete/update scope) ✅ and M1.2
+  (naf-P02, portal create/edit/delete scope) ✅ merged. M1.3 (read-scope leak) still open
+  in backlog B-UI. The boundary is closed on the *mutation* paths.
+- **M2 — audit trail:** ✅ done (naf-P03, merged 2026-07-16).
+- **M3 — production-shaped config:** M3.1 + M3.2 (naf-P04, settings encoding + SMTP key) ✅
+  merged. M3.3 (naf-P05, devcontainer FQDN) still open (deferred this session — infra/shell,
+  needs a post-create run).
+- **M4 — honest suite:** M4.1 (route discovery fails loudly + route floor) ✅ merged as
+  naf-P06 part 1. M4.2 (kill can't-fail tests) is naf-P06 part 2, open (needs the e2e gate).
+
+All merged work validated on BOTH Passenger interpreters (3.11 + 3.9) via the gate.
+
+---
+
 ## M1 — Close the authorization boundary (ship-blocker)
 
 The product is a *scoped, audited* DNS authorization layer. Today that claim is false on
