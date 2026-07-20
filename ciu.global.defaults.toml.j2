@@ -138,8 +138,10 @@ path = "tooling/geoip-mock"
 [[deploy.phases.phase_0.services]]
 path = "tooling/netcup-api-mock"
 
-[[deploy.phases.phase_0.services]]
-path = "tooling/backend-powerdns"
+# backend-powerdns is intentionally NOT registered yet: its conversion is on
+# REVIEW HOLD (wt/ciu-powerdns) because it replaced mandatory ${VAR:?} guards with
+# invented SOA/zone defaults. It re-enters here once reworked to source its zone from
+# [topology.dns].delegated_zone (D-007) instead of guessed values.
 
 [[deploy.phases.phase_0.services]]
 path = "infra/pwmcp"
@@ -161,15 +163,15 @@ path = "tooling/test-runner"
 [deploy.profiles.test]
 stacks = ["infra/pwmcp", "tooling/test-runner"]
 
+# backend-powerdns omitted from both profiles until its reworked marker lands (see above).
 [deploy.profiles.mocks]
-stacks = ["tooling/mailpit", "tooling/geoip-mock", "tooling/netcup-api-mock", "tooling/backend-powerdns"]
+stacks = ["tooling/mailpit", "tooling/geoip-mock", "tooling/netcup-api-mock"]
 
 [deploy.profiles.full]
 stacks = [
     "tooling/mailpit",
     "tooling/geoip-mock",
     "tooling/netcup-api-mock",
-    "tooling/backend-powerdns",
     "infra/pwmcp",
     "tooling/app-local",
     "tooling/test-runner",
@@ -198,6 +200,23 @@ tls = true
 # Exposed containers join this IN ADDITION to the project network; backends stay
 # project-internal. naf terminates no TLS and holds no certs (naf-I04).
 ingress_network = "ingress_public"
+
+# ---------------------------------------------------------------------------
+# [topology.dns] — the delegated DNS zone that makes up naf's dev/test DNS infra.
+# CROSS-STACK by design (D-007): read by BOTH the backend-powerdns stack (which must
+# be authoritative for the zone) AND the app stack (which seeds a domain-root/backend
+# so a user owns the zone and can create hosts under it). Modeled on
+# topology.external.public_fqdn — a global topology fact, not a single stack's config.
+#
+# Operator-specific infra, NOT shipped data: the operator delegates a real (sub)domain
+# whose NS points at this host's PUBLIC_IP, then sets NAF_DELEGATED_DNS_ZONE in the
+# environment (ciu.env / an .env). The committed default is EMPTY — for a released
+# product this is the placeholder a sysadmin fills in. `env.get(... ) or ''` (not a bare
+# "$VAR") so render does NOT hard-fail when it is unset; consumers guard on non-empty.
+[topology.dns]
+delegated_zone = "{{ env.get('NAF_DELEGATED_DNS_ZONE') or '' }}"
+# The public FQDN the PowerDNS API is reached at through traefik (naf-pdns.<fqdn>).
+pdns_subdomain = "naf-pdns"
 
 # ---------------------------------------------------------------------------
 # basicauth guard (operator decision 2026-07-20): the product is NOT production

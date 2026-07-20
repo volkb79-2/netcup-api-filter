@@ -80,6 +80,44 @@ review** — flagged REVIEW-ME. See `INFRA-PLAN-2026-07-20.md`.
 
 ---
 
+## D-007 — cross-stack config: the delegated DNS zone lives in `[topology.dns]`
+
+**Status:** DECIDED (orchestrator, 2026-07-20) · shapes: backend-powerdns, app-local ·
+**resolves the `wt/ciu-powerdns` review hold**
+
+For e2e/public tests naf needs a real DNS backend: the operator delegates a public
+(sub)domain whose NS points at this host's `PUBLIC_IP` where PowerDNS runs. That zone is
+consumed by **two** stacks — `backend-powerdns` (must be authoritative for it) and
+`app-local` (seeds a domain-root/backend so a user owns the zone and can create hosts under
+it). It is app-level in *meaning* but **cross-stack** in *scope*, and for a released product
+it is a placeholder a sysadmin fills in, not shipped data. So a per-stack `config.toml.j2`
+(like dstdns `applications/worker-io`) is the wrong home.
+
+**Decision (ciu precedent = `topology.external.public_fqdn`, read cross-stack by authentik +
+reverse-proxy):** it lives in the GLOBAL marker as `[topology.dns] delegated_zone` — a
+reserved-namespace topology fact that is a Jinja global in every stack template. Committed as
+an env-ref placeholder `{{ env.get('NAF_DELEGATED_DNS_ZONE') or '' }}` (empty default so
+render never hard-fails); the operator supplies the real value via `NAF_DELEGATED_DNS_ZONE`
+in the environment (`ciu.env` / an `.env`), editing no committed file. **Not** a secret (a
+zone name is public), **not** `[deploy.env.shared]` (that is for raw container env), **not**
+`[registry.*]` (that is provisioning metadata).
+
+**How each stack reads it (all plumbing already exists):**
+- **backend-powerdns:** flatten `{{ topology.dns.delegated_zone }}` into a stack-local key; a
+  `configfile` or `post_compose` hook creates/serves the zone via the pdns API, guarded on
+  non-empty. This **replaces the invented SOA/zone defaults** that put `wt/ciu-powerdns` on
+  hold — the values come from the operator, not guesses.
+- **app-local:** read `{{ topology.dns.delegated_zone }}`; a `post_compose`/init step (DB/API
+  seed, **not** writing into the RO app container) inserts the `ManagedDomainRoot`/
+  `BackendService` row for the zone. DB-seed-from-a-global-fact has no dstdns precedent but
+  reuses the existing hook plumbing (hooks receive the full merged config incl. `topology`).
+
+`[topology.dns]` placeholder is added to the marker now; the two consuming implementations
+(pdns zone-create hook + app backend-seed hook) are the remaining work. Exposure of the pdns
+API is `naf-pdns.<public_fqdn>` behind the same basicauth guard as the app.
+
+---
+
 ## D-001 — nyxloomd cannot reach this repo (blocks ALL dispatch)
 
 **Status:** CARVED UPSTREAM · raised 2026-07-16 · blocks: every handoff in this trove
