@@ -1,5 +1,42 @@
 # Infra plan — off the cockpit, onto ciu-governed containers + host traefik (2026-07-20)
 
+## STATUS 2026-07-20 — INFRA-1 + INFRA-2 LANDED; INFRA-3 + INFRA-4 CARVED (paused)
+
+Per **D-006** (decided autonomously; the interview was hook-blocked — all REVIEW-ME):
+
+- **INFRA-1 ciu adoption — DONE.** Repo-root marker `ciu.global.defaults.toml.j2`, stack
+  template `tooling/test-runner/ciu.defaults.toml.j2`, compose template
+  `ciu.compose.yml.j2`, ciu gitignore rules. The committed rendered-output-named
+  `ciu.toml` and the hand-written `docker-compose.yml` are **removed** (superseded).
+  Verified end-to-end: `ciu env generate` → `ciu render` → `ciu check` (passes) →
+  `ciu up --dry-run` completes all 17 steps and **injects governance**:
+  `cgroup_parent=besteffort.slice; mem_limit=2g; mem_reservation=256m; read_iops=200;
+  write_iops=400; device=/dev/vda; services_injected=1`. Rendered `workspace` now derives
+  from mountinfo instead of the old hardcoded host path.
+- **INFRA-2 pwmcp — DONE.** `infra/pwmcp/docker-compose.yml` (hardened: `user 1000:1000`,
+  `cap_drop ALL`, `no-new-privileges`, `shm_size 2gb`, healthcheck, alias `pwmcp`),
+  `playwright==1.61.*` added to the gate closure, and `testing-exec.sh e2e` now defaults
+  `PLAYWRIGHT_SERVER_WS=ws://pwmcp:3000/` instead of hard-failing. **Proven live:**
+  `naf-dev-pwmcp` healthy on `naf-dev-network`, and `http://pwmcp:3000/health` returns
+  `200 {"status":"ok","max_clients":2}` from a peer container. The e2e gate is no longer
+  un-runnable — this unblocks **naf-P06 part 2**.
+- **INFRA-3 / INFRA-4 — CARVED, NOT EXECUTED.** See
+  `handoffs/naf-I03-containerized-build.md` and `handoffs/naf-I04-host-traefik-exposure.md`.
+  Both modify the production deploy path; both PAUSED for operator review. INFRA-4 still
+  needs **Decision A (the FQDN)** — it cannot be guessed.
+
+**Findings recorded in backlog B-INFRA** (all hit live during adoption): the gate never
+rebuilds on dependency drift (`ensure_image` builds only if missing → silent stale-closure
+gating); ciu resolves to the **wrong repo** from this devcontainer (dstdns's sourced env wins
+— a bare `ciu render` rendered 17 dstdns stacks, so every naf ciu call needs
+`--define-root`); `ciu env generate` derived and **created** its own network
+(`netcup-api-filter-7716ce-network`), so `network_name` is now pinned explicitly to
+`naf-dev-network`; `infra/pwmcp/` remains hand-written compose (a valid `--shipped` path)
+rather than a `.j2` stack.
+
+---
+
+
 **Goal (operator directive, 2026-07-20):** stop using the devcontainer as a build/test
 *cockpit*. Build and test `naf` in **version-specific containers (Python 3.9 + 3.11, the
 Passenger deploy targets)** under **ciu** governance (cgroups/mem/IO safeguards). Run UI/e2e

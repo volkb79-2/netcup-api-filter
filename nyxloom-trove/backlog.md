@@ -286,3 +286,32 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
   3.9/3.11 builds).
 - `.vscode/REVIEW_PROMPT_*.md` (7 files) — one-shot prompts whose reports were all
   retired to `docs/deprecated/`. Retire alongside them, or say why they stay.
+
+## B-INFRA — findings from the ciu/pwmcp adoption (naf-I01/I02, 2026-07-20)
+
+- **The gate never rebuilds on dependency drift.** `tooling/test-runner/testing-exec.sh`
+  `ensure_image()` (~:68) builds ONLY `if ! image_present`. So editing
+  `requirements.webhosting.txt` / `requirements-dev.txt` leaves the existing image in
+  place and the gate silently keeps proving things about a **stale closure** — the exact
+  class of false-green the container exists to prevent. (Hit live: adding `playwright` to
+  requirements-dev.txt required a manual `docker rmi` before the gate saw it.) Fix: tag the
+  image with a hash of the two requirements files (+ the Dockerfile) so a drifted closure
+  is a cache miss, or add an explicit `--rebuild` that CI/gates always pass. S-M.
+- **ciu resolves to the WRONG REPO from this devcontainer.** The devcontainer's shell
+  exports dstdns's sourced `ciu.env` (`REPO_ROOT=/workspaces/dstdns`,
+  `PHYSICAL_REPO_ROOT=…/dstdns`, `DOCKER_NETWORK_INTERNAL=dstdns-98535c-network`). A bare
+  `ciu render` therefore rendered **17 dstdns stacks** from naf's cwd. Every ciu invocation
+  for naf needs `--define-root /workspaces/netcup-api-filter`, and `ciu env generate` needs
+  those vars unset or it bakes dstdns's values into naf's `ciu.env`. Same wrong-root class
+  as the documented `nyxloom lint` bug. Fix: a tiny `tooling/ciu-naf.sh` wrapper that pins
+  the root and scrubs the inherited vars, so nobody has to remember. S.
+- **`ciu env generate` derives its own network and creates it.** It produced
+  `DOCKER_NETWORK_INTERNAL="netcup-api-filter-7716ce-network"` (repo-path hash) and
+  **created that docker network + attached the devcontainer**, which is NOT naf's
+  `naf-dev-network`. `ciu.global.defaults.toml.j2` now pins `network_name` explicitly to
+  avoid the split, but the stray ciu-created network is unused clutter — decide whether to
+  reconcile naf on the ciu-derived name or teach ciu.env the existing one. S.
+- **`infra/pwmcp/` is hand-written compose, not a ciu stack.** Valid (`ciu up --shipped`
+  supports it, and ciu's own gitignore notes a hand-written compose stays committed), but it
+  is the one piece of the adoption not under the `.j2` convention. Templating it
+  (`ciu.compose.yml.j2` + `ciu.defaults.toml.j2`) would bring it under governance too. S.
