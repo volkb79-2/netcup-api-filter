@@ -1473,6 +1473,36 @@ def dns_records(realm_id):
                           can_delete='delete' in realm_ops)
 
 
+def _realm_fqdn_for(realm: AccountRealm, hostname: str) -> str:
+    """Build the FQDN for a relative hostname within `realm.domain`.
+
+    Mirrors the dns_records listing view's notion of "in scope": '@' (or empty)
+    denotes the zone apex, everything else is `<hostname>.<domain>`. Shared by the
+    create/edit/delete routes so they all feed the same fqdn shape into
+    ``realm.matches_hostname()``.
+    """
+    hostname = hostname if hostname else '@'
+    if hostname == '@':
+        return realm.domain
+    return f"{hostname}.{realm.domain}"
+
+
+def _find_realm_record(netcup, realm: AccountRealm, record_id):
+    """Resolve `record_id` to its record dict within `realm.domain`'s zone.
+
+    Returns ``(existing_records, record)``. `record` is ``None`` when `record_id`
+    is not present in the zone -- callers should show "not found", not a
+    permission error, in that case.
+    """
+    existing_records = netcup.info_dns_records(realm.domain)
+    record = None
+    for rec in existing_records:
+        if str(rec.get('id')) == str(record_id):
+            record = rec
+            break
+    return existing_records, record
+
+
 @account_bp.route('/realms/<int:realm_id>/dns/create', methods=['GET', 'POST'])
 @require_account_auth
 def dns_record_create(realm_id):
@@ -1506,12 +1536,14 @@ def dns_record_create(realm_id):
             flash(f'Record type {record_type} is not allowed', 'error')
             return redirect(url_for('account.dns_record_create', realm_id=realm_id))
         
-        # Validate hostname is within realm scope
-        test_hostname = hostname if hostname else '@'
-        fqdn = f"{test_hostname}.{realm.domain}" if test_hostname != '@' else realm.domain
-        
-        if realm.realm_type == 'host' and hostname != realm.realm_value:
-            flash(f'Hostname must be {realm.realm_value}', 'error')
+        # Validate hostname is within realm scope. Works for every realm_type
+        # (host / subdomain / subdomain_only) via the same predicate the
+        # dns_records listing view uses -- a subdomain(-only) realm must not be
+        # able to create at the apex or a sibling subtree.
+        fqdn = _realm_fqdn_for(realm, hostname)
+
+        if not realm.matches_hostname(fqdn):
+            flash(f'Hostname {hostname or "@"} is outside this realm\'s scope', 'error')
             return redirect(url_for('account.dns_record_create', realm_id=realm_id))
         
         try:
@@ -1603,20 +1635,21 @@ def dns_record_edit(realm_id, record_id):
             timeout=config.get('timeout', 30)
         )
         
-        # Get existing records
-        existing_records = netcup.info_dns_records(realm.domain)
-        
         # Find the record to edit
-        record = None
-        for rec in existing_records:
-            if str(rec.get('id')) == str(record_id):
-                record = rec
-                break
-        
+        existing_records, record = _find_realm_record(netcup, realm, record_id)
+
         if not record:
             flash('Record not found', 'error')
             return redirect(url_for('account.dns_records', realm_id=realm_id))
-        
+
+        # Validate the record's hostname is within realm scope BEFORE allowing any
+        # view/edit of it. This route never lets the form change the hostname (only
+        # destination/priority are editable), so checking the record's current
+        # hostname also covers the "don't move a record into/out of scope" case.
+        if not realm.matches_hostname(_realm_fqdn_for(realm, record.get('hostname', ''))):
+            flash('This record is outside the realm scope', 'error')
+            return redirect(url_for('account.dns_records', realm_id=realm_id))
+
         if request.method == 'POST':
             destination = request.form.get('destination', '').strip()
             priority = request.form.get('priority', '').strip()
@@ -1688,21 +1721,21 @@ def dns_record_delete(realm_id, record_id):
             timeout=config.get('timeout', 30)
         )
         
-        # Get existing records
-        existing_records = netcup.info_dns_records(realm.domain)
-        
-        # Find and mark the record for deletion
-        record_to_delete = None
-        for rec in existing_records:
-            if str(rec.get('id')) == str(record_id):
-                record_to_delete = rec
-                rec['deleterecord'] = True
-                break
-        
+        # Find the record to delete
+        existing_records, record_to_delete = _find_realm_record(netcup, realm, record_id)
+
         if not record_to_delete:
             flash('Record not found', 'error')
             return redirect(url_for('account.dns_records', realm_id=realm_id))
-        
+
+        # Validate the record's hostname is within realm scope BEFORE mutating
+        # anything -- a realm must not be able to delete a sibling's record.
+        if not realm.matches_hostname(_realm_fqdn_for(realm, record_to_delete.get('hostname', ''))):
+            flash('This record is outside the realm scope', 'error')
+            return redirect(url_for('account.dns_records', realm_id=realm_id))
+
+        record_to_delete['deleterecord'] = True
+
         # Save (with deleterecord flag)
         netcup.update_dns_records(realm.domain, existing_records)
         
