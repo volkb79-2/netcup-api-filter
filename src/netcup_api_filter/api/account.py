@@ -38,6 +38,7 @@ from ..account_auth import (
 )
 from ..models import (
     Account, AccountRealm, ActivityLog, APIToken, RegistrationRequest, db,
+    validate_password,
     # Multi-backend models
     BackendService, BackendProvider, ManagedDomainRoot, DomainRootGrant,
     VisibilityEnum, OwnerTypeEnum, TestStatusEnum,
@@ -200,26 +201,29 @@ def reset_password(token):
         return redirect(url_for('account.dashboard'))
     
     from ..password_reset import verify_reset_token, complete_password_reset
-    
-    # Get client IP for security validation
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip and ',' in client_ip:
-        client_ip = client_ip.split(',')[0].strip()
-    
+
+    # Client IP for reset-token IP-binding validation. ProxyFix (x_for=1) is
+    # configured in app.py, so remote_addr is already the trusted client IP;
+    # trusting a client-supplied X-Forwarded-For value here would let the
+    # leftmost (attacker-controlled) hop spoof its way past IP binding.
+    client_ip = request.remote_addr
+
     account, error = verify_reset_token(token, current_ip=client_ip, expected_type='reset')
     if not account:
         flash(error or 'Invalid or expired password reset link', 'error')
         return redirect(url_for('account.forgot_password'))
-    
+
     if request.method == 'POST':
         new_password = request.form.get('new_password', '')
         confirm_password = request.form.get('confirm_password', '')
-        
+
         if new_password != confirm_password:
             flash('Passwords do not match', 'error')
-        elif len(new_password) < 12:
-            flash('Password must be at least 12 characters', 'error')
         else:
+            is_valid, policy_error = validate_password(new_password)
+            if not is_valid:
+                flash(policy_error, 'error')
+                return render_template('account/reset_password.html', token=token)
             success, error = complete_password_reset(account, new_password, token)
             if success:
                 flash('Password has been reset. Please log in with your new password.', 'success')
@@ -255,16 +259,18 @@ def accept_invite(token):
         
         if new_password != confirm_password:
             flash('Passwords do not match', 'error')
-        elif len(new_password) < 12:
-            flash('Password must be at least 12 characters', 'error')
         else:
+            is_valid, policy_error = validate_password(new_password)
+            if not is_valid:
+                flash(policy_error, 'error')
+                return render_template('account/accept_invite.html', token=token, username=account.username)
             success, error = complete_password_reset(account, new_password, token)
             if success:
                 flash('Your account is now active. Please log in with your new password.', 'success')
                 return redirect(url_for('account.login'))
             else:
                 flash(error, 'error')
-    
+
     return render_template('account/accept_invite.html', token=token, username=account.username)
 
 

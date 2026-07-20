@@ -24,7 +24,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
-from .models import Account, ResetToken, RegistrationRequest, db
+from .models import Account, ResetToken, RegistrationRequest, db, validate_password
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,14 @@ def complete_password_reset(account: Account, new_password: str, raw_token: str)
     
     if reset_token.is_used():
         return False, "Reset link has already been used"
-    
+
+    # Enforce the real password policy here too (defense in depth) -- this
+    # function must be safe regardless of what upstream validation, if any,
+    # the caller already performed.
+    is_valid, policy_error = validate_password(new_password)
+    if not is_valid:
+        return False, policy_error
+
     # Update password
     password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     account.password_hash = password_hash
