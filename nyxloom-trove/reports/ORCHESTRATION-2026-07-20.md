@@ -70,4 +70,42 @@ and runs pytest against the worktree's own files.
 
 ## Dispatch / review / merge log
 
-(appended as the session proceeds)
+### Batch 1 — P01/P02/P04 fanned out (sonnet, worktrees), P06-part-1 by orchestrator
+
+Dispatched 3 sonnet agents in parallel worktrees; each self-gated. Reviewed against git
+state, not the reports (AUTHORING §7).
+
+- **naf-P02** (`46990c1`, wt/naf-p02) — ACCEPTED. `matches_hostname` for all realm types
+  on create; resolve-by-id + scope check before mutation on edit/delete; `ActivityLog`
+  writes left untouched (CC-1 honored). `_realm_fqdn_for` correctly maps apex→bare zone.
+  15 backend-truth tests incl. the subtle subtree-apex inclusion (`subdomain`) vs
+  exclusion (`subdomain_only`). Agent gate: 398 passed on 3.11 + 3.9.
+- **naf-P04** (`121b23b`, wt/naf-p04) — ACCEPTED. Found and fixed **12** double-encode
+  sites, not the 10 I named (2 had drifted in since the carve — `free_domains_config`,
+  `platform_backends_config`); good grep discipline. Shared `_get_smtp_config()` helper;
+  all three senders now read `smtp_config` then `email_config`; None-on-invalid matches
+  the old False early-returns. O1/O2 exercised via a real `passenger_wsgi` exec_module in
+  a subprocess (not just round-trip). Agent gate: 394 passed on 3.11 + 3.9.
+- **naf-P01** (wt/naf-p01) — ACCEPTED WITH ORCHESTRATOR FIX. The agent did NOT commit
+  (report truncated mid-gate); code was sound: resolve-by-id, authorize against the
+  STORED record's hostname/type, and re-check the TARGET on a move (better than the
+  carve spec). 7 backend-truth tests, incl. move-out-of-scope.
+  **Review finding (regression) — FIXED by orchestrator before merge:** the agent
+  removed the upfront zone-level `check_permission` and fetched the record FIRST. That
+  let an out-of-scope caller (a) trigger an upstream fetch for any zone and (b) tell
+  404 (no such id) from 403 (id exists, not yours) — a cross-zone record-existence
+  oracle. Restored a cheap zone/op gate before the fetch in both `update_record` and
+  `delete_record` (this is what the original delete path had; the agent dropped it).
+  Documented here for later discussion — it's the kind of subtle security regression a
+  cheap-model implement + fast merge can introduce, which is exactly why review-merge
+  re-derives rather than trusts the report.
+- **naf-P06 part 1** (`2f298a2`, wt/naf-p06, orchestrator) — route discovery now raises
+  loudly instead of the stale-static fallback; `discover_routes_static()` deleted; smoke
+  suite asserts an admin/client route floor; new `tests/test_route_discovery_unit.py`
+  proves the contract under the UNIT gate (added beyond scope.touch so O1 is provable
+  without e2e). Gate: 386 on 3.11. Part 2 (ui_tests can't-fail cleanup, needs e2e) TBD.
+
+Cross-cutting check passed: the four branches touch strictly disjoint files (dns_api.py /
+account.py / {passenger_wsgi,password_reset}.py / {route_discovery,test_route_smoke}.py +
+four disjoint new test files), so they merge without conflict and a single combined gate
+on `main` is a valid signal for the batch.
