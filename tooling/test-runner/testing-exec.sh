@@ -21,21 +21,40 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=runner.env
 source "${REPO_ROOT}/tooling/test-runner/runner.env"
 
-# Environment-specific paths come from the auto-generated workspace file.
+# WORKTREE AWARENESS — so a parallel agent working in .worktrees/<pkg> can gate ITS
+# checkout in isolation. The daemon binds the MAIN repo root, and worktrees live inside
+# it (worktree_root = .worktrees), so the single mount already sees every worktree; we
+# just cd to the right subpath inside the container.
+#   MAIN_ROOT  — the main working tree (holds the gitignored .env.workspace). The git
+#                common-dir is shared by every linked worktree, so its parent is MAIN_ROOT.
+#   WT_REL     — REPO_ROOT relative to MAIN_ROOT: "" for main, "/.worktrees/<pkg>" for a wt.
+GIT_COMMON_DIR="$(git -C "${REPO_ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+if [ -n "${GIT_COMMON_DIR}" ]; then
+    MAIN_ROOT="$(dirname "${GIT_COMMON_DIR}")"
+else
+    MAIN_ROOT="${REPO_ROOT}"   # not a git checkout (shouldn't happen); degrade to self
+fi
+WT_REL="${REPO_ROOT#"${MAIN_ROOT}"}"   # "" or "/.worktrees/<pkg>"
+
+# Environment-specific paths come from the auto-generated workspace file, which lives in
+# the MAIN root only (it is gitignored, so worktrees never carry a copy).
 # NOTE: we deliberately do NOT source .env.services here — it expands ${PUBLIC_FQDN}
 # unconditionally (POWERDNS_API_URL) and aborts any `set -u` consumer when post-create
 # has not written that var. The gate must not inherit that breakage.
-# See docs/FOLLOWUP_REVIEW_2026-07-16.md §P0-8.
-[ -f "${REPO_ROOT}/.env.workspace" ] || {
-    echo "FATAL: .env.workspace missing — run .devcontainer/post-create.sh (it is auto-generated)" >&2
+# See docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md §P0-8.
+[ -f "${MAIN_ROOT}/.env.workspace" ] || {
+    echo "FATAL: .env.workspace missing in ${MAIN_ROOT} — run .devcontainer/post-create.sh (auto-generated)" >&2
     exit 3
 }
 # shellcheck disable=SC1091
-source "${REPO_ROOT}/.env.workspace"
+source "${MAIN_ROOT}/.env.workspace"
 
-# DooD: the docker socket is the HOST's, so -v sources must be HOST paths.
+# DooD: the docker socket is the HOST's, so -v sources must be HOST paths. We mount the
+# HOST main root and cd to the worktree subpath (CONTAINER_WORKDIR) inside the container.
 PHYSICAL_REPO_ROOT="${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT not set (check .env.workspace)}"
 DOCKER_NETWORK_INTERNAL="${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set (check .env.workspace)}"
+CONTAINER_WORKDIR="/workspaces/netcup-api-filter${WT_REL}"
+[ -n "${WT_REL}" ] && echo "[gate] worktree: ${REPO_ROOT} -> ${CONTAINER_WORKDIR}" >&2
 
 IMAGE="${TEST_RUNNER_IMAGE:?TEST_RUNNER_IMAGE not set (check tooling/test-runner/runner.env)}"
 CONTAINER="${TEST_RUNNER_CONTAINER:?TEST_RUNNER_CONTAINER not set (check tooling/test-runner/runner.env)}"
@@ -61,7 +80,7 @@ ensure_image() {
 run_ephemeral() {
     docker run --rm \
         -v "${PHYSICAL_REPO_ROOT}:/workspaces/netcup-api-filter:rw" \
-        -w /workspaces/netcup-api-filter \
+        -w "${CONTAINER_WORKDIR}" \
         "${IMAGE}" "$@"
 }
 
@@ -71,7 +90,7 @@ run_networked() {
     docker run --rm \
         --network "${DOCKER_NETWORK_INTERNAL}" \
         -v "${PHYSICAL_REPO_ROOT}:/workspaces/netcup-api-filter:rw" \
-        -w /workspaces/netcup-api-filter \
+        -w "${CONTAINER_WORKDIR}" \
         -e "PLAYWRIGHT_SERVER_WS=${PLAYWRIGHT_SERVER_WS:-}" \
         "${IMAGE}" "$@"
 }
