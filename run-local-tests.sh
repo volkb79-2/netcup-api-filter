@@ -52,18 +52,26 @@ echo ""
 # 0. Start mock services if requested
 if [ "$WITH_MOCKS" -eq 1 ]; then
     echo -e "${BLUE}Starting mock services (Mailpit, GeoIP, Netcup API)...${NC}"
-    (
-        cd "${WORKSPACE_DIR}/tooling/mailpit"
-        docker compose up -d --wait
-    )
-    (
-        cd "${WORKSPACE_DIR}/tooling/geoip-mock"
-        docker compose up -d --wait
-    )
-    (
-        cd "${WORKSPACE_DIR}/tooling/netcup-api-mock"
-        docker compose up -d --wait
-    )
+    # tooling/{mailpit,geoip-mock,netcup-api-mock} are ciu .j2 stacks now
+    # (hand-written docker-compose.yml files are gone) - use `ciu up --dir`,
+    # the supported single-stack verb (see `ciu up --help`; `ciu down`/`ciu
+    # clean` only take --profile, not --dir, but that doesn't matter here -
+    # this script only starts stacks).
+    #
+    # WHY source ciu.env: this devcontainer's login shell auto-sources
+    # dstdns's ciu.env (dstdns is the devcontainer's primary workspace), so a
+    # bare `ciu` call can resolve REPO_ROOT to dstdns, not naf (ciu resolves
+    # its repo root as --define-root -> $REPO_ROOT -> cwd walk-up, SPEC
+    # S1.1). naf's own ciu.env (standalone_root = true, see
+    # ciu.global.defaults.toml.j2) re-exports the correct REPO_ROOT for THIS
+    # repo - source it before every ciu invocation instead of trusting the
+    # ambient shell. `set -e` (line 2) means a failed `ciu up` here aborts
+    # this script immediately and loudly - no error-hiding.
+    # shellcheck disable=SC1091
+    source "${WORKSPACE_DIR}/ciu.env"
+    ciu up --dir "${WORKSPACE_DIR}/tooling/mailpit" -y
+    ciu up --dir "${WORKSPACE_DIR}/tooling/geoip-mock" -y
+    ciu up --dir "${WORKSPACE_DIR}/tooling/netcup-api-mock" -y
     echo ""
 fi
 

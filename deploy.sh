@@ -407,6 +407,71 @@ log_error() {
     echo -e "${RED}✗ $1${NC}" >&2
 }
 
+# ----------------------------------------------------------------------------
+# ciu stack helpers
+# ----------------------------------------------------------------------------
+# tooling/{mailpit,geoip-mock,netcup-api-mock,backend-powerdns} are ciu .j2
+# stacks now (hand-written docker-compose.yml files are gone/going). These two
+# helpers are the ONLY place deploy.sh talks to a ciu-managed stack.
+
+# Bring up a single ciu-managed stack (path relative to REPO_ROOT, e.g.
+# "tooling/mailpit"). `ciu up --dir` is the supported single-stack verb
+# (verified via `ciu up --help`).
+#
+# WHY source ciu.env first: this devcontainer's login shell auto-sources
+# dstdns's ciu.env (dstdns is the devcontainer's primary workspace), so a
+# bare `ciu` call can resolve REPO_ROOT to dstdns, not naf (ciu resolves its
+# repo root as --define-root -> $REPO_ROOT -> cwd walk-up, SPEC S1.1). naf's
+# own ciu.env (standalone_root = true, see ciu.global.defaults.toml.j2)
+# re-exports the correct REPO_ROOT/PHYSICAL_REPO_ROOT for THIS repo - source
+# it right before every ciu invocation instead of trusting the ambient shell.
+#
+# A start failure is never hidden: no `2>/dev/null`, no swallowing `|| true`
+# / `|| log_warning`. That silent-failure shape is exactly what let the mocks
+# never start while deploy.sh reported success (fail-fast doctrine -
+# docs/FAIL_FAST_PRINCIPLE.md, AGENTS.md §2). Callers propagate the exit code
+# so a broken start actually fails the script.
+ciu_stack_up() {
+    local stack_dir="$1"
+
+    if [[ ! -f "${REPO_ROOT}/ciu.env" ]]; then
+        log_error "ciu.env not found at ${REPO_ROOT}/ciu.env (run: ciu env generate)"
+        return 1
+    fi
+    # shellcheck disable=SC1091
+    source "${REPO_ROOT}/ciu.env"
+
+    if ! ciu up --dir "${REPO_ROOT}/${stack_dir}" -y; then
+        log_error "ciu up --dir ${stack_dir} failed - see ciu output above"
+        return 1
+    fi
+}
+
+# Bring down a single ciu-managed stack. `ciu down`/`ciu clean` only accept
+# --profile (whole-project scope), NOT --dir - verified via `ciu down --help`
+# and ciu's own CLI dispatch (ciu/cli.py): the old per-directory form is
+# actively rejected - `ciu -d <dir>` errors with "'-d' is not a verb. Did you
+# mean: ciu up --dir '<dir>'?". There is no supported single-stack `down`.
+#
+# The working per-stack teardown is `docker compose down` against ciu's own
+# rendered ciu.compose.yml (the file `ciu up --dir` produces), scoped with
+# the same "<project>-<env>-<stack>" compose project ciu used to bring it up
+# (ciu/engine.py compose_project_name()) so this actually targets the
+# containers `ciu up` created instead of silently matching nothing under the
+# directory's default project name. PROJECT_TAG/ENV_TAG come from
+# .env.services (naf/dev) and mirror ciu.global.defaults.toml.j2's
+# [deploy] project_name/environment_tag.
+#
+# Tolerant of "never started"/"already down" - that is a legitimate
+# non-fatal outcome for a teardown path, unlike a start failure. Callers keep
+# their own && / || handling for messaging, same as before this change.
+ciu_stack_down() {
+    local stack_dir="$1"
+    local project="${PROJECT_TAG:?PROJECT_TAG not set (source .env.services)}-${ENV_TAG:?ENV_TAG not set (source .env.services)}-$(basename "${stack_dir}")"
+
+    (cd "${REPO_ROOT}/${stack_dir}" && docker compose -p "${project}" -f ciu.compose.yml down)
+}
+
 format_duration_seconds() {
     local seconds="$1"
     if [[ "$seconds" -lt 60 ]]; then
@@ -623,30 +688,30 @@ print(primary.get('secret_key', ''))
 
 start_mock_services() {
     log_step "Starting mock services (Mailpit, Mock Netcup API, Mock GeoIP)..."
-    
+
     # Start Mailpit
     if [[ -d "${REPO_ROOT}/tooling/mailpit" ]]; then
-        (cd "${REPO_ROOT}/tooling/mailpit" && docker compose up -d 2>/dev/null) || log_warning "Mailpit start failed (may already be running)"
+        ciu_stack_up "tooling/mailpit" || return 1
     fi
-    
+
     # Start Mock Netcup API
     if [[ -d "${REPO_ROOT}/tooling/netcup-api-mock" ]]; then
-        (cd "${REPO_ROOT}/tooling/netcup-api-mock" && docker compose up -d 2>/dev/null) || log_warning "Mock Netcup API start failed (may already be running)"
+        ciu_stack_up "tooling/netcup-api-mock" || return 1
     fi
-    
+
     # Start Mock GeoIP
     if [[ -d "${REPO_ROOT}/tooling/geoip-mock" ]]; then
-        (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose up -d 2>/dev/null) || log_warning "Mock GeoIP start failed (may already be running)"
+        ciu_stack_up "tooling/geoip-mock" || return 1
     fi
-    
+
     log_success "Mock services started"
 }
 
 stop_mock_services() {
     log_step "Stopping mock services..."
-    (cd "${REPO_ROOT}/tooling/mailpit" && docker compose down 2>/dev/null) || true
-    (cd "${REPO_ROOT}/tooling/netcup-api-mock" && docker compose down 2>/dev/null) || true
-    (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose down 2>/dev/null) || true
+    ciu_stack_down "tooling/mailpit" || true
+    ciu_stack_down "tooling/netcup-api-mock" || true
+    ciu_stack_down "tooling/geoip-mock" || true
 }
 
 start_powerdns_backend() {
@@ -674,8 +739,8 @@ start_powerdns_backend() {
     
     # Start containers (init container runs first, then PowerDNS)
     log_step "Running init container to prepare database..."
-    (cd "${powerdns_dir}" && docker compose up -d 2>/dev/null) || log_warning "PowerDNS start failed (may already be running)"
-    
+    ciu_stack_up "tooling/backend-powerdns" || return 1
+
     # Wait for health check
     local waited=0
     while [[ $waited -lt 30 ]]; do
@@ -698,7 +763,7 @@ start_powerdns_backend() {
 
 stop_powerdns_backend() {
     log_step "Stopping PowerDNS backend..."
-    (cd "${REPO_ROOT}/tooling/backend-powerdns" && docker compose down 2>/dev/null) || true
+    ciu_stack_down "tooling/backend-powerdns" || true
 }
 
 start_tls_proxy() {
@@ -818,12 +883,12 @@ phase_infrastructure() {
 
     # Start mock services BEFORE TLS proxy (nginx config references naf-dev-mailpit)
     if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
-        start_mock_services
+        start_mock_services || return 1
     fi
-    
+
     # Start PowerDNS backend (optional - skip if not configured)
     if [[ "$DEPLOYMENT_TARGET" == "local" ]]; then
-        start_powerdns_backend
+        start_powerdns_backend || return 1
     fi
     
     # Start TLS proxy for HTTPS mode (default for local, use --http to disable)
@@ -1398,20 +1463,23 @@ stop_all_services() {
     
     # 3. Stop Mailpit
     log_step "Stopping Mailpit..."
-    (cd "${REPO_ROOT}/tooling/mailpit" && docker compose down 2>/dev/null) && log_success "Mailpit stopped" || log_step "Mailpit not running"
-    
+    ciu_stack_down "tooling/mailpit" && log_success "Mailpit stopped" || log_step "Mailpit not running"
+
     # 4. Stop Mock Netcup API
     log_step "Stopping Mock Netcup API..."
-    (cd "${REPO_ROOT}/tooling/netcup-api-mock" && docker compose down 2>/dev/null) && log_success "Mock Netcup API stopped" || log_step "Mock Netcup API not running"
-    
+    ciu_stack_down "tooling/netcup-api-mock" && log_success "Mock Netcup API stopped" || log_step "Mock Netcup API not running"
+
     # 5. Stop Mock GeoIP
     log_step "Stopping Mock GeoIP..."
-    (cd "${REPO_ROOT}/tooling/geoip-mock" && docker compose down 2>/dev/null) && log_success "Mock GeoIP stopped" || log_step "Mock GeoIP not running"
-    
+    ciu_stack_down "tooling/geoip-mock" && log_success "Mock GeoIP stopped" || log_step "Mock GeoIP not running"
+
     # 6. Stop PowerDNS backend
     log_step "Stopping PowerDNS backend..."
     local powerdns_dir="${REPO_ROOT}/tooling/backend-powerdns"
-    if [[ -d "${powerdns_dir}" && -f "${powerdns_dir}/docker-compose.yml" ]]; then
+    # NOTE: no longer gated on docker-compose.yml existing - that file is
+    # gone now that backend-powerdns is a ciu .j2 stack (ciu.compose.yml is
+    # the rendered artifact ciu_stack_down looks for).
+    if [[ -d "${powerdns_dir}" ]]; then
         # Load environment variables needed by docker-compose
         if [[ -f "${REPO_ROOT}/.env" ]]; then
             set -a
@@ -1441,7 +1509,7 @@ stop_all_services() {
         export PDNS_DEFAULT_SOA_NAME PDNS_DEFAULT_SOA_MAIL
         
         # Stop containers (both PowerDNS and init container)
-        if (cd "${powerdns_dir}" && docker compose down 2>/dev/null); then
+        if ciu_stack_down "tooling/backend-powerdns"; then
             log_success "PowerDNS stopped"
         else
             # Fallback: stop containers directly
