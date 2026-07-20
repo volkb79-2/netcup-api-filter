@@ -1,0 +1,29 @@
+# tooling/geoip-mock/ciu.defaults.toml.j2 — STACK MARKER (geoip mock)
+# =============================================================================
+#   Rendered output: ciu.toml  (GITIGNORED — never edit or commit the rendered file)
+#
+# Replaces the previously hand-written `tooling/geoip-mock/docker-compose.yml`
+# with the ciu `.j2` convention (naf-I01 follow-on). The stack serves
+# `ui_tests/mock_geoip_server.py` (a MaxMind-GeoIP-shaped mock) over Flask.
+#
+# The container name / network / healthcheck are kept IDENTICAL to the
+# pre-ciu form — see ciu.compose.yml.j2 header — so the resolvable name does
+# not change for existing callers (ui_tests, the app under test via
+# MOCK_GEOIP_API_URL in .env.services).
+# =============================================================================
+
+[geoip_mock]
+name = "mock-geoip"
+image = "python"
+image_tag = "3.11-slim"
+port = 80
+
+[geoip_mock.mounts]
+# HOST path (DooD: the docker socket is the host's, so -v sources are host
+# paths). ui_tests/ holds mock_geoip_server.py — the actual mock
+# implementation; the `/ui_tests` suffix is appended in the compose bind.
+workspace = "{{ ciu.physical_repo_root }}"
+
+[geoip_mock.hooks]
+pre_compose = []
+post_compose = []
