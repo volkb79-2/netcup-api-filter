@@ -25,6 +25,31 @@ not part of this batch.
 
 ---
 
+## D-005 — B-AUTH batch partition (2026-07-20b): three disjoint packages
+
+**Status:** DECIDED (orchestrator, 2026-07-20) · shapes: naf-P07, naf-P08, naf-P09
+
+The five B-AUTH items span overlapping files, so the fan-out is partitioned by **file
+ownership** to keep parallel worktrees mergeable:
+
+- **naf-P07** owns `account_auth.py` (TOTP-branch lockout, remove dead
+  `request_password_reset`, remove dead `generate_secure_password`) **plus** the single
+  dead-import line `api/admin.py:31`. Item 5 (`generate_secure_password`) must be **atomic**
+  — its definition and its lone import live in one worktree, else the package fails its own
+  gate on an `ImportError`.
+- **naf-P08** owns the client-IP sites in `api/admin.py` (`_get_client_ip:90`, audit sites
+  :1207/:1291) and `api/ddns_protocols.py:get_client_ip`. Fix = trust `request.remote_addr`
+  (ProxyFix `x_for=1`, `app.py:75`), mirroring what `dns_api.py` already does.
+- **naf-P09** owns `api/account.py` (reset/invite password policy :220/:258 **and** the
+  leftmost-XFF reset-token IP-binding site :210) and `password_reset.py`
+  (`complete_password_reset` validates nothing today).
+
+Only P07∩P08 share a file (`api/admin.py`) at disjoint hunks (line 31 vs 90/1207/1291) —
+git auto-merges. **Merge P07 first, then P08**, re-gating between; P09 is fully disjoint and
+merges in any order.
+
+---
+
 ## D-001 — nyxloomd cannot reach this repo (blocks ALL dispatch)
 
 **Status:** CARVED UPSTREAM · raised 2026-07-16 · blocks: every handoff in this trove
@@ -70,7 +95,21 @@ authoritative.
 
 ## D-002 — the `backends/` abstraction is dead code on the live DNS path
 
-**Status:** OPEN · raised 2026-07-16 · blocks: naf-P20, and any Cloudflare/Route53 work
+**Status:** DECIDED (a) — WIRE IT UP · resolved 2026-07-20 (operator) · raised 2026-07-16
+
+**Resolution (operator, 2026-07-20):** Option **(a) — wire it up now.** Route
+`dns_api`/`ddns_protocols` through `get_backend_for_realm()` so a realm bound to a
+BYOD/PowerDNS backend actually executes against that backend rather than silently against
+the platform netcup account. This is an **L-effort milestone**, carved as
+`naf-P20-backends-wireup`, and it **sequences AFTER the B-AUTH batch (2026-07-20b)**: it
+touches `dns_api.py` + `ddns_protocols.py`, colliding with naf-P08 (XFF client-IP), so it
+cannot share the same parallel worktree wave. Prerequisite correctness fixes fold into it —
+`backends/netcup.py:161` delete-by-omission (a silent no-op the mock hides), the
+`update_record` priority-`0` drop, and `backends/powerdns.py:97` REPLACE-wipes-the-RRset /
+hostname double-suffix / priority-drop. `docs/FEATURES.md` becomes true once it lands. See
+roadmap M6.3.
+
+
 
 `backends/registry.get_backend_for_realm()` — the documented core of realm→backend
 resolution (AGENTS.md "Backends") — has **zero callers**. Both live DNS paths build a
