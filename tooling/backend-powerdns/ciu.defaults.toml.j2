@@ -1,0 +1,96 @@
+# tooling/backend-powerdns/ciu.defaults.toml.j2 — STACK MARKER (self-hosted authoritative DNS)
+# =============================================================================
+#   Rendered output: ciu.toml  (GITIGNORED — never edit or commit the rendered file)
+#
+# Replaces the previously hand-written docker-compose.yml: a two-service stack
+# (an init container that loads the sqlite schema + owns the data dir, and the
+# PowerDNS Authoritative Server itself, gsqlite3-backed). Both are carried
+# across unchanged in ciu.compose.yml.j2.
+#
+# REVIEW HISTORY: a prior conversion of this stack was REJECTED for inventing
+# SOA/zone defaults (hardcoding something like ns1.vxxu.de / hostmaster.vxxu.de)
+# instead of sourcing the delegated zone from the operator. This version does
+# NOT do that:
+#   * `zone` below is `{{ topology.dns.delegated_zone }}` — a GLOBAL topology
+#     fact (D-007, [topology.dns] in ciu.global.defaults.toml.j2), itself an
+#     env-ref placeholder (`NAF_DELEGATED_DNS_ZONE`) with a committed EMPTY
+#     default. It is flattened here, not reinvented.
+#   * There is NO PDNS_DEFAULT_SOA_NAME / PDNS_DEFAULT_SOA_MAIL in this stack
+#     anymore (see ciu.compose.yml.j2 header for why) — the SOA is derived
+#     FROM the zone at zone-creation time by the post_compose hook below, not
+#     hardcoded anywhere in this file.
+# See nyxloom-trove/decisions.md D-007 for the full design.
+# =============================================================================
+
+[backend_powerdns]
+name = "powerdns"
+image = "powerdns/pdns-auth-48"
+image_tag = "latest"
+
+# UID 953 = the `pdns` user baked into the powerdns/pdns-auth-* images (README
+# Architecture section, carried over unchanged). The GID half of `user:` in
+# compose is the HOST's docker-group GID (DOCKER_GID, a ciu.env
+# machine-identity fact) — same convention as app-local/test-runner, not a
+# config value here.
+uid = 953
+
+# The delegated DNS zone (D-007) — sourced from the GLOBAL topology fact, NOT
+# invented here. Empty by committed default; every consumer (this stack's
+# post_compose hook, app-local's future backend-seed hook) guards on
+# non-empty, same placeholder discipline as topology.external.public_fqdn.
+zone = "{{ topology.dns.delegated_zone }}"
+
+[backend_powerdns.ports]
+# Public DNS query port. MUST stay 53 on both sides — real resolvers query
+# port 53 on the delegation's glue A/AAAA record, so unlike the mock
+# services' host ports this cannot be a per-developer env override.
+dns = 53
+# PowerDNS's internal HTTP API/webserver port. Never published to the host
+# directly — reachable only via the project network (peers, e.g. the app) or
+# through traefik on topology.external.ingress_network. See ciu.compose.yml.j2.
+api = 8081
+
+[backend_powerdns.pdns]
+# Static PowerDNS daemon config — translated 1:1 to PDNS_* container env vars.
+# None of this is zone-specific or secret; the API key is the only credential
+# and it stays a required ${VAR:?} guard in compose (not here).
+auth_api = "yes"
+webserver = "yes"
+webserver_address = "0.0.0.0"
+# The webserver only ever receives traffic from docker-internal networks
+# (project network peers, or traefik on the ingress network) — never directly
+# from the public internet — so its own IP allowlist is left open and access
+# control is delegated entirely to traefik's basicauth guard instead.
+webserver_allow_from = "0.0.0.0/0,::/0"
+launch = "gsqlite3"
+gsqlite3_database = "/var/lib/powerdns/pdns.sqlite3"
+loglevel = "4"
+log_dns_queries = "no"
+log_dns_details = "no"
+# AXFR (zone transfer) is not used anywhere in this stack — the app and the
+# zone-bootstrap hook both talk to PowerDNS over pdnsutil/the HTTP API — so it
+# stays disabled by default.
+disable_axfr = "yes"
+allow_axfr_ips = ""
+
+[backend_powerdns.health]
+# pdns_control talks to the running daemon's control socket directly — this
+# does NOT depend on the HTTP API being up, only the auth server process.
+interval = "10s"
+timeout = "5s"
+retries = 3
+start_period = "10s"
+
+[backend_powerdns.external]
+# Exposes the HTTP API at {{ topology.dns.pdns_subdomain }}.{{ topology.external.public_fqdn }}
+# behind the same basicauth guard as app-local (D-007: "Exposure of the pdns
+# API is naf-pdns.<public_fqdn> behind the same basicauth guard as the app").
+# The DNS port (53) is NEVER part of this — it stays a raw host port publish,
+# never a traefik route. See ciu.compose.yml.j2.
+enabled = true
+
+[backend_powerdns.hooks]
+pre_compose = []
+# Bootstraps `zone` in PowerDNS after `docker compose up` (D-007). No-op
+# when `zone` is empty. See post_compose_zone.py for the full contract.
+post_compose = ["post_compose_zone.py"]
