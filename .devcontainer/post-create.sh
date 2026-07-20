@@ -221,9 +221,11 @@ setup_network_connectivity() {
     log_info "Setting up network connectivity..."
     log_debug "Docker version: $(docker --version 2>&1 || echo 'Docker not available')"
 
-    # Determine the shared network name.
-    # Fall through in priority order: env var → project default.
-    local network_name="${DOCKER_NETWORK_INTERNAL:-naf-dev-network}"
+    # Determine the shared network name. NO default: the name is ciu-derived
+    # (<repo>-<path-hash>-network, see ciu.env) and a stale hardcoded fallback would
+    # silently put containers on a DIFFERENT network than ciu renders — the exact
+    # split-brain this migration removed. Fail fast instead (AGENTS.md §2).
+    local network_name="${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set — source ciu.env (or .env.workspace)}"
     log_debug "Network name: $network_name"
 
     # Create network if it doesn't exist yet

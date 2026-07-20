@@ -11,6 +11,28 @@
 # =============================================================================
 
 [ciu]
+# SPEC S1.2 — naf is a STANDALONE ROOT. ciu MUST refuse to run when $REPO_ROOT points
+# somewhere else, instead of silently operating on that other repo.
+#
+# WHY THIS IS LOAD-BEARING HERE: this devcontainer's ~/.bashrc auto-sources
+# "${REPO_ROOT}/ciu.env", and dstdns is the devcontainer's primary workspace — so every
+# login shell starts with REPO_ROOT=/workspaces/dstdns. S1.1 resolves
+# --define-root -> $REPO_ROOT -> cwd walk-up, so that stale env BEAT naf's marker and a
+# bare `ciu render` from this repo rendered 17 DSTDNS stacks.
+#
+# WHAT THIS ACTUALLY BUYS (measured, not assumed):
+#   * `ciu up`    — PROTECTED. Fails with "[S1.2] ... Expected: /workspaces/netcup-api-filter,
+#                   got: /workspaces/dstdns". This is the MUTATING path (it creates
+#                   containers), so the dangerous case is covered.
+#   * `ciu render` — NOT protected. Upstream bug: deploy.py:1633 calls
+#                   detect_standalone_root(repo_root) on the ALREADY-RESOLVED root, so it
+#                   finds dstdns's marker (no standalone_root) and passes. engine.py:1033
+#                   correctly walks from working_dir. The guard therefore misses the very
+#                   cross-repo case it was written for. Worth reporting upstream.
+#
+# So the reliable workflow is still `source ciu.env` (it exports the correct REPO_ROOT) —
+# NOT sprinkling --define-root on every invocation. standalone_root is the safety net.
+standalone_root = true
 repo_root = "$REPO_ROOT"
 physical_repo_root = "$PHYSICAL_REPO_ROOT"
 workspace_env_file = "ciu.env"
@@ -39,12 +61,12 @@ python_base_image_secondary = "python:3.9-slim-trixie"
 # matching DOCKER_NETWORK_INTERNAL="naf-dev-network" in .env.workspace.
 project_name = "naf"
 environment_tag = "dev"
-# PINNED EXPLICITLY, not "$DOCKER_NETWORK_INTERNAL". This devcontainer is a
-# sibling of the dstdns one and its shell exports dstdns's sourced ciu.env, so a
-# `$DOCKER_NETWORK_INTERNAL` reference silently resolves to dstdns's network
-# (observed: "dstdns-98535c-network"). naf's network is authoritative in
-# .env.workspace and is what testing-exec.sh + the mock services already use.
-network_name = "naf-dev-network"
+# The ciu-derived name (<repo>-<path-hash>-network) is authoritative now. This is safe
+# to reference again ONLY because standalone_root above guarantees $REPO_ROOT is naf's —
+# without it, a dstdns-contaminated shell would resolve this to dstdns's network.
+# Known trade-off: the hash embeds the checkout path, so moving the repo renames the
+# network (recorded in backlog B-INFRA).
+network_name = "$DOCKER_NETWORK_INTERNAL"
 log_level = "INFO"
 
 [deploy.registry]

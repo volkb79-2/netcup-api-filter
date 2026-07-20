@@ -297,14 +297,24 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
   requirements-dev.txt required a manual `docker rmi` before the gate saw it.) Fix: tag the
   image with a hash of the two requirements files (+ the Dockerfile) so a drifted closure
   is a cache miss, or add an explicit `--rebuild` that CI/gates always pass. S-M.
-- **ciu resolves to the WRONG REPO from this devcontainer.** The devcontainer's shell
-  exports dstdns's sourced `ciu.env` (`REPO_ROOT=/workspaces/dstdns`,
-  `PHYSICAL_REPO_ROOT=…/dstdns`, `DOCKER_NETWORK_INTERNAL=dstdns-98535c-network`). A bare
-  `ciu render` therefore rendered **17 dstdns stacks** from naf's cwd. Every ciu invocation
-  for naf needs `--define-root /workspaces/netcup-api-filter`, and `ciu env generate` needs
-  those vars unset or it bakes dstdns's values into naf's `ciu.env`. Same wrong-root class
-  as the documented `nyxloom lint` bug. Fix: a tiny `tooling/ciu-naf.sh` wrapper that pins
-  the root and scrubs the inherited vars, so nobody has to remember. S.
+- **ciu resolves to the WRONG REPO from this devcontainer — RESOLVED (partly) via SPEC S1.2.**
+  Cause: `~/.bashrc` auto-sources `${REPO_ROOT}/ciu.env` and dstdns is this devcontainer's
+  primary workspace, so every shell starts `REPO_ROOT=/workspaces/dstdns`; S1.1 resolves
+  `--define-root → $REPO_ROOT → cwd walk-up`, so the stale env beat naf's marker and a bare
+  `ciu render` produced **17 dstdns stacks**. Fixed by declaring `standalone_root = true`
+  under `[ciu]` in `ciu.global.defaults.toml.j2`, plus the `source ciu.env` workflow.
+  (ciu's related **CIU-10**, `PHYSICAL_REPO_ROOT` contamination, is already FIXED upstream —
+  hence `env generate` self-correcting via `/proc/self/mountinfo`.)
+- **UPSTREAM ciu BUG — `standalone_root` does not guard `ciu render`.** Measured: with
+  `REPO_ROOT=/workspaces/dstdns`, `ciu up --dir …` correctly aborts
+  (`[S1.2] … Expected: /workspaces/netcup-api-filter, got: /workspaces/dstdns`), but
+  `ciu render` still renders all 17 dstdns stacks, rc=0. Reason: `deploy.py:1633` calls
+  `detect_standalone_root(repo_root)` on the **already-resolved** root, so it inspects
+  dstdns's marker (which has no `standalone_root`) and passes; `engine.py:1033` gets it right
+  by walking from `working_dir`. The guard therefore misses precisely the cross-repo
+  contamination it exists for. Mitigation here: the mutating path (`up`) IS protected, and
+  `source ciu.env` is the documented workflow. **Report to the ciu project** — the one-line
+  fix is to pass the working dir, not the resolved root. S.
 - **`ciu env generate` derives its own network and creates it.** It produced
   `DOCKER_NETWORK_INTERNAL="netcup-api-filter-7716ce-network"` (repo-path hash) and
   **created that docker network + attached the devcontainer**, which is NOT naf's
