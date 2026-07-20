@@ -31,11 +31,11 @@ dns_api_bp = Blueprint('dns_api', __name__, url_prefix='/api')
 def get_netcup_client():
     """Get configured Netcup client."""
     from ..netcup_client import NetcupClient
-    
+
     config = get_setting('netcup_config')
     if not config:
         return None
-    
+
     return NetcupClient(
         customer_id=config.get('customer_id'),
         api_key=config.get('api_key'),
@@ -43,6 +43,35 @@ def get_netcup_client():
         api_url=config.get('api_url', 'https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON'),
         timeout=config.get('timeout', 30)
     )
+
+
+def _find_zone_record(netcup, domain, record_id):
+    """Resolve a record id to its stored record within a zone.
+
+    Record-level operations (update/delete by id) must authorize against the
+    hostname/type that is ACTUALLY stored under ``record_id``, not a value the
+    caller supplies — otherwise a host-scoped token could target any record in
+    a shared zone just by knowing its numeric id.
+
+    Returns a tuple ``(record, fetch_error)``:
+    - On a successful fetch, ``fetch_error`` is ``None``. ``record`` is the
+      matching record dict, or ``None`` if no record with that id exists in
+      the zone (caller should treat this as 404 — "not yours" vs "not there"
+      must stay distinguishable, so this is NOT reported as a permission
+      error).
+    - If the upstream fetch itself failed, ``record`` is ``None`` and
+      ``fetch_error`` carries the failure reason (caller should treat this as
+      a 502 API error).
+    """
+    result = netcup.info_dns_records(domain)
+    if mutation_failed(result):
+        return None, mutation_message(result, 'Failed to fetch records')
+
+    for rec in extract_dns_records(result):
+        if str(rec.get('id')) == str(record_id):
+            return rec, None
+
+    return None, None
 
 
 # ============================================================================
@@ -312,16 +341,13 @@ def update_record(domain, record_id):
             'error': 'validation',
             'message': 'Required fields: type, hostname, destination'
         }), 400
-    
-    # Check permission
-    perm = check_permission(
-        auth, 'update', domain,
-        record_type=record_type,
-        record_name=hostname,
-        client_ip=client_ip
-    )
-    
-    if not perm.granted:
+
+    # Zone/operation gate BEFORE any backend call (see delete_record for the rationale:
+    # avoids an upstream fetch and a 404-vs-403 existence oracle for out-of-scope zones).
+    # Record-level scope — against the STORED record, and against the target on a move —
+    # is enforced below.
+    zone_perm = check_permission(auth, 'update', domain, client_ip=client_ip)
+    if not zone_perm.granted:
         log_activity(
             auth=auth,
             action='api_call',
@@ -331,11 +357,11 @@ def update_record(domain, record_id):
             record_name=hostname,
             source_ip=client_ip,
             status='denied',
-            error_code=perm.error_code,
-            status_reason=perm.reason,
+            error_code=zone_perm.error_code,
+            status_reason=zone_perm.reason,
             request_data=data
         )
-        return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
+        return jsonify({'error': 'forbidden', 'message': zone_perm.reason}), 403
 
     # Get Netcup client
     netcup = get_netcup_client()
@@ -343,6 +369,76 @@ def update_record(domain, record_id):
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
 
     try:
+        # Resolve record_id to its stored record. Permission must be checked
+        # against what is ACTUALLY stored under this id, not the (potentially
+        # attacker-controlled) request body.
+        stored, fetch_error = _find_zone_record(netcup, domain, record_id)
+
+        if fetch_error is not None:
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='update',
+                domain=domain,
+                record_type=record_type,
+                record_name=hostname,
+                source_ip=client_ip,
+                status='error',
+                status_reason=fetch_error,
+                request_data=data
+            )
+            return jsonify({'error': 'api_error', 'message': fetch_error}), 502
+
+        if stored is None:
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='update',
+                domain=domain,
+                record_type=record_type,
+                record_name=hostname,
+                source_ip=client_ip,
+                status='error',
+                status_reason='Record not found',
+                request_data=data
+            )
+            return jsonify({'error': 'not_found', 'message': 'Record not found'}), 404
+
+        # Check permission against the STORED record's hostname/type.
+        perm = check_permission(
+            auth, 'update', domain,
+            record_type=stored.get('type'),
+            record_name=stored.get('hostname'),
+            client_ip=client_ip
+        )
+
+        if perm.granted and (hostname != stored.get('hostname') or record_type != stored.get('type')):
+            # The request also wants to move the record to a different
+            # hostname/type. A host-scoped token must not be able to move a
+            # record OUT of, or INTO, its scope, so the target must pass too.
+            perm = check_permission(
+                auth, 'update', domain,
+                record_type=record_type,
+                record_name=hostname,
+                client_ip=client_ip
+            )
+
+        if not perm.granted:
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='update',
+                domain=domain,
+                record_type=record_type,
+                record_name=hostname,
+                source_ip=client_ip,
+                status='denied',
+                error_code=perm.error_code,
+                status_reason=perm.reason,
+                request_data=data
+            )
+            return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
+
         # Build record with ID for update
         record = {
             'id': record_id,
@@ -352,7 +448,7 @@ def update_record(domain, record_id):
         }
         if 'priority' in data:
             record['priority'] = data['priority']
-        
+
         result = netcup.update_dns_records(domain, [record])
 
         if mutation_failed(result):
@@ -372,7 +468,7 @@ def update_record(domain, record_id):
                 'error': 'api_error',
                 'message': mutation_message(result, 'Failed to update record')
             }), 502
-        
+
         log_activity(
             auth=auth,
             action='api_call',
@@ -385,7 +481,7 @@ def update_record(domain, record_id):
             request_data=data,
             response_summary={'status': 'updated', 'record_id': record_id}
         )
-        
+
         return jsonify({
             'status': 'updated',
             'record': record
@@ -414,12 +510,15 @@ def delete_record(domain, record_id):
     """Delete a DNS record."""
     auth = g.auth
     client_ip = request.remote_addr
-    
-    # We need to fetch the record first to get its type for permission check
-    # For now, we'll use a generic check
-    perm = check_permission(auth, 'delete', domain, client_ip=client_ip)
-    
-    if not perm.granted:
+
+    # Zone/operation gate BEFORE any backend call. Record-level hostname scope is
+    # enforced below against the STORED record, but that requires fetching the zone
+    # first; without this gate an out-of-scope caller could trigger an upstream fetch
+    # for a zone it can't touch AND distinguish 404 (no such id) from 403 (id exists
+    # but not yours), leaking record existence across zones. This early check needs no
+    # record_name, so it validates zone + operation only — cheap and leak-free.
+    zone_perm = check_permission(auth, 'delete', domain, client_ip=client_ip)
+    if not zone_perm.granted:
         log_activity(
             auth=auth,
             action='api_call',
@@ -427,10 +526,10 @@ def delete_record(domain, record_id):
             domain=domain,
             source_ip=client_ip,
             status='denied',
-            error_code=perm.error_code,
-            status_reason=perm.reason
+            error_code=zone_perm.error_code,
+            status_reason=zone_perm.reason
         )
-        return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
+        return jsonify({'error': 'forbidden', 'message': zone_perm.reason}), 403
 
     # Get Netcup client
     netcup = get_netcup_client()
@@ -438,12 +537,63 @@ def delete_record(domain, record_id):
         return jsonify({'error': 'configuration', 'message': 'Netcup API not configured'}), 500
 
     try:
+        # Resolve record_id to its stored record so permission is checked
+        # against the record's REAL hostname/type, not a generic zone-wide
+        # check (which would let a host-scoped token delete any record).
+        stored, fetch_error = _find_zone_record(netcup, domain, record_id)
+
+        if fetch_error is not None:
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='delete',
+                domain=domain,
+                source_ip=client_ip,
+                status='error',
+                status_reason=fetch_error
+            )
+            return jsonify({'error': 'api_error', 'message': fetch_error}), 502
+
+        if stored is None:
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='delete',
+                domain=domain,
+                source_ip=client_ip,
+                status='error',
+                status_reason='Record not found'
+            )
+            return jsonify({'error': 'not_found', 'message': 'Record not found'}), 404
+
+        perm = check_permission(
+            auth, 'delete', domain,
+            record_type=stored.get('type'),
+            record_name=stored.get('hostname'),
+            client_ip=client_ip
+        )
+
+        if not perm.granted:
+            log_activity(
+                auth=auth,
+                action='api_call',
+                operation='delete',
+                domain=domain,
+                record_type=stored.get('type'),
+                record_name=stored.get('hostname'),
+                source_ip=client_ip,
+                status='denied',
+                error_code=perm.error_code,
+                status_reason=perm.reason
+            )
+            return jsonify({'error': 'forbidden', 'message': perm.reason}), 403
+
         # Delete record by marking deleterecord=True
         record = {
             'id': record_id,
             'deleterecord': True
         }
-        
+
         result = netcup.update_dns_records(domain, [record])
 
         if mutation_failed(result):
@@ -452,6 +602,8 @@ def delete_record(domain, record_id):
                 action='api_call',
                 operation='delete',
                 domain=domain,
+                record_type=stored.get('type'),
+                record_name=stored.get('hostname'),
                 source_ip=client_ip,
                 status='error',
                 status_reason=mutation_message(result, 'API error')
@@ -460,17 +612,19 @@ def delete_record(domain, record_id):
                 'error': 'api_error',
                 'message': mutation_message(result, 'Failed to delete record')
             }), 502
-        
+
         log_activity(
             auth=auth,
             action='api_call',
             operation='delete',
             domain=domain,
+            record_type=stored.get('type'),
+            record_name=stored.get('hostname'),
             source_ip=client_ip,
             status='success',
             response_summary={'status': 'deleted', 'record_id': record_id}
         )
-        
+
         return jsonify({
             'status': 'deleted',
             'record_id': record_id
