@@ -1,0 +1,43 @@
+# infra/pwmcp/ciu.defaults.toml.j2 — STACK MARKER (browser offload for the e2e gate)
+# =============================================================================
+#   Rendered output: ciu.toml  (GITIGNORED — never edit or commit the rendered file)
+#
+# WHY: the gate image (tooling/test-runner/Dockerfile) ships NO browser engine by
+# design. JS-rendered UI tests connect to THIS container over ws://pwmcp:3000/
+# (PLAYWRIGHT_SERVER_WS). This is the netcup equivalent of dstdns infra/pwmcp.
+#
+# The image is the shared, prebuilt, digest-tracked unified Playwright image
+# (Playwright run-server :3000 + @playwright/mcp :8931 under supervisord). naf uses
+# ONLY the :3000 connect() path; the raw `chromium.connect("ws://pwmcp:3000/")`
+# path needs no lease headers (the gateway falls back to the default lease).
+# See [test_runner.pwmcp] in tooling/test-runner/ciu.defaults.toml.j2.
+#
+# STATUS: this replaces the previously hand-written infra/pwmcp/docker-compose.yml
+# (INFRA-2) with the ciu .j2 convention (INFRA-1 follow-up, B-INFRA). The pin is
+# still `:latest` (the shared governed image); adopt a digest pin when this stack
+# owns the image build.
+# =============================================================================
+
+[pwmcp]
+name = "pwmcp"
+image_registry = "ghcr.io/volkb79-2"
+image_name = "pwmcp"
+image_tag = "latest"
+# `missing`, not `always`: this devcontainer's docker credential helper errors even
+# on anonymous ghcr pulls, and the governed image is already present locally. Switch
+# to `always` where creds work.
+pull_policy = "missing"
+# Chromium needs real shared memory — the 64mb compose default crashes the renderer.
+shm_size = "2gb"
+
+[pwmcp.ports]
+run_server = 3000
+run_server_upstream = 3001
+run_server_admin = 8940
+mcp = 8931
+
+[pwmcp.tunables]
+default_lease_s = 1800
+max_lease_s = 7200
+max_clients = 2
+idle_recycle_s = 30
