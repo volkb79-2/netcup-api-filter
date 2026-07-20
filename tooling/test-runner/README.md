@@ -59,10 +59,18 @@ PYTHON_VERSION=3.9 TEST_RUNNER_IMAGE=netcup-api-filter/test-runner:py39 \
 
 Persistent peer (warm container on `naf-dev-network`, alongside the mock services):
 
+The peer form is now **ciu-managed** (naf-I01). `ciu.compose.yml` is a RENDERED,
+gitignored artifact — edit `ciu.compose.yml.j2`, never the output. Note the
+`--define-root`: this devcontainer's shell exports dstdns's `REPO_ROOT`, so a bare
+`ciu` call resolves to the wrong repo (backlog B-INFRA).
+
 ```bash
-source tooling/test-runner/runner.env && source .env.workspace
-docker compose -f tooling/test-runner/docker-compose.yml up -d
+ciu render --define-root /workspaces/netcup-api-filter
+ciu up --dir tooling/test-runner --define-root /workspaces/netcup-api-filter
 ```
+
+`ciu up` also applies the cgroup/memory/IOPS governance overlay from `[governance]`
+in `ciu.global.defaults.toml.j2` (`.ciu/ciu.compose.overlay.yml`).
 
 ## Config
 

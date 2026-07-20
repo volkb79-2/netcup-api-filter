@@ -275,3 +275,19 @@ ui_tests/cookies.txt
 # Inside the repo on purpose: the daemon binds this repo, so worktrees are reachable
 # by both the daemon and the gate containers via that single mount.
 .worktrees/
+
+# ---------------------------------------------------------------------------
+# ciu-generated files (naf-I01). RENDERED OUTPUTS ARE NEVER COMMITTED — the
+# committed sources are the .j2 templates:
+#   ciu.global.defaults.toml.j2            (repo-root marker; locates REPO_ROOT)
+#   tooling/test-runner/ciu.defaults.toml.j2
+#   tooling/test-runner/ciu.compose.yml.j2
+# Rules mirror vbpub/ciu/.gitignored.ciu.
+# ---------------------------------------------------------------------------
+**/.ciu/
+ciu.env
+ciu.global.toml
+ciu.global.toml.j2
+**/ciu.toml
+**/ciu.toml.j2
+**/ciu.compose.yml

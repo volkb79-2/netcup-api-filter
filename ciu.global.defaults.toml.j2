@@ -1,0 +1,123 @@
+# ciu.global.defaults.toml.j2 — REPO-ROOT MARKER (naf)
+# =============================================================================
+# This file's EXISTENCE is how ciu locates REPO_ROOT (walk-up, SPEC S1.1).
+#   Rendered output: ciu.global.toml  (GITIGNORED — never edit the rendered file)
+#   Sparse override:  ciu.global.toml.j2 (optional, not committed by default)
+#   Machine facts:    ciu.env (from `ciu env generate` — authoritative, gitignored)
+#
+# Doctrine (see nyxloom-trove/INFRA-PLAN-2026-07-20.md): the devcontainer is a
+# COCKPIT, not a ship signal. Builds and the gating suite run in version-specific
+# containers matching the Passenger deploy targets (3.11 primary, 3.9 secondary).
+# =============================================================================
+
+[ciu]
+repo_root = "$REPO_ROOT"
+physical_repo_root = "$PHYSICAL_REPO_ROOT"
+workspace_env_file = "ciu.env"
+# naf's dev edge is being moved to the host traefik (naf-I04); until that lands
+# nothing here requires certs or a resolvable FQDN.
+require_certs = false
+require_fqdn = false
+fail_fast = true
+auto_connect_network = true
+
+# =============================================================================
+# Build — the two Passenger deploy targets. SINGLE SOURCE for the gate images
+# and (once naf-I03 lands) the containerized build.
+#   3.11 = primary target   (deploy.sh -> deploy-py311.zip)
+#   3.9  = secondary target (deploy.sh -> deploy-py39.zip)
+# The devcontainer's 3.14 is NOT a valid build or gate interpreter.
+# =============================================================================
+[build]
+python_version_primary = "3.11"
+python_version_secondary = "3.9"
+python_base_image = "python:3.11-slim-trixie"
+python_base_image_secondary = "python:3.9-slim-trixie"
+
+[deploy]
+# naf's container convention is <project>-<env>-<svc> => naf-dev-test-runner,
+# matching DOCKER_NETWORK_INTERNAL="naf-dev-network" in .env.workspace.
+project_name = "naf"
+environment_tag = "dev"
+# PINNED EXPLICITLY, not "$DOCKER_NETWORK_INTERNAL". This devcontainer is a
+# sibling of the dstdns one and its shell exports dstdns's sourced ciu.env, so a
+# `$DOCKER_NETWORK_INTERNAL` reference silently resolves to dstdns's network
+# (observed: "dstdns-98535c-network"). naf's network is authoritative in
+# .env.workspace and is what testing-exec.sh + the mock services already use.
+network_name = "naf-dev-network"
+log_level = "INFO"
+
+[deploy.registry]
+# Local-only images; nothing is pushed from this repo.
+url = ""
+namespace = "netcup-api-filter"
+
+[deploy.labels]
+prefix = "de.vxxu.volkb79"
+
+[deploy.health]
+interval = "10s"
+timeout = "5s"
+retries = 6
+start_period = "60s"
+
+[deploy.env.defaults]
+TZ = "UTC"
+PYTHONUNBUFFERED = "1"
+
+# Machine-identity facts exposed to compose templates + hostdir ownership.
+# ciu.env is the source; naf's own scripts read the equivalent USER_UID/DOCKER_GID
+# from .env.workspace (same values, older names).
+[deploy.env.shared]
+CONTAINER_UID = "$CONTAINER_UID"
+CONTAINER_GID = "$DOCKER_GID"
+DOCKER_GID = "$DOCKER_GID"
+USER_UID = "$CONTAINER_UID"
+REPO_ROOT = "$REPO_ROOT"
+PHYSICAL_REPO_ROOT = "$PHYSICAL_REPO_ROOT"
+
+# =============================================================================
+# Governance (SPEC S15) — the cgroup/mem/IO safeguards.
+# ciu injects these as standard compose keys into .ciu/ciu.compose.overlay.yml;
+# the kernel + systemd slice do the enforcing. Author-set keys always win.
+#
+# `device` is set EXPLICITLY: autodetect (findmnt on /var/lib/docker) does not
+# work from inside a DooD devcontainer. /dev/vda backs docker on this host.
+# KSM opt-in is deliberately NOT enabled — the shim is a dstdns-local artifact.
+# =============================================================================
+[governance]
+enabled = true
+cgroup_parent = "besteffort.slice"
+mem_limit = "2g"
+mem_reservation = "256m"
+read_iops = 200
+write_iops = 400
+device = "/dev/vda"
+exempt_services = []
+
+# =============================================================================
+# Stack registry — a stack is only rendered/brought up if it is declared here.
+# naf is deliberately small: the gating test-runner, and (naf-I02) the pwmcp
+# browser service the e2e gate connects to. Order matters: pwmcp must be up
+# before the e2e gate can reach ws://pwmcp:3000/.
+# =============================================================================
+[deploy.phases.phase_0]
+name = "Test infrastructure"
+description = "Browser service + the gating test-runner peer"
+enabled = true
+
+[[deploy.phases.phase_0.services]]
+path = "tooling/test-runner"
+
+[deploy.profiles.test]
+stacks = ["tooling/test-runner"]
+
+# =============================================================================
+# Topology — declarative facts consumed by compose templates.
+# public_fqdn is INTENTIONALLY EMPTY until naf-I04 (host-traefik exposure) is
+# reviewed: the FQDN becomes a config fact here, replacing the reverse-DNS
+# detection in docs/FQDN_DETECTION.md. Do NOT guess a hostname.
+# =============================================================================
+[topology.external]
+public_fqdn = ""
+tls = true
