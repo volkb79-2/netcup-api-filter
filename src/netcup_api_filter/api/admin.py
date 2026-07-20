@@ -88,11 +88,14 @@ def _add_timing_jitter():
 
 
 def _get_client_ip() -> str:
-    """Get real client IP, handling proxy headers."""
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip and ',' in client_ip:
-        client_ip = client_ip.split(',')[0].strip()
-    return client_ip or 'unknown'
+    """Get real client IP.
+
+    ProxyFix (x_for=1, see app.py) already normalizes request.remote_addr to
+    the trusted client hop. Do NOT re-parse X-Forwarded-For here — the raw
+    header is attacker-controlled and re-parsing it defeats ProxyFix's
+    trusted-hop extraction.
+    """
+    return request.remote_addr or 'unknown'
 
 
 def _track_failed_login(username: str, client_ip: str) -> tuple[bool, int]:
@@ -1204,7 +1207,7 @@ def account_regenerate_alias(account_id):
             action='alias_regenerated',
             status='success',
             severity='high',
-            source_ip=request.headers.get('X-Forwarded-For', request.remote_addr),
+            source_ip=request.remote_addr,
             user_agent=request.headers.get('User-Agent'),
             status_reason=f'Admin {g.admin.username} regenerated alias, {tokens_deleted} tokens invalidated'
         )
@@ -1288,7 +1291,7 @@ def account_change_email(account_id):
             action='email_changed',
             status='success',
             severity='medium',
-            source_ip=request.headers.get('X-Forwarded-For', request.remote_addr),
+            source_ip=request.remote_addr,
             user_agent=request.headers.get('User-Agent'),
             status_reason=f'Admin {g.admin.username} changed email from {old_email} to {new_email}'
         )
