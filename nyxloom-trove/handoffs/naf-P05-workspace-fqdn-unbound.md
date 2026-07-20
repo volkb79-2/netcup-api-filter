@@ -35,6 +35,25 @@ escalate_if:
 
 # P05 — The devcontainer rebuild bomb
 
+## PARTIAL STATUS 2026-07-20 (orchestrator) — O1 LANDED, O2 REMAINS
+
+O1 (the critical bomb-defuse) is **done and merged**: `.env.services` now guards the
+`POWERDNS_API_URL` derivation (`if [ -n "${PUBLIC_FQDN:-}" ]`), so sourcing it under
+`set -euo pipefail` with no `PUBLIC_*` set exits 0 instead of aborting every consumer.
+Verified: `env -i bash -c 'set -euo pipefail; source .env.services'` → rc 0. Regression
+test `tests/test_env_services_sourcing.py` runs in the unit gate. This alone un-bricks
+`deploy.sh` / `run-local-tests.sh` across a devcontainer rebuild.
+
+**O2 REMAINS (deferred):** `post-create.sh` still writes no `PUBLIC_FQDN` to
+`.env.workspace` (reverse-DNS detection per `docs/FQDN_DETECTION.md`). Without it the
+HTTPS/PowerDNS-over-public-edge path has an empty URL — but nothing aborts. O2 needs the
+detection logic AND validation in a real devcontainer rebuild (reverse DNS depends on the
+environment), which cannot be exercised from the gate. Keep this handoff open for O2; the
+scope narrows to `post-create.sh` + `docs/FQDN_DETECTION.md`.
+
+---
+
+
 > Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
 > Source: the deep review, finding **P0-8**. Reproduced:
 > `env -i bash -c 'set -euo pipefail; source .env.services'` → *"PUBLIC_FQDN: unbound

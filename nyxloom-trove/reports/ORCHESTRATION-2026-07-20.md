@@ -109,3 +109,36 @@ Cross-cutting check passed: the four branches touch strictly disjoint files (dns
 account.py / {passenger_wsgi,password_reset}.py / {route_discovery,test_route_smoke}.py +
 four disjoint new test files), so they merge without conflict and a single combined gate
 on `main` is a valid signal for the batch.
+
+### Batch 1 merged + confirmed
+
+Merged `--no-ff` per package (ebffa4e P02, 2d0d35e P04, 49d1711 P06, 2035480 P01).
+**Combined dual-interpreter gate on `main`: 419 passed on python 3.11 AND 3.9** (373
+baseline + 7 + 15 + 11 + 3). Handoffs P01/P02/P04 archived with reports; roadmap updated.
+
+### naf-P05 (O1) — orchestrator, partial
+
+The critical half of the "rebuild bomb" is fixed and merged: `.env.services` guards the
+`${PUBLIC_FQDN}` derivation, so `set -u` sourcing no longer aborts every consumer. Test
+`tests/test_env_services_sourcing.py` (shells out) runs in the unit gate. My first test
+assertion was buggy (`${VAR:-<unset>}` masked empty-vs-unbound) — caught by the gate, not
+merged; the underlying `.env.services` fix was correct throughout (rc 0). **O2 deferred**
+(post-create reverse-DNS write; needs a real rebuild to validate) — handoff left open.
+
+## Session outcome & what remains
+
+Landed this session (all gated 3.11 + 3.9): **naf-P01, P02, P04, P05-O1, P06-part-1**.
+The authorization boundary is closed on every mutation path (REST + portal); the settings
+double-encode that 500'd the DNS API on real config is fixed; the devcontainer rebuild
+bomb is defused; route discovery can no longer silently shrink the suite.
+
+Open, ready for the next session or the daemon once it can reach this repo (D-001):
+- **naf-P05 O2** — post-create writes PUBLIC_FQDN (reverse-DNS).
+- **naf-P06 part 2** — delete/restore the can't-fail ui_tests (needs the e2e gate).
+- Backlog buckets B-AUTH … B-DOCS and decisions D-002 (backends abstraction) / D-003
+  (data-preserving upgrades) — all file:line-specific in backlog.md.
+
+Process notes worth keeping (also in project memory): worktree fan-out + review-merge
+works well; trust git state over agent receipts (one agent didn't commit; one introduced
+a security regression its report omitted); the worktree-aware gate makes per-package
+isolated self-gating cheap.
