@@ -39,6 +39,30 @@ escalate_if:
 
 # P04 — Settings encoding + the SMTP key split
 
+## REFRESH 2026-07-20 (orchestrator) — read this FIRST
+
+Re-verified against `main` @ `488ac2d`; both defects **still present**.
+- The double-encode is NOT just `netcup_config`. **All 10** `set_setting(key, json.dumps(...))`
+  calls in `src/netcup_api_filter/passenger_wsgi.py` double-encode (set_setting encodes
+  again): lines **246, 274, 301, 327, 356, 383, 430, 491, 550, 568**. Fix every one — drop
+  the redundant `json.dumps` so each passes `set_setting` a Python object. (Four of these
+  keys — `session/admin_security/logging/notifications_config` — are read by nobody today,
+  backlog B-CONFIG; fixing their encoding anyway keeps the file consistent and is harmless.)
+  Verify: `grep -n "set_setting(" src/netcup_api_filter/passenger_wsgi.py`.
+- `password_reset.py` reads only `email_config` at **:459** (registration verification) and
+  **:586** (`send_account_invite_email`); the working reset path at **:317** already does
+  `get_system_config('smtp_config') or get_system_config('email_config')` + `isinstance(str)`
+  json-decode. Make :459 and :586 match that (prefer a shared helper — see the body).
+- Note: in this repo the settings reader used here is `get_system_config` (not
+  `notification_service._get_smtp_config` as the body guesses). Reuse whatever
+  `send_password_reset_email` at :317 already uses so all three paths agree.
+
+O2 lists netcup_config/smtp_config/geoip_config for the round-trip test — that is the right
+minimal set to assert; you may add the others.
+
+---
+
+
 > Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
 > Source: the deep review, finding **P0-7**. Both bugs are invisible locally and fire
 > only on a production-shaped config — which is exactly why they survived.

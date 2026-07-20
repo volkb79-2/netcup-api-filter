@@ -38,6 +38,30 @@ escalate_if:
 
 # P01 — REST DNS API: record-level scope on delete + update-by-id
 
+## REFRESH 2026-07-20 (orchestrator) — read this FIRST, it supersedes stale line numbers
+
+Re-verified against `main` @ `488ac2d`; the defect is **still present**. Current locations
+(the body below cites the older `adcba7d` lines — trust these):
+- `delete_record` → `src/netcup_api_filter/api/dns_api.py:413`; its bad call is
+  `check_permission(auth, 'delete', domain, client_ip=client_ip)` at **:420** (no
+  `record_name`/`record_type`).
+- `update_record` → **:300**, its `check_permission` at **:317** (validates the
+  *request-supplied* hostname, not the stored record addressed by `record_id`).
+- `list_records` → **:104**, `check_permission(... 'read' ...)` at **:110** (the read-leak
+  is P1-B / backlog B-UI — **out of scope here**, do not change list/read).
+- `create_record` → **:186** — the CORRECT pattern; mirror it.
+- `get_netcup_client()` → **:31** (use it; don't re-inline a client).
+
+Verify before editing: `grep -n "check_permission" src/netcup_api_filter/api/dns_api.py`.
+
+Cross-cutting (D-004): naf-P02 fixes the SAME class of bug in the portal
+(`api/account.py`) in parallel. Do **not** create a shared helper across the two modules —
+keep your record-resolution helper local to `dns_api.py`. Use `realm.matches_hostname` as
+the scope predicate (P02 does the same, so the semantics match).
+
+---
+
+
 > Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
 > Source: the deep review, finding **P0-1** (`docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md`).
 > This is a **live authorization bypass**, not a cleanup: on a shared

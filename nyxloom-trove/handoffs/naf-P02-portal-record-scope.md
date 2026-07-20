@@ -38,6 +38,34 @@ escalate_if:
 
 # P02 — Account portal: realm hostname scope on record mutations
 
+## REFRESH 2026-07-20 (orchestrator) — read this FIRST, it supersedes stale line numbers
+
+Re-verified against `main` @ `488ac2d`; the defect is **still present**. Current locations:
+- `dns_record_create` → `src/netcup_api_filter/api/account.py:1478`; the too-narrow guard
+  is `if realm.realm_type == 'host' and hostname != realm.realm_value:` at **:1513** (it
+  even computes `fqdn` at :1511 but never uses it for the check).
+- `dns_record_edit` → **:1574**; finds the record by id at **:1610-1614**, then mutates +
+  `update_dns_records` at **:1630** with NO hostname check on the found record.
+- `dns_record_delete` → **:1659**; same pattern (finds by id, sets `deleterecord`, saves).
+- Good reference: the `dns_records` listing view already filters by hostname via
+  `realm.matches_hostname` (~:1435) — mirror that predicate.
+
+**CRITICAL cross-cutting (CC-1): the audit writes in these routes are ALREADY FIXED**
+(commit for P0-4 landed: each `ActivityLog(...)` now passes `source_ip=request.remote_addr`
+and `status_reason=`). **Do NOT modify the `ActivityLog` writes.** Your only change is to
+insert a hostname-scope check *before* each `netcup.update_dns_records(...)` call (and
+before appending the new record, for create). Leave logging exactly as-is.
+
+D-004: naf-P01 fixes the REST-API twin in parallel (`dns_api.py`). Keep your
+record-resolution logic local to `account.py`; use `realm.matches_hostname` (same
+predicate P01 uses). Do not create a shared cross-module helper.
+
+Note the original body below says the audit write "happens after the mutation" and treats
+that as part of the bug — that was P0-4, now fixed. Ignore that framing; scope-check only.
+
+---
+
+
 > Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
 > Source: the deep review, findings **P0-2** and **P0-3**. Same class of bypass as
 > naf-P01 but through the UI, and independently reachable — carve them separately.

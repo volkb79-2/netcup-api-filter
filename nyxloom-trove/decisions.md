@@ -6,6 +6,25 @@ mechanical gap is a BLOCKED exit, not a decision (AUTHORING.md §5/§6).
 
 ---
 
+## D-004 — P01/P02 record-resolution helpers stay per-module (not shared)
+
+**Status:** DECIDED (orchestrator, 2026-07-20) · shapes: naf-P01, naf-P02
+
+naf-P01 (REST DNS API) and naf-P02 (account portal) both need the same shape: resolve a
+`record_id` to the stored record within a zone, then validate that record's hostname
+against `realm.matches_hostname`. The tempting move is one shared helper.
+
+**Decision: keep them per-module** (`api/dns_api.py` and `api/account.py` each get their
+own small helper). Reasons: (1) they run in different auth contexts — token-auth vs
+session-auth — and resolve config/clients differently; (2) a shared helper forces both
+parallel agents to edit one file, creating a merge conflict and premature coupling for
+~10 lines of duplication. Both MUST use `realm.matches_hostname` as the predicate so the
+*semantics* are identical even though the code is duplicated. A later unifying refactor
+(once both have landed and the real shared surface is visible) is a backlog candidate,
+not part of this batch.
+
+---
+
 ## D-001 — nyxloomd cannot reach this repo (blocks ALL dispatch)
 
 **Status:** CARVED UPSTREAM · raised 2026-07-16 · blocks: every handoff in this trove
