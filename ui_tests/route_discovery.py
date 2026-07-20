@@ -151,77 +151,18 @@ def discover_routes_from_app() -> RouteRegistry:
                 registry.add(route)
                 
     except Exception as e:
-        print(f"Warning: Could not discover routes from app: {e}")
-        # Fall back to static list
-        return discover_routes_static()
-    
-    return registry
+        # FAIL LOUDLY. The old behavior swallowed this exception, printed a warning
+        # pytest hides, and returned a stale ~21-route hardcoded list — which silently
+        # shrank route-smoke from ~86 to ~45 tests (and ci_smoke ~93 -> ~50) while the
+        # suite stayed green, so new or broken routes got zero coverage. A route-smoke
+        # run that cannot discover the real routes is not a weaker signal, it is NO
+        # signal, and must abort rather than pretend. See naf-P06 / review §P1-F.
+        raise RuntimeError(
+            f"Route discovery could not import the Flask app: {e!r}. Refusing to fall "
+            f"back to a stale static route list — fix the import (a common cause is an "
+            f"unwritable tmp/route_discovery.db) rather than running a hollow suite."
+        ) from e
 
-
-def discover_routes_static() -> RouteRegistry:
-    """Static route list as fallback when app import fails."""
-    registry = RouteRegistry()
-    
-    # Known admin pages (no URL parameters)
-    admin_pages = [
-        "/admin/",
-        "/admin/login",
-        "/admin/accounts",
-        "/admin/accounts/new",
-        "/admin/accounts/pending",
-        "/admin/audit",
-        "/admin/config/netcup",
-        "/admin/config/email",
-        "/admin/system",
-        "/admin/realms",
-        "/admin/change-password",
-    ]
-    
-    # Known account (user portal) pages (historically referred to as "client")
-    client_pages = [
-        "/account/login",
-        "/account/dashboard",
-        "/account/activity",
-        "/account/realms",
-        "/account/tokens",
-        "/account/settings",
-    ]
-    
-    # Public pages
-    public_pages = [
-        "/",
-        "/health",
-        "/admin/login",
-        "/account/login",
-    ]
-    
-    for page in admin_pages:
-        registry.add(RouteInfo(
-            rule=page,
-            endpoint=page.replace("/", "_").strip("_"),
-            methods={"GET"},
-            auth_required="admin",
-            has_params=False,
-        ))
-    
-    for page in client_pages:
-        registry.add(RouteInfo(
-            rule=page,
-            endpoint=page.replace("/", "_").strip("_"),
-            methods={"GET"},
-            auth_required="client",
-            has_params=False,
-        ))
-    
-    for page in public_pages:
-        registry.add(RouteInfo(
-            rule=page,
-            endpoint=page.replace("/", "_").strip("_"),
-            methods={"GET"},
-            auth_required="none",
-            has_params=False,
-        ))
-    
     return registry
 
 
