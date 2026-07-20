@@ -4,17 +4,22 @@ Modern SMTP testing server with web UI for email capture during development and 
 
 ## Quick Start
 
-```bash
-cd tooling/mailpit
+Mailpit is a **ciu-managed** stack — there is no `docker-compose.yml` in this directory.
+`ciu.compose.yml` is a RENDERED, gitignored artifact; edit `ciu.compose.yml.j2` (or the
+name/image/port scalars in `ciu.defaults.toml.j2`), never the rendered output. Note the
+`--define-root`: this devcontainer's shell exports a sibling repo's `REPO_ROOT`, so a
+bare `ciu` call resolves to the wrong repo (backlog B-INFRA).
 
-# Start Mailpit
-docker compose up -d
+```bash
+# Start Mailpit (also brought up centrally as part of the mock-services stack — see
+# deploy.sh start_mock_services / the orchestrator)
+ciu up --dir tooling/mailpit --define-root /workspaces/netcup-api-filter
 
 # View logs
-docker compose logs -f
+docker logs -f naf-dev-mailpit
 
-# Stop Mailpit
-docker compose down
+# Stop Mailpit (stops the active profile's stacks; there is no per-directory `down`)
+ciu down --define-root /workspaces/netcup-api-filter
 ```
 
 ## Access
@@ -39,7 +44,7 @@ MAILPIT_PASSWORD=MySecurePassword123!
 
 Then restart:
 ```bash
-docker compose down && docker compose up -d
+docker restart naf-dev-mailpit
 ```
 
 ## Configuration
@@ -138,7 +143,7 @@ MAIL_PASSWORD = None
 docker ps | grep naf-mailpit
 
 # Check logs
-docker compose logs
+docker logs naf-dev-mailpit
 
 # Verify port binding
 docker port naf-mailpit
@@ -152,7 +157,7 @@ docker port naf-mailpit
 cat .env | grep MAILPIT
 
 # Restart after changing credentials
-docker compose restart
+docker restart naf-dev-mailpit
 ```
 
 ### SMTP connection refused

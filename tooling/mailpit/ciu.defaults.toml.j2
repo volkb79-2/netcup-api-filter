@@ -1,0 +1,30 @@
+# tooling/mailpit/ciu.defaults.toml.j2 — STACK MARKER (mailpit — mock SMTP capture)
+# =============================================================================
+#   Rendered output: ciu.toml  (GITIGNORED — never edit or commit the rendered file)
+#
+# This replaces the previously hand-written `docker-compose.yml`. Mailpit is a
+# prebuilt-image mock SMTP server: the app sends real mail traffic to it (password
+# reset, 2FA, invites) and the test suite (ui_tests/mailpit_client.py,
+# run-2fa-security-tests.sh, build_deployment.py) asserts against its HTTP API to
+# verify delivery. It has no build step and no persisted data — captured mail lives
+# only in the container's memory for the life of the run.
+#
+# INTERNAL-ONLY (nyxloom-trove/INFRA-PLAN-B-2026-07-20.md, D-006 decision D): no
+# traefik labels here — Mailpit is never exposed outside the naf network.
+# =============================================================================
+
+[mailpit]
+name = "mailpit"
+image = "axllent/mailpit"
+image_tag = "latest"
+
+# Mailpit's own FIXED internal listening ports — not the host-side ports (those stay
+# per-environment env vars, MAILPIT_WEB_PORT/MAILPIT_SMTP_PORT, in ciu.compose.yml.j2).
+# SSOT for the container-side port mapping, the MP_*_BIND_ADDR env vars, and the
+# healthcheck URL, which all previously hardcoded 8025/1025 in three separate places.
+smtp_port = 1025
+web_port = 8025
+
+[mailpit.hooks]
+pre_compose = []
+post_compose = []
