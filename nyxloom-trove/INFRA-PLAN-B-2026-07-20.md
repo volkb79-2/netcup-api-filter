@@ -5,6 +5,44 @@ decisions this round: **execute INFRA-3 + INFRA-4**, adopt the **ciu-derived net
 FQDN = `naf.<PUBLIC_FQDN>` with a combined `naf-pdns.<PUBLIC_FQDN>` for PowerDNS, and
 **never hardcode the FQDN**. Plan presented for review before execution.
 
+## EXECUTION STATUS 2026-07-20 (live)
+
+**Done + committed:**
+- Phase A — `standalone_root = true`. **Measured caveat:** it guards `ciu up` (the mutating
+  path) but NOT `ciu render` — upstream bug, `deploy.py:1633` checks the already-resolved
+  root instead of the working dir. Recorded in B-INFRA; report to the ciu project.
+- Phase B — network migrated to the ciu-derived name; `post-create.sh` hardcoded fallback
+  removed (it would have silently split ciu's network from the containers').
+- App containerized as the `tooling/app-local` ciu stack + traefik ingress + basicauth;
+  `Host()` templated from `topology.external.public_fqdn` (never hardcoded).
+  Verified: `ciu up --dir tooling/app-local --dry-run` → 17 steps, governance injected.
+- Playwright `_guard_credentials()` + gate env forwarding, so the guard does not kill e2e.
+- Stack conversions merged: `infra/pwmcp`, `tooling/geoip-mock`, `tooling/netcup-api-mock`.
+
+**In flight:** conversions for `tooling/backend-powerdns` + `tooling/mailpit`; and a fix for
+the deploy.sh call sites below.
+
+**REMAINING — in order:**
+1. **deploy.sh silently no-ops the mocks.** ~10 sites do
+   `(cd tooling/<svc> && docker compose up -d 2>/dev/null) || log_warning`. The compose files
+   are now deleted, and the calls are *doubly* silenced (`2>/dev/null` AND `|| true`), so the
+   mocks simply never start and nothing errors. Must become ciu calls with the error-hiding
+   removed on the *start* path.
+2. Merge the last two conversions; register nothing new (registry already lists all stacks).
+3. `naf-pdns` traefik exposure on `tooling/backend-powerdns` (labels + guard), mirroring
+   `tooling/app-local`.
+4. INFRA-4 surgery in `deploy.sh`: delete `tooling/reverse-proxy/`, remove
+   `start_tls_proxy`/`stop_tls_proxy` (:704-809), the `USE_HTTPS && local` branch (:831), the
+   `naf-dev-reverse-proxy` cleanup (:1378-1391), `SERVICE_REVERSE_PROXY` (:57), the
+   `/etc/letsencrypt` mount and `PUBLIC_TLS_*`. Re-point `.env.services` `POWERDNS_API_URL`.
+   Close **naf-P05 O2** as superseded.
+5. **Stop the old containers and redeploy under ciu** (`ciu up --profile full`), then verify:
+   app answers HTTPS at `naf.<fqdn>` through edge-traefik behind basicauth; pwmcp healthy;
+   `testing-exec.sh unit` still 433 on 3.11+3.9; e2e passes the guard.
+6. INFRA-3 containerized build (separate, `handoffs/naf-I03-containerized-build.md`).
+
+**Nothing has been torn down yet** — the running environment is still intact.
+
 ## Phase A — fix ciu root resolution properly (replaces the `--define-root` workaround)
 
 **Root cause (confirmed in ciu's own handoff docs):** the devcontainer's `~/.bashrc`
@@ -138,3 +176,22 @@ Without this, enabling the guard silently kills the e2e gate it exists to protec
 `testing-exec.sh unit` (433 on 3.11+3.9) after each risky phase; `e2e` via pwmcp on the new
 network; both deploy zips built in-container with correct ABI; app+PowerDNS answering over
 HTTPS through edge-traefik.
+
+## REVIEW HOLD — `wt/ciu-powerdns` NOT merged (2026-07-20)
+
+The `tooling/backend-powerdns` conversion is committed on `wt/ciu-powerdns` but **deliberately
+not merged**. The agent disclosed (to its credit) that it converted the stack's mandatory
+`${VAR:?must be set}` environment variables into **committed TOML defaults with invented
+values** — SOA `ns1.vxxu.de` / `hostmaster.vxxu.de`, the API port, and the `PDNS_*` server
+settings — because the real values live in gitignored `.env` files it could not read.
+
+That is the wrong trade for this repo: it replaces fail-fast required-vars with
+cross-environment default fallbacks on a DNS server's SOA and API configuration, which
+`docs/FAIL_FAST_PRINCIPLE.md` / AGENTS.md §2 explicitly forbid. A wrong-but-plausible SOA is
+exactly the kind of value that silently produces bad zone data rather than an error.
+
+**Resolution needed before merge:** keep the `${VAR:?...}` guards (sourced from the operator's
+`.env`) and let the ciu marker carry only genuinely static identity (image, tag, container
+name, internal ports), or have the operator supply the real values. Everything else in that
+branch (2 services, init one-shot + depends_on, healthcheck fidelity, UID 953, port 53
+udp/tcp) verified clean and is worth keeping.
