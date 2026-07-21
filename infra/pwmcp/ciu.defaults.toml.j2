@@ -23,10 +23,19 @@ name = "pwmcp"
 image_registry = "ghcr.io/volkb79-2"
 image_name = "pwmcp"
 image_tag = "latest"
-# `missing`, not `always`: this devcontainer's docker credential helper errors even
-# on anonymous ghcr pulls, and the governed image is already present locally. Switch
-# to `always` where creds work.
-pull_policy = "missing"
+# `always`: freshly-pushed ghcr builds of the governed image are pulled on every
+# `ciu up` (compose recreates the container when the digest changed). A bare
+# `docker restart` never pulls regardless of policy — only `ciu up` / `docker compose
+# up` honors pull_policy, so "restart to get the new build" means a re-up, not a restart.
+#
+# History: this was `missing` under the belief that the devcontainer's docker
+# credential helper (credsStore "dev-containers-…") errored on ghcr pulls. That is
+# no longer true — ~/.docker/config.json now carries an explicit empty `ghcr.io` auth
+# entry, which makes docker SKIP the credsStore for ghcr.io, so anonymous pulls of this
+# PUBLIC image succeed (verified 2026-07-21: `docker pull …/pwmcp:latest` → up to date,
+# exit 0). This also matches every other naf stack (mailpit/geoip/netcup-mock/powerdns
+# all use `always`).
+pull_policy = "always"
 # Chromium needs real shared memory — the 64mb compose default crashes the renderer.
 shm_size = "2gb"
 

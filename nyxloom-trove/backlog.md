@@ -336,7 +336,10 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
   an explicit `name:`. Also: `pull_policy: always` fails in this devcontainer (the docker
   credential helper errors even on anonymous ghcr pulls), so naf's compose uses `missing`
   (the governed image is already local). ciu templating (item above) would make the project
-  name deterministic and remove this footgun. S. **Validation strengthened:** beyond the
+  name deterministic and remove this footgun. S. **UPDATE 2026-07-21:** the credential-helper
+  claim is stale — anonymous ghcr pulls of the PUBLIC image now succeed (config.json carries an
+  explicit empty `ghcr.io` auth that bypasses the broken credsStore), so `infra/pwmcp` was moved
+  to `pull_policy: always` like every other stack. **Validation strengthened:** beyond the
   co-worker's `http://pwmcp:3000/health`=200 peer check, the gate image (with the pinned
   `playwright==1.61.*` client) was proven to `chromium.connect(ws://pwmcp:3000/)`, drive a
   real Chromium (149.x), set + read page content — the full browser-offload path, live.
