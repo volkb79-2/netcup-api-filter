@@ -11,8 +11,7 @@ name/image/port scalars in `ciu.defaults.toml.j2`), never the rendered output. N
 bare `ciu` call resolves to the wrong repo (backlog B-INFRA).
 
 ```bash
-# Start Mailpit (also brought up centrally as part of the mock-services stack — see
-# deploy.sh start_mock_services / the orchestrator)
+# Start Mailpit (also started by `run-local-tests.sh --with-mocks`)
 ciu up --dir tooling/mailpit --define-root /workspaces/netcup-api-filter
 
 # View logs

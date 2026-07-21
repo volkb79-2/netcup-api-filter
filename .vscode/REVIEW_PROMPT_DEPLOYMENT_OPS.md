@@ -21,9 +21,9 @@ Verify that the deployment process is:
 
 ## Review Checklist
 
-### 1. Build Process (`build_deployment.py`)
+### 1. Local Build Process (`build_deployment.py`)
 
-**Files:** `build_deployment.py`, `build_deployment_lib.sh`
+**Files:** `build_deployment.py`, `run-local-tests.sh`
 
 #### Build Phases
 - [ ] **Directory preparation**: Creates `deploy/` directory
@@ -73,7 +73,7 @@ cat deploy-local/build_info.json
 
 ### 2. Local Testing Workflow
 
-**Files:** `run-local-tests.sh`, `build-and-deploy-local.sh`
+**Files:** `run-local-tests.sh`, `build_deployment.py`
 
 #### Workflow Steps
 1. **Build**: Runs `build_deployment.py --local`

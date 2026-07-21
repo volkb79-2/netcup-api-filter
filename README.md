@@ -17,15 +17,15 @@ Netcup issues a single credential set with full control over every DNS record, d
 - Realm-based permission engine (`host`, `subdomain`, `subdomain_only`).
 - Admin UI plus client portal backed by SQLite.
 - Config-driven email notifications, auditing, and IP/network allowlists.
-- Build + deployment scripts that mirror the production package.
+- Separate local build/test and CMRU release/CIU deployment workflows.
 - Playwright UI tests (local HTTP, HTTPS with real certs, and MCP mode).
 - **DDNS protocol support** - DynDNS2 and No-IP compatible endpoints for routers and DDNS clients.
 
 ## Quick Start - Installation
 
-Initial Setup Flow for fresh installation via provided `deploy.zip` package:
+Initial setup flow for a freshly released Passenger tarball (select `py39` or `py311`):
 
-1. Extract deploy.zip → Access site
+1. Activate the selected tarball → Access site
 2. Login: admin/admin → Forced password change
 3. Dashboard → See 2FA warning banner
 4. Click "Set Up Authenticator App (TOTP)" → Scan QR code
@@ -36,15 +36,12 @@ Initial Setup Flow for fresh installation via provided `deploy.zip` package:
 
 ## Quick Start - Development
 
-`deploy.sh` is the master orchestrator (build → deploy → test). Its shape:
+Local development/testing and webhosting release/deploy are intentionally separate:
 
 ```
-deploy.sh (master orchestrator)
-├── local (default)
-│   ├── --mock (default): start mocks, build, deploy, test via HTTPS
-│   └── --mode live    : build, deploy, test via HTTPS using real services
-├── webhosting          : build, upload, restart Passenger, test
-└── Common phases: infra → build → deploy → start (gunicorn/Passenger) → tests
+run-local-tests.sh → build_deployment.py --local → deploy-local/ → ui_tests
+cmru release → py3.14 OCI image + Passenger py39/py311 tarball variants
+ciu up --host webhoster --thin -- --variant py311 → Passenger activation
 ```
 
 ```bash
@@ -54,17 +51,20 @@ deploy.sh (master orchestrator)
 git clone git@github.com:user/netcup-api-filter.git
 cd netcup-api-filter
 
-# 2. Clean restart + local deploy (mocked services by default)
-./deploy.sh --stop && ./deploy.sh local | tee deploy.log
+# 2. Build deploy-local/ and run the local UI suite
+./run-local-tests.sh
+
+# Or start the local mock services as part of the run
+./run-local-tests.sh --with-mocks
 
 # 3. Access the deployment
 echo "Admin UI:    https://${PUBLIC_FQDN}/admin/login"
 echo "Mailpit:     https://${PUBLIC_FQDN}/mailpit/"
 echo "Credentials: admin / admin (fresh deploy; forced password change)"
 
-# 4. Run the UI test suite directly (optional; deploy.sh also runs it)
-./run-local-tests.sh                 # build + run ui_tests against deploy-local
-./run-local-tests.sh --with-mocks    # also start mock services
+# 4. Ship webhosting artifacts separately (only when making a release)
+cmru release
+ciu up --host webhoster --thin -- --variant py311
 ```
 
 ## DDNS Protocol Support
@@ -100,7 +100,7 @@ PowerDNS provides an alternative to the Netcup API for DNS management:
 
 **Quick Start:**
 ```bash
-# PowerDNS starts automatically with deploy.sh
+# Start the required local service stack before testing PowerDNS.
 # Test API connectivity
 curl -sf -H "X-API-Key: $(grep POWERDNS_API_KEY .env.defaults | cut -d= -f2)" \
   http://naf-dev-powerdns:8081/api/v1/servers/localhost | python3 -m json.tool

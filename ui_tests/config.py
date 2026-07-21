@@ -90,8 +90,8 @@ class UiTestConfig:
                 f"Deployment state file not found: {state_file}\n"
                 f"DEPLOYMENT_TARGET={self._deployment_target}\n"
                 f"\n"
-                f"For local: Run ./build-and-deploy-local.sh\n"
-                f"For webhosting: Run ./build-and-deploy.sh and ensure state is synced"
+                f"For local: Run ./run-local-tests.sh\n"
+                f"For webhosting: Run cmru release, then ciu up --host webhoster --thin -- --variant py311 and ensure state is synced"
             )
         
         state = load_state(self._deployment_target)

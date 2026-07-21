@@ -95,7 +95,7 @@ detect_environment() {
 # ============================================================================
 # Sets canonical repository paths and writes .env.workspace so ALL downstream
 # scripts (run-local-tests.sh, tooling/start-ui-stack.sh, tooling/flask-manager.sh,
-# deploy.sh, build_deployment_lib.sh, .vscode/*.sh, etc.) have a consistent
+# run-local-tests.sh, build_deployment.py, .vscode/*.sh, etc.) have a consistent
 # single source of truth — even when invoked outside this post-create context.
 
 setup_repository_paths() {
@@ -141,7 +141,7 @@ setup_repository_paths() {
 
     # Write .env.workspace — the single source of truth consumed by all scripts.
     # WHY .env.workspace?
-    # - Scripts run OUTSIDE post-create.sh context (deploy.sh, run-local-tests.sh, etc.)
+    # - Scripts run OUTSIDE post-create.sh context (run-local-tests.sh, etc.)
     #   need these variables but don't have access to our current shell environment.
     # - New terminal sessions need these values before manual export.
     # - Sibling service containers (e.g. pwmcp-playwright) are reached by container
@@ -158,8 +158,8 @@ setup_repository_paths() {
 #   - run-local-tests.sh        (REPO_ROOT, PHYSICAL_REPO_ROOT)
 #   - tooling/start-ui-stack.sh (DOCKER_NETWORK_INTERNAL)
 #   - tooling/flask-manager.sh  (REPO_ROOT, DOCKER_NETWORK_INTERNAL)
-#   - deploy.sh                 (REPO_ROOT, PHYSICAL_REPO_ROOT, DOCKER_NETWORK_INTERNAL)
-#   - build_deployment_lib.sh   (REPO_ROOT, PHYSICAL_REPO_ROOT)
+#   - run-local-tests.sh        (REPO_ROOT, PHYSICAL_REPO_ROOT, DOCKER_NETWORK_INTERNAL)
+#   - build_deployment.py       (REPO_ROOT, PHYSICAL_REPO_ROOT)
 #   - run-2fa-security-tests.sh (REPO_ROOT)
 #   - .vscode/*.sh              (all workspace paths)
 #

@@ -45,11 +45,10 @@ auto_connect_network = true
 
 # =============================================================================
 # Build — the two Passenger deploy targets. SINGLE SOURCE for the gate images
-# and (once naf-I03 lands) the containerized build.
-#   3.11 = primary target   (deploy.sh -> deploy-py311.zip)
-#   3.9  = secondary target (deploy.sh -> deploy-py39.zip)
-# 3.14 is NOT a Passenger deploy target (deploy.sh's PYTHON_TARGETS stays
-# 3.9/3.11) but IS gated (tooling/test-runner/testing-exec.sh unit) as the
+# and CMRU's Passenger-variant builder.
+#   3.11 = primary Passenger target (CMRU variant py311)
+#   3.9  = secondary Passenger target (CMRU variant py39)
+# 3.14 is NOT a Passenger target but IS gated (tooling/test-runner/testing-exec.sh unit) as the
 # py3.14 self-hosting container release target — see docker-bake.hcl / cmru.toml
 # and nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md Phase 1.
 # =============================================================================

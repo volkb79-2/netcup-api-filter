@@ -354,6 +354,19 @@ and need reconciling with `docs/DEV_INFRA_SETUP.md`: `docs/CERTIFICATE_MOUNTING.
 drive the old nginx TLS flow — it now fails fast (its `tooling/reverse-proxy/proxy.env` is gone);
 delete it or rewrite it against the traefik/ciu path. S-M.
 
+## B-DEPLOY-DOCS — long-tail docs still reference the retired `deploy.sh` flow
+
+The cmru-adoption P4 retired `deploy.sh` / `build_deployment_lib.sh` (webhosting release+push,
+now `cmru release` + `ciu up --host`) and reconciled the KEY docs (AGENTS.md, README,
+CHANGELOG, PYTHON_PACKAGES, docs/DEPLOYMENT_WORKFLOW.md, docs/DEPLOY_ARCHITECTURE.md). These
+LIVE docs still describe `deploy.sh` and were deliberately deferred (not butchered): `docs/`
+`FAIL_FAST_PRINCIPLE.md`, `FEATURES.md`, `GUNICORN_CONFIG.md`, `README.md` (index line calls
+DEPLOYMENT_WORKFLOW a "deploy.sh runbook"), `TESTING_INFRASTRUCTURE.md`, `UI_REQUIREMENTS.md`,
+`UI_TESTING_GUIDE.md`, and the `docs/plans/testing-{hardening,overhaul}/` task set. Reconcile to
+the split flow: local = `run-local-tests.sh`/`build_deployment.py --local`; release = `cmru`;
+webhosting deploy = `ciu up --host`. `build_deployment.py`/`run-local-tests.sh` STAY (local
+builder of `deploy-local/`). S-M.
+
 ## B-BUILD — demo-seed double-insert breaks every `--seed-demo` build (✅ FIXED 9d632c5)
 
 **RESOLVED:** `seed_comprehensive_demo_data` now get-or-creates accounts (reuses an existing

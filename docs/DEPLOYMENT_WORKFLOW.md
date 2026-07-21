@@ -1,461 +1,83 @@
-# Deployment Workflow Documentation
+# Deployment workflow
 
-## Overview
+naf has three distinct workflows. Do not use a webhosting release command to create the local
+test deployment, and do not build or copy Passenger artifacts by hand.
 
-The deployment system now provides a seamless, zero-configuration workflow for both local and webhosting deployments.
+## Local development and UI testing
 
-## Key Improvements
-
-### 1. Automatic FQDN Detection
-
-**No manual setup required!** The system automatically detects your public FQDN via reverse DNS.
-
-```bash
-# Just run deploy.sh - FQDN detection is automatic
-./deploy.sh local
-```
-
-**How it works:**
-1. The devcontainer's `.devcontainer/post-create.sh` detects the public IP and performs a reverse DNS lookup at container-create time.
-2. It saves `PUBLIC_FQDN` (and related values) to `.env.workspace` for all later runs.
-3. `deploy.sh` reads `PUBLIC_FQDN` from `.env.workspace` when starting the TLS proxy (it does not re-detect; it warns if the value is missing).
-4. The TLS proxy is configured with the detected FQDN and its Let's Encrypt certificate paths.
-
-**Files updated automatically:**
-- `.env.workspace` - Adds `PUBLIC_FQDN` and `PUBLIC_IP`
-- `tooling/reverse-proxy/.env` - Uses `${PUBLIC_FQDN}` variable
-- Certificate paths - Constructed as `/etc/letsencrypt/live/${PUBLIC_FQDN}/`
-
-### 2. Unified Service Naming (`.env.services`)
-
-All container/service names are now centralized in `.env.services`:
+`run-local-tests.sh` is the local entry point. It runs `build_deployment.py --local`, extracts
+the resulting package into `deploy-local/`, starts the local Flask manager, and drives
+`ui_tests/` against that deployment.
 
 ```bash
-# Service names follow pattern: ${PROJECT_TAG}-${ENV_TAG}-{service}
-SERVICE_PLAYWRIGHT="naf-dev-playwright"
-SERVICE_REVERSE_PROXY="naf-dev-reverse-proxy"
-SERVICE_MAILPIT="naf-dev-mailpit"
-# ... etc
+# Build deploy-local/ and run the UI suite.
+./run-local-tests.sh
+
+# Also start Mailpit, GeoIP, and Netcup API mocks.
+./run-local-tests.sh --with-mocks
+
+# Reuse an existing deploy-local/ build.
+./run-local-tests.sh --skip-build
 ```
 
-**Benefits:**
-- Single source of truth for all service names
-- Easy to change environment tags (dev/staging/prod)
-- Consistent across Docker Compose, nginx configs, Python code, shell scripts
+`build_deployment.py --local` is the only builder of `deploy-local/`. Live test and coverage
+tooling depend on that directory, so it remains part of the local workflow.
 
-### 3. Clean Stop/Start Workflow
+The public FQDN is detected into `.env.workspace` by `.devcontainer/post-create.sh`. Local
+service names and URLs are defined in `.env.services`; see [FQDN detection](FQDN_DETECTION.md)
+and the individual tooling READMEs for TLS and service-stack operation.
 
-#### Stop All Services
+## Release artifacts
+
+`cmru release` creates a source-control-versioned release and publishes all release artifacts:
+
+- the Python 3.14 OCI image for self-hosting;
+- ABI-matched Passenger tarballs for Python 3.9 (`py39`) and Python 3.11 (`py311`); and
+- the variant-selecting installer.
 
 ```bash
-./deploy.sh --stop
+cmru release
 ```
 
-**What it stops:**
-1. Flask/gunicorn backend
-2. TLS reverse proxy (nginx)
-3. Mailpit (SMTP testing)
-4. Mock Netcup API
-5. Mock GeoIP service
-6. Playwright container
+CMRU invokes `scripts/build_webhosting_tarball.py` for the Passenger assets. That builder uses
+`tooling/test-runner/testing-exec.sh build <version>` so dependency vendoring and database
+seeding run under the target interpreter. It is separate from the local
+`build_deployment.py --local` build.
 
-**Output:**
-```
-╔═══════════════════════════════════════════════════════════╗
-║  Stopping All Deployment Services
-╚═══════════════════════════════════════════════════════════╝
+## Webhosting deployment
 
-→ Stopping Flask backend...
-✓ Flask stopped
-→ Stopping TLS reverse proxy...
-✓ TLS proxy stopped
-→ Stopping Mailpit...
-✓ Mailpit stopped
-→ Stopping Mock Netcup API...
-✓ Mock Netcup API stopped
-→ Stopping Mock GeoIP...
-✓ Mock GeoIP stopped
-→ Stopping Playwright container...
-✓ Playwright stopped
-
-✓ All naf- containers stopped
-```
-
-#### Fresh Start (From Scratch)
+Deploy a released Passenger variant with CIU:
 
 ```bash
-./deploy.sh local
+ciu up --host webhoster --thin -- --variant py311
 ```
 
-**What it does automatically:**
-1. **Phase 0: Infrastructure**
-   - Auto-detects PUBLIC_FQDN if missing
-   - Starts Playwright container
-   - Starts mock services (Mailpit, Mock Netcup API, Mock GeoIP)
-   - Starts TLS reverse proxy with Let's Encrypt certificates
+The `webhoster` connection inventory is `.ciu.hosts.toml`; it owns the SSH connection metadata,
+remote directory, and activation command. The selected tarball is transferred to that host and
+`scripts/activate.py` performs the project-specific activation:
 
-2. **Phase 1: Build**
-   - Creates fresh `deploy.zip` with vendored dependencies
-   - Includes fresh database with default credentials
+1. extract the selected tarball;
+2. retain the existing `SECRET_KEY`;
+3. touch `tmp/restart.txt` to reload Passenger; and
+4. health-probe `/admin/login`.
 
-3. **Phase 2: Deploy**
-   - Extracts to `deploy-local/`
-   - Preserves screenshots directory
+Passenger releases are greenfield: each tarball supplies a freshly seeded
+`netcup_filter.db`. The database is not preserved across releases; preserving only `SECRET_KEY`
+matches the retired deployment behaviour.
 
-4. **Phase 3: Start**
-   - Starts Flask/gunicorn backend
+## Verification gate
 
-5. **Phase 4: Journey Tests**
-   - Documents fresh deployment experience
-   - Performs initial password change
-   - Captures authentication screenshots
-
-6. **Phase 5: Validation Tests**
-   - Runs comprehensive test suite (90+ tests)
-   - Adapts to deployment mode (mock vs live)
-
-7. **Phase 6: Screenshots**
-   - Captures all UI pages for documentation
-
-### 4. Containerized Webhosting Builds (naf-I03)
-
-`./deploy.sh webhosting` builds **two** artifacts, one per Passenger target Python
-version (`PYTHON_TARGETS=(3.9 3.11)` in `deploy.sh`): `deploy-py39.zip` and
-`deploy-py311.zip` (the primary, uploaded artifact). Each is a `build_deployment.py`
-run that does two things:
-
-1. **Download** (`pip download --only-binary :all: --python-version <ver> --platform
-   manylinux2014_x86_64`) — resolves wheels for the TARGET version without executing
-   any of them. This step is safe under any host interpreter.
-2. **Seed** (`initialize_database`) — puts the freshly-vendored `vendor/` on
-   `sys.path` and **imports** the app (and therefore the vendored `.so` extensions)
-   to create + seed the SQLite DB. This step is only meaningful if it runs under the
-   SAME interpreter the wheels were downloaded for — otherwise version-tagged
-   extensions (`cpython-39-*.so`, `cpython-311-*.so`) are silently not import
-   candidates at all.
-
-`phase_build` therefore runs step 2 (via the whole `build_deployment.py` invocation)
-**inside** the matching `netcup-api-filter/test-runner:py39` / `:py311` container
-(the same images the `unit` gate uses), never under the devcontainer's own
-`python3`. Concretely, for each `pyver` in `PYTHON_TARGETS`:
+The ship gate runs the unit suite under all shipped Python versions:
 
 ```bash
-./tooling/test-runner/testing-exec.sh build <pyver> -- build_deployment.py \
-    --target webhosting --build-dir deploy-webhosting-py<XY> \
-    --output deploy-py<XY>.zip --seed-demo --python-version <pyver>
+./tooling/test-runner/testing-exec.sh unit  # Python 3.9, 3.11, and 3.14
 ```
 
-`testing-exec.sh build <pyver>` (new naf-I03 subcommand) selects the image
-(`image_for_python_version`: `3.11` -> `TEST_RUNNER_IMAGE`, anything else ->
-`TEST_RUNNER_IMAGE` with a `:py<XY>` tag), builds it if missing, and runs the given
-command with:
+Use `./tooling/test-runner/testing-exec.sh e2e` for the external Playwright path and
+`./tooling/test-runner/testing-exec.sh trove` for nyxloom handoff linting.
 
-- `-v ${PHYSICAL_REPO_ROOT}:/workspaces/netcup-api-filter` — DooD; the docker socket
-  is the HOST's, so bind sources must be host paths.
-- `--user ${USER_UID}:${DOCKER_GID}` — unlike the `unit`/`trove` gates (which run as
-  the image's baked-in uid), the `build` subcommand runs as the calling host user so
-  the produced `deploy-webhosting-py*/`, `deploy-py*.zip`, `netcup_filter.db`, etc.
-  stay writable outside the container.
-- `-e NAF_BUILDER_IMAGE_DIGEST=<image id>` — the local image ID (these images are
-  never pushed to a registry, so a content-addressed ID is the strongest
-  provenance available). `build_deployment.py` stamps this into
-  `build_info.json.builder_image_digest`.
+## Related documentation
 
-**Fail-fast guard:** `build_deployment.py` itself refuses to run `initialize_database`
-unless the RUNNING interpreter's `sys.version_info[:2]` matches the requested
-`--python-version` — a deliberate mismatch (e.g. running it bare under the
-devcontainer's `python3`) exits non-zero with an explicit message naming both
-versions. This is what makes "seeded under the wrong interpreter" impossible to do
-silently, whether from `deploy.sh` or by hand.
-
-**No compiler in the gate image, on purpose:** if a dependency lacks a cp39/cp311
-manylinux wheel, `download_and_extract_dependencies` fails loudly instead of falling
-back to building an sdist (sdists build against whatever interpreter is running the
-script — i.e. the HOST inside the container image, which coincidentally *is* the
-target here, but the fallback is still refused by default because it previously
-poisoned cross-target builds silently). Pass `--allow-unsafe-sdist-fallback` to
-`build_deployment.py` to opt back in if you understand the risk.
-
-**Local target unaffected in kind, but now version-pinned:** `deploy-local` is
-served directly by the devcontainer's own `gunicorn`/`python3` (`start_flask_local`),
-so there is no separate target ABI to cross-build for — `phase_build`'s local branch
-still runs `build_deployment.py` directly on the host, but now passes
-`--python-version <host's own major.minor>` explicitly (detected via `python3 -c
-'import sys; print(...)'`) so the same host-vs-target guard is satisfied instead of
-tripping on the CLI's `--python-version` default of `"3.11"`.
-
-## Usage Examples
-
-### Quick Development Iteration
-
-```bash
-# Full deployment with all tests (default)
-./deploy.sh local
-
-# Skip tests for faster iteration
-./deploy.sh local --skip-tests
-
-# Run tests only (no rebuild)
-./deploy.sh local --tests-only
-
-# Plain HTTP (no TLS proxy)
-./deploy.sh local --http
-```
-
-### Production Deployment
-
-```bash
-# Deploy to webhosting (uses live services by default)
-./deploy.sh webhosting
-
-# Skip tests on production
-./deploy.sh webhosting --skip-tests
-```
-
-### Service Management
-
-```bash
-# Stop everything
-./deploy.sh --stop
-
-# Start fresh with HTTPS (default)
-./deploy.sh local
-
-# Start with HTTP only
-./deploy.sh local --http
-
-# Start with live services (real Netcup API)
-./deploy.sh local --mode live
-```
-
-## Configuration Files
-
-### `.env.workspace` (Auto-generated)
-
-Created and populated by `.devcontainer/post-create.sh` (including `PUBLIC_FQDN` via reverse DNS):
-
-```bash
-export PUBLIC_FQDN="gstammtisch.dchive.de"
-export PUBLIC_IP="152.53.179.117"
-export REPO_ROOT="/workspaces/netcup-api-filter"
-export PHYSICAL_REPO_ROOT="/home/vb/volkb79-2/netcup-api-filter"
-export DOCKER_NETWORK_INTERNAL="naf-dev-network"
-export DEVCONTAINER_NAME="netcup-api-filter-devcontainer-vb"
-```
-
-### `.env.services` (Service Names)
-
-Central registry of all service/container names:
-
-```bash
-SERVICE_PLAYWRIGHT="naf-dev-playwright"
-SERVICE_REVERSE_PROXY="naf-dev-reverse-proxy"
-SERVICE_MAILPIT="naf-dev-mailpit"
-SERVICE_MOCK_NETCUP_API="naf-dev-mock-netcup-api"
-SERVICE_MOCK_GEOIP="naf-dev-mock-geoip"
-
-# URLs for inter-service communication
-MAILPIT_URL="http://naf-dev-mailpit:8025/mailpit"
-MOCK_NETCUP_API_URL="http://naf-dev-mock-netcup-api"
-```
-
-### `tooling/reverse-proxy/.env`
-
-TLS proxy configuration (uses variables from `.env.workspace`):
-
-```bash
-LOCAL_TLS_DOMAIN=${PUBLIC_FQDN:-gstammtisch.dchive.de}
-LOCAL_APP_HOST=netcup-api-filter-devcontainer-vb
-LOCAL_APP_PORT=5100
-LOCAL_TLS_BIND_HTTPS=443
-LOCAL_PROXY_NETWORK=naf-dev-network
-```
-
-## Deployment Modes
-
-### Mock Mode (Default for Local)
-
-Uses mock services for isolated testing:
-- Mailpit for SMTP (web UI at `/mailpit`)
-- Mock Netcup API (simulated DNS responses)
-- Mock GeoIP (IP geolocation testing)
-
-```bash
-./deploy.sh local  # Implicit --mode mock
-```
-
-### Live Mode (Default for Webhosting)
-
-Uses real external services:
-- Real SMTP server (from config)
-- Real Netcup CCP API
-- Real GeoIP service
-
-```bash
-./deploy.sh local --mode live
-./deploy.sh webhosting  # Always live mode
-```
-
-## HTTPS vs HTTP
-
-### HTTPS (Default for Local)
-
-Provides production parity with real Let's Encrypt certificates:
-
-```bash
-./deploy.sh local  # HTTPS via TLS proxy
-```
-
-**Requirements:**
-- Public FQDN with reverse DNS configured
-- Let's Encrypt certificates at `/etc/letsencrypt/live/${PUBLIC_FQDN}/`
-- Certificates readable by nginx container (docker group access)
-
-**Benefits:**
-- 100% production parity
-- Secure cookies work correctly
-- Tests HTTPS-specific features
-- Mailpit accessible at `https://${PUBLIC_FQDN}/mailpit`
-
-### HTTP (Opt-in)
-
-Simplified setup without TLS:
-
-```bash
-./deploy.sh local --http
-```
-
-**When to use:**
-- No Let's Encrypt certificates available
-- Quick local testing without HTTPS requirements
-- Debugging TLS-independent issues
-
-## Troubleshooting
-
-### FQDN Detection Failed
-
-If reverse DNS is not configured, FQDN detection runs in `.devcontainer/post-create.sh`, which honors a `FORCE_FQDN` override:
-
-```bash
-# Re-run container post-create with a forced FQDN, or set it directly in .env.workspace:
-#   export PUBLIC_FQDN="my-domain.com"
-FORCE_FQDN=my-domain.com bash .devcontainer/post-create.sh
-
-# Or use HTTP mode (no FQDN/TLS needed)
-./deploy.sh local --http
-```
-
-### Certificates Not Found
-
-```bash
-# Check if certificates exist on host
-ls -la /etc/letsencrypt/live/${PUBLIC_FQDN}/
-
-# If missing, obtain Let's Encrypt certificate
-sudo certbot certonly --standalone -d ${PUBLIC_FQDN}
-
-# Or use HTTP mode
-./deploy.sh local --http
-```
-
-### Services Won't Stop
-
-```bash
-# Force stop all naf- containers
-docker ps --filter "name=naf-" -q | xargs -r docker stop
-
-# Verify all stopped
-docker ps --filter "name=naf-"
-```
-
-### Flask Import Errors
-
-Check that all dependencies are in `requirements.webhosting.txt`:
-
-```bash
-# List vendored packages
-ls deploy-local/vendor/
-
-# Check for missing package
-grep -i httpx requirements.webhosting.txt
-```
-
-## Advanced Usage
-
-### Skip Infrastructure Setup
-
-If services are already running:
-
-```bash
-./deploy.sh local --skip-infra --skip-tests
-```
-
-### Run Specific Test Suite
-
-```bash
-# Set environment and run pytest directly
-DEPLOYMENT_TARGET=local \
-UI_BASE_URL="https://gstammtisch.dchive.de" \
-pytest ui_tests/tests/test_admin_ui.py -v
-```
-
-### Debug TLS Proxy
-
-```bash
-# Check proxy logs
-docker logs naf-dev-reverse-proxy
-
-# Test backend directly (bypass proxy)
-curl http://localhost:5100/admin/login
-
-# Test HTTPS through proxy
-curl -sk https://gstammtisch.dchive.de/admin/login
-```
-
-## Migration from Old Workflow
-
-### Before (Manual Steps)
-
-> Historical only. These standalone scripts (`detect-fqdn.sh`, `build-and-deploy-local.sh`) no longer exist; their work is now done by `.devcontainer/post-create.sh` and `deploy.sh`.
-
-```bash
-# 1. Manual FQDN detection (now handled by .devcontainer/post-create.sh)
-
-# 2. Manual proxy configuration
-cd tooling/reverse-proxy
-./render-nginx-conf.sh
-./stage-proxy-inputs.sh
-docker compose up -d
-
-# 3. Build and deploy (now: ./deploy.sh local)
-cd ../..
-
-# 4. Manual cleanup (now: ./deploy.sh --stop)
-pkill gunicorn
-docker stop naf-playwright
-docker stop naf-reverse-proxy
-```
-
-### After (Automated)
-
-```bash
-# Start everything
-./deploy.sh local
-
-# Stop everything
-./deploy.sh --stop
-```
-
-**Improvements:**
-- ✅ FQDN detection automatic
-- ✅ Single command for full deployment
-- ✅ Clean stop/start workflow
-- ✅ Centralized service naming
-- ✅ Automatic proxy configuration
-
-## See Also
-
-- [FQDN Detection](FQDN_DETECTION.md) - Reverse DNS and certificate paths
-- [Local Testing Guide](deprecated/LOCAL_TESTING_GUIDE.md) - HTTP testing without TLS (archived)
-- [HTTPS Local Testing](deprecated/HTTPS_LOCAL_TESTING.md) - TLS proxy setup (archived)
-- [Deploy Architecture](DEPLOY_ARCHITECTURE.md) - System architecture
+- [Deployment architecture](DEPLOY_ARCHITECTURE.md)
+- [FQDN detection](FQDN_DETECTION.md)
+- [Testing infrastructure](TESTING_INFRASTRUCTURE.md)

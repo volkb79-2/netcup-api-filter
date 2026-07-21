@@ -18,13 +18,22 @@
   `ciu up --host … --thin` push→activate (the reserved `--thin` slot), `activate` host key
   (string or per-verb `bootstrap/apply/health/rollback` table), rsync→scp fallback,
   `bundle_excludes`, SPEC S14.6. ciu backlog audited — all items already resolved.
+- **Phase 2 (CMRU variants/installer/builder)** — landed in naf: `cmru.toml` declares the py3.14
+  OCI image plus Passenger `py39`/`py311` tarball variants and a variant-selecting installer;
+  `scripts/build_webhosting_tarball.py` builds ABI-matched tarballs through
+  `testing-exec.sh build <version>` and publishes through CMRU's versioned-variant publisher.
+- **Phase 3 (activation/host inventory)** — landed in naf: `scripts/activate.py` implements the
+  `bootstrap`/`apply`/`health`/`rollback` contract, and `.ciu.hosts.toml` provides the
+  `webhoster` inventory for `ciu up --host webhoster --thin -- --variant py311`.
+- **Phase 4 (cleanup/reconciliation)** — landed: the retired webhosting `deploy.sh` and
+  `build_deployment_lib.sh` plumbing is gone; `build_deployment.py` and `run-local-tests.sh` are
+  deliberately retained as the local `deploy-local/` build/test path. Passenger releases are
+  greenfield: the database is not preserved; activation carries forward only `SECRET_KEY`.
 - **opus-review of ciu — DONE** (`vbpub` `4636899`+5): caught a **real bug the feature missed**
   — `make_tarball` used `str.lstrip("./")` as a prefix-strip (it strips a charset), so the
   `.git` exclude never matched and the scp/tar fallback shipped the whole `.git` history to the
   webhoster; the test masked it with the same bug. Also fixed a `ValueError` crash in
   `lint_graph` cycle detection, doc drift, dead code. 1022 passed.
-
-**Running:** opus-review of cmru (serialized after ciu's).
 
 **Known issue (cosmetic):** two `vbpub` commit *messages* are crossed — a concurrent
 `git commit --amend` on the fast-moving shared `main` (multiple agents + a nyxloom daemon +
@@ -34,10 +43,8 @@ sides**; fixing the messages needs a quiet exclusive window on `vbpub main` (his
 unsafe while writers are active). Lesson: don't run concurrent committers against one shared
 branch, and never `--amend`/rebase there.
 
-**Next (sequenced):** P2 (cmru variant tarball build step + `[installer]`, using the landed
-CMRU-FEAT + INFRA-3 container build) → P3 (naf `activate.py` + `.ciu.hosts.toml`, using the
-landed CIU-12; retire `deploy.sh` push) → P4 (delete bespoke `build_deployment.py`/`deploy.sh`
-plumbing).
+**Execution complete:** P2, P3, and P4 are landed. The historical plan below records the
+pre-execution design and should not be read as current implementation status.
 
 ---
 

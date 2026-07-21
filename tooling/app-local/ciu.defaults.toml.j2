@@ -3,7 +3,7 @@
 #   Rendered output: ciu.toml  (GITIGNORED)
 #
 # WHY THIS STACK EXISTS (naf-I04): the dev app used to run as a HOST gunicorn process
-# inside the devcontainer (deploy.sh: `gunicorn -c gunicorn.conf.py passenger_wsgi:application`,
+# inside the devcontainer (the retired local runner used `gunicorn -c gunicorn.conf.py passenger_wsgi:application`,
 # `pkill -9 gunicorn`). traefik's docker provider builds routes from CONTAINER LABELS, so a
 # host process is invisible to it — there is nothing to label. Containerizing the app makes
 # it label-discoverable, and simultaneously removes one more "the devcontainer is the
@@ -15,7 +15,8 @@
 # gate proves — one image, one fidelity story. Production is unaffected: it ships to shared
 # webhosting under Passenger, not from this container.
 #
-# PREREQUISITE: `deploy.sh` must have produced `deploy-local/` (build + unzip). This stack
+# PREREQUISITE: `run-local-tests.sh` must have produced `deploy-local/` (via
+# `build_deployment.py --local`, then unzip). This stack
 # serves that directory over the mounted repo; it does not build the app itself.
 # =============================================================================
 
@@ -29,7 +30,7 @@ image_tag = "local"
 # 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.
 port = 5100
 
-# Directory (relative to the repo root) that deploy.sh unpacks the local build into.
+# Directory (relative to the repo root) that the local test workflow unpacks the build into.
 deploy_dir = "deploy-local"
 
 [app_local.external]

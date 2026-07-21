@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — CMRU release and CIU webhosting deployment — 2026-07-21
+
+### Changed
+
+- **Release and deployment flow reconciled.** `cmru release` now publishes the Python 3.14 OCI
+  image plus ABI-matched Passenger `py39`/`py311` tarball variants and a variant-selecting
+  installer; `ciu up --host webhoster --thin -- --variant <variant>` deploys a selected
+  Passenger asset. Local development remains `run-local-tests.sh` →
+  `build_deployment.py --local` → `deploy-local/`.
+- **Greenfield Passenger activation.** Activation extracts the selected tarball, preserves only
+  `SECRET_KEY`, touches Passenger's `tmp/restart.txt`, and health-probes the application.
+
+### Removed
+
+- Retired the bespoke webhosting release/push plumbing and its obsolete SSH environment samples.
+
 ## [Unreleased] — Testing hardening (E1–E4, P1–P4, M1–M2) — 2026-06-14
 
 Testing infrastructure hardened in six areas. No functional app changes except one bug fix.

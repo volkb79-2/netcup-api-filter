@@ -37,7 +37,7 @@ def _update_deployment_state(**kwargs) -> None:
         raise RuntimeError(
             f"Deployment state file not found: {state_file}\n"
             f"DEPLOYMENT_TARGET={target}\n"
-            f"Run build-and-deploy-local.sh (local) or build-and-deploy.sh (webhosting)"
+            f"Run ./run-local-tests.sh (local) or cmru release followed by ciu up --host webhoster --thin (webhosting)"
         )
     
     # Load current state

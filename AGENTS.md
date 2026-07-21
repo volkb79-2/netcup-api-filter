@@ -86,21 +86,29 @@ Settings live in the `settings` table via `get_setting`/`set_setting` (JSON-enco
 
 ## Build, deploy, run
 
-**`deploy.sh` is the unified deployment script** (local and webhosting). `build_deployment.py`
-builds the deployment zip (`deploy-local.zip` locally; `deploy-py311.zip` + `deploy-py39.zip`
-for webhosting); `passenger_wsgi.py` is copied to the deploy root. Do **not** scp files by hand.
-(`build_deployment_lib.sh` is **dead** — nothing sources it; see the backlog's B-OPS.)
+There are deliberately separate local and webhosting flows.
 
 ```bash
-./deploy.sh                     # local, mocked services (default)
-./deploy.sh local --mode live   # local against real services
-./deploy.sh local --tests-only  # skip build, just run tests
-./deploy.sh local --https       # via the local TLS proxy
-./deploy.sh webhosting           # build + upload + restart Passenger
+# Local development and UI tests: builds deploy-local/ via build_deployment.py --local.
+./run-local-tests.sh
+./run-local-tests.sh --with-mocks
+
+# Release all published artifacts: py3.14 OCI image and Passenger py39/py311 tarballs.
+cmru release
+
+# Deploy one published Passenger variant to the webhoster.
+ciu up --host webhoster --thin -- --variant py311
 ```
 
-Webhosting deploys **reset the database to a fresh preseeded state** (default `admin`/`admin`,
-`must_change_password=true`). The Passenger app is reloaded by touching `tmp/restart.txt`.
+`build_deployment.py --local` is the only builder of `deploy-local/`; do not replace it with a
+webhosting release command. CMRU uses `scripts/build_webhosting_tarball.py` to build the
+ABI-matched Passenger tarballs in the matching test-runner image. CIU reads the webhoster
+inventory from `.ciu.hosts.toml`, transfers the selected variant, and invokes
+`scripts/activate.py`. Activation extracts the tarball, preserves the existing `SECRET_KEY`,
+touches `tmp/restart.txt` for Passenger, then health-probes the application.
+
+Webhosting releases are **greenfield**: every tarball contains a freshly seeded database
+(default `admin`/`admin`, `must_change_password=true`); only `SECRET_KEY` is carried forward.
 
 **Credentials are tracked in `deployment_state_{local,webhosting}.json`**, never hardcoded.
 Tests change the default password on first login and persist the generated value there.
@@ -110,11 +118,11 @@ jq -r '.admin.password'             deployment_state_local.json   # current pass
 jq -r '.admin.password_changed_at'  deployment_state_local.json   # null => fresh (use admin/admin)
 ```
 
-If the state file and DB disagree, rebuild to a known state (`./deploy.sh local`) rather than
+If the local state file and DB disagree, rebuild to a known state (`./run-local-tests.sh`) rather than
 guessing. Never hardcode a password anywhere (code, tests, docs).
 
-The webhosting target (host, remote dir, restart path) is defined by the deployment config /
-`deploy.sh` — read it there rather than copying literals around.
+The webhosting target (host, remote directory, pinned host key, and activation contract) is
+defined by `.ciu.hosts.toml` — read it there rather than copying literals around.
 
 ## Testing
 
@@ -136,8 +144,8 @@ Two distinct layers:
 > (in the **base-image repo**, not this one).
 >
 > **The gate is `tooling/test-runner/`, and it is the only ship signal.** The devcontainer runs
-> python **3.14**; the app deploys under Passenger on **3.11** (`deploy.sh` → `deploy-py311.zip`,
-> wheels vendored with `--python-version 3.11`). A 3.10+ construct, or a dep with a cp314 wheel but
+> python **3.14**; webhosting Passenger variants target **3.9** and **3.11** (with wheels
+> vendored for the matching ABI). A 3.10+ construct, or a dep with a cp314 wheel but
 > no cp311 wheel, is green in the cockpit and a post-deploy 500 in production. Run:
 >
 > ```bash

@@ -30,19 +30,25 @@ ui_tests/requirements.txt (UI test dependencies)
 
 ## Usage
 
-### Production Deployment (Webhosting)
+### Passenger Release (Webhosting)
 
-**Automated via `build_deployment.py`:**
+**Automated by CMRU:**
 ```bash
-./build_deployment.py
-# Downloads and vendors packages from requirements.webhosting.txt into deploy/vendor/
+cmru release
 ```
 
-The deployment package (`deploy.zip`) contains:
+CMRU calls `scripts/build_webhosting_tarball.py` for each Passenger target (Python 3.9 and
+3.11). The builder runs through `tooling/test-runner/testing-exec.sh build <version>` so wheels
+from `requirements.webhosting.txt` are downloaded, vendored, and database seeding is performed
+under the matching ABI. It publishes separate `py39` and `py311` tarballs.
+
+Each Passenger tarball contains:
 - Vendored dependencies (no pip install needed on server)
 - Application code
 - Preseeded database
 - Configuration defaults
+
+The Python 3.14 self-hosting OCI image is released by the same `cmru release` invocation.
 
 ### Local Development (Devcontainer)
 
@@ -51,6 +57,12 @@ The deployment package (`deploy.zip`) contains:
 # Runs automatically when devcontainer is created
 pip install --user -r requirements-dev.txt
 ```
+
+### Local Deployment Build
+
+`build_deployment.py --local` remains the local builder. `run-local-tests.sh` invokes it,
+extracts the package into `deploy-local/`, and runs the local UI suite. It is not the webhosting
+release path.
 
 **Manual installation (if needed):**
 ```bash

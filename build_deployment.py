@@ -121,7 +121,7 @@ def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
             f"Python {python_version} interpreter — e.g. inside the matching "
             f"netcup-api-filter/test-runner image via "
             f"'./tooling/test-runner/testing-exec.sh build {python_version} -- "
-            "build_deployment.py ...' (see deploy.sh phase_build)."
+            "build_deployment.py ...' (used by the local build and CMRU variant builder)."
         )
 
 
@@ -303,11 +303,11 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
         "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
         # naf-I03: the local image ID (`docker image inspect --format='{{.Id}}'`) of
         # the test-runner container build_deployment.py ran inside, stamped by
-        # deploy.sh / testing-exec.sh's `build` subcommand via NAF_BUILDER_IMAGE_DIGEST.
+        # testing-exec.sh's `build` subcommand via NAF_BUILDER_IMAGE_DIGEST.
         # These images are never pushed to a registry, so there is no RepoDigest —
         # the content-addressed local image ID is the strongest provenance available.
         # "unknown" for non-containerized runs (e.g. local target, or a bare CLI
-        # invocation outside deploy.sh).
+        # invocation outside the managed build path).
         "builder_image_digest": os.environ.get("NAF_BUILDER_IMAGE_DIGEST", "unknown"),
         "source": "build_deployment.py",
         # Count of clients for display purposes only

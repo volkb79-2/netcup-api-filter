@@ -125,8 +125,8 @@ case "${CMD}" in
         # The PRIMARY gate: hermetic, no services, no browser. pytest.ini sets
         # `pythonpath = . src`. -p no:cacheprovider keeps the bind mount clean.
         #
-        # Runs all THREE shipped-artifact interpreters: the two Passenger deploy
-        # targets (deploy.sh PYTHON_TARGETS=(3.9 3.11)) plus 3.14, the py3.14
+        # Runs all THREE shipped-artifact interpreters: the two Passenger release
+        # targets (CMRU variants py39/py311) plus 3.14, the py3.14
         # self-hosting container release target (docker-bake.hcl "py314" /
         # cmru.toml [project.naf.oci] — nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md
         # Phase 1). 3.11 is primary, but a 3.10+ construct passes there and breaks
@@ -155,7 +155,8 @@ case "${CMD}" in
         # test-runner image matching a given Python version, so a webhosting build's
         # DB-seeding step (which IMPORTS the app + vendored cp39/cp311 .so files)
         # actually exercises the target ABI instead of the devcontainer's host
-        # python3. deploy.sh phase_build is the caller.
+        # python3. Both build_deployment.py (local ABI work) and
+        # scripts/build_webhosting_tarball.py (CMRU Passenger variants) call this.
         #
         # Unlike run_ephemeral (used by unit/trove/e2e, which rely on the image's
         # baked-in USER 1003), this ADDS an explicit --user so build artifacts

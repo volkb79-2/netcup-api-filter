@@ -188,7 +188,7 @@ async def test_login_with_2fa(page, base_url):
 
 ### 6. Local Deployment Testing
 
-**Files:** `run-local-tests.sh`, `build-and-deploy-local.sh`
+**Files:** `run-local-tests.sh`, `build_deployment.py`
 
 #### Production Parity
 - [ ] **Same deployment package**: Uses `build_deployment.py`
@@ -412,7 +412,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build deployment
-        run: ./build-and-deploy-local.sh
+        run: ./run-local-tests.sh
       - name: Run tests
         run: pytest ui_tests/tests -v --junit-xml=junit.xml
       - name: Upload coverage
