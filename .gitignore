@@ -169,6 +169,9 @@ deploy.zip
 deploy.zip.sha256
 deploy-local.zip
 deploy-local.zip.sha256
+deploy-py*.zip
+deploy-py*.zip.sha256
+dist/
 
 # Local proxy runtime assets (legacy - replaced by reverse-proxy)
 tooling/local_proxy/proxy.env

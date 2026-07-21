@@ -1,9 +1,9 @@
 # cmru.toml — CMRU project config for netcup-api-filter (naf)
 # =============================================================================
-# Phase 1 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
-# the py3.14 self-hosting container release target ONLY. Tarball/bundle artifacts
-# (the per-interpreter Passenger webhosting builds, cmru's multi-variant feature)
-# land in Phase 2; [installer] and [steps.build] are added then, not here.
+# Phase 2 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
+# one tagged release publishes the py3.14 OCI image plus cp39/cp311 Passenger
+# tarball variants.  The tarball builder is deliberately project-local: it is the
+# only naf-specific part of the release flow.
 #
 # NO SECRETS here (this file is committed). The GitHub token is resolved at run
 # time from $GITHUB_PUSH_PAT / $GITHUB_TOKEN, or a gitignored cmru.secret.toml
@@ -21,19 +21,49 @@ registry = ["ghcr.io"]
 
 [project.naf]
 prefix    = "naf-v"
-artifacts = ["oci-image"]    # Phase 1: container only. Phase 2 adds "tarball"/"bundle".
+artifacts = ["oci-image", "tarball"]
 cwd       = "."
 
-# S-REL.4 (cmru SPEC): an oci-image-ONLY project must not pair with a
-# tagging strategy (scm/counter/file) — cmru's loader rejects that combo with
-# exit 2 ("OCI images are not git-tagged"; see cli.py _resolve_release_profile).
-# strategy="none" mirrors vbpub's own oci-image-only project
-# (modern-debian-tools-python-debug). Once Phase 2 adds "tarball"/"bundle" to
-# artifacts above, strategy="scm" (the plan doc's original intent for naf's
-# OVERALL versioning) becomes valid and should be switched then.
 [project.naf.version]
-strategy = "none"
+strategy = "scm"
 
 [project.naf.oci]
 bake_file = "docker-bake.hcl"
 target    = "py314"
+
+# CMRU-FEAT: one tagged release, two ABI-specific assets.  The build script
+# reads these build args from this config and invokes the matching INFRA-3
+# build image for each one; cmru's landed variant publisher gives them their
+# canonical <tag>-<variant>.tar.xz release names.
+[[project.naf.variants]]
+name      = "py39"
+build_arg = "PYTHON_VERSION=3.9"
+label     = "Passenger Python 3.9"
+
+[[project.naf.variants]]
+name      = "py311"
+build_arg = "PYTHON_VERSION=3.11"
+label     = "Passenger Python 3.11"
+
+# naf's Passenger deploy is GREENFIELD (matches the retired deploy.sh
+# --preserve-secret-key): each release ships a freshly-seeded netcup_filter.db in
+# the tarball, activation extracts it over the deploy root, and ONLY the SECRET_KEY
+# is carried across (scripts/activate.py does this on the ciu --thin push path). So
+# there is deliberately NO `preserve` list here — declaring the whole DB preserved
+# would contradict the seeded-DB-per-release model.
+[project.naf.installer]
+install_dir_system = "/netcup-api-filter"
+install_dir_user   = "netcup-api-filter"
+asset_suffix       = ".tar.xz"
+entrypoint         = "scripts/activate.py"
+required_commands  = ["sh", "tar", "touch"]
+
+[project.naf.steps.build]
+commands = [
+  { label = "build Passenger tarball variants in matching ABI containers", argv = ["python3", "scripts/build_webhosting_tarball.py", "build"], cwd = "." },
+]
+
+[project.naf.steps.push]
+commands = [
+  { label = "publish Passenger tarball variants", argv = ["python3", "scripts/build_webhosting_tarball.py", "publish"], cwd = "." },
+]
