@@ -11,6 +11,9 @@
 #   ./tooling/test-runner/testing-exec.sh trove                 # nyxloom handoff frontmatter lint
 #   ./tooling/test-runner/testing-exec.sh e2e ui_tests/tests/security/
 #   ./tooling/test-runner/testing-exec.sh shell                 # interactive shell in the gate
+#   ./tooling/test-runner/testing-exec.sh build 3.11 -- build_deployment.py --target webhosting ...
+#                                                                 # naf-I03: run a command inside the
+#                                                                 # per-version image, host-uid-writable
 #
 # Fail-fast: no cross-environment fallbacks. Required inputs are asserted, not defaulted.
 set -euo pipefail
@@ -75,6 +78,19 @@ ensure_image() {
     fi
 }
 
+# Map a Python X.Y version to its test-runner image tag. Shared by the `unit` gate
+# loop and the `build` subcommand (naf-I03) so there is exactly one place that knows
+# 3.11 is TEST_RUNNER_IMAGE itself and every other version is TEST_RUNNER_IMAGE's repo
+# with a ":py<XY>" tag.
+image_for_python_version() {
+    local ver="$1"
+    if [ "${ver}" = "3.11" ]; then
+        echo "${TEST_RUNNER_IMAGE}"
+    else
+        echo "${TEST_RUNNER_IMAGE%:*}:py${ver//./}"
+    fi
+}
+
 # Ephemeral run: the form nyxloom gates use. No persistent peer required, so a gate
 # never depends on prior `ciu up` state.
 run_ephemeral() {
@@ -113,11 +129,7 @@ case "${CMD}" in
         # single-interpreter gate would ship it. Set GATE_PYTHON=3.11 to run just one.
         rc=0
         for target in ${GATE_PYTHON:-3.11 3.9}; do
-            if [ "${target}" = "3.11" ]; then
-                IMAGE="${TEST_RUNNER_IMAGE}"
-            else
-                IMAGE="${TEST_RUNNER_IMAGE%:*}:py${target//./}"
-            fi
+            IMAGE="$(image_for_python_version "${target}")"
             PYTHON_VERSION="${target}"
             echo "[gate] === python ${target} (${IMAGE}) ===" >&2
             ensure_image
@@ -131,6 +143,41 @@ case "${CMD}" in
         # trove is checkable before the daemon can even reach this repo.
         ensure_image
         run_ephemeral "${VENV}" tooling/test-runner/lint_trove.py "$@"
+        ;;
+    build)
+        # naf-I03: run a command (normally `build_deployment.py ...`) INSIDE the
+        # test-runner image matching a given Python version, so a webhosting build's
+        # DB-seeding step (which IMPORTS the app + vendored cp39/cp311 .so files)
+        # actually exercises the target ABI instead of the devcontainer's host
+        # python3. deploy.sh phase_build is the caller.
+        #
+        # Unlike run_ephemeral (used by unit/trove/e2e, which rely on the image's
+        # baked-in USER 1003), this ADDS an explicit --user so build artifacts
+        # (deploy-webhosting-py*/, deploy-py*.zip, netcup_filter.db) stay writable by
+        # whatever uid actually owns the bind-mounted host checkout — the image's
+        # baked default is only a coincidence when it happens to match.
+        #
+        # Usage: testing-exec.sh build <python-version> [--] <cmd...>
+        TARGET_PY="${1:?build requires a python version, e.g. 3.11 or 3.9}"; shift
+        [ "${1:-}" = "--" ] && shift
+        [ $# -gt 0 ] || { echo "usage: testing-exec.sh build <python-version> [--] <cmd...>" >&2; exit 2; }
+
+        IMAGE="$(image_for_python_version "${TARGET_PY}")"
+        PYTHON_VERSION="${TARGET_PY}"
+        ensure_image
+
+        # Provenance (naf-I03): these images are local-only (never pushed to a
+        # registry), so there is no RepoDigest — the content-addressed image ID is
+        # the strongest identifier available. build_deployment.py stamps this into
+        # build_info.json as "builder_image_digest".
+        BUILDER_IMAGE_DIGEST="$(docker image inspect --format='{{.Id}}' "${IMAGE}")"
+
+        docker run --rm \
+            -v "${PHYSICAL_REPO_ROOT}:/workspaces/netcup-api-filter:rw" \
+            -w "${CONTAINER_WORKDIR}" \
+            --user "${USER_UID}:${DOCKER_GID}" \
+            -e "NAF_BUILDER_IMAGE_DIGEST=${BUILDER_IMAGE_DIGEST}" \
+            "${IMAGE}" "${VENV}" "$@"
         ;;
     e2e)
         # Playwright E2E against a running deploy-local + mocks. The browser is OFFLOADED
