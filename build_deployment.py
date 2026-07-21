@@ -22,8 +22,8 @@ import hashlib
 import logging
 import json
 import re
-from datetime import datetime
-from typing import Tuple
+from datetime import datetime, timezone
+from typing import Optional, Tuple
 from pathlib import Path
 
 # Configure logging
@@ -69,6 +69,62 @@ def _render_app_config_toml(raw_text: str) -> str:
     return rendered
 
 
+def _utc_now_iso() -> str:
+    """UTC timestamp, seconds precision, 'Z' suffix.
+
+    Equivalent to the old (deprecated) ``datetime.utcnow().replace(microsecond=0)
+    .isoformat() + "Z"`` pattern, but built on the timezone-aware
+    ``datetime.now(timezone.utc)`` API.
+    """
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
+    """Refuse to seed the database under a mismatched interpreter (naf-I03).
+
+    ``download_and_extract_dependencies`` resolves target-ABI wheels via
+    ``pip download --only-binary :all: --python-version <ver> --platform
+    manylinux2014_x86_64``, which is safe under ANY host interpreter because it never
+    executes the downloaded code. ``initialize_database`` is different: it puts
+    ``vendor/`` on ``sys.path`` and IMPORTS the app (and therefore the vendored
+    cp39/cp311 ``.so`` extensions) to seed the SQLite DB. If that import happens under
+    a different interpreter than the one those wheels were resolved for,
+    version-tagged C extensions are silently NOT import candidates at all (packages
+    with a pure-Python fallback silently use it; C-only ones ImportError), and an
+    abi3 extension (e.g. bcrypt) loads a wrong-version binary without complaint. Either
+    way, seeding proves nothing about the real target closure.
+
+    Pass ``python_version=None`` to skip this check entirely — used by callers that
+    seed a database with NO vendored cross-version wheels involved at all (e.g.
+    ``scripts/ci_bootstrap_e2e.py``, which imports straight from ``src/`` under
+    whatever interpreter the CI runner provides).
+    """
+    if python_version is None:
+        return
+
+    try:
+        wanted = tuple(int(part) for part in python_version.split(".")[:2])
+        if len(wanted) != 2:
+            raise ValueError("expected MAJOR.MINOR")
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid --python-version {python_version!r}: {exc}") from exc
+
+    actual = sys.version_info[:2]
+    if actual != wanted:
+        raise RuntimeError(
+            "Refusing to seed the database under a mismatched interpreter: this "
+            f"process is running Python {actual[0]}.{actual[1]}, but --python-version "
+            f"{python_version} was requested (vendor/ wheels were resolved for "
+            f"cp{wanted[0]}{wanted[1]}). Seeding under the wrong interpreter makes "
+            "version-tagged C extensions silently not import candidates and validates "
+            "nothing about the target closure. Run build_deployment.py UNDER a "
+            f"Python {python_version} interpreter — e.g. inside the matching "
+            f"netcup-api-filter/test-runner image via "
+            f"'./tooling/test-runner/testing-exec.sh build {python_version} -- "
+            "build_deployment.py ...' (see deploy.sh phase_build)."
+        )
+
+
 def create_directory_structure(deploy_dir):
     """Create the deployment directory structure."""
     logger.info("Creating deployment directory structure...")
@@ -82,7 +138,12 @@ def create_directory_structure(deploy_dir):
     return deploy_path, vendor_dir
 
 
-def download_and_extract_dependencies(vendor_dir, requirements_file, python_version="3.11"):
+def download_and_extract_dependencies(
+    vendor_dir,
+    requirements_file,
+    python_version="3.11",
+    allow_unsafe_sdist_fallback=False,
+):
     """Download all dependencies and extract them to vendor directory."""
     logger.info(f"Downloading dependencies (target Python {python_version})...")
 
@@ -103,16 +164,35 @@ def download_and_extract_dependencies(vendor_dir, requirements_file, python_vers
 
         if result.returncode != 0:
             logger.warning(
-                f"Binary-only download failed for Python {python_version}, "
-                "retrying with source packages..."
+                f"Binary-only download failed for Python {python_version} "
+                f"(manylinux2014_x86_64). pip stderr:\n{result.stderr}"
             )
-            if python_version != "3.11":
-                logger.warning(
-                    f"WARNING: source (sdist) fallback for target Python {python_version} "
-                    "is UNSAFE — sdists are built for the host Python, not the target. "
-                    "Cross-version source builds may produce wrong-version artifacts. "
-                    "Ensure all deps have binary wheels for the target version."
+
+            if not allow_unsafe_sdist_fallback:
+                raise RuntimeError(
+                    f"No binary (manylinux2014_x86_64) wheel available for one or more "
+                    f"dependencies in {requirements_file} for Python {python_version}. "
+                    "Refusing to fall back to sdist: sdists are built by "
+                    f"{sys.executable!r} — i.e. the HOST interpreter running this "
+                    "script, NOT the --python-version target — and would silently "
+                    "poison this vendor/ tree with wrong-ABI artifacts. Either add a "
+                    "version constraint that resolves to a wheel-having release, or "
+                    "pass --allow-unsafe-sdist-fallback to opt in explicitly (only "
+                    "safe when the host interpreter genuinely matches the target)."
                 )
+
+            # Opted in explicitly: every occurrence of this fallback is unsafe by
+            # construction (sdists build against the HOST interpreter, not
+            # --python-version), so the warning always fires here — no more
+            # `if python_version != "3.11"` gate that silently hid it for the
+            # single most common target.
+            logger.warning(
+                f"UNSAFE sdist fallback opted in (--allow-unsafe-sdist-fallback) for "
+                f"target Python {python_version}: sdists are built for the HOST "
+                f"Python running this script ({sys.version_info.major}."
+                f"{sys.version_info.minor}), not the target. Cross-version source "
+                "builds may produce wrong-version artifacts."
+            )
             # Retry without binary-only restriction
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "download",
@@ -121,11 +201,11 @@ def download_and_extract_dependencies(vendor_dir, requirements_file, python_vers
                 capture_output=True,
                 text=True
             )
-            
+
             if result.returncode != 0:
                 logger.error(f"Failed to download dependencies: {result.stderr}")
                 raise RuntimeError("Failed to download dependencies")
-        
+
         logger.info(f"Downloaded packages to {temp_dir}")
         
         # Extract all wheel files to vendor directory
@@ -216,11 +296,19 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
 
     # Public build info only - NO SECRETS
     build_info = {
-        "built_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "built_at": _utc_now_iso(),
         "git_commit": git_output("rev-parse", "HEAD", default="unknown"),
         "git_short": git_output("rev-parse", "--short", "HEAD", default="unknown"),
         "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
         "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
+        # naf-I03: the local image ID (`docker image inspect --format='{{.Id}}'`) of
+        # the test-runner container build_deployment.py ran inside, stamped by
+        # deploy.sh / testing-exec.sh's `build` subcommand via NAF_BUILDER_IMAGE_DIGEST.
+        # These images are never pushed to a registry, so there is no RepoDigest —
+        # the content-addressed local image ID is the strongest provenance available.
+        # "unknown" for non-containerized runs (e.g. local target, or a bare CLI
+        # invocation outside deploy.sh).
+        "builder_image_digest": os.environ.get("NAF_BUILDER_IMAGE_DIGEST", "unknown"),
         "source": "build_deployment.py",
         # Count of clients for display purposes only
         "demo_client_count": len(all_demo_clients),
@@ -319,7 +407,7 @@ def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients,
         "target": target,
         "deploy_dir": str(Path(deploy_dir).absolute()),
         "build": {
-            "built_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "built_at": _utc_now_iso(),
             "git_commit": git_output("rev-parse", "--short", "HEAD", default="unknown"),
             "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
             "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
@@ -339,7 +427,7 @@ def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients,
             }
             for i, (cid, secret, desc) in enumerate(all_demo_clients)
         ],
-        "last_updated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "last_updated_at": _utc_now_iso(),
         "updated_by": "build_deployment.py",
     }
     
@@ -373,27 +461,36 @@ def create_initial_env_webhosting(deploy_dir):
         f.write(f"SECRET_KEY={secret_key}\n\n")
         f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', '')}\n")
         f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', '')}\n")
-        f.write(f"DEPLOYED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z\n")
+        f.write(f"DEPLOYED_AT={_utc_now_iso()}\n")
     
     logger.info(f"Created {env_webhosting_path} with initial deployment state (including SECRET_KEY)")
 
 
-def initialize_database(deploy_dir, is_local: bool = False, seed_demo: bool = False) -> Tuple[str, str, list]:
+def initialize_database(
+    deploy_dir,
+    is_local: bool = False,
+    seed_demo: bool = False,
+    python_version: Optional[str] = None,
+) -> Tuple[str, str, list]:
     """Initialize SQLite database with default admin user and dynamically generated client credentials.
-    
+
     Args:
         deploy_dir: Path to the deployment directory
         is_local: If True, seed email config for mock mode (Mailpit)
         seed_demo: If True, seed comprehensive demo data for UI screenshots
-    
+        python_version: Expected "MAJOR.MINOR" of the RUNNING interpreter (naf-I03
+            host-vs-target guard). Pass the same value used to resolve vendor/'s
+            wheels; None skips the check (see _assert_interpreter_matches_target).
+
     Returns:
         Tuple of (client_id, secret_key, all_demo_clients)
         where all_demo_clients is list of (client_id, secret_key, description) tuples
     """
     logger.info("Initializing database...")
+    _assert_interpreter_matches_target(python_version)
     if is_local:
         logger.info("Local deployment - will seed mock email config")
-    
+
     # Save current directory
     original_dir = os.getcwd()
     
@@ -762,6 +859,11 @@ def main():
                         help="Seed comprehensive demo data for UI screenshots")
     parser.add_argument("--bundle-app-config", action="store_true",
                         help="Include app-config.toml in deployment if it exists (WARNING: contains secrets)")
+    parser.add_argument("--allow-unsafe-sdist-fallback", action="store_true",
+                        help="If binary wheel resolution fails for --python-version, fall back to "
+                             "downloading sdists (built by the HOST interpreter running this script, "
+                             "NOT the target). UNSAFE for cross-version builds; off by default so a "
+                             "missing wheel fails loudly instead of silently poisoning vendor/.")
     args = parser.parse_args()
     
     # Determine deployment target
@@ -801,15 +903,28 @@ def main():
         deploy_path, vendor_dir = create_directory_structure(deploy_dir)
         
         # Download and extract dependencies
-        download_and_extract_dependencies(vendor_dir, requirements_path, python_version=args.python_version)
-        
+        download_and_extract_dependencies(
+            vendor_dir,
+            requirements_path,
+            python_version=args.python_version,
+            allow_unsafe_sdist_fallback=args.allow_unsafe_sdist_fallback,
+        )
+
         # Copy application files
         copy_application_files(deploy_dir)
-        
+
         # Initialize database and get generated credentials
         # For local builds, seed mock email config (Mailpit)
+        # python_version=args.python_version enforces the naf-I03 host-vs-target guard:
+        # this process MUST be running under the same interpreter that vendor/'s wheels
+        # were resolved for, or seeding is refused (see _assert_interpreter_matches_target).
         is_local_build = deployment_target == "local"
-        client_id, secret_key, all_demo_clients = initialize_database(deploy_dir, is_local=is_local_build, seed_demo=args.seed_demo)
+        client_id, secret_key, all_demo_clients = initialize_database(
+            deploy_dir,
+            is_local=is_local_build,
+            seed_demo=args.seed_demo,
+            python_version=args.python_version,
+        )
         
         # Create unified deployment state (primary state file)
         create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients, target=deployment_target)

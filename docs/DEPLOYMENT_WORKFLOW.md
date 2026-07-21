@@ -117,6 +117,73 @@ SERVICE_MAILPIT="naf-dev-mailpit"
 7. **Phase 6: Screenshots**
    - Captures all UI pages for documentation
 
+### 4. Containerized Webhosting Builds (naf-I03)
+
+`./deploy.sh webhosting` builds **two** artifacts, one per Passenger target Python
+version (`PYTHON_TARGETS=(3.9 3.11)` in `deploy.sh`): `deploy-py39.zip` and
+`deploy-py311.zip` (the primary, uploaded artifact). Each is a `build_deployment.py`
+run that does two things:
+
+1. **Download** (`pip download --only-binary :all: --python-version <ver> --platform
+   manylinux2014_x86_64`) — resolves wheels for the TARGET version without executing
+   any of them. This step is safe under any host interpreter.
+2. **Seed** (`initialize_database`) — puts the freshly-vendored `vendor/` on
+   `sys.path` and **imports** the app (and therefore the vendored `.so` extensions)
+   to create + seed the SQLite DB. This step is only meaningful if it runs under the
+   SAME interpreter the wheels were downloaded for — otherwise version-tagged
+   extensions (`cpython-39-*.so`, `cpython-311-*.so`) are silently not import
+   candidates at all.
+
+`phase_build` therefore runs step 2 (via the whole `build_deployment.py` invocation)
+**inside** the matching `netcup-api-filter/test-runner:py39` / `:py311` container
+(the same images the `unit` gate uses), never under the devcontainer's own
+`python3`. Concretely, for each `pyver` in `PYTHON_TARGETS`:
+
+```bash
+./tooling/test-runner/testing-exec.sh build <pyver> -- build_deployment.py \
+    --target webhosting --build-dir deploy-webhosting-py<XY> \
+    --output deploy-py<XY>.zip --seed-demo --python-version <pyver>
+```
+
+`testing-exec.sh build <pyver>` (new naf-I03 subcommand) selects the image
+(`image_for_python_version`: `3.11` -> `TEST_RUNNER_IMAGE`, anything else ->
+`TEST_RUNNER_IMAGE` with a `:py<XY>` tag), builds it if missing, and runs the given
+command with:
+
+- `-v ${PHYSICAL_REPO_ROOT}:/workspaces/netcup-api-filter` — DooD; the docker socket
+  is the HOST's, so bind sources must be host paths.
+- `--user ${USER_UID}:${DOCKER_GID}` — unlike the `unit`/`trove` gates (which run as
+  the image's baked-in uid), the `build` subcommand runs as the calling host user so
+  the produced `deploy-webhosting-py*/`, `deploy-py*.zip`, `netcup_filter.db`, etc.
+  stay writable outside the container.
+- `-e NAF_BUILDER_IMAGE_DIGEST=<image id>` — the local image ID (these images are
+  never pushed to a registry, so a content-addressed ID is the strongest
+  provenance available). `build_deployment.py` stamps this into
+  `build_info.json.builder_image_digest`.
+
+**Fail-fast guard:** `build_deployment.py` itself refuses to run `initialize_database`
+unless the RUNNING interpreter's `sys.version_info[:2]` matches the requested
+`--python-version` — a deliberate mismatch (e.g. running it bare under the
+devcontainer's `python3`) exits non-zero with an explicit message naming both
+versions. This is what makes "seeded under the wrong interpreter" impossible to do
+silently, whether from `deploy.sh` or by hand.
+
+**No compiler in the gate image, on purpose:** if a dependency lacks a cp39/cp311
+manylinux wheel, `download_and_extract_dependencies` fails loudly instead of falling
+back to building an sdist (sdists build against whatever interpreter is running the
+script — i.e. the HOST inside the container image, which coincidentally *is* the
+target here, but the fallback is still refused by default because it previously
+poisoned cross-target builds silently). Pass `--allow-unsafe-sdist-fallback` to
+`build_deployment.py` to opt back in if you understand the risk.
+
+**Local target unaffected in kind, but now version-pinned:** `deploy-local` is
+served directly by the devcontainer's own `gunicorn`/`python3` (`start_flask_local`),
+so there is no separate target ABI to cross-build for — `phase_build`'s local branch
+still runs `build_deployment.py` directly on the host, but now passes
+`--python-version <host's own major.minor>` explicitly (detected via `python3 -c
+'import sys; print(...)'`) so the same host-vs-target guard is satisfied instead of
+tripping on the CLI's `--python-version` default of `"3.11"`.
+
 ## Usage Examples
 
 ### Quick Development Iteration

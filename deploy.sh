@@ -798,15 +798,24 @@ phase_build() {
             local out="deploy-py${safe_ver}.zip"
             local bdir="deploy-webhosting-py${safe_ver}"
             local build_args="--target webhosting --build-dir ${bdir} --output ${out} --seed-demo --python-version ${pyver} ${extra_args}"
-            log_step "Building for Python ${pyver}: python3 build_deployment.py ${build_args}..."
+
+            # naf-I03: seed the DB (which IMPORTS the app and thus the vendored
+            # cp${safe_ver} .so files) under the REAL Python ${pyver} interpreter, via
+            # the matching netcup-api-filter/test-runner:py${safe_ver} image — never
+            # the devcontainer's host python3. Mirrors testing-exec.sh's
+            # run_ephemeral, but adds --user so artifacts land host-uid-writable
+            # instead of owned by the image's baked-in uid. build_deployment.py's own
+            # host-vs-target guard also refuses to seed if this ever drifts.
+            local runner="${REPO_ROOT}/tooling/test-runner/testing-exec.sh"
+            log_step "Building for Python ${pyver} (in-container): build_deployment.py ${build_args}..."
 
             if [[ "$pyver" != "$primary_pyver" ]]; then
                 # Non-primary build: non-fatal — log a warning on failure and continue
                 local build_exit=0
                 if [[ "$FAILFAST" == "true" ]]; then
-                    python3 build_deployment.py ${build_args} || build_exit=$?
+                    "${runner}" build "${pyver}" -- build_deployment.py ${build_args} || build_exit=$?
                 else
-                    python3 build_deployment.py ${build_args} 2>&1 | tail -20 || build_exit=$?
+                    "${runner}" build "${pyver}" -- build_deployment.py ${build_args} 2>&1 | tail -20 || build_exit=$?
                 fi
                 if [[ $build_exit -ne 0 ]]; then
                     log_warning "Python ${pyver} build failed (exit ${build_exit}) — non-primary build, continuing"
@@ -816,9 +825,9 @@ phase_build() {
             else
                 # Primary build: fatal on failure (3.11 zip is what gets deployed)
                 if [[ "$FAILFAST" == "true" ]]; then
-                    python3 build_deployment.py ${build_args}
+                    "${runner}" build "${pyver}" -- build_deployment.py ${build_args}
                 else
-                    python3 build_deployment.py ${build_args} 2>&1 | tail -20
+                    "${runner}" build "${pyver}" -- build_deployment.py ${build_args} 2>&1 | tail -20
                 fi
                 log_success "Built (primary): ${out}"
             fi
@@ -827,8 +836,17 @@ phase_build() {
         # Primary deploy artifact is the 3.11 bundle
         log_success "Webhosting builds complete. Primary: ${ZIP_FILE}"
     else
-        # Local target: single bundle with current Python (no cross-version needed)
-        local BUILD_ARGS="--target local --build-dir deploy-local --output deploy-local.zip --seed-demo"
+        # Local target: single bundle for the CURRENT host interpreter. deploy-local
+        # is served directly by host python3/gunicorn in phase_start
+        # (start_flask_local) — there is no separate target ABI to cross-build for,
+        # the vendor/ wheels just need to match whatever actually runs it. naf-I03's
+        # host-vs-target guard in build_deployment.py refuses to seed under a
+        # mismatched interpreter, so pass the host's OWN version explicitly instead
+        # of relying on the CLI's "3.11" default — which would wrongly trip the guard
+        # whenever the devcontainer runs a different Python (e.g. 3.14).
+        local host_pyver
+        host_pyver="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+        local BUILD_ARGS="--target local --build-dir deploy-local --output deploy-local.zip --seed-demo --python-version ${host_pyver}"
         if [[ "${BUNDLE_APP_CONFIG}" == "true" ]]; then
             BUILD_ARGS="${BUILD_ARGS} --bundle-app-config"
         fi
