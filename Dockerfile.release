@@ -1,0 +1,61 @@
+# Dockerfile.release — netcup-api-filter py3.14 self-hosting container image.
+# =============================================================================
+# Phase 1 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
+# the container release target. Built via docker-bake.hcl's "py314" target —
+#   ciu (local dev/inspect): docker buildx bake -f docker-bake.hcl py314 --load
+#   cmru (publish to ghcr):  docker buildx bake -f docker-bake.hcl py314 --push
+#
+# Runs the REAL app, mirroring tooling/app-local/ciu.compose.yml.j2's entrypoint
+# exactly: gunicorn -c gunicorn.conf.py passenger_wsgi:application, port 5100,
+# health GET /admin/login. This is NOT the retired root Dockerfile it replaces
+# (that one installed a non-existent requirements.txt, a YAML config, and ran
+# the dead filter_proxy module — deleted, B-OPS).
+#
+# Layout mirrors build_deployment.py's copy_application_files(): passenger_wsgi.py
+# is copied from its canonical location (src/netcup_api_filter/passenger_wsgi.py)
+# to the deploy root, alongside the full src/ tree and gunicorn.conf.py — the same
+# arrangement Passenger webhosting and the app-local dev stack both use, so
+# passenger_wsgi.py's own app_root/src_root resolution (Path(__file__).resolve())
+# works unmodified in the container.
+#
+# No app-config.toml / SECRET_KEY / NETCUP_* credentials are baked in or required
+# to boot: passenger_wsgi.py already self-generates a temporary SECRET_KEY and
+# auto-detects the sqlite DB path when they are absent (see that file). An
+# operator wiring this image for real use supplies NETCUP_CUSTOMER_ID/
+# NETCUP_API_KEY/NETCUP_API_PASSWORD (or an app-config.toml bind-mounted over
+# /app/app-config.toml) and a persistent volume for /app so netcup_filter.db and
+# the persisted SECRET_KEY survive container recreation.
+# =============================================================================
+
+ARG PYTHON_VERSION=3.14
+FROM python:${PYTHON_VERSION}-slim-trixie
+
+WORKDIR /app
+
+# Runtime closure only — the same requirements file the Passenger webhosting
+# deploy installs (requirements-dev.txt is test/gate-only and never ships).
+# gunicorn itself is NOT in requirements.webhosting.txt (Passenger hosts don't
+# need it — Passenger is its own process manager); this image is its own
+# webserver, so it is installed explicitly, pinned like requirements-dev.txt.
+COPY requirements.webhosting.txt ./
+RUN pip install --no-cache-dir -r requirements.webhosting.txt "gunicorn>=21.0.0"
+
+# Canonical application code + the two deploy-root files passenger_wsgi.py
+# expects beside it, exactly as build_deployment.py's copy_application_files()
+# lays out a Passenger deployment directory.
+COPY src/ ./src/
+COPY src/netcup_api_filter/passenger_wsgi.py ./passenger_wsgi.py
+COPY gunicorn.conf.py ./gunicorn.conf.py
+
+ENV PYTHONPATH=/app/src \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# gunicorn.conf.py's GUNICORN_BIND default (0.0.0.0:5100) — keep in sync with
+# tooling/app-local/ciu.defaults.toml.j2's app_local.port.
+EXPOSE 5100
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5100/admin/login', timeout=3).status==200 else 1)"
+
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "passenger_wsgi:application"]
