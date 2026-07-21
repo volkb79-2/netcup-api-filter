@@ -4,7 +4,7 @@ id: naf-P06-test-suite-integrity
 project: naf
 title: "Test suite: silent route-discovery fallback and tests that cannot fail"
 tier: sonnet5-high
-input_revision: "adcba7d"
+input_revision: "a5a9397"
 depends_on: []
 session: fresh
 source: {kind: review, ref: "docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md#P1-F"}
@@ -41,9 +41,9 @@ escalate_if:
 
 # P06 — Test-suite integrity: the silent fallback and the can't-fail tests
 
-> **STATE (2026-07-21): 🟡 PARTIAL.** O1 (route-discovery floor) done as part 1. **O2/O3 still open** (kill the can't-fail tests + delete skip-only skeletons) — premise still valid, and now **unblocked**: the e2e gate + pwmcp browser container are live. See [../STATE.md](../STATE.md).
+> **STATUS (2026-07-21):** O1 part-1 merged (do not re-implement); active work = O2 + O3 (+ any O1 part-2 STATE.md names); the unit gate re-verifies all oracles. See [../STATE.md](../STATE.md).
 
-> Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
+> Tier: sonnet5-high · Base branch: main (input_revision a5a9397).
 > Source: the deep review, finding **P1-F**. This is the "testing framework" priority.
 > A suite that silently covers half of what it claims is worse than a smaller honest one.
 
@@ -90,6 +90,10 @@ escalate_if:
    report the numbers, do not edit the docs here.
 
 ## Gate (the ONLY accepted gate)
+
+The daemon runs this package in a git **worktree** under `.worktrees/` off the `main` branch;
+the `unit` gate mounts the repo and `cd`s into that worktree. Run the gate there, never in the
+devcontainer:
 
 ```
 ./tooling/test-runner/testing-exec.sh unit

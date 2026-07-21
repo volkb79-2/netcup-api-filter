@@ -24,9 +24,27 @@ project home (the tool's own source tree).
     decisions.md     # decisions inbox — product calls (D-<NNN>)
     roadmap.md       # self-dev milestones
     backlog.md       # un-carved ideas
+    GUIDE.md         # OPTIONAL: project-specific agent operating guide (see below)
     archive/         # merged handoffs + reports land here
   docs/              # the project's OWN docs — nyxloom READS these (see [refs])
 ```
+
+### `GUIDE.md` — project-specific operating instructions (optional, recommended)
+
+A project MAY keep a `nyxloom-trove/GUIDE.md`: the nyxloom-specific
+information and usage instructions an agent needs to *operate the
+project's environment* — gate invocation, worktree/stack setup recipes,
+environment modes and teardown rules, cockpit-vs-runner distinctions.
+Rationale: repo-root `AGENTS.md` is the cross-tool surface every agent
+CLI loads, but it should stay lean and tool-agnostic — so instead of
+inlining nyxloom-specific operating detail there, `AGENTS.md` carries a
+**one-line pointer** ("nyxloom-specific information and usage
+instructions: see `nyxloom-trove/GUIDE.md`") and the detail lives in the
+trove, versioned next to the handoffs that depend on it. Carvers should
+reference GUIDE.md sections in a handoff's "Context to read first"
+instead of restating environment recipes per-handoff (single source;
+recipes rot fast). First adopter: dstdns (multi-stack environment rules,
+2026-07-16).
 
 ## Where nyxloom's data lives — the trove vs. the state volume
 
@@ -64,12 +82,38 @@ Every document nyxloom **manages or reads** is either:
 If it's neither, nyxloom doesn't know about it. `nyxloom lint` (config
 schema-validation) flags a `[refs]` path that doesn't resolve.
 
+## Direction spine (north-star / product-definition / roadmap / backlog)
+
+A project MAY additionally adopt the managed "direction spine" -- four
+numeric-prefixed trove docs (`1-north-star.md`, `2-product-definition.md`,
+`3-roadmap.md`, `4-backlog.md`) with schema-validated YAML frontmatter,
+non-AI-checked by `nyxloom lint`'s S1-S4 rules the same way handoffs get
+L1-L12. Full contract (frontmatter schemas, `nyxloom.toml` config keys,
+validator rules): see `docs/spine-documents-spec.md`. Adopting the spine is
+**optional per project** -- the plain `roadmap.md`/`backlog.md` above remain
+valid and are still what `exec-nyxloom init` scaffolds. nyxloom's own trove
+has adopted it (see `nyxloom-trove/nyxloom.toml`'s `north_star`/
+`product_definition`/`roadmap`/`backlog` keys and the four docs they point
+at) as the worked example.
+
 ## Document conventions ("managed" = enforced, not aspirational)
 
 - **Naming:** the filename stem MUST equal the frontmatter `id` (enforced by
   lint L1) — i.e. `<id>.md`, where `id` is `<project>-P<NN>-<kebab-slug>` and
   `<NN>` is a zero-padded ordinal unique per project. (A short `P<NN>-<slug>.md`
   filename with a project-prefixed id fails L1 — see nyxloom-P23's own fix.)
+  - **Component / category convention:** the id regex
+    (`^[a-z][a-z0-9]*-P[0-9]{2,4}(-[a-z0-9-]+)?$`) allows only ONE hyphen-free
+    token before `-P<NN>` — that token is the **real project id**, NOT a
+    component. A project with components/categories encodes the component as the
+    **first slug segment**: `<project>-P<NN>-<component>-<slug>` (e.g.
+    `dstdns-P32-lifecycle-cancel-semantics` → project `dstdns`, component
+    `lifecycle`). Do NOT make the component the pre-`P<NN>` token
+    (`ui-P10`, `infra-P11`): that makes each component look like a *separate
+    project* to the daemon (its own statefile namespace, registry entry, event
+    log). For grouping/filtering by component, an optional first-class
+    `component:` frontmatter field is preferred over parsing the slug
+    (added by nyxloom-P42; until then the slug convention is the only signal).
 - **Frontmatter mandatory + schema-validated** against
   `schemas/handoff-frontmatter.schema.json`. `nyxloom lint` rejects a handoff
   with missing/invalid frontmatter — that lint IS the managed-folder guard.

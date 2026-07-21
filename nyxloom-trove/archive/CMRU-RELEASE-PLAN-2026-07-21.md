@@ -1,3 +1,5 @@
+**SUPERSEDED 2026-07-21 — archived; work merged, see STATE.md**
+
 # naf release architecture — cmru adoption plan (2026-07-21)
 
 ## EXECUTION STATUS 2026-07-21

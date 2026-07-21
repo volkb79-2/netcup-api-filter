@@ -1,3 +1,5 @@
+**SUPERSEDED 2026-07-21 — archived; work merged, see STATE.md**
+
 # Infra plan B — ciu root fix, network migration, containerized build, host traefik
 
 Supersedes the sequencing in `INFRA-PLAN-2026-07-20.md` (INFRA-1/2 are landed). Operator

@@ -21,8 +21,10 @@ trove = "nyxloom-trove"
 handoff_globs   = ["nyxloom-trove/handoffs/*.md"]
 reports_dir     = "nyxloom-trove/reports"
 decisions_inbox = "nyxloom-trove/decisions.md"
-roadmap         = "nyxloom-trove/roadmap.md"
-backlog         = "nyxloom-trove/backlog.md"
+north_star      = "nyxloom-trove/1-north-star.md"
+product_definition = "nyxloom-trove/2-product-definition.md"
+roadmap         = "nyxloom-trove/3-roadmap.md"
+backlog         = "nyxloom-trove/4-backlog.md"
 archive_dir     = "nyxloom-trove/archive"
 archive_keep_visible = 10
 agent_logs      = "nyxloom-trove/agent-logs"
@@ -36,7 +38,7 @@ worktree_root = ".worktrees"
 
 # --- [refs]: docs nyxloom READS but never edits ------------------------------
 # The 2026-07-16 deep review is deliberately NOT referenced here: its findings now live
-# in this trove (handoffs/ + backlog.md), so the trove is the truth and the review is an
+# in this trove (handoffs/ + 4-backlog.md), so the trove is the truth and the review is an
 # archive (docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md). Handoffs still cite it in
 # `source.ref` as provenance — where a finding came from — not as a live document.
 [refs]

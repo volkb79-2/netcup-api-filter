@@ -58,7 +58,8 @@ I tried to interview the operator on the five open infra decisions; the interact
 question was **denied by a hook** (background session, operator away). Per standing
 instruction ("make decisions on your own, don't wait for signoff; write them down for later
 review"), I decided them with the plan's recommended options. **All are open to reversal on
-review** — flagged REVIEW-ME. See `INFRA-PLAN-2026-07-20.md`.
+review** — flagged REVIEW-ME. See the archived
+[`INFRA-PLAN-2026-07-20.md`](archive/INFRA-PLAN-2026-07-20.md).
 
 - **E · sequencing:** execute **INFRA-1 (ciu adoption) + INFRA-2 (pwmcp e2e) now** (additive,
   validatable on this host); **carve INFRA-3 (containerized build) + INFRA-4 (host traefik) as
