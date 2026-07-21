@@ -1,0 +1,21 @@
+# CIU S14.6 inventory for the shared Passenger webhoster. naf has NO Vault, so
+# ssh_key is a PATH to a private-key file that lives OUTSIDE this repo — CIU reads
+# it directly (expanduser + resolve). Do NOT use an "ASK_VAULT:" value here (there
+# is nothing to resolve it against), and never commit a key. The retired deploy.sh
+# used the ambient SSH agent / default identity with no `-i`; CIU-12 requires an
+# explicit key path, so name the operator's key below. ssh_host / ssh_user and the
+# known-host fingerprint are public connection metadata.
+#
+# Copy the example values below into this local inventory before using:
+#   ciu up --host webhoster --thin -- --variant py311
+
+[deploy.hosts.webhoster]
+ssh_host = "REPLACE_WITH_WEBHOSTING_SSH_HOST"
+ssh_user = "REPLACE_WITH_WEBHOSTING_SSH_USER"
+ssh_key = "REPLACE_WITH_PATH_TO_WEBHOSTER_SSH_KEY"   # a private-key FILE path, e.g. ~/.ssh/naf-webhoster (expanduser supported); NOT ASK_VAULT — naf has no Vault
+known_host = "REPLACE_WITH_PINNED_SSH_HOST_KEY"
+bundle_dir = "/netcup-api-filter"
+docker_optional = true
+push_mode = "auto"
+bundle_excludes = [".git", ".env", ".env.workspace", ".env.guard", ".ciu", "deploy", "deploy-local", "deploy-webhosting", "deployment_state_local.json", "deployment_state_webhosting.json", "tmp"]
+activate = "python3 scripts/activate.py"
