@@ -3,6 +3,9 @@
 Orientation for AI agents and new contributors. Read this first; follow the links
 for depth. Keep it accurate — if you change a workflow, update the relevant section.
 
+> **For the current state of naf** (what's done, what's open, gate status, handoff states),
+> see the single point-of-truth board: [`nyxloom-trove/STATE.md`](nyxloom-trove/STATE.md).
+
 ## What this is
 
 A Flask application that sits **in front of DNS provider APIs** (netcup CCP, plus

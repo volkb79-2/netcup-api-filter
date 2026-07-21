@@ -9,6 +9,7 @@ the architecture overview, then dive into the relevant guide below.
 
 ## Architecture & onboarding
 
+- [`../nyxloom-trove/STATE.md`](../nyxloom-trove/STATE.md) — **current project state** (done/open, gate, handoffs) — the single status board.
 - [`../AGENTS.md`](../AGENTS.md) — project orientation, architecture, conventions (read first).
 - [`FEATURES.md`](FEATURES.md) — **the canonical capability + roadmap map.**
 - [`../README.md`](../README.md) — top-level overview and quick start.

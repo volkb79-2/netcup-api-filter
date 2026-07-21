@@ -8,7 +8,7 @@ input_revision: "f912479"
 depends_on: [naf-I01-ciu-adoption]
 session: fresh
 source: {kind: plan, ref: "nyxloom-trove/INFRA-PLAN-2026-07-20.md#INFRA-4"}
-status: CARVED — PAUSED FOR OPERATOR REVIEW (needs the FQDN decision + changes deploy.sh)
+status: DONE — merged (3049c49); the "changes deploy.sh" premise is obsolete (deploy.sh retired); see ../STATE.md
 supersedes: [naf-P05-workspace-fqdn-unbound#O2]
 scope:
   touch:
@@ -39,6 +39,8 @@ escalate_if:
 ---
 
 # naf-I04 — one edge, owned by the host
+
+> **STATE (2026-07-21): ✅ DONE** — host-traefik exposure landed (`3049c49`); naf terminates no TLS. The premise's "changes deploy.sh" is obsolete (deploy.sh retired in P4). See [../STATE.md](../STATE.md).
 
 > **PAUSED — carved for operator review.** Needs Decision A (the FQDN) confirmed and changes
 > `deploy.sh`. Recorded under D-006 (REVIEW-ME).

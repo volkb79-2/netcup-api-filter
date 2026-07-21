@@ -8,28 +8,18 @@ Handoffs reference these via `advances:`; the reviewer verifies the ratchet at m
 
 ---
 
-## Landed status (updated 2026-07-20b)
+## Landed status
 
-- **B-AUTH — auth hardening batch (2026-07-20b):** naf-P07 (TOTP 2FA lockout + dead-auth
-  removal) ✅, naf-P08 (trust ProxyFix `remote_addr`, not spoofable leftmost XFF) ✅, naf-P09
-  (reset/invite honor `validate_password`) ✅ — all merged, **433 unit tests on 3.11 + 3.9**
-  (was 422). Remaining B-AUTH items (dead second reset path already partly cleared by P07's
-  function removal; the `password_reset_code`/`_expires` column drop needs a migration).
-- **INFRA track (2026-07-20b):** `INFRA-PLAN-2026-07-20.md` — ciu adoption + pwmcp e2e +
-  containerized build + host-traefik exposure. INFRA-1/2 executing now; INFRA-3/4 carved for
-  operator review (they modify the deploy path). Decisions in D-006. INFRA-4 obsoletes
-  naf-P05 O2.
-- **M1 — authorization boundary:** M1.1 (naf-P01, REST delete/update scope) ✅ and M1.2
-  (naf-P02, portal create/edit/delete scope) ✅ merged. M1.3 (read-scope leak) still open
-  in backlog B-UI. The boundary is closed on the *mutation* paths.
-- **M2 — audit trail:** ✅ done (naf-P03, merged 2026-07-16).
-- **M3 — production-shaped config:** M3.1 + M3.2 (naf-P04, settings encoding + SMTP key) ✅
-  merged. M3.3 (naf-P05, devcontainer FQDN) still open (deferred this session — infra/shell,
-  needs a post-create run).
-- **M4 — honest suite:** M4.1 (route discovery fails loudly + route floor) ✅ merged as
-  naf-P06 part 1. M4.2 (kill can't-fail tests) is naf-P06 part 2, open (needs the e2e gate).
+> **The live landed/open board is [STATE.md](STATE.md)** (the single point of truth). This file
+> is the milestone *ladder*, not the status board — read STATE.md for what's done.
 
-All merged work validated on BOTH Passenger interpreters (3.11 + 3.9) via the gate.
+As of 2026-07-21: **M1.1/1.2** (P01/P02 scope), **M2** (P03 audit), **M3.1/3.2** (P04 config),
+**M4.1** (P06 part 1 route floor) landed; the **B-AUTH batch** (P07/P08/P09) and the full
+**ciu/cmru release adoption** (containerized 3.9/3.11/3.14 build, host-traefik edge, pwmcp e2e,
+cmru multi-variant tarballs + py3.14 image, `deploy.sh` retired) landed. Gate: **441 ×
+{3.11, 3.9, 3.14}**. Open milestone work: **M1.3** (read-scope leak), **M4.2** (can't-fail
+tests, P06 part 2 — now unblocked), **M5** (portal — operator priority), **M6** (one DNS stack /
+D-002), **M7** (data survival / D-003). INFRA-4 supersedes naf-P05 O2.
 
 ---
 

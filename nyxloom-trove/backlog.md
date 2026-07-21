@@ -1,5 +1,9 @@
 # Backlog — un-carved ideas
 
+> **Live status board: [STATE.md](STATE.md).** This backlog is the detailed *un-carved* list;
+> some sections below are already DONE (marked ✅) but kept for the record — STATE.md is
+> authoritative for what's open.
+
 Everything from the deep review (`docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md`, declared in
 `nyxloom.toml [refs]`) that is **not yet a handoff**. Each entry is specific enough that
 carving is mechanical: the file:line and the intended change are already named.
@@ -14,7 +18,12 @@ directly in commit `3fd6357` and validated in the gate (373 passed on python 3.1
 
 ---
 
-## B-AUTH — auth hardening (review §P1-C)
+## B-AUTH — auth hardening (review §P1-C) — ✅ RESOLVED
+
+> **✅ DONE (naf-P07/P08/P09, 2026-07-21):** TOTP lockout (`3434659`), XFF spoofing (`521b788`),
+> reset/invite password policy (`675a338`), and both dead-auth functions removed. The only
+> residue is the optional `password_reset_code`/`_expires` **column drop** (needs a migration) —
+> tracked under B-DATA/D-003, not blocking. Original items kept below for the record.
 
 - **TOTP has no lockout.** `account_auth.py:585` — the TOTP branch of `verify_2fa` never
   calls `increment_2fa_failures`, so `method=totp` retries indefinitely. The

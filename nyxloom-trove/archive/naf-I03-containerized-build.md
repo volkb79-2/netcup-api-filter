@@ -8,7 +8,7 @@ input_revision: "f912479"
 depends_on: [naf-I01-ciu-adoption]
 session: fresh
 source: {kind: plan, ref: "nyxloom-trove/INFRA-PLAN-2026-07-20.md#INFRA-3"}
-status: CARVED — PAUSED FOR OPERATOR REVIEW (touches the production deploy path)
+status: DONE — merged (860c825); see ../STATE.md
 advances: [M3]
 scope:
   touch:
@@ -37,6 +37,8 @@ escalate_if:
 ---
 
 # naf-I03 — build the deployment artifacts at their target ABI
+
+> **STATE (2026-07-21): ✅ DONE** — the containerized build (`testing-exec.sh build <ver>`) landed (`860c825`) and now backs the cmru Passenger-tarball builder. See [../STATE.md](../STATE.md).
 
 > **PAUSED — carved for operator review.** This modifies the production artifact pipeline
 > (`deploy.sh`, `build_deployment.py`). Do not dispatch until the operator confirms. Recorded

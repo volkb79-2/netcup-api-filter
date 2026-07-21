@@ -37,6 +37,8 @@ escalate_if:
 
 # naf-P07 — 2FA TOTP lockout + dead-auth removal
 
+> **STATE (2026-07-21): ✅ DONE** — merged (`3434659`). See [../STATE.md](../STATE.md).
+
 > Base: `main` @ `c1acb8e`. Gate: `./tooling/test-runner/testing-exec.sh unit` (runs 3.11 + 3.9).
 > Self-gate in your worktree before finishing. Review is against git state, not this report.
 

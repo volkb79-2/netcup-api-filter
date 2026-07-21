@@ -41,6 +41,8 @@ escalate_if:
 
 # P06 — Test-suite integrity: the silent fallback and the can't-fail tests
 
+> **STATE (2026-07-21): 🟡 PARTIAL.** O1 (route-discovery floor) done as part 1. **O2/O3 still open** (kill the can't-fail tests + delete skip-only skeletons) — premise still valid, and now **unblocked**: the e2e gate + pwmcp browser container are live. See [../STATE.md](../STATE.md).
+
 > Tier: sonnet5-high · Base branch: main (input_revision adcba7d).
 > Source: the deep review, finding **P1-F**. This is the "testing framework" priority.
 > A suite that silently covers half of what it claims is worse than a smaller honest one.

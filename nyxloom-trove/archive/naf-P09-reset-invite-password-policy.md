@@ -36,6 +36,8 @@ escalate_if:
 
 # naf-P09 — reset/invite must honor the real password policy
 
+> **STATE (2026-07-21): ✅ DONE** — merged (`675a338`). See [../STATE.md](../STATE.md).
+
 > Base: `main` @ `c1acb8e`. Gate: `./tooling/test-runner/testing-exec.sh unit` (3.11 + 3.9).
 > Self-gate in your worktree. Review is against git state, not this report.
 

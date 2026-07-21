@@ -36,6 +36,8 @@ escalate_if:
 
 # naf-P08 — trust the ProxyFix-normalized client IP, not the raw header
 
+> **STATE (2026-07-21): ✅ DONE** — merged (`521b788`). See [../STATE.md](../STATE.md).
+
 > Base: `main` @ `c1acb8e`. Gate: `./tooling/test-runner/testing-exec.sh unit` (3.11 + 3.9).
 > Self-gate in your worktree. Review is against git state, not this report.
 

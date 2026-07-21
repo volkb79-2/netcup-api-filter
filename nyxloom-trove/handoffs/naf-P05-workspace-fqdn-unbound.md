@@ -35,6 +35,8 @@ escalate_if:
 
 # P05 — The devcontainer rebuild bomb
 
+> **STATE (2026-07-21): 🟡 PARTIAL.** O1 (`.env.services` set-u guard) done. **O2 premise superseded** — after INFRA-4, `PUBLIC_FQDN` is a ciu config fact from `ciu.env`, not something `post-create.sh` writes; re-scope or close O2. See [../STATE.md](../STATE.md).
+
 ## STATUS 2026-07-21 — O2 SUPERSEDED by naf-I04 (CLOSED)
 
 **O2 is superseded, not implemented.** naf-I04 (host-traefik exposure) retired naf's dev
