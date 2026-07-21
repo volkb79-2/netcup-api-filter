@@ -15,6 +15,7 @@ from .seeding import (
     seed_from_config,
     seed_mock_email_config,
     seed_comprehensive_demo_data,
+    seed_delegated_zone_domain_root,
     generate_test_client_credentials,
     create_default_test_client_options,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "seed_from_config",
     "seed_mock_email_config",
     "seed_comprehensive_demo_data",
+    "seed_delegated_zone_domain_root",
     "generate_test_client_credentials",
     "create_default_test_client_options",
 ]
