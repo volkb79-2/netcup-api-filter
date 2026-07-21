@@ -9,7 +9,7 @@ and drive it remotely over `ws://pwmcp:3000/`.
 `ghcr.io/volkb79-2/pwmcp:latest` — the shared, prebuilt unified Playwright image
 (Playwright `run-server` on `:3000` + `@playwright/mcp` on `:8931`, under supervisord).
 naf uses **only** the `:3000` `connect()` path. Mirrors `dstdns/infra/pwmcp`, but joins
-**naf-dev-network** with alias `pwmcp` (the shared `pwmcp-local-pwmcp` sits on dstdns's
+**naf-dev-network** with alias `pwmcp` (the shared `dstdns-shared-local-pwmcp` sits on dstdns's
 network, unreachable from here — hence naf's own instance; decision D-006/B).
 
 ## Use
@@ -18,7 +18,7 @@ This stack is ciu-managed (`ciu.defaults.toml.j2` + `ciu.compose.yml.j2`, root k
 `pwmcp`) — bring it up via the central ciu orchestrator (`source ciu.env`, then
 `ciu up`), not a bare `docker compose` invocation. See the header comments in
 `ciu.compose.yml.j2` for why: a bare `docker compose -f ... up` here once adopted
-dstdns's shared `pwmcp-local-pwmcp` because both directories share the basename
+dstdns's shared `dstdns-shared-local-pwmcp` because both directories share the basename
 `pwmcp` (hit live, see `nyxloom-trove/backlog.md` B-INFRA); ciu scopes the compose
 project name explicitly instead of falling back to the directory basename.
 

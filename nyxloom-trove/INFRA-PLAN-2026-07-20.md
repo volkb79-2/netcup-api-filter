@@ -54,12 +54,12 @@ traefik reference sweeps, all file-cited in the session log.
 
 - `ciu` is installed in the devcontainer (`4.7.1.dev153`).
 - Running & healthy (4–6 days): `edge-traefik` (traefik v3.7), `edge-dockerproxy`,
-  `pwmcp-local-pwmcp` (`ghcr.io/volkb79-2/pwmcp:latest`).
+  `dstdns-shared-local-pwmcp` (`ghcr.io/volkb79-2/pwmcp:latest`).
 - Networks present: `ingress_public` (traefik consumer net), `naf-dev-network`,
   `traefik_internal`.
 - `edge-traefik` `websecure` entrypoint carries `certResolver: letsencrypt` — **consumers
   need no TLS/cert labels**, just `traefik.enable` + a `Host()` router + `ingress_public`.
-- The shared `pwmcp-local-pwmcp` is on `dstdns-98535c-network` / `pwmcp` — **not**
+- The shared `dstdns-shared-local-pwmcp` is on `dstdns-98535c-network` / `pwmcp` — **not**
   `naf-dev-network`, so naf can't reach it as-is.
 - `.env.workspace` currently has **no** `PUBLIC_*` vars (the stale file was cleaned).
 
@@ -111,7 +111,7 @@ raw `chromium.connect(ws://pwmcp:3000/)` path — no `pwmcp_client`/lease adopti
 **Work (three real gaps):**
 1. Stand pwmcp up on `naf-dev-network` with alias `pwmcp` — either **vendor `infra/pwmcp/`**
    (ciu consumer stack, declarative, matches dstdns) or **attach the existing shared
-   `pwmcp-local-pwmcp`** to `naf-dev-network` (lighter, but mutates a dstdns-owned container).
+   `dstdns-shared-local-pwmcp`** to `naf-dev-network` (lighter, but mutates a dstdns-owned container).
    See Decision B. Hardened: `user 1000:1000`, `cap_drop ALL`, `no-new-privileges`,
    `shm_size 2gb`.
 2. Set `PLAYWRIGHT_SERVER_WS=ws://pwmcp:3000/` for the e2e gate (from ciu `[test_runner.pwmcp]`
@@ -188,7 +188,7 @@ close it, superseded by INFRA-4. The `PUBLIC_TLS_*` cert paths lose all consumer
   `<project>.gstammtisch.dchive.de` behind wildcard DNS. What hostname base for naf? *(operator
   — non-inferable env/DNS config)*
 - **B · pwmcp** (INFRA-2): vendor naf's own `infra/pwmcp/` stack on `naf-dev-network`
-  (declarative, matches dstdns) vs. attach the running shared `pwmcp-local-pwmcp`. *Recommend
+  (declarative, matches dstdns) vs. attach the running shared `dstdns-shared-local-pwmcp`. *Recommend
   vendor-own* (declarative, no cross-project container mutation).
 - **C · ciu depth** (INFRA-1): full `.j2` template convention (matches dstdns) vs. minimal
   `ciu up --shipped` over the hand-written compose. *Recommend full* (the user asked to copy

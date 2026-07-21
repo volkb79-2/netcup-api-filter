@@ -328,7 +328,7 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
 - **Compose project-name collision clobbered dstdns's shared pwmcp (hit live, FIXED).**
   naf's `infra/pwmcp/` and dstdns's `infra/pwmcp/` both default their compose project name
   to the directory basename `pwmcp`, so `docker compose -f infra/pwmcp/docker-compose.yml
-  up -d` from naf adopted dstdns's `pwmcp-local-pwmcp` as its own service and **recreated
+  up -d` from naf adopted dstdns's `dstdns-shared-local-pwmcp` as its own service and **recreated
   then removed it** — taking down shared browser infra. Restored with
   `docker compose -f /workspaces/dstdns/infra/pwmcp/ciu.compose.yml up -d --pull never`.
   Fixed permanently by pinning `name: naf-pwmcp` at the top of naf's compose (committed).

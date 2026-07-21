@@ -70,7 +70,7 @@ review** — flagged REVIEW-ME. See `INFRA-PLAN-2026-07-20.md`.
   dstdns `ciu.env` `PUBLIC_FQDN`), i.e. `naf.<base>`. Not committed until INFRA-4 review.
 - **B · pwmcp (INFRA-2):** **vendor naf's own `infra/pwmcp/` ciu stack** on `naf-dev-network`
   (declarative, matches dstdns, self-contained) rather than attaching the dstdns-owned shared
-  `pwmcp-local-pwmcp` (which sits on dstdns's network and would couple naf's e2e to a foreign
+  `dstdns-shared-local-pwmcp` (which sits on dstdns's network and would couple naf's e2e to a foreign
   runtime container).
 - **C · ciu depth (INFRA-1):** **full `.j2` template convention** (repo-root marker + stack
   templates + gitignore rendered outputs), matching dstdns — not the minimal `--shipped` path,

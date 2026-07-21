@@ -17,7 +17,7 @@
 # compose pinned an explicit `name: naf-pwmcp` because dstdns's `infra/pwmcp/` also
 # defaults to compose project `pwmcp` (directory basename) — a bare `docker compose
 # up` from here once adopted, then recreated-and-removed, dstdns's shared
-# `pwmcp-local-pwmcp` (hit live, see nyxloom-trove/backlog.md B-INFRA). ciu drives
+# `dstdns-shared-local-pwmcp` (hit live, see nyxloom-trove/backlog.md B-INFRA). ciu drives
 # `docker compose` with an explicit project scope derived from deploy.project_name
 # ("{{ deploy.project_name }}"), not the directory basename, so that footgun no
 # longer applies here — do NOT reintroduce a bare `docker compose -f ... up`
