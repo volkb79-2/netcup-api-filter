@@ -1,5 +1,47 @@
 # naf release architecture — cmru adoption plan (2026-07-21)
 
+## EXECUTION STATUS 2026-07-21
+
+**Landed + green:**
+- **Phase 1 (container)** — merged to naf `main` (`abf6274`): `docker-bake.hcl` (py3.14
+  `Dockerfile.release`, gunicorn `passenger_wsgi:application`), `cmru.toml`
+  (`artifacts=["oci-image"]`, **`version.strategy="none"`** — an oci-only project can't be
+  git-tagged; `scm` switches on in P2 when tarball/bundle are added), dead root
+  `Dockerfile`/`docker-compose.yml` deleted, gate now **3.9/3.11/3.14** (441×3). Image builds
+  + runs healthy.
+- **CMRU-FEAT** (upstream, `vbpub` `964eec0`, suite 348): multi-variant `bundle`/`tarball`
+  publish (`[[project.X.variants]]`, `publish_versioned_variants`, per-variant asset+sha256+
+  manifest/minisig, `latest.json` variants list) + variant-selecting installer (explicit
+  `--variant`, remembered in `shared/.variant`, no silent default). Single-variant path
+  proven byte-for-byte unchanged.
+- **CIU-12** (upstream, `vbpub` `4a3a0ff`, suite 1016→**1022 after review**): docker-optional
+  `ciu up --host … --thin` push→activate (the reserved `--thin` slot), `activate` host key
+  (string or per-verb `bootstrap/apply/health/rollback` table), rsync→scp fallback,
+  `bundle_excludes`, SPEC S14.6. ciu backlog audited — all items already resolved.
+- **opus-review of ciu — DONE** (`vbpub` `4636899`+5): caught a **real bug the feature missed**
+  — `make_tarball` used `str.lstrip("./")` as a prefix-strip (it strips a charset), so the
+  `.git` exclude never matched and the scp/tar fallback shipped the whole `.git` history to the
+  webhoster; the test masked it with the same bug. Also fixed a `ValueError` crash in
+  `lint_graph` cycle detection, doc drift, dead code. 1022 passed.
+
+**Running:** opus-review of cmru (serialized after ciu's).
+
+**Known issue (cosmetic):** two `vbpub` commit *messages* are crossed — a concurrent
+`git commit --amend` on the fast-moving shared `main` (multiple agents + a nyxloom daemon +
+wings-cgroups all committing) relabeled `964eec0` (cmru content, wears a wings message) and
+`2a21079` (ciu-docs content, wears the cmru message). **Content is correct and green on both
+sides**; fixing the messages needs a quiet exclusive window on `vbpub main` (history rewrite is
+unsafe while writers are active). Lesson: don't run concurrent committers against one shared
+branch, and never `--amend`/rebase there.
+
+**Next (sequenced):** P2 (cmru variant tarball build step + `[installer]`, using the landed
+CMRU-FEAT + INFRA-3 container build) → P3 (naf `activate.py` + `.ciu.hosts.toml`, using the
+landed CIU-12; retire `deploy.sh` push) → P4 (delete bespoke `build_deployment.py`/`deploy.sh`
+plumbing).
+
+---
+
+
 **Plan only — no code in this pass** (operator: "plan only, wait for the SSH/deploy research").
 Goal: outsource all reusable build/release/deploy logic to the upstream tools (cmru, ciu) and
 keep naf minimal. Retire the ~2500 lines of bespoke `build_deployment.py` + `deploy.sh`.
