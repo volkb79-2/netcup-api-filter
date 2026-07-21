@@ -1,0 +1,39 @@
+# cmru.toml — CMRU project config for netcup-api-filter (naf)
+# =============================================================================
+# Phase 1 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
+# the py3.14 self-hosting container release target ONLY. Tarball/bundle artifacts
+# (the per-interpreter Passenger webhosting builds, cmru's multi-variant feature)
+# land in Phase 2; [installer] and [steps.build] are added then, not here.
+#
+# NO SECRETS here (this file is committed). The GitHub token is resolved at run
+# time from $GITHUB_PUSH_PAT / $GITHUB_TOKEN, or a gitignored cmru.secret.toml
+# overlay ([github].token) — see cmru SPEC S2.4.
+# =============================================================================
+
+[github]
+owner      = "volkb79-2"
+repo       = "netcup-api-filter"
+owner_type = "user"          # matches vbpub/cmru.toml's owner_type for the same account
+
+[targets]
+host     = "github"
+registry = ["ghcr.io"]
+
+[project.naf]
+prefix    = "naf-v"
+artifacts = ["oci-image"]    # Phase 1: container only. Phase 2 adds "tarball"/"bundle".
+cwd       = "."
+
+# S-REL.4 (cmru SPEC): an oci-image-ONLY project must not pair with a
+# tagging strategy (scm/counter/file) — cmru's loader rejects that combo with
+# exit 2 ("OCI images are not git-tagged"; see cli.py _resolve_release_profile).
+# strategy="none" mirrors vbpub's own oci-image-only project
+# (modern-debian-tools-python-debug). Once Phase 2 adds "tarball"/"bundle" to
+# artifacts above, strategy="scm" (the plan doc's original intent for naf's
+# OVERALL versioning) becomes valid and should be switched then.
+[project.naf.version]
+strategy = "none"
+
+[project.naf.oci]
+bake_file = "docker-bake.hcl"
+target    = "py314"

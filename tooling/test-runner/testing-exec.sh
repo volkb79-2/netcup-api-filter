@@ -81,7 +81,8 @@ ensure_image() {
 # Map a Python X.Y version to its test-runner image tag. Shared by the `unit` gate
 # loop and the `build` subcommand (naf-I03) so there is exactly one place that knows
 # 3.11 is TEST_RUNNER_IMAGE itself and every other version is TEST_RUNNER_IMAGE's repo
-# with a ":py<XY>" tag.
+# with a ":py<XY>" tag — this already maps 3.14 -> ":py314" generically, no
+# 3.14-specific branch needed (verify: image_for_python_version 3.14).
 image_for_python_version() {
     local ver="$1"
     if [ "${ver}" = "3.11" ]; then
@@ -124,11 +125,16 @@ case "${CMD}" in
         # The PRIMARY gate: hermetic, no services, no browser. pytest.ini sets
         # `pythonpath = . src`. -p no:cacheprovider keeps the bind mount clean.
         #
-        # Runs BOTH Passenger targets (deploy.sh PYTHON_TARGETS=(3.9 3.11)). 3.11 is
-        # primary, but a 3.10+ construct passes there and breaks the 3.9 build, so a
-        # single-interpreter gate would ship it. Set GATE_PYTHON=3.11 to run just one.
+        # Runs all THREE shipped-artifact interpreters: the two Passenger deploy
+        # targets (deploy.sh PYTHON_TARGETS=(3.9 3.11)) plus 3.14, the py3.14
+        # self-hosting container release target (docker-bake.hcl "py314" /
+        # cmru.toml [project.naf.oci] — nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md
+        # Phase 1). 3.11 is primary, but a 3.10+ construct passes there and breaks
+        # the 3.9 build (or a 3.14-only construct breaks nothing here but would
+        # break there), so a single-interpreter gate would ship it. Set
+        # GATE_PYTHON=3.11 to run just one.
         rc=0
-        for target in ${GATE_PYTHON:-3.11 3.9}; do
+        for target in ${GATE_PYTHON:-3.11 3.9 3.14}; do
             IMAGE="$(image_for_python_version "${target}")"
             PYTHON_VERSION="${target}"
             echo "[gate] === python ${target} (${IMAGE}) ===" >&2
