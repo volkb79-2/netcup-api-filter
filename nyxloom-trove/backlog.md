@@ -350,3 +350,21 @@ and need reconciling with `docs/DEV_INFRA_SETUP.md`: `docs/CERTIFICATE_MOUNTING.
 `docs/CONFIGURATION_GUIDE.md`, `AGENTS.md`. Also `tooling/run-ui-validation.sh` existed only to
 drive the old nginx TLS flow — it now fails fast (its `tooling/reverse-proxy/proxy.env` is gone);
 delete it or rewrite it against the traefik/ciu path. S-M.
+
+## B-BUILD — demo-seed double-insert breaks every `--seed-demo` build (CONFIRMED release-blocker)
+
+`build_deployment.py:486` `seed_default_entities(seed_demo_clients_flag=True)` creates the
+`demo-readonly` account (from `.env.defaults` `DEFAULT_READONLY_TEST_CLIENT_ID=demo-readonly`),
+then `:495` `seed_comprehensive_demo_data()` (`bootstrap/seeding.py:713`) creates a
+`demo-readonly` account AGAIN → `sqlite3.IntegrityError: UNIQUE constraint failed:
+accounts.username`. The webhosting build always passes `--seed-demo` (`deploy.sh:800`), so a
+fresh `deploy.sh webhosting` (and `deploy.sh local`) **cannot complete DB seeding**.
+
+**Surfaced by INFRA-3** (the containerized build runs seeding to completion in a clean env and
+fails loudly). **Confirmed pre-existing**: reproduces identically under host Python 3.14, so it
+is NOT an ABI/interpreter issue — the current `deploy-webhosting/` zip predates the collision or
+was built without `--seed-demo`. **Fix:** make the two demo-account seed paths reconcile — either
+`seed_comprehensive_demo_data` get-or-creates `demo-readonly` instead of inserting, or
+`seed_default_entities`'s demo-client seed shouldn't create the account the comprehensive path
+owns. Needs a `--seed-demo` build to actually complete afterward (validate in the test container
+via `testing-exec.sh build`). Relates to B-QUALITY "duplicate demo-seeding implementations". S-M.
