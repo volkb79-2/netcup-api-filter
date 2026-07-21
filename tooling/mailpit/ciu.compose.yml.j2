@@ -17,6 +17,8 @@
 services:
   {{ mailpit.name }}:
     image: {{ mailpit.image }}:{{ mailpit.image_tag }}
+    # Always re-pull so a moving tag (:latest / :3.11-slim) never gets stuck stale.
+    pull_policy: always
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ mailpit.name }}
     restart: unless-stopped
     ports:

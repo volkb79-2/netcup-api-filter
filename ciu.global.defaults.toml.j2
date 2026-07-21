@@ -105,7 +105,9 @@ PHYSICAL_REPO_ROOT = "$PHYSICAL_REPO_ROOT"
 #
 # `device` is set EXPLICITLY: autodetect (findmnt on /var/lib/docker) does not
 # work from inside a DooD devcontainer. /dev/vda backs docker on this host.
-# KSM opt-in is deliberately NOT enabled — the shim is a dstdns-local artifact.
+# `ksm_optin` points at the vendored shim (tooling/ksm-optin/); ciu injects
+# LD_PRELOAD + a bind of it into every non-exempt service so identical pages
+# across naf's long-lived containers (mocks, PowerDNS, app) dedupe via KSM.
 # =============================================================================
 [governance]
 enabled = true
@@ -115,6 +117,7 @@ mem_reservation = "256m"
 read_iops = 200
 write_iops = 400
 device = "/dev/vda"
+ksm_optin = "tooling/ksm-optin/ksm-optin.so"
 exempt_services = []
 
 # =============================================================================
