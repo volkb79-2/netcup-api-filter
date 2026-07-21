@@ -13,7 +13,6 @@ set -euo pipefail
 #   ./deploy.sh webhosting         # Deploy to webhosting (live mode)
 #   ./deploy.sh local --skip-tests # Deploy without running tests
 #   ./deploy.sh local --tests-only # Skip build, just run tests
-#   ./deploy.sh local --https      # Use TLS proxy for HTTPS testing
 #   ./deploy.sh local --failfast   # Stop immediately on first error
 #
 # Modes:
@@ -21,7 +20,7 @@ set -euo pipefail
 #   live  - Use real services (from config) - default for webhosting
 #
 # Phases:
-#   0. Infrastructure - Start Playwright, TLS proxy, mock services
+#   0. Infrastructure - Start Playwright, mock services
 #   1. Build          - Create deploy.zip with fresh database
 #   2. Deploy         - Extract locally or upload to webhosting
 #   3. Start          - Start Flask (local) or restart Passenger (webhosting)
@@ -54,7 +53,6 @@ fi
 export REPO_ROOT
 
 # Map service names to container names (from .env.services)
-CONTAINER_REVERSE_PROXY="${SERVICE_REVERSE_PROXY:?missing SERVICE_REVERSE_PROXY}"
 CONTAINER_MAILPIT="${SERVICE_MAILPIT:?missing SERVICE_MAILPIT}"
 
 # Colors
@@ -92,20 +90,22 @@ OPTIONS:
     --profile          Print timing information per phase/suite
     --pytest-workers N Enable pytest-xdist parallelism (e.g. "auto" or "4")
     --pytest-durations N  Show N slowest tests (pytest --durations)
-    --http             Disable TLS proxy, use plain HTTP (default: HTTPS via TLS proxy)
+    --http             Accepted for backward compat (no-op); local deploys are plain HTTP
+                       now that the dev TLS proxy is retired (naf-I04). For HTTPS dev
+                       access, expose the app via the host traefik - see
+                       docs/DEV_INFRA_SETUP.md.
     --preserve-secret-key  Extract SECRET_KEY before deploy, restore after (webhosting only)
     --bundle-app-config    Include app-config.toml in deployment (if exists)
     --stop             Stop all deployment services and clean up containers
     -h, --help         Show this help message
 
 EXAMPLES:
-    ./deploy.sh                          # Local deployment with mocks + HTTPS (default)
+    ./deploy.sh                          # Local deployment with mocks (plain HTTP)
     ./deploy.sh local                    # Same as above
     ./deploy.sh local --mode live        # Local deployment using real services
     ./deploy.sh local --skip-tests       # Deploy locally without tests
     ./deploy.sh local --tests-only       # Run tests only (no rebuild)
     ./deploy.sh local --tests-only --skip-journey-tests  # Faster iteration (skip Phase 4)
-    ./deploy.sh local --http             # Local with plain HTTP (no TLS proxy)
     ./deploy.sh --stop                   # Stop all services and clean up
     ./deploy.sh webhosting               # Deploy to production webhosting (fresh DB)
     ./deploy.sh webhosting --skip-tests  # Deploy to production without tests
@@ -113,7 +113,7 @@ EXAMPLES:
     ./deploy.sh webhosting --bundle-app-config  # Include app-config.toml in deployment (manual config)
 
 DEPLOYMENT PHASES:
-    0. Infrastructure  Start Playwright container, TLS proxy (default), mock services (if mock mode)
+    0. Infrastructure  Start Playwright container, mock services (if mock mode)
     1. Build           Create deploy.zip with fresh database and vendored dependencies
     2. Deploy          Extract locally or upload to webhosting
     3. Start           Start Flask (local) or restart Passenger (webhosting)
@@ -124,7 +124,6 @@ DEPLOYMENT PHASES:
 CONFIGURATION:
     State files:       deployment_state_local.json, deployment_state_webhosting.json
     Environment:       .env (secrets/overrides), .env.defaults (defaults skeleton), .env.workspace (workspace config)
-    TLS Proxy:         tooling/reverse-proxy/.env (for --https mode, sourced from .env.workspace)
 
 MOCK SERVICES (local mock mode):
     Mailpit            SMTP testing at http://localhost:8025
@@ -151,7 +150,6 @@ SKIP_SCREENSHOTS=false
 TESTS_ONLY=false
 SKIP_INFRA=false
 SKIP_JOURNEY_TESTS=false
-USE_HTTPS=true  # HTTPS is default for local deployments
 DEPLOYMENT_MODE=""
 PRESERVE_SECRET_KEY=false
 BUNDLE_APP_CONFIG=false
@@ -216,7 +214,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --http)
-            USE_HTTPS=false
+            # Backward-compat no-op: local deploys are plain HTTP now that the dev
+            # TLS proxy is retired (naf-I04). Kept so existing docs/scripts don't break.
             shift
             ;;
         *)
@@ -303,22 +302,6 @@ if [[ "$STOP_SERVICES_ONLY" != "true" ]]; then
     load_env_files
 fi
 
-# Load TLS proxy config if available
-load_proxy_config() {
-    local proxy_env="${REPO_ROOT}/tooling/reverse-proxy/.env"
-    if [[ -f "$proxy_env" ]]; then
-        # Use a temp file to avoid process substitution EOF issues
-        local temp_env=$(mktemp)
-        grep -v '^#' "$proxy_env" | grep -v '^$' | grep '=' > "$temp_env" || true
-        if [[ -s "$temp_env" ]]; then
-            set -a
-            source "$temp_env"
-            set +a
-        fi
-        rm -f "$temp_env"
-    fi
-}
-
 # ============================================================================
 # Configuration per target (Config-Driven - NO HARDCODED VALUES)
 # ============================================================================
@@ -340,19 +323,15 @@ case "$DEPLOYMENT_TARGET" in
         
         # Get devcontainer hostname for Playwright container to connect
         DEVCONTAINER_HOSTNAME=$(hostname)
-        
-        # Determine URL based on --https flag (explicit only)
-        # Note: LOCAL_USE_HTTPS from .env/.env.defaults is IGNORED unless --https flag used
-        if [[ "$USE_HTTPS" == "true" ]]; then
-            load_proxy_config
-            LOCAL_TLS_DOMAIN="${LOCAL_TLS_DOMAIN:?LOCAL_TLS_DOMAIN not set - check tooling/reverse-proxy/.env}"
-            LOCAL_TLS_BIND_HTTPS="${LOCAL_TLS_BIND_HTTPS:?LOCAL_TLS_BIND_HTTPS not set - check tooling/reverse-proxy/.env}"
-            UI_BASE_URL="https://${LOCAL_TLS_DOMAIN}:${LOCAL_TLS_BIND_HTTPS}"
-        else
-            # Use devcontainer hostname so Playwright container can connect
-            UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:${LOCAL_FLASK_PORT}"
-        fi
-        
+
+        # deploy.sh's local target runs Flask as a plain host gunicorn process
+        # (start_flask_local) - plain HTTP only. The dev TLS proxy that used to
+        # front it with HTTPS is retired (naf-I04); HTTPS dev access now goes
+        # through the host traefik / ciu-managed app-local stack instead (see
+        # docs/DEV_INFRA_SETUP.md), which is a separate stack from this one.
+        # Use devcontainer hostname so the Playwright container can connect.
+        UI_BASE_URL="http://${DEVCONTAINER_HOSTNAME}:${LOCAL_FLASK_PORT}"
+
         ZIP_FILE="${REPO_ROOT}/deploy-local.zip"
         ;;
     webhosting)
@@ -625,14 +604,8 @@ run_in_playwright() {
     # playwright_client.py reads PLAYWRIGHT_SERVER_WS automatically.
     local cmd="$*"
 
-    local devcontainer_hostname
-    devcontainer_hostname=$(get_devcontainer_hostname)
-
-    if [[ "$USE_HTTPS" == "true" ]]; then
-        export UI_BASE_URL="${UI_BASE_URL}"  # Already set to HTTPS URL
-    else
-        export UI_BASE_URL="http://${devcontainer_hostname}:${LOCAL_FLASK_PORT}"
-    fi
+    # UI_BASE_URL is already set correctly per target in the configuration block above.
+    export UI_BASE_URL="${UI_BASE_URL}"
     [[ "$DEPLOYMENT_TARGET" == "webhosting" ]] && export UI_BASE_URL="${WEBHOSTING_URL}"
     export SCREENSHOT_DIR="$SCREENSHOT_DIR"
     export DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
@@ -766,122 +739,15 @@ stop_powerdns_backend() {
     ciu_stack_down "tooling/backend-powerdns" || true
 }
 
-start_tls_proxy() {
-    log_step "Starting TLS proxy (nginx with Let's Encrypt certs)..."
-    
-    local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
-    
-    if [[ ! -f "${proxy_dir}/.env" ]]; then
-        log_error "TLS proxy not configured: ${proxy_dir}/.env not found"
-        log_step "Check tooling/reverse-proxy/.env configuration"
-        return 1
-    fi
-    
-    # Load workspace environment (PUBLIC_FQDN set by post-create.sh)
-    if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
-        source "${REPO_ROOT}/.env.workspace"
-    fi
-    
-    # Check for PUBLIC_FQDN
-    if [[ -z "${PUBLIC_FQDN:-}" ]]; then
-        log_warning "PUBLIC_FQDN not set (should be auto-detected by post-create.sh)"
-        log_step "Rebuild devcontainer to regenerate .env.workspace"
-        return 1
-    fi
-    
-    # Render nginx config from template
-    if [[ -f "${proxy_dir}/render-nginx-conf.sh" ]]; then
-        log_step "Rendering nginx configuration..."
-        (cd "${proxy_dir}" && ./render-nginx-conf.sh) || {
-            log_error "Failed to render nginx config"
-            return 1
-        }
-    fi
-    
-    # Export required variables for docker-compose (from .env.workspace)
-    export PHYSICAL_REPO_ROOT="${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}"
-    export DOCKER_GID="${DOCKER_GID:?DOCKER_GID must be set}"
-    export PUBLIC_FQDN="${PUBLIC_FQDN:?PUBLIC_FQDN must be set}"
-    
-    # CRITICAL: Certificate accessibility check
-    # Devcontainer CANNOT access /etc/letsencrypt (host filesystem isolation)
-    # nginx container CAN access via docker group mount (user: 0:${DOCKER_GID})
-    # TLS certificate verification happens implicitly during nginx startup:
-    # - If certs missing/unreadable: nginx fails immediately with clear error
-    # - If certs valid: nginx starts successfully and serves HTTPS
-    # - Devcontainer cannot check HOST /etc/letsencrypt (filesystem isolation)
-    # - nginx container reads via docker group (GID ${DOCKER_GID})
-    
-    log_step "Starting TLS proxy (will fail if certs inaccessible)..."
-    log_step "(Certificates: /etc/letsencrypt/live/${PUBLIC_FQDN}/ on HOST, read via docker group)"
-    
-    # We'll verify by starting nginx - if certs are missing/unreadable, nginx will fail
-    # with clear error. No need for devcontainer to check what it cannot access.
-    
-    # Start proxy via docker-compose
-    if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
-        log_step "Starting TLS proxy container..."
-        if docker ps | grep -q "${CONTAINER_REVERSE_PROXY}"; then
-            log_step "TLS proxy already running - restarting..."
-            (cd "${proxy_dir}" && docker compose --env-file .env restart) || {
-                log_error "Failed to restart TLS proxy"
-                return 1
-            }
-        else
-            (cd "${proxy_dir}" && docker compose --env-file .env up -d) || {
-                log_error "Failed to start TLS proxy"
-                return 1
-            }
-        fi
-        
-        # Wait for proxy to be ready
-        local proxy_url="${UI_BASE_URL}/admin/login"
-        log_step "Waiting for TLS proxy at ${proxy_url}..."
-        
-        # Give nginx a moment to start (bind ports, load config)
-        sleep 2
-        
-        for i in {1..60}; do
-            if curl -sk "${proxy_url}" > /dev/null 2>&1; then
-                log_success "TLS proxy ready at ${proxy_url}"
-                # Extra 2 seconds for stability (ensure backend is fully responsive)
-                sleep 2
-                return 0
-            fi
-            sleep 1
-        done
-        
-        # After 60 seconds, check if proxy is running but backend unreachable
-        if docker ps | grep -q "${CONTAINER_REVERSE_PROXY}"; then
-            log_error "TLS proxy running but not responsive at ${proxy_url}"
-            log_error "Check: docker logs ${CONTAINER_REVERSE_PROXY}"
-        else
-            log_error "TLS proxy container not running"
-        fi
-        return 1
-    else
-        log_error "TLS proxy docker-compose.yml not found"
-        return 1
-    fi
-}
-
-stop_tls_proxy() {
-    log_step "Stopping TLS proxy..."
-    local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
-    if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
-        (cd "${proxy_dir}" && docker compose --env-file .env down 2>/dev/null) || true
-    fi
-}
-
 phase_infrastructure() {
     log_phase "0" "Infrastructure Setup"
-    
+
     if [[ "$SKIP_INFRA" == "true" ]]; then
         log_warning "Skipping infrastructure setup (--skip-infra)"
         return 0
     fi
 
-    # Start mock services BEFORE TLS proxy (nginx config references naf-dev-mailpit)
+    # Start mock services
     if [[ "$DEPLOYMENT_MODE" == "mock" && "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_mock_services || return 1
     fi
@@ -890,17 +756,7 @@ phase_infrastructure() {
     if [[ "$DEPLOYMENT_TARGET" == "local" ]]; then
         start_powerdns_backend || return 1
     fi
-    
-    # Start TLS proxy for HTTPS mode (default for local, use --http to disable)
-    # MUST come after mock services so nginx can resolve upstream hostnames
-    if [[ "$USE_HTTPS" == "true" && "$DEPLOYMENT_TARGET" == "local" ]]; then
-        start_tls_proxy || {
-            log_error "Failed to start TLS proxy - HTTPS testing will fail"
-            log_step "Use --http flag to skip TLS proxy if certificates not available"
-            return 1
-        }
-    fi
-    
+
     log_success "Infrastructure ready"
 }
 
@@ -1437,43 +1293,20 @@ stop_all_services() {
     # 1. Stop Flask backend
     log_step "Stopping Flask backend..."
     pkill -f "gunicorn.*passenger_wsgi:application" 2>/dev/null && log_success "Flask stopped" || log_step "Flask not running"
-    
-    # 2. Stop TLS reverse proxy
-    log_step "Stopping TLS reverse proxy..."
-    local proxy_dir="${REPO_ROOT}/tooling/reverse-proxy"
-    # Try docker compose first (graceful), then fallback to direct container stop
-    if [[ -f "${proxy_dir}/docker-compose.yml" ]]; then
-        # Source workspace environment for PUBLIC_FQDN and other required vars
-        if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
-            set -a
-            source "${REPO_ROOT}/.env.workspace"
-            set +a
-        fi
-        if (cd "${proxy_dir}" && docker compose --env-file .env down 2>/dev/null); then
-            log_success "TLS proxy stopped"
-        else
-            # Fallback: stop container directly if docker compose fails (missing env vars)
-            if docker stop naf-dev-reverse-proxy 2>/dev/null && docker rm naf-dev-reverse-proxy 2>/dev/null; then
-                log_success "TLS proxy stopped (direct)"
-            else
-                log_step "TLS proxy not running"
-            fi
-        fi
-    fi
-    
-    # 3. Stop Mailpit
+
+    # 2. Stop Mailpit
     log_step "Stopping Mailpit..."
     ciu_stack_down "tooling/mailpit" && log_success "Mailpit stopped" || log_step "Mailpit not running"
 
-    # 4. Stop Mock Netcup API
+    # 3. Stop Mock Netcup API
     log_step "Stopping Mock Netcup API..."
     ciu_stack_down "tooling/netcup-api-mock" && log_success "Mock Netcup API stopped" || log_step "Mock Netcup API not running"
 
-    # 5. Stop Mock GeoIP
+    # 4. Stop Mock GeoIP
     log_step "Stopping Mock GeoIP..."
     ciu_stack_down "tooling/geoip-mock" && log_success "Mock GeoIP stopped" || log_step "Mock GeoIP not running"
 
-    # 6. Stop PowerDNS backend
+    # 5. Stop PowerDNS backend
     log_step "Stopping PowerDNS backend..."
     local powerdns_dir="${REPO_ROOT}/tooling/backend-powerdns"
     # NOTE: no longer gated on docker-compose.yml existing - that file is

@@ -1,11 +1,12 @@
 """`.env.services` must source cleanly under `set -u` (naf-P05 O1 / review §P0-8).
 
-The file derives POWERDNS_API_URL from ${PUBLIC_FQDN}. That var is written to
-.env.workspace by post-create's reverse-DNS detection and is only needed for the HTTPS
-reverse-proxy path — but the derivation used to be unconditional, so under `set -euo
-pipefail` (which every consumer uses) sourcing aborted with "PUBLIC_FQDN: unbound
-variable" whenever post-create had not written it. That bricked deploy.sh /
-run-local-tests.sh on any devcontainer rebuild.
+The file derives POWERDNS_API_URL from ${PUBLIC_FQDN}. PUBLIC_FQDN is a ciu config fact
+(topology.external.public_fqdn, naf-I04) — not reverse-DNS detected (naf-P05 O2,
+superseded) — and is only needed for the HTTPS PowerDNS-over-the-public-edge path
+(reached through the host traefik at naf-pdns.<PUBLIC_FQDN>, naf-I04). But the
+derivation used to be unconditional, so under `set -euo pipefail` (which every consumer
+uses) sourcing aborted with "PUBLIC_FQDN: unbound variable" whenever it wasn't set.
+That bricked deploy.sh / run-local-tests.sh on any devcontainer rebuild.
 
 These tests shell out (the contract is a shell contract) and run in the unit gate.
 """
@@ -52,7 +53,12 @@ def test_sources_cleanly_with_no_public_vars():
 
 
 def test_derives_url_when_public_fqdn_present():
-    """The HTTPS path still works: a set PUBLIC_FQDN yields the derived URL."""
+    """The HTTPS path still works: a set PUBLIC_FQDN yields the derived URL.
+
+    Routed through the host traefik at the naf-pdns subdomain (naf-I04) - mirrors
+    tooling/backend-powerdns/ciu.compose.yml.j2's traefik Host() label and
+    ciu.global.defaults.toml.j2's [topology.dns] pdns_subdomain = "naf-pdns".
+    """
     proc = _source({"PATH": "/usr/bin:/bin", "PUBLIC_FQDN": "example.test"})
     assert proc.returncode == 0, proc.stderr
-    assert "POWERDNS_API_URL=[https://example.test" in proc.stdout, proc.stdout
+    assert "POWERDNS_API_URL=[https://naf-pdns.example.test]" in proc.stdout, proc.stdout

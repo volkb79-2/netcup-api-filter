@@ -35,6 +35,15 @@ escalate_if:
 
 # P05 — The devcontainer rebuild bomb
 
+## STATUS 2026-07-21 — O2 SUPERSEDED by naf-I04 (CLOSED)
+
+**O2 is superseded, not implemented.** naf-I04 (host-traefik exposure) retired naf's dev
+nginx TLS proxy that O2's reverse-DNS `PUBLIC_FQDN` write existed to feed, and made
+`PUBLIC_FQDN` a **ciu config fact** (`topology.external.public_fqdn` in
+`ciu.global.defaults.toml.j2`) instead of a post-create reverse-DNS PTR lookup. O1 (below)
+already shipped and remains the live fix. `docs/FQDN_DETECTION.md` has been reduced to a
+superseded note pointing at `docs/DEV_INFRA_SETUP.md`. This handoff is closed.
+
 ## PARTIAL STATUS 2026-07-20 (orchestrator) — O1 LANDED, O2 REMAINS
 
 O1 (the critical bomb-defuse) is **done and merged**: `.env.services` now guards the
