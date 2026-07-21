@@ -351,7 +351,13 @@ and need reconciling with `docs/DEV_INFRA_SETUP.md`: `docs/CERTIFICATE_MOUNTING.
 drive the old nginx TLS flow — it now fails fast (its `tooling/reverse-proxy/proxy.env` is gone);
 delete it or rewrite it against the traefik/ciu path. S-M.
 
-## B-BUILD — demo-seed double-insert breaks every `--seed-demo` build (CONFIRMED release-blocker)
+## B-BUILD — demo-seed double-insert breaks every `--seed-demo` build (✅ FIXED 9d632c5)
+
+**RESOLVED:** `seed_comprehensive_demo_data` now get-or-creates accounts (reuses an existing
+username instead of blind-inserting). Validated end-to-end via `testing-exec.sh build 3.11 --
+build_deployment.py … --seed-demo` (completes + produces the zip); unit gate 441 on 3.11+3.9.
+Original write-up kept below for the record.
+
 
 `build_deployment.py:486` `seed_default_entities(seed_demo_clients_flag=True)` creates the
 `demo-readonly` account (from `.env.defaults` `DEFAULT_READONLY_TEST_CLIENT_ID=demo-readonly`),
