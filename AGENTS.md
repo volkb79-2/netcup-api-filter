@@ -202,7 +202,10 @@ state (e.g. the admin `netcup_config`) you mutate.
 
 - **Dynamic FQDN.** The public hostname is auto-detected (reverse DNS) into `.env.workspace` as `PUBLIC_FQDN`. Never hardcode a hostname; `source .env.workspace` in scripts. See [`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md).
 - **Config files (by scope):** `.env.defaults` (project defaults) → `.env.workspace` (auto-generated, environment-specific) → `.env.services` (service hostnames/URLs) → `tooling/<service>/.env` (per-service).
-- **HTTPS parity** via the nginx TLS proxy in `tooling/reverse-proxy/` (real Let's Encrypt certs). The proxy container reads certs from the host `/etc/letsencrypt`; the **devcontainer cannot** see them directly (security isolation) — verify cert problems from the nginx container logs, not with `ls` in the devcontainer. See the folder README.
+- **HTTPS parity** is provided by the host-owned `edge-traefik` edge. Exposed naf stacks join
+  `ingress_public` and declare ciu/traefik labels; Traefik owns TLS and certificates. naf holds
+  no TLS material. See [`docs/DEV_INFRA_SETUP.md`](docs/DEV_INFRA_SETUP.md) and
+  `tooling/app-local/`.
 - **Mock services** for offline/deterministic runs — all named with the `naf-` prefix:
 
   | Container | Tooling dir | Purpose |
@@ -210,7 +213,7 @@ state (e.g. the admin `netcup_config`) you mutate.
   | `naf-mailpit` | `tooling/mailpit/` | SMTP capture ([`docs/MAILPIT_CONFIGURATION.md`](docs/MAILPIT_CONFIGURATION.md)) |
   | `naf-mock-geoip` | `tooling/geoip-mock/` | GeoIP API mock |
   | `naf-mock-netcup-api` | `tooling/netcup-api-mock/` | Netcup CCP API mock |
-  | `naf-reverse-proxy` | `tooling/reverse-proxy/` | Local TLS proxy |
+  | `naf-app-local` | `tooling/app-local/` | Local app, exposed through host Traefik |
 
 - **Python**: the devcontainer installs dependencies for the `vscode` user directly (no project `venv` by design). Runtime deps: `requirements.webhosting.txt`; dev/test: `requirements-dev.txt`. See [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
 - **`/deploy`, `/deploy-local`, `/deploy-webhosting`** are generated (gitignored) staging trees — don't edit them by hand; they're rebuilt from `src/`.

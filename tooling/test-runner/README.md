@@ -8,7 +8,7 @@ ship signal. This container is where "green" is allowed to mean something.
 Two independent reasons, both load-bearing:
 
 1. **Interpreter fidelity.** The app deploys to shared webhosting under Passenger.
-   `deploy.sh` builds `deploy-py311.zip` as the primary artifact and
+   `cmru release` builds the py3.14 OCI image and cp39/cp311 Passenger tarball variants;
    `build_deployment.py` vendors wheels with `--python-version 3.11 --only-binary`. The
    devcontainer runs **3.14**. A 3.10+ syntax construct, or a dependency that has a
    cp314 wheel but no cp311 wheel, is green in the cockpit and a **post-deploy 500** in

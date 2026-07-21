@@ -22,9 +22,11 @@ The precedence for any setting is: `env override > database value > .env.default
 
 Scripts intentionally abort unless every variable they rely on is exported. Common ones:
 
-- `DEPLOYMENT_ENV_FILE` – Points to the env file that mirrors the target deployment (`.env.local`, `.env.webhosting`, etc.). Required by `build-and-deploy*.sh`, `run-local-tests.sh`, UI tests, and screenshot capture.
+- `DEPLOYMENT_ENV_FILE` – Points to the env file that mirrors the target deployment (`.env.local`, `.env.webhosting`, etc.). Used by local test/UI tooling; release and webhosting deployment follow the `cmru` and `ciu` workflows in [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md).
 - `UI_*` variables – Used by `tooling/run-ui-validation.sh` and `ui_tests/tests`. Export `UI_BASE_URL`, `UI_ADMIN_USERNAME`, `UI_ADMIN_PASSWORD`, `UI_CLIENT_ID`, `UI_CLIENT_TOKEN`, `UI_CLIENT_DOMAIN`, `UI_SCREENSHOT_PREFIX`, `PLAYWRIGHT_HEADLESS`, and `KEEP_UI_STACK` before running the validation script.
-- `LOCAL_PROXY_*` variables – Provide host/port/domain bindings for the local TLS proxy as described in `tooling/reverse-proxy/proxy.env`.
+- Host-edge settings are operator infrastructure, not naf application settings. Exposed ciu
+  stacks join `ingress_public` and use Traefik labels; TLS and certificates remain owned by
+  the host edge. See [`DEV_INFRA_SETUP.md`](DEV_INFRA_SETUP.md).
 
 When unsure, run the script once—its fail-fast message will identify the missing variable and usually suggest the exact file to source.
 
@@ -34,7 +36,7 @@ Session cookie behavior stays config-driven via env vars:
 
 - `FLASK_SESSION_COOKIE_SECURE=auto` switches between Secure cookies when HTTPS is available and HTTP for `FLASK_ENV=local_test`.
 - `FLASK_SESSION_COOKIE_HTTPONLY`, `FLASK_SESSION_COOKIE_SAMESITE`, and `FLASK_SESSION_LIFETIME` (seconds) control browser session handling.
-- Timeouts, rate limits, TLS proxy values, and admin/client credentials all follow the same pattern.
+- Timeouts, rate limits, and admin/client credentials all follow the same pattern.
 
 Whenever you add a new security-relevant constant, update `.env.defaults`, document it in this guide, and use `os.environ[...]` (or equivalent) in code.
 

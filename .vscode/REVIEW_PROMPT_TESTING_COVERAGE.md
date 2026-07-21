@@ -218,16 +218,15 @@ async def test_login_with_2fa(page, base_url):
 # - Flask killed, cleanup done
 ```
 
-### 7. HTTPS Testing with Let's Encrypt
+### 7. HTTPS testing through the host edge
 
-**Files:** `tooling/reverse-proxy/`, `test-https-deployment.sh`
+**Files:** `docs/DEV_INFRA_SETUP.md`, `tooling/app-local/`, and ciu templates.
 
-#### TLS Proxy Setup
-- [ ] **nginx container**: Configured with Let's Encrypt certs
-- [ ] **Certificate mounting**: Certs from `/etc/letsencrypt/` mounted
-- [ ] **TLS termination**: nginx terminates TLS, forwards to Flask
-- [ ] **X-Forwarded-Proto**: Flask sees HTTPS protocol
-- [ ] **Secure cookies**: Session cookies work with Secure=True
+#### TLS edge setup
+- [ ] **Host Traefik**: terminates TLS and owns certificate issuance
+- [ ] **Ingress network**: exposed stacks join `ingress_public` with Traefik labels
+- [ ] **No app certificates**: naf does not mount or manage TLS material
+- [ ] **Secure cookies**: session behavior is verified over the rendered HTTPS hostname
 
 #### HTTPS Test Coverage
 - [ ] **Certificate validation**: Browsers accept cert without warnings
@@ -238,17 +237,9 @@ async def test_login_with_2fa(page, base_url):
 
 **Test:**
 ```bash
-# Start HTTPS proxy
-cd tooling/reverse-proxy
-./render-nginx-conf.sh && ./stage-proxy-inputs.sh
-docker compose --env-file proxy.env up -d
-
-# Run tests against HTTPS endpoint
-FQDN=$(grep LOCAL_TLS_DOMAIN proxy.env | cut -d= -f2)
-UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
-
-# Verify TLS
-curl -v https://$FQDN/ 2>&1 | grep "SSL certificate verify ok"
+# Load the ciu environment/guard and bring up the exposed dev/test profile
+ciu up --profile full
+curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" https://naf."$PUBLIC_FQDN"/admin/login -I
 ```
 
 ### 8. API Testing

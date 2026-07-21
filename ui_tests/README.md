@@ -155,11 +155,11 @@ Automated UI coverage using a multi-layer testing strategy:
 ### Full Deployment Test Suite
 
 ```bash
-# Complete build, deploy, test cycle (recommended)
-./deploy.sh local
+# Complete production-parity local build and test cycle (recommended)
+./run-local-tests.sh
 
-# Skip build if deploy-local already exists
-./deploy.sh local --tests-only
+# Reuse deploy-local if it already exists
+./run-local-tests.sh --skip-build
 ```
 
 **Test Execution Order:**
@@ -439,4 +439,3 @@ element = await browser._page.wait_for_selector("#result", timeout=5000)
 2. **Masks Issues**: Hides race conditions and timing bugs
 3. **Slow**: Wastes time waiting even when condition is already met
 4. **Flaky**: Tests pass/fail randomly based on system load
-

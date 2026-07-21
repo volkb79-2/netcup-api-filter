@@ -667,7 +667,7 @@ html.density-compact {
 
 1. **Deploy locally:**
    ```bash
-   ./deploy.sh local --skip-tests
+   ./run-local-tests.sh --skip-build
    ```
 
 2. **Playwright** runs in-process by default (no container needed).

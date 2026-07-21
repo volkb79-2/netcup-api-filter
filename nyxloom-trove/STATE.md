@@ -72,14 +72,15 @@ wiring = D-002/naf-P20), B-DATA (plaintext credential logging), B-CONFIG (hardco
 constants, example-config live values, dead TOML sections), B-QUALITY (duplicated
 `get_netcup_client`, rate-limiter `memory://`), B-TESTS (`pytest.ini` strictness, naf-P06 O2/O3).
 
-## Known doc debt (being reconciled)
+## Doc debt — ✅ reconciled (2026-07-21)
 
-- **B-INFRA-DOCS** — reverse-proxy references after naf-I04 (`docs/CERTIFICATE_MOUNTING.md`,
-  `MAILPIT_CONFIGURATION.md`, `CONFIGURATION_GUIDE.md`, …).
-- **B-DEPLOY-DOCS** — `deploy.sh` long-tail in `docs/` + `docs/plans/testing-{hardening,overhaul}/`.
-
-Key docs (AGENTS.md, README, CHANGELOG, DEPLOYMENT_WORKFLOW, DEPLOY_ARCHITECTURE) are already
-current; the long-tail is tracked above.
+Live docs are current. **B-INFRA-DOCS** (reverse-proxy → host-traefik) and **B-DEPLOY-DOCS**
+(`deploy.sh` → cmru release + ciu deploy) were swept across all live `docs/`, `tooling/`,
+`ui_tests/`, and `.vscode/` markdown; `docs/CERTIFICATE_MOUNTING.md` is now a "removed in naf-I04"
+stub. Only historical `docs/deprecated/` and `docs/plans/testing-{hardening,overhaul}/` keep the
+old terms **by design** (read for reasoning, never as current status). **Remaining (non-doc):**
+`tooling/run-ui-validation.sh` still drives the old nginx flow — delete or rewrite against
+traefik/ciu (tracked in backlog B-INFRA-DOCS).
 
 ## Decisions still open
 

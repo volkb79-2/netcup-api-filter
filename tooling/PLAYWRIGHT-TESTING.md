@@ -66,19 +66,16 @@ export PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/
 ## Running the full local suite
 
 ```bash
-# Build + deploy + test (all phases)
-./deploy.sh local
+# Build the production-parity local deployment and run tests
+./run-local-tests.sh
 
-# Skip build, run tests only
-./deploy.sh local --tests-only
+# Reuse an existing deployment
+./run-local-tests.sh --skip-build
 ```
 
-Or use the lightweight helper (no deploy):
+With remote Playwright:
 
 ```bash
-source .env.workspace
-./run-local-tests.sh
-# With remote browser:
 PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ ./run-local-tests.sh
 ```
 

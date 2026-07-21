@@ -28,7 +28,7 @@ Variables must be intentionally set, preventing "it worked by accident" scenario
 ### 2. **Clear Error Messages**
 When something is missing, you get an immediate, actionable error:
 ```bash
-$ ./deploy.sh local
+$ ./run-local-tests.sh
 bash: LOCAL_FLASK_PORT: LOCAL_FLASK_PORT not set - check .env.defaults
 ```
 
@@ -167,7 +167,6 @@ Centralized service/container naming:
 ```bash
 # .env.services
 export SERVICE_PLAYWRIGHT="naf-dev-playwright"
-export SERVICE_REVERSE_PROXY="naf-dev-reverse-proxy"
 export MAILPIT_API_URL="http://naf-dev-mailpit:8025/api/v1"
 ```
 
@@ -176,10 +175,8 @@ export MAILPIT_API_URL="http://naf-dev-mailpit:8025/api/v1"
 Each service has its own `.env` in `tooling/{service}/`:
 
 ```bash
-# tooling/reverse-proxy/.env
-LOCAL_TLS_DOMAIN=${PUBLIC_FQDN}  # References workspace variable
-LOCAL_APP_PORT=5100
-LOCAL_TLS_BIND_HTTPS=443
+# Host-edge ingress is configured by ciu templates. Exposed stacks join
+# ingress_public and carry Traefik labels; TLS/certificates are not naf config.
 ```
 
 ## Migration Checklist
@@ -250,7 +247,7 @@ source .env.workspace
 source .env.services
 
 # Script should work
-./deploy.sh local --skip-tests
+./run-local-tests.sh --skip-build
 ```
 
 ### Negative Test (Should Fail with Clear Error)
@@ -260,7 +257,7 @@ source .env.services
 unset LOCAL_FLASK_PORT
 
 # Script should fail immediately with helpful error
-./deploy.sh local
+./run-local-tests.sh
 # Expected: bash: LOCAL_FLASK_PORT: LOCAL_FLASK_PORT not set - check .env.defaults
 ```
 

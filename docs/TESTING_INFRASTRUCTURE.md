@@ -110,9 +110,10 @@ Use `-m <marker>` to select by bucket regardless of path.
 ./run-local-tests.sh --with-mocks <file>      # run a single test file
 ```
 
-The script builds a production-parity deployment under `deploy-local/`, starts the app,
-and runs the `ui_tests` suite. `deploy.sh` manages the suite list; it is updated alongside
-test additions and deletions so the two stay in sync.
+The script invokes `build_deployment.py --local` to build a production-parity deployment
+under `deploy-local/`, starts the app, and runs the `ui_tests` suite. Pass a test path to
+`run-local-tests.sh` to select a subset; keep its documented CLI and the suite layout in sync
+when adding or removing tests.
 
 ---
 
@@ -218,7 +219,7 @@ invite form, realm/token creation).
 netstat -tuln | grep 5100
 
 # Rebuild from scratch
-./deploy.sh local
+./run-local-tests.sh
 ```
 
 ### Tests fail with "Connection Refused"
@@ -227,7 +228,7 @@ netstat -tuln | grep 5100
 # Verify the app is running
 curl http://localhost:5100/health
 
-# Check which port deploy-local is using (deploy.sh sets this)
+# Check the configured local port in the built deployment
 grep PORT deploy-local/.env 2>/dev/null || echo "not set, using default 5100"
 ```
 

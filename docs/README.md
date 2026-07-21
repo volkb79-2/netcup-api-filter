@@ -63,10 +63,10 @@ current status. Handoffs cite it in `source.ref` as provenance only.
 
 ## Deployment & operations
 
-- [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md) — `deploy.sh` build/test/deploy runbook (canonical).
+- [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md) — canonical local test, release, and webhosting-deploy runbook.
 - [`DEPLOY_ARCHITECTURE.md`](DEPLOY_ARCHITECTURE.md) — deployment phases and package layout.
 - [`GUNICORN_CONFIG.md`](GUNICORN_CONFIG.md) — local gunicorn tuning.
-- [`CERTIFICATE_MOUNTING.md`](CERTIFICATE_MOUNTING.md) · [`DOCKER_NETWORKS.md`](DOCKER_NETWORKS.md) — local TLS proxy and container networking.
+- [`CERTIFICATE_MOUNTING.md`](CERTIFICATE_MOUNTING.md) (removed in naf-I04 — host Traefik owns TLS) · [`DOCKER_NETWORKS.md`](DOCKER_NETWORKS.md) — container networking.
 - [`SSH_AGENT_PERSISTENCE.md`](SSH_AGENT_PERSISTENCE.md) — persistent SSH agent in the devcontainer.
 
 ## Testing

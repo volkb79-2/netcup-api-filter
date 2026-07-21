@@ -22,10 +22,8 @@ docker logs -f naf-dev-mock-netcup-api
 docker stop naf-dev-mock-netcup-api
 ```
 
-Normally this isn't brought up standalone — it comes up as a peer alongside the
-gating test-runner and the other mocks (`deploy.sh` / `run-local-tests.sh` still
-shell out to `docker compose` in this directory as of this writing; that call
-site is tracked centrally, not fixed here).
+Normally this is not brought up standalone: it is a peer of the gating test-runner and
+the other mock stacks. Use the ciu workflow above or `run-local-tests.sh --with-mocks`.
 
 ## Access
 

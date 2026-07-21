@@ -2,7 +2,7 @@
 
 ## Overview
 
-Mailpit is a modern SMTP testing server with a web UI for viewing captured emails during development and testing. This document covers configuration, authentication, and integration with the local TLS proxy.
+Mailpit is a modern SMTP testing server with a web UI for viewing captured emails during development and testing. This document covers its local configuration and authentication.
 
 **Container Name**: `naf-mailpit` (as of 2024-12-08, prefixed for easy identification)
 
@@ -72,77 +72,12 @@ curl -u admin:SecurePassword123 http://localhost:8025/api/v1/messages
 
 ---
 
-## Integration with Local TLS Proxy
+## Access model
 
-To access Mailpit through the main application URL (e.g., `https://naf.example.com/mailpit`), configure nginx reverse proxy.
-
-### Step 1: Update nginx Configuration Template
-
-Edit [`tooling/reverse-proxy/nginx.conf.template`](../tooling/reverse-proxy/nginx.conf.template):
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name ${LOCAL_TLS_DOMAIN};
-
-    # ... existing SSL config ...
-
-    # Main application (Flask backend)
-    location / {
-        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
-        # ... existing proxy settings ...
-    }
-
-    # Mailpit web UI
-    location /mailpit/ {
-        # Remove /mailpit prefix before proxying
-        rewrite ^/mailpit/(.*) /$1 break;
-        
-        proxy_pass http://naf-mailpit:8025;
-        proxy_http_version 1.1;
-        
-        # WebSocket support (for real-time UI updates)
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # Standard proxy headers
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Optional: Pass through basic auth credentials
-        proxy_set_header Authorization $http_authorization;
-        proxy_pass_header Authorization;
-    }
-}
-```
-
-### Step 2: Rebuild and Restart Proxy
-
-```bash
-cd tooling/reverse-proxy
-
-# Regenerate nginx config from template
-./render-nginx-conf.sh
-
-# Stage inputs (copy config and certs)
-./stage-proxy-inputs.sh
-
-# Restart proxy
-docker compose down
-docker compose up -d
-```
-
-### Step 3: Access via HTTPS
-
-```bash
-# Example URL
-open https://naf.example.com/mailpit/
-
-# Or with authentication
-curl -u admin:SecurePassword123 https://naf.example.com/mailpit/api/v1/messages
-```
+Mailpit is an internal test service. It has no public host-edge route or TLS material;
+access its UI/API through its configured local port (normally `http://localhost:8025`) or
+by container name (`http://naf-mailpit:8025`) from the project network. The ciu stack in
+[`tooling/mailpit/`](../tooling/mailpit/) is the current operational reference.
 
 ---
 
@@ -217,14 +152,14 @@ else:
 |-------------|----------------|--------|
 | **Local Development** | Optional | Localhost only |
 | **CI/CD** | Optional | Isolated network |
-| **Staging/Production** | **Required** | Behind TLS proxy with auth |
+| **Staging/Production** | **Required** | Do not expose Mailpit; use an authenticated internal test service |
 
 ### Best Practices
 
 1. **Enable authentication** when exposing Mailpit outside localhost
 2. **Use password file** instead of `MP_UI_AUTH` (ENV vars visible in `docker inspect`)
 3. **Restrict network access** - Mailpit should not be internet-facing
-4. **Use TLS proxy** - Always access via HTTPS in staging/production
+4. **Keep it internal** - Do not add public ingress for Mailpit
 5. **Rotate passwords** - Change default credentials immediately
 
 ### Password File Security

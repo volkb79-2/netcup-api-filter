@@ -2453,8 +2453,8 @@ We do NOT use visual regression testing (screenshot comparison). Instead:
 > **Note**: `test_ui_comprehensive.py`, `test_ui_interactive.py`, `test_user_journeys.py`,
 > `test_mobile_responsive.py` and several others were consolidated into `test_route_smoke.py`,
 > `test_config_pages.py`, `test_audit_logs.py`, and `test_admin_ui.py` during the T12 smoke
-> consolidation. The test counts above are a snapshot; see `deploy.sh` for the current suite
-> list.
+> consolidation. The test counts above are a snapshot; see `run-local-tests.sh` and
+> [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md) for the current suite layout.
 
 ### 12.1.1 Comprehensive UI Test Coverage (NEW)
 

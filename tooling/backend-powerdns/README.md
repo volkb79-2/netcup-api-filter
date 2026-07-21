@@ -82,7 +82,7 @@ cd /workspaces/netcup-api-filter
 # repo's checkout).
 source ciu.env
 
-# Single-stack bring-up (what deploy.sh's ciu_stack_up() does)
+# Single-stack bring-up
 ciu up --dir tooling/backend-powerdns -y
 
 # Check logs
@@ -140,8 +140,7 @@ scope) — verified via `ciu down --help`; there is no supported `ciu down
 --dir`. The working single-stack teardown is `docker compose` directly
 against ciu's own rendered `ciu.compose.yml`, scoped to the same compose
 project ciu used to bring it up (`<PROJECT_TAG>-<ENV_TAG>-backend-powerdns`,
-i.e. `naf-dev-backend-powerdns` — see `deploy.sh`'s `ciu_stack_down()`, which
-is exactly this):
+i.e. `naf-dev-backend-powerdns`):
 
 ```bash
 cd tooling/backend-powerdns

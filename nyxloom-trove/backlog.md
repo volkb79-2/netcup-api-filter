@@ -353,7 +353,12 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
   `playwright==1.61.*` client) was proven to `chromium.connect(ws://pwmcp:3000/)`, drive a
   real Chromium (149.x), set + read page content — the full browser-offload path, live.
 
-## B-INFRA-DOCS — stale reverse-proxy references after naf-I04
+## B-INFRA-DOCS — stale reverse-proxy references after naf-I04 — 🟡 DOCS DONE, script residue
+
+> **✅ Docs reconciled (2026-07-21):** every live doc (`docs/CERTIFICATE_MOUNTING.md` → stub,
+> `MAILPIT_CONFIGURATION.md`, `CONFIGURATION_GUIDE.md`, `FAIL_FAST_PRINCIPLE.md`, `AGENTS.md`, …)
+> now describes the host-traefik edge. **Still open:** `tooling/run-ui-validation.sh` (a *script*,
+> not a doc) still drives the old nginx TLS flow — delete or rewrite against the traefik/ciu path.
 
 naf-I04 deleted `tooling/reverse-proxy/` and the dev nginx TLS edge (app + PowerDNS now go
 through the host traefik). These LIVE (non-deprecated) files still describe the removed proxy
@@ -363,7 +368,12 @@ and need reconciling with `docs/DEV_INFRA_SETUP.md`: `docs/CERTIFICATE_MOUNTING.
 drive the old nginx TLS flow — it now fails fast (its `tooling/reverse-proxy/proxy.env` is gone);
 delete it or rewrite it against the traefik/ciu path. S-M.
 
-## B-DEPLOY-DOCS — long-tail docs still reference the retired `deploy.sh` flow
+## B-DEPLOY-DOCS — long-tail docs still reference the retired `deploy.sh` flow — ✅ RESOLVED
+
+> **✅ DONE (2026-07-21):** all live `docs/`/`tooling/`/`ui_tests/`/`.vscode/` markdown reconciled
+> to local = `run-local-tests.sh`/`build_deployment.py --local`, release = `cmru`, deploy =
+> `ciu up --host`. Only historical `docs/deprecated/` + `docs/plans/testing-{hardening,overhaul}/`
+> retain `deploy.sh` by design. Original note below.
 
 The cmru-adoption P4 retired `deploy.sh` / `build_deployment_lib.sh` (webhosting release+push,
 now `cmru release` + `ciu up --host`) and reconciled the KEY docs (AGENTS.md, README,

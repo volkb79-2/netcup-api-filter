@@ -109,19 +109,20 @@ The BS5 component demo at `/component-demo-bs5` serves as the canonical referenc
 | `docs/ROUTE_COVERAGE.md` | Complete route matrix |
 | `docs/UI_TESTING_GUIDE.md` | This document |
 
-## Integration with deploy.sh
+## Local test integration
 
-The deployment script (`deploy.sh`) runs tests and screenshots in Phase 5 and 6:
+`run-local-tests.sh` builds `deploy-local/` through `build_deployment.py --local` and runs
+the UI suite. Capture screenshots as a separate explicit step when needed:
 
 ```bash
-# Phase 5: Run tests
-pytest ui_tests/tests -v
+# Run the production-parity local suite
+./run-local-tests.sh
 
-# Phase 6: Capture screenshots
+# Capture screenshots
 python ui_tests/capture_ui_screenshots.py
 ```
 
-Both phases now include UX validation automatically.
+The tests and screenshot capture include UX validation automatically.
 
 ## Debugging UX Issues
 

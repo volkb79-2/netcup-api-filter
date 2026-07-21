@@ -5,8 +5,10 @@
 The project implements a strict deployment workflow ensuring production parity:
 - **Build process**: `build_deployment.py` creates production-identical packages
 - **Local testing**: `run-local-tests.sh` tests against exact deployment package
-- **HTTPS testing**: TLS proxy with real Let's Encrypt certificates
-- **Webhosting deployment**: `build-and-deploy.sh` deploys to production
+- **HTTPS testing**: host-owned Traefik terminates TLS for exposed ciu stacks
+- **Release**: `cmru release` publishes the OCI image and Passenger variants
+- **Webhosting deployment**: `ciu up --host webhoster --thin -- --variant py311`
+  deploys a selected published Passenger variant
 - **Passenger WSGI**: Python app runs under Passenger on shared hosting
 - **Zero-downtime restarts**: Touch `tmp/restart.txt` to reload app
 
@@ -119,69 +121,30 @@ cat deploy-local/build_info.json
 # (Introduce failing test, verify cleanup still runs)
 ```
 
-### 3. HTTPS Local Testing
+### 3. HTTPS dev/test ingress
 
-**Files:** `tooling/reverse-proxy/`, `test-https-deployment.sh`
+**Files:** `docs/DEV_INFRA_SETUP.md`, `tooling/app-local/`, and ciu templates.
 
-#### TLS Proxy Setup
-- [ ] **nginx configuration**: Generated from template via `render-nginx-conf.sh`
-- [ ] **Certificate mounting**: Let's Encrypt certs mounted read-only
-- [ ] **TLS termination**: nginx handles TLS, forwards HTTP to Flask
-- [ ] **Proxy headers**: X-Forwarded-Proto, X-Forwarded-For set correctly
-- [ ] **Docker network**: Proxy and Flask on same network
-
-#### Configuration Steps
-1. **Detect FQDN**: Read `PUBLIC_FQDN` from `.env.workspace`
-2. **Render config**: Run `render-nginx-conf.sh` to generate nginx.conf
-3. **Stage files**: Run `stage-proxy-inputs.sh` to copy config/certs to /tmp
-4. **Start container**: `docker compose --env-file proxy.env up -d`
-5. **Verify TLS**: Test HTTPS endpoint
-
-- [ ] **Auto-detection**: FQDN auto-detected from external IP
-- [ ] **Manual override**: Can set PUBLIC_FQDN manually
-- [ ] **Certificate paths**: Derived from FQDN automatically
-- [ ] **Error handling**: Clear errors if certs missing
-
-**Test:**
-```bash
-# Start HTTPS proxy
-cd tooling/reverse-proxy
-./render-nginx-conf.sh && ./stage-proxy-inputs.sh
-docker compose --env-file proxy.env up -d
-
-# Get FQDN
-FQDN=$(grep LOCAL_TLS_DOMAIN proxy.env | cut -d= -f2)
-
-# Test HTTPS
-curl -v https://$FQDN/ 2>&1 | grep "SSL certificate verify ok"
-# Should succeed with valid certificate
-
-# Test Secure cookies
-curl -I https://$FQDN/admin/login | grep -i "set-cookie"
-# Should show: Secure; HttpOnly; SameSite=Lax
-
-# Run UI tests against HTTPS
-UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
-# Should pass all tests
-```
+- [ ] **Host edge**: `edge-traefik` owns `ingress_public`, TLS termination, and certificates.
+- [ ] **App exposure**: the local app joins `ingress_public` and declares its ciu/Traefik labels.
+- [ ] **No app TLS material**: the naf stack neither mounts nor manages certificates.
+- [ ] **Verification**: with the ciu env and guard loaded, request the rendered HTTPS hostname
+  through Traefik and run the relevant test suite.
 
 ### 4. Webhosting Deployment
 
-**Files:** `build-and-deploy.sh`, SSH config
+**Files:** `cmru.toml`, `.ciu.hosts.toml`, `scripts/activate.py`
 
 #### Deployment Steps
-1. **Build package**: Runs `build_deployment.py` (webhosting mode)
-2. **Upload to server**: `scp deploy.zip user@host:/path/`
-3. **Connect via SSH**: SSH into webhosting server
-4. **Backup current**: `mv /netcup-api-filter /netcup-api-filter.backup`
-5. **Extract new**: `unzip deploy.zip -d /netcup-api-filter`
-6. **Restart Passenger**: `touch /netcup-api-filter/tmp/restart.txt`
-7. **Verify deployment**: Check health endpoint
+1. **Release artifacts**: `cmru release` publishes the py3.14 OCI image and cp39/cp311 Passenger variants.
+2. **Select variant**: use `ciu up --host webhoster --thin -- --variant py311`.
+3. **Activate**: `scripts/activate.py` installs the variant, preserves `SECRET_KEY`, touches
+   `tmp/restart.txt`, and health-probes the application.
+4. **Database**: every webhosting deployment is greenfield and freshly seeded.
 
-- [ ] **Automated**: Single script performs entire deployment
-- [ ] **Safe**: Creates backup before deployment
-- [ ] **Rollback**: Can restore from backup if needed
-- [ ] **Minimal downtime**: Passenger reload (not full restart)
+- [ ] **Automated**: release and deploy commands are separate, documented operations
+- [ ] **Variant-specific**: the deployed Passenger ABI is explicitly selected
+- [ ] **Greenfield**: validate the fresh seeded database after activation
 
 #### SSH Configuration
 - [ ] **Host**: `hosting218629@hosting218629.ae98d.netcup.net`
@@ -197,16 +160,9 @@ UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
 
 **Test:**
 ```bash
-# Deploy to production
-./build-and-deploy.sh
-
-# Expected output:
-# [BUILD] Building deployment package...
-# [UPLOAD] Uploading to hosting218629.ae98d.netcup.net...
-# [DEPLOY] Extracting on server...
-# [RESTART] Restarting Passenger...
-# [VERIFY] Checking health endpoint...
-# ✓ Deployment successful
+# Publish release artifacts, then deploy one Passenger ABI variant
+cmru release
+ciu up --host webhoster --thin -- --variant py311
 
 # Verify deployment
 curl -I https://$PUBLIC_FQDN/
@@ -494,8 +450,7 @@ jobs:
       - name: Upload to server
         run: |
           scp deploy.zip ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-            'cd /netcup-api-filter && bash deploy.sh'
+          ciu up --host webhoster --thin -- --variant py311
 ```
 
 ### 12. Documentation & Runbook

@@ -164,7 +164,8 @@ gunicorn --workers=4 --threads=4 --worker-class=gthread --timeout=120 app:app
 
 On shared hosting (Passenger), these settings may be overridden by the host. The config file is primarily for:
 
-1. **Local development** - Full control via `deploy.sh local`
+1. **Local development** - Full control through `run-local-tests.sh` and its
+   `build_deployment.py --local` production-parity build
 2. **Dedicated servers** - Direct gunicorn deployment
 3. **Containers** - Docker/Kubernetes deployments
 
