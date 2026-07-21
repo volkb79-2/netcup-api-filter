@@ -27,7 +27,7 @@ This mirrors the old setup-zones.sh convention, minus any hardcoded
 vxxu.de/ns1 default — those were exactly the invented values the previous
 ciu-powerdns conversion attempt was rejected for.
 
-NEEDS LIVE VALIDATION: written against `pdnsutil create-zone` / `replace-rrset`
+VALIDATED 2026-07-21 against a live pdns-auth-48: create-zone + replace-rrset @ SOA
 CLI docs, not yet exercised against a running PowerDNS container (see the
 report from the conversion that added this file).
 
@@ -141,7 +141,7 @@ def run(config: dict, ctx) -> dict:
     serial = time.strftime("%Y%m%d00")
     soa_content = f"{ns_fqdn}. {hostmaster}. {serial} 10800 3600 604800 3600"
     soa = _docker_exec(
-        container, "pdnsutil", "replace-rrset", zone, zone, "SOA", "3600", soa_content, timeout=30,
+        container, "pdnsutil", "replace-rrset", zone, "@", "SOA", "3600", soa_content, timeout=30,
     )
     if soa.returncode != 0:
         raise RuntimeError(
