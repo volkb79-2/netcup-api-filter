@@ -1340,3 +1340,125 @@ def seed_demo_domain_roots() -> tuple[BackendService, ManagedDomainRoot]:
     
     logger.info("Demo backend and domain root created for testing")
     return demo_backend, demo_root
+
+
+# ============================================================================
+# Delegated Zone Seeding (D-007)
+# ============================================================================
+
+# Fixed service name for the BackendService fronting the operator-delegated
+# PowerDNS zone. Deliberately distinct from 'platform-powerdns' (the legacy
+# app-config.toml [platform_backends] path in bootstrap/platform_backends.py
+# -> setup_platform_powerdns()) so the two seeding paths can never collide if
+# both are ever exercised against the same database.
+DELEGATED_ZONE_BACKEND_SERVICE_NAME = "delegated-powerdns"
+
+
+def seed_delegated_zone_domain_root(
+    zone: str,
+    *,
+    api_url: str | None = None,
+    api_key: str | None = None,
+) -> ManagedDomainRoot | None:
+    """Idempotently offer the operator-delegated PowerDNS zone as a manageable
+    domain root (D-007, nyxloom-trove/decisions.md).
+
+    Ensures exactly one platform-owned PowerDNS ``BackendService`` pointing at
+    the INTERNAL PowerDNS API (app-to-app, inside the docker network — never
+    the public/traefik URL), and one ``ManagedDomainRoot`` for ``zone`` bound
+    to that service, so a user/system owns the zone and can create hosts
+    (subdomains) under it.
+
+    No-op when ``zone`` is empty — the committed default before an operator
+    sets NAF_DELEGATED_DNS_ZONE (see ciu.global.defaults.toml.j2
+    [topology.dns].delegated_zone) — and idempotent (no-op) when the
+    BackendService/ManagedDomainRoot rows already exist.
+
+    MULTI-DOMAIN note: one PowerDNS instance can serve MANY zones. This
+    function deliberately keys the BackendService by a FIXED service name
+    (not per-zone) and the ManagedDomainRoot by (backend_service_id,
+    root_domain) — the same BackendService row can grow additional
+    ManagedDomainRoot rows for further zones later, once naf can create zones
+    itself via the pdns HTTP API (the backends/ wire-up, D-002(a)/naf-P20).
+    This function only ever establishes the ONE dev/test root for the
+    currently-delegated zone; it does not assume there is only ever one.
+
+    Visibility is 'private' (VisibilityEnum.PRIVATE) — the same default
+    create_domain_root() already uses when a caller doesn't override it, and
+    matches ManagedDomainRoot's own docstring ("admin-controlled zone").
+    Granting specific users access is DomainRootGrant, out of scope here.
+
+    Args:
+        zone: The delegated DNS zone (e.g. 'managed.vxxu.de'). Callers read
+            this from config["topology"]["dns"]["delegated_zone"].
+        api_url: PowerDNS API URL to store in the backend config. Defaults to
+            POWERDNS_API_URL_INTERNAL from the environment (see
+            .env.services) — overridable so callers/tests don't need to touch
+            the environment.
+        api_key: PowerDNS API key. Defaults to POWERDNS_API_KEY from the
+            environment — overridable for the same reason.
+
+    Returns:
+        The (possibly pre-existing) ManagedDomainRoot, or None if zone is empty.
+
+    Raises:
+        RuntimeError: zone is non-empty but api_url/api_key cannot be
+            resolved from either the arguments or the environment. This seed
+            never invents DNS backend credentials (the D-007 lesson).
+    """
+    zone = (zone or "").strip().rstrip(".")
+    if not zone:
+        logger.info(
+            "delegated_zone is empty (NAF_DELEGATED_DNS_ZONE not set) — "
+            "skipping delegated-zone domain-root seed (no-op)"
+        )
+        return None
+
+    api_url = api_url or os.environ.get("POWERDNS_API_URL_INTERNAL")
+    api_key = api_key or os.environ.get("POWERDNS_API_KEY")
+    if not api_url or not api_key:
+        raise RuntimeError(
+            f"Cannot seed delegated-zone domain root for '{zone}': "
+            "POWERDNS_API_URL_INTERNAL and POWERDNS_API_KEY must both be "
+            "resolvable (explicit args or environment) — see .env.services / "
+            "POWERDNS_API_KEY in .env. Not invented (D-007)."
+        )
+
+    service = BackendService.query.filter_by(
+        service_name=DELEGATED_ZONE_BACKEND_SERVICE_NAME
+    ).first()
+    if not service:
+        service = create_backend_service(
+            provider_code="powerdns",
+            service_name=DELEGATED_ZONE_BACKEND_SERVICE_NAME,
+            display_name="Delegated PowerDNS Backend",
+            config={"api_url": api_url, "api_key": api_key, "server_id": "localhost"},
+            owner_type=OwnerTypeEnum.PLATFORM,
+            is_active=True,
+        )
+        logger.info("Created delegated PowerDNS backend service (id=%s)", service.id)
+    else:
+        logger.info("Delegated PowerDNS backend service already exists (id=%s)", service.id)
+
+    existing_root = ManagedDomainRoot.query.filter_by(
+        backend_service_id=service.id,
+        root_domain=zone,
+    ).first()
+    if existing_root:
+        logger.info("Domain root for delegated zone '%s' already exists", zone)
+        return existing_root
+
+    root = create_domain_root(
+        backend_service=service,
+        root_domain=zone,
+        dns_zone=zone,
+        visibility=VisibilityEnum.PRIVATE,
+        display_name=f"Delegated zone: {zone}",
+        description=(
+            "Operator-delegated DNS zone (D-007), authoritative in the "
+            "app-local PowerDNS backend. Seeded so a user/system owns the "
+            "root and can create hosts (subdomains) under it."
+        ),
+    )
+    logger.info("Created delegated-zone domain root: %s", zone)
+    return root

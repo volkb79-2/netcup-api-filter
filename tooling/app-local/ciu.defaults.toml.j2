@@ -38,3 +38,13 @@ deploy_dir = "deploy-local"
 # PUBLIC_FQDN fact. TLS/cert are inherited from traefik's `websecure` entrypoint.
 enabled = true
 subdomain = "naf"
+
+[app_local.hooks]
+pre_compose = []
+# D-007: seeds config["topology"]["dns"]["delegated_zone"] into the app's own
+# database as a manageable ManagedDomainRoot/BackendService once the app
+# container is healthy — the app-side analog of
+# tooling/backend-powerdns/post_compose_zone.py (which makes PowerDNS
+# authoritative for the same zone). No-op when the zone is empty. See
+# post_compose_seed_domain.py for the full contract.
+post_compose = ["post_compose_seed_domain.py"]
