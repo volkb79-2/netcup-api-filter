@@ -340,3 +340,13 @@ Sequence: delete the two dead stacks first, then resolve **D-002** (backends).
   co-worker's `http://pwmcp:3000/health`=200 peer check, the gate image (with the pinned
   `playwright==1.61.*` client) was proven to `chromium.connect(ws://pwmcp:3000/)`, drive a
   real Chromium (149.x), set + read page content — the full browser-offload path, live.
+
+## B-INFRA-DOCS — stale reverse-proxy references after naf-I04
+
+naf-I04 deleted `tooling/reverse-proxy/` and the dev nginx TLS edge (app + PowerDNS now go
+through the host traefik). These LIVE (non-deprecated) files still describe the removed proxy
+and need reconciling with `docs/DEV_INFRA_SETUP.md`: `docs/CERTIFICATE_MOUNTING.md`,
+`docs/DEPLOYMENT_WORKFLOW.md`, `docs/FAIL_FAST_PRINCIPLE.md`, `docs/MAILPIT_CONFIGURATION.md`,
+`docs/CONFIGURATION_GUIDE.md`, `AGENTS.md`. Also `tooling/run-ui-validation.sh` existed only to
+drive the old nginx TLS flow — it now fails fast (its `tooling/reverse-proxy/proxy.env` is gone);
+delete it or rewrite it against the traefik/ciu path. S-M.
