@@ -1,9 +1,10 @@
 # naf — project state (single point of truth)
 
 **Last synced: 2026-07-21.** Start here. This dashboard reflects the *current* state of
-netcup-api-filter; the detail lives in [roadmap.md](roadmap.md) (milestones),
-[backlog.md](backlog.md) (un-carved review items), [decisions.md](decisions.md) (D-###), and
-[handoffs/](handoffs/) (open carved tasks) / [archive/](archive/) (completed). When those disagree with reality, this file is corrected
+netcup-api-filter; the direction spine lives in [1-north-star.md](1-north-star.md),
+[2-product-definition.md](2-product-definition.md), [3-roadmap.md](3-roadmap.md), and
+[4-backlog.md](4-backlog.md); decisions live in [decisions.md](decisions.md) (D-###), and
+[handoffs/](handoffs/) holds open carved tasks / [archive/](archive/) completed material. When those disagree with reality, this file is corrected
 first; the July-2026 review that seeded the backlog is `docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md`.
 
 ## What naf is
@@ -32,8 +33,7 @@ across). naf has **no Vault** — secrets are gitignored `.env.*`; `ciu` `ssh_ke
 
 ## Handoffs — real state (files were stale; corrected here)
 
-Done handoffs are now in [`archive/`](archive/) (with P01–P04); only the open ones (P05, P06)
-remain in [`handoffs/`](handoffs/).
+Done handoffs are in [`archive/`](archive/); only P06 remains open in [`handoffs/`](handoffs/).
 
 | Handoff | State | Evidence / note |
 |---|---|---|
@@ -42,7 +42,7 @@ remain in [`handoffs/`](handoffs/).
 | naf-P07 2FA lockout + dead auth | ✅ DONE | `3434659` (merged) |
 | naf-P08 client-IP trust (XFF) | ✅ DONE | `521b788` (merged) |
 | naf-P09 reset/invite password policy | ✅ DONE | `675a338` (merged) |
-| naf-P05 workspace FQDN | 🟡 PARTIAL | O1 (`.env.services` guard) ✅; **O2 premise superseded** — PUBLIC_FQDN now comes from `ciu.env` (INFRA-4), not `post-create.sh` |
+| naf-P05 workspace FQDN | ✅ ARCHIVED | O1 merged; O2 superseded by naf-I04 because PUBLIC_FQDN now comes from `ciu.env`; no residual work |
 | naf-P06 test-suite integrity | 🟡 PARTIAL | O1 (route floor) ✅ part 1; **O2/O3 open** (kill can't-fail tests) — premise still valid and now **unblocked** (e2e gate + pwmcp live) |
 
 ## Implemented since the review
@@ -66,7 +66,7 @@ remain in [`handoffs/`](handoffs/).
 5. **B-DATA audit-cascade + FK enforcement** (`models.py:611` + `PRAGMA foreign_keys=ON`) — token delete silently wipes audit history. M
 6. **B-UI two broken routes** (`/account/docs` 500, `/admin/app-logs` traceback) — user-visible, invisible to the suite. M
 
-**Also open (see backlog.md for file:line):** B-PORTAL (webhook, self-service 2FA unlock,
+**Also open (see [4-backlog.md](4-backlog.md) for file:line):** B-PORTAL (webhook, self-service 2FA unlock,
 background SMTP dispatch, security-alert stub), B-DEAD (`netcup_client_mock.py`, `backends/`
 wiring = D-002/naf-P20), B-DATA (plaintext credential logging), B-CONFIG (hardcoded TFA
 constants, example-config live values, dead TOML sections), B-QUALITY (duplicated
@@ -88,4 +88,5 @@ traefik/ciu (tracked in backlog B-INFRA-DOCS).
   not-yet-live (naf-P20 / M6).
 - **D-003** — Alembic vs. formally-documented greenfield (M7).
 
-See [decisions.md](decisions.md) for the full D-### log.
+See [decisions.md](decisions.md) for the full D-### log. The superseded CMRU release plan and
+both INFRA plans were archived on 2026-07-21 because their recorded work is merged.

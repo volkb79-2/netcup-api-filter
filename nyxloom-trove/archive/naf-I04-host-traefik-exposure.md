@@ -7,7 +7,7 @@ tier: sonnet5-high
 input_revision: "f912479"
 depends_on: [naf-I01-ciu-adoption]
 session: fresh
-source: {kind: plan, ref: "nyxloom-trove/INFRA-PLAN-2026-07-20.md#INFRA-4"}
+source: {kind: plan, ref: "nyxloom-trove/archive/INFRA-PLAN-2026-07-20.md#INFRA-4"}
 status: DONE — merged (3049c49); the "changes deploy.sh" premise is obsolete (deploy.sh retired); see ../STATE.md
 supersedes: [naf-P05-workspace-fqdn-unbound#O2]
 scope:

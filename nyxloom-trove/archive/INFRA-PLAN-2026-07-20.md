@@ -1,3 +1,5 @@
+**SUPERSEDED 2026-07-21 — archived; work merged, see STATE.md**
+
 # Infra plan — off the cockpit, onto ciu-governed containers + host traefik (2026-07-20)
 
 ## STATUS 2026-07-20 — INFRA-1 + INFRA-2 LANDED; INFRA-3 + INFRA-4 CARVED (paused)

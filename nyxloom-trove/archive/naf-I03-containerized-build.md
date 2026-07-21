@@ -7,7 +7,7 @@ tier: sonnet5-high
 input_revision: "f912479"
 depends_on: [naf-I01-ciu-adoption]
 session: fresh
-source: {kind: plan, ref: "nyxloom-trove/INFRA-PLAN-2026-07-20.md#INFRA-3"}
+source: {kind: plan, ref: "nyxloom-trove/archive/INFRA-PLAN-2026-07-20.md#INFRA-3"}
 status: DONE — merged (860c825); see ../STATE.md
 advances: [M3]
 scope:
