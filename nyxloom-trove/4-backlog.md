@@ -40,6 +40,7 @@ items:
   - {id: B036, title: Consolidate tests on shared account fixtures, type: bugfix, component: tests, context_estimate: medium, folds_into: F009}
   - {id: B037, title: Replace assert-free UI tests, type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F009}
   - {id: B038, title: Remove colliding mock SMTP fixture, type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F009}
+  - {id: B039, title: "Adopt a meaningful, verified gate: confirm/build a separate runtime-faithful test env (not the cockpit) + coverage floor + parallelism, and prove the gate rejects a known-bad canary — nyxloom reference/STANDARD.md gate contract + docs/plan-gate-adoption.md checklist", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
 ---
 
 # Backlog
