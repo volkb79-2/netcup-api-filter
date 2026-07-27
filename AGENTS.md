@@ -6,6 +6,35 @@ for depth. Keep it accurate — if you change a workflow, update the relevant se
 > **For the current state of naf** (what's done, what's open, gate status, handoff states),
 > see the single point-of-truth board: [`nyxloom-trove/STATE.md`](nyxloom-trove/STATE.md).
 
+## nyxloom trove & doctrine (read this if you were started manually)
+
+This repo is a nyxloom consumer: its direction spine, handoffs, decisions, and
+project-specific instructions live in [`nyxloom-trove/`](nyxloom-trove/) — start at
+[`nyxloom-trove/README.md`](nyxloom-trove/README.md).
+
+**Canonical nyxloom doctrine ships with the nyxloom product, not with this repo** —
+it is deliberately *not* copied into the trove, so this project can never hold a
+stale duplicate of a rule that changed upstream:
+
+| Canonical doc | What it covers |
+|---|---|
+| `reference/AUTHORING.md` | the handoff-authoring contract (read before writing any handoff or agent prompt) |
+| `reference/STANDARD.md`  | the trove layout spec + declaration model |
+| `reference/DOCTRINE.md`  | operational lessons: gate discipline, evidence, the review checklist, merge discipline |
+
+To add to or override any of them **for netcup-api-filter**, create the *same-named
+sibling* in `nyxloom-trove/` (e.g. `nyxloom-trove/AUTHORING.md`): agents read the
+canonical file first, then ours, which **refines — never replaces** it. Keep it to
+the delta; never copy upstream text back in.
+
+**If you were started manually (not dispatched by nyxloomd), this is on you.** A
+dispatched agent gets the doc set injected by the daemon; a hand-started CLI agent
+gets only this file. So before doing work here, read: (1)
+[`nyxloom-trove/README.md`](nyxloom-trove/README.md) and
+[`nyxloom-trove/STATE.md`](nyxloom-trove/STATE.md); (2) every same-named sibling
+present in `nyxloom-trove/` (`ls nyxloom-trove/*.md`); (3) the canonical doctrine
+set above, from the nyxloom product.
+
 ## What this is
 
 A Flask application that sits **in front of DNS provider APIs** (netcup CCP, plus
