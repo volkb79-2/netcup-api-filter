@@ -20,7 +20,6 @@ else
 fi
 
 echo ""
-echo "[INFO] To rebuild the virtual environment, you can either:"
-echo "  1. Rebuild the devcontainer (recommended)"
-echo "  2. Run: bash .devcontainer/post-create.sh"
+echo "[INFO] To rebuild the virtual environment:"
+echo "  Rebuild the devcontainer (VS Code: 'Dev Containers: Rebuild Container')"
 echo ""

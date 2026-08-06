@@ -187,6 +187,17 @@ Two distinct layers:
 > ```
 >
 > Rationale and the 3.9 secondary-target rebuild: [`tooling/test-runner/README.md`](tooling/test-runner/README.md).
+>
+> **Host cgroup placement.** This host runs production workloads alongside dev/test work, so
+> `test-runner` (and any other container spawned for gating/build work) should land in a bounded
+> tier, not Docker's unconfined default. The devcontainer's `containerEnv` exposes
+> `$CGROUP_PARENT_DEV_INTERACTIVE` (this devcontainer's own tier — already applied) and
+> `$CGROUP_PARENT_DEV_BACKGROUND` (the shared dev/test/build tier) — read the latter, never
+> hardcode a slice name (see vbpub's `AGENTS.md` "Host cgroup placement for spawned containers" and
+> `modern-debian-tools-python-debug/host-setup/README.md` for the host-side tiers). **Not yet wired
+> up here**: `tooling/test-runner/testing-exec.sh` calls `docker run` directly (no `--cgroup-parent`)
+> — unlike dstdns's ciu-governed `test-runner`, this repo's runner doesn't yet read the env var, so
+> its containers currently rely on whatever the Docker daemon-wide default resolves to.
 
 The standard runner builds a production-parity deployment and runs the suite:
 

@@ -1,59 +1,120 @@
-// this is JSONC format, so you can add comments
+// netcup-api-filter devcontainer configuration (JSONC — comments allowed).
+// Migrated to mdt (modern-debian-tools) base image (2026-08-06).
+// Lifecycle: identity → host bootstrap → image → features → container metadata
+// → mounts → env → Docker runtime args → in-container init → post-start → IDE config
 {
-  // In VS Code: "Dev Containers: Rebuild Container"
-  // manually:  `docker build --no-cache -f .devcontainer/Dockerfile .`
-  // # 3. Clean up old containers/images: `docker system prune -a --volumes`
-
+  // ─── 1. Identity ──────────────────────────────────────────────────────────────
   // Display name in VS Code UI (includes username for uniqueness)
   "name": "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
-  // Use pre-built image from GHCR (private - requires docker login ghcr.io)
-  // To build locally instead, uncomment the "build" section below
-  "image": "ghcr.io/volkb79-2/modern-debian-tools-python-debug-vsc-devcontainer:latest",
-  // "build": {
-  //   "dockerfile": "Dockerfile"
-  // },
+
+  // ─── 2. Host bootstrap (PRE-container) ─────────────────────────────────────────
+  // Runs ON THE HOST before the container is created. Ensures every $HOME bind-mount
+  // source below exists with correct perms (avoids root-owned dirs). It must be a file
+  // in your repo checkout — the image doesn't exist yet at initializeCommand time.
+  "initializeCommand": "python3 .devcontainer/initialize_container_environment.py",
+
+  // ─── 3. Container image ────────────────────────────────────────────────────────
+  // Use pre-built image from GHCR (private — requires `docker login ghcr.io`).
+  "image": "ghcr.io/volkb79-2/modern-debian-tools-python-debug-vsc-devcontainer:trixie-py3.14-php8.5-latest",
+
+  // ─── 4. Container features ─────────────────────────────────────────────────────
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false,
       "dockerDashComposeVersion": "v2"
     }
   },
+
+  // ─── 5. Container metadata ─────────────────────────────────────────────────────
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "remoteUser": "vscode",
+
+  // ─── 6. Mounts ─────────────────────────────────────────────────────────────────
+  // Sources are host paths, created by initialize_container_environment.py.
   "mounts": [
-    // Mount Docker socket for container management
-    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
-    // make local letsencrypt certificates available inside container (readonly), might be security issue depending on certs available on host
+    // ── Docker / host integration ──────────────────────────────────────────────
+    // A DIRECTORY-level bind mount, not a file-level one: a file-level
+    // `-v /var/run/docker.sock:/var/run/docker.sock` pins one socket inode
+    // and goes stale (Docker access unrecoverable short of a rebuild) the
+    // next time dockerd restarts and recreates that file — verified live, an
+    // unrelated `apt upgrade` was enough. Binding the whole directory means a
+    // file dockerd recreates INSIDE it stays visible with no remount. See
+    // vbpub/modern-debian-tools-python-debug/host-setup/units/docker-api-socket.conf
+    // (the vendored-from source) for the full writeup and the docker.socket
+    // drop-in this requires on the host.
+    "source=/run/docker-api,target=/run/docker-api,type=bind",
+    // Host letsencrypt certs (readonly). Consider security implications.
     "source=/etc/letsencrypt,target=/etc/letsencrypt,type=bind,consistency=cached,readonly",
-    // Mount SSH keys for Git access (readonly — keys are used via ssh-agent, not modified)
+
+    // ── Host ssh keys (readonly, dual-use: native keys + in-container) ─────────
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh-host,type=bind,consistency=cached,readonly",
-    // Mount Claude Code state (settings, memory, sessions, history) so rebuilds don't wipe it
-    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
-    // Mount sibling repos for cross-repo browsing / MCP context (readonly)
-    "source=${localWorkspaceFolder}/../vbpub,target=/workspaces/vbpub,type=bind,consistency=cached,readonly",
-    "source=${localWorkspaceFolder}/../dstdns,target=/workspaces/dstdns,type=bind,consistency=cached,readonly"
+
+    // ── PERSISTENT STATE (~/mdt--mounted-folders/) — survives rebuilds ────────
+    // Directory mounts (alphabetical by subdir name)
+    "source=${localEnv:HOME}/mdt--mounted-folders/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.codex,target=/home/vscode/.codex,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.config,target=/home/vscode/.config,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.gnupg,target=/home/vscode/.gnupg,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.local,target=/home/vscode/.local,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.minisign,target=/home/vscode/.minisign,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.openclaw,target=/home/vscode/.openclaw,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.reasonix,target=/home/vscode/.reasonix,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/mdt--mounted-folders/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached",
+
+    // ── Persisted host-backed /tmp (mode 1777) ─────────────────────────────────
+    "source=${localEnv:HOME}/mdt--mounted-folders/tmp,target=/tmp,type=bind,consistency=cached",
+
+    // ── Sibling-repo workspace mounts (multi-root workspace) ───────────────────
+    "source=${localWorkspaceFolder}/../vbpub,target=/workspaces/vbpub,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/../dstdns,target=/workspaces/dstdns,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/../vbpro,target=/workspaces/vbpro,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/../DST,target=/workspaces/DST,type=bind,consistency=cached"
   ],
+
+  // ─── 7. Container environment ──────────────────────────────────────────────────
   "containerEnv": {
-    "DOCKER_HOST": "unix:///var/run/docker.sock"
+    // Points at the directory-mounted socket above, not the default
+    // /var/run/docker.sock path — see that mount's own comment.
+    "DOCKER_HOST": "unix:///run/docker-api/docker.sock"
   },
+
+  // ─── 8. Docker runtime arguments ──────────────────────────────────────────────
   "runArgs": [
-    // Set container hostname (used by validation scripts)
     "--hostname", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
-    // Set Docker container name (visible in docker ps)
     "--name", "${localWorkspaceFolderBasename}-devcontainer-${localEnv:USER}",
-    // NOTE: DOCKER_GID is needed so devcontainer can access `/var/run/docker-host.sock`; needs to be set or devcontainer won't start
-    // must be set in the host VS Code/SSH environment (non-interactive shells won't load ~/.config/environment.d)
-    // e.g. add to `.zshrc` at top *before* stopping for non-interactive shells: `export DOCKER_GID=$(getent group docker | cut -d: -f3 2>/dev/null)`
-    // `--group-add` will cause the user `vscode` to be added to the Docker group inside the container
+
+    // DOCKER_GID: needed so devcontainer can access /run/docker-api/docker.sock.
+    // Must be exported in the host VS Code/SSH environment before launch
+    // (non-interactive shells won't load ~/.config/environment.d). Example
+    // for .zshrc:
+    //   export DOCKER_GID=$(getent group docker | cut -d: -f3 2>/dev/null)
     "--group-add", "${localEnv:DOCKER_GID}",
-    // SSHFS support (required for mount(2) inside container)
+    // sshfs / mount(2) inside container
     "--cap-add", "SYS_ADMIN",
     "--device", "/dev/fuse",
-    // needed related to Docker-in-Docker and security for sshfs
     "--security-opt", "apparmor=unconfined",
     "--security-opt", "seccomp=unconfined"
   ],
-  "postCreateCommand": "bash .devcontainer/post-create.sh 2>&1 | tee .devcontainer/post-create-$(date +%Y%m%d-%H%M%S).log",
+
+  // ─── 9. In-container initialization (POST-create) ─────────────────────────────
+  // Baked into the mdt image — runs generic ciu-agnostic setup, then discovers +
+  // runs consumer hooks from .devcontainer/finalize.{pre,post}.d/*.sh.
+  // Our hook: .devcontainer/finalize.post.d/10-netcup-setup.sh (sets up Python venv,
+  // generates .env.workspace, wires SSH + aliases + development tools).
+  // REQUIRES an mdt base image that ships finalize_container_environment.py.
+  "postCreateCommand": "finalize_container_environment.py",
+
+  // ─── 10. Post-start command (every container start) ───────────────────────────
+  // fix-docker-relay.sh MUST run here, not at postCreate: the docker-outside-of-
+  // docker feature's entrypoint starts its socat relay before any lifecycle hook,
+  // and ships it WITHOUT `-t`, so socat's 0.5s default half-close timeout silently
+  // truncates every attached `docker run` AND forges exit 0 — a false-green under
+  // every containerised gate run from this cockpit. The script patches the feature
+  // script (for later restarts) and restarts the live relay. Read its header, or
+  // vbpub's nyxloom reference/LESSONS.md L18 defeat 4, before removing it.
+  "postStartCommand": "bash .devcontainer/fix-docker-relay.sh; echo \"PATH is: $PATH\" && echo \"code is: $(find / -iname code -type f  -print0 2>/dev/null | xargs -0 ls -l 2>/dev/null || true)\"",
+
+  // ─── 11. IDE customizations (VS Code) ─────────────────────────────────────────
   "customizations": {
     "vscode": {
       "settings": {
@@ -63,29 +124,21 @@
         "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python"
       },
       "extensions": [
-        // Extensions listed here are installed inside the devcontainer
-        // (remote side). Use this list for any tooling Copilot/VS Code
-        // needs to run in the container rather than on the host.
-        //
-        // How to decide:
-        // - If the extension provides language tooling or CLI helpers used
-        //   inside the container, include it here.
-        // - If it is purely UI/Theme on the host, keep it out.
-        //
-        // Missing extensions? Check required tooling in docs and add only
-        // those that are necessary for container-side workflows.
-        //
-        // in devcontainer: `code-insiders  --list-extensions --show-versions`
-        // on host: `ls ~/.vscode-server/extensions`
+        // Python & linting
         "ms-python.python",
         "ms-python.black-formatter",
+        // Docker & container tooling
         "ms-vscode.docker",
+        // Config & markup languages
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
         "samuelcolvin.jinjahtml",
-        "github.vscode-github-actions",
+        // Data & CSV
         "mechatroner.rainbow-csv",
         "janisdd.vscode-edit-csv",
+        // GitHub & Actions
+        "github.vscode-github-actions",
+        // Spreadsheets and markdown
         "GrapeCity.gc-excelviewer",
         "bierner.markdown-mermaid",
         "bpruitt-goddard.mermaid-markdown-syntax-highlighting"
