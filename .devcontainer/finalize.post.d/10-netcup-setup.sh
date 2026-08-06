@@ -131,13 +131,19 @@ setup_python_environment() {
 
     # ─── Add venv auto-activation to ~/.bashrc (REMOVE-AND-REWRITE, not add-if-absent)
     strip_bashrc_block "netcup-api-filter venv"
-    cat >> ~/.bashrc <<'EOF'
+    # UNQUOTED heredoc: $WS expands HERE, at generation time, so the written
+    # block contains this container's actual workspace path as a fact. A quoted
+    # heredoc (<<'EOF') would emit the literal instead -- which is what the
+    # first version of this block did, while carrying a comment claiming the
+    # opposite. A hardcoded /workspaces/netcup-api-filter is exactly the
+    # anti-pattern this migration exists to remove (AGENTS.md 4.2a).
+    cat >> ~/.bashrc <<EOF
 
 # >>> netcup-api-filter venv
 # Auto-activate the project venv when entering a shell in the workspace.
-# The workspace path is BAKED IN at generation time from MDT_WORKSPACE_DIR.
-if [[ -f "/workspaces/netcup-api-filter/.venv/bin/activate" ]]; then
-    source "/workspaces/netcup-api-filter/.venv/bin/activate"
+# Path written at generation time from MDT_WORKSPACE_DIR -- not a default.
+if [ -f "$WS/.venv/bin/activate" ]; then
+    source "$WS/.venv/bin/activate"
 fi
 # <<< netcup-api-filter venv
 EOF
