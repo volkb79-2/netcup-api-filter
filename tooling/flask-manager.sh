@@ -76,7 +76,12 @@ get_flask_pid() {
 start_flask() {
     local port="${PORT:-5100}"
     local deploy_dir="${DEPLOY_DIR}"
-    local flask_env="${FLASK_ENV:-local_test}"
+    # No default (AGENTS.md 4.2a): FLASK_ENV selects which CONFIG and which
+    # secrets the app loads. Defaulting it means a run against the wrong
+    # environment starts successfully and looks normal -- the failure shows up
+    # later as "wrong data" rather than "wrong environment", which is the
+    # hardest kind to trace back. State it.
+    local flask_env="${FLASK_ENV:?not set — export FLASK_ENV (e.g. local_test) before starting Flask}"
     
     log_info "Starting Flask backend..."
     log_info "  Deploy dir: ${deploy_dir}"

@@ -19,7 +19,11 @@ log() { echo "[netcup-setup] $*"; }
 # ============================================================================
 # 1. REPOSITORY PATHS & .env.workspace GENERATION
 # ============================================================================
-# Netcup doesn't use ciu, so we generate .env.workspace directly in this hook.
+# netcup DOES use ciu (ciu.env + ciu.global.toml at the repo root); this hook
+# writes .env.workspace as the shell-facing companion, and reads ciu.env where
+# a value has an authoritative source there. An earlier revision of this file
+# claimed "netcup doesn't use ciu" and dropped network setup on that basis --
+# the claim was false and the drop broke pwmcp-based UI tests.
 # REPO_ROOT is the container-visible path (the workspace); PHYSICAL_REPO_ROOT
 # is the host path (needed for Docker bind mounts).
 
@@ -329,6 +333,63 @@ EOF
     log "Development tools configured"
 }
 
+
+# ============================================================================
+# 5. DOCKER NETWORK CONNECTIVITY (pwmcp / sibling service containers)
+# ============================================================================
+# RESTORED 2026-08-06. The mdt migration dropped this on the stated basis that
+# "netcup doesn't use pwmcp" -- false: UI tests reach Playwright-as-a-Service at
+# ws://pwmcp-playwright:3000/, which only resolves once this devcontainer has
+# JOINED the shared network. Without it those tests cannot connect at all.
+
+setup_network_connectivity() {
+    [ "${MDT_ENV_TYPE:-devcontainer}" = "devcontainer" ] || { log "not a devcontainer — skipping network setup"; return 0; }
+    command -v docker >/dev/null 2>&1 || { log "WARN docker not available — skipping network setup"; return 0; }
+
+    # NO default: the name is ciu-derived (<repo>-<path-hash>-network, see
+    # ciu.env). A stale hardcoded fallback would silently put containers on a
+    # DIFFERENT network than ciu renders -- split-brain, and invisible.
+    local network_name="${DOCKER_NETWORK_INTERNAL:-}"
+    if [ -z "$network_name" ] && [ -f "$WS/ciu.env" ]; then
+        # shellcheck source=/dev/null
+        network_name=$(. "$WS/ciu.env" >/dev/null 2>&1; printf '%s' "${DOCKER_NETWORK_INTERNAL:-}")
+    fi
+    if [ -z "$network_name" ]; then
+        log "WARN DOCKER_NETWORK_INTERNAL not set and not found in ciu.env — skipping network join"
+        log "WARN pwmcp-based UI tests will not be able to reach ws://pwmcp-playwright:3000/"
+        return 0
+    fi
+
+    if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+        log "creating docker network: $network_name"
+        docker network create "$network_name" >/dev/null 2>&1 || {
+            log "WARN could not create network $network_name"; return 0; }
+    fi
+
+    local container_name
+    container_name=$(docker ps --format '{{.Names}}' --filter volume="$WS" 2>/dev/null | head -1)
+    if [ -z "$container_name" ]; then
+        log "WARN could not detect this devcontainer's name — skipping network join"
+    elif docker network inspect "$network_name" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qw "$container_name"; then
+        log "already connected to $network_name"
+        export DEVCONTAINER_NAME="$container_name"
+    else
+        log "connecting $container_name to $network_name"
+        docker network connect "$network_name" "$container_name" >/dev/null 2>&1 \
+            && export DEVCONTAINER_NAME="$container_name" \
+            || log "WARN could not connect to $network_name — sibling containers unreachable by name"
+    fi
+
+    export DOCKER_NETWORK_INTERNAL="$network_name"
+    cat >> "$WS/.env.workspace" <<EOF
+
+# Docker network for reaching sibling service containers by name,
+# e.g. ws://pwmcp-playwright:3000/ for UI tests.
+export DOCKER_NETWORK_INTERNAL="$network_name"
+export DEVCONTAINER_NAME="${DEVCONTAINER_NAME:-}"
+EOF
+}
+
 # ============================================================================
 # HELPER: Remove-and-rewrite ~/.bashrc blocks (NOT add-if-absent)
 # ============================================================================
@@ -368,6 +429,10 @@ main() {
 
     if ! setup_development_tools; then
         log "WARN: Development tools setup had issues (non-critical)"
+    fi
+
+    if ! setup_network_connectivity; then
+        log "WARN: Network connectivity setup had issues (pwmcp UI tests may fail)"
     fi
 
     log "finalize hook complete (REPO_ROOT=${REPO_ROOT:-?})"
