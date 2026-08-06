@@ -44,7 +44,7 @@ services:
       - PWMCP_SESSION_LABEL={{ test_runner.pwmcp.session_label }}
     volumes:
       # HOST path (DooD) — see [test_runner.mounts].workspace.
-      - ${PHYSICAL_REPO_ROOT:-{{ test_runner.mounts.workspace }}}:{{ ciu.repo_root }}:rw
+      - ${PHYSICAL_REPO_ROOT:?required host path — source ciu.env}:{{ ciu.repo_root }}:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
     working_dir: {{ ciu.repo_root }}
     networks:

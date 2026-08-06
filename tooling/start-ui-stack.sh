@@ -49,8 +49,15 @@ log_error() {
 # Configuration with defaults allowed (not critical paths)
 FLASK_PORT="${FLASK_PORT:-8000}"
 FLASK_HOST="${FLASK_HOST:-0.0.0.0}"
-DATABASE_PATH="${DATABASE_PATH:-/workspaces/netcup-api-filter/netcup_filter.db}"
-GATEWAY_IP=$(ip route | awk '/default/ {print $3; exit}' || echo "172.17.0.1")
+# DERIVED from this script's own location, never a hardcoded workspace path
+# (AGENTS.md §4.2a): the literal was correct on exactly one machine and in
+# exactly one checkout — wrong in every worktree and on every other host.
+DATABASE_PATH="${DATABASE_PATH:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/netcup_filter.db}"
+# No invented fallback: 172.17.0.1 is the DEFAULT bridge gateway, which is
+# wrong the moment this runs on a user-defined network — and wrong silently,
+# as a connection that goes nowhere rather than an error.
+GATEWAY_IP=$(ip route | awk '/default/ {print $3; exit}')
+: "${GATEWAY_IP:?could not determine the default-route gateway; refusing to guess}"
 
 FLASK_PID=""
 
