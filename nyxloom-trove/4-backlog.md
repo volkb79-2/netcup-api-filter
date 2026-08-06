@@ -162,3 +162,19 @@ remains the status dashboard; completed B-AUTH work is intentionally not re-open
   `smoke/test_screenshot_capture_and_ux.py:486`: add behavioral assertions or remove tests.
 - **B038 — Remove colliding mock SMTP fixture.** UI test `mock_smtp_server`: remove the
   hardcoded-port self-test fixture that duplicates Mailpit.
+- **B039 — Adopt the shared testing library once it exists (do NOT build one now).**
+  This project has no changed-line coverage floor, no canary probe and no mutation
+  gate today. The right answer is to consume the shared library rather than write a
+  fourth-and-a-half copy: `coverage_gate.py` already exists FOUR times across the
+  estate (nyxloom 455 lines, dstdns 804, topos 299, plus srdm's Go `tools/covergate`)
+  and every copy has diverged.
+
+  The extraction is specified in
+  `vbpub/nyxloom/nyxloom-trove/handoffs/nyxloom-P90-extract-testing-library.md` and
+  is queued behind nyxloom's core redesign. **Blocked on that; nothing to do here
+  until it lands.**
+
+  This project is also the honest test of whether that extraction succeeded: it uses
+  ciu + cmru but has no nyxloom-internal coupling, so if the library cannot be
+  adopted here standalone, it is a nyxloom sub-module wearing a library's name (the
+  P90 handoff's oracle O1 states exactly this).
