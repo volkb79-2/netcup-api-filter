@@ -188,7 +188,6 @@ tmp/*
 !tmp/restart.txt
 
 # VS Code Copilot execution plan files
-.vscode/copilot-plan.sh
 
 # Mutation testing (mutmut 3.x) working directory and temp files
 mutants/

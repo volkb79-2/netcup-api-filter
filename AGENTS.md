@@ -1,299 +1,86 @@
-# AGENTS.md — netcup-api-filter
+# AGENTS.md — netcup-api-filter (naf)
 
-Orientation for AI agents and new contributors. Read this first; follow the links
-for depth. Keep it accurate — if you change a workflow, update the relevant section.
+naf's delta on top of the estate rules. **Read vbpub's `AGENTS.md` first**
+(`/workspaces/vbpub/AGENTS.md`): cockpit doctrine, defaults-are-hazards, worktrees,
+cgroup placement, supported-workflow rule, exit-status rule. Nothing from it is repeated here.
+Current state, gate status and handoffs: [`nyxloom-trove/STATE.md`](nyxloom-trove/STATE.md).
 
-> **For the current state of naf** (what's done, what's open, gate status, handoff states),
-> see the single point-of-truth board: [`nyxloom-trove/STATE.md`](nyxloom-trove/STATE.md).
-
-## nyxloom trove & doctrine (read this if you were started manually)
-
-This repo is a nyxloom consumer: its direction spine, handoffs, decisions, and
-project-specific instructions live in [`nyxloom-trove/`](nyxloom-trove/) — start at
-[`nyxloom-trove/README.md`](nyxloom-trove/README.md).
-
-**Canonical nyxloom doctrine ships with the nyxloom product, not with this repo** —
-it is deliberately *not* copied into the trove, so this project can never hold a
-stale duplicate of a rule that changed upstream:
-
-| Canonical doc | What it covers |
-|---|---|
-| `reference/AUTHORING.md` | the handoff-authoring contract (read before writing any handoff or agent prompt) |
-| `reference/STANDARD.md`  | the trove layout spec + declaration model |
-| `reference/DOCTRINE.md`  | operational lessons: gate discipline, evidence, the review checklist, merge discipline |
-
-To add to or override any of them **for netcup-api-filter**, create the *same-named
-sibling* in `nyxloom-trove/` (e.g. `nyxloom-trove/AUTHORING.md`): agents read the
-canonical file first, then ours, which **refines — never replaces** it. Keep it to
-the delta; never copy upstream text back in.
-
-**If you were started manually (not dispatched by nyxloomd), this is on you.** A
-dispatched agent gets the doc set injected by the daemon; a hand-started CLI agent
-gets only this file. So before doing work here, read: (1)
-[`nyxloom-trove/README.md`](nyxloom-trove/README.md) and
-[`nyxloom-trove/STATE.md`](nyxloom-trove/STATE.md); (2) every same-named sibling
-present in `nyxloom-trove/` (`ls nyxloom-trove/*.md`); (3) the canonical doctrine
-set above, from the nyxloom product.
+**Hand-started (not nyxloomd-dispatched)?** Before work, read `nyxloom-trove/README.md`,
+`nyxloom-trove/STATE.md`, every `nyxloom-trove/*.md` sibling of a canonical doc, and the
+canonical doctrine in vbpub `nyxloom/reference/{AUTHORING,STANDARD,DOCTRINE}.md`. The sibling
+refines the canonical file, never replaces it; keep siblings to the delta.
 
 ## What this is
 
-A Flask application that sits **in front of DNS provider APIs** (netcup CCP, plus
-"bring your own backend" services) and exposes a **scoped, audited DNS API** so that
-machines can update only the records they're authorized to. It provides:
+A Flask app in front of DNS provider APIs (netcup CCP, plus bring-your-own backends) that exposes
+a **scoped, audited DNS API**: REST + DDNS (DynDNS2/No-IP) via Bearer tokens, an account portal
+and an admin UI, with 2FA, GeoIP checks and an activity log. Deployed to shared webhosting
+(Passenger → `src/netcup_api_filter/passenger_wsgi.py` → `create_app()` in `app.py`) and as a
+container.
 
-- A **REST DNS API** and **DDNS endpoints** (DynDNS2 / No-IP compatible) authenticated by Bearer tokens.
-- An **account portal** (self-service: realms, tokens, 2FA, notifications) and an **admin UI**.
-- Per-account authorization, 2FA, GeoIP checks, and an activity/audit log.
+## Domain model (internalize before touching auth/DNS code)
 
-It is deployed to **shared webhosting** (Passenger picks up `passenger_wsgi.py`) and runs
-locally with **production parity** (same package, same DB, same entry point).
+**Account → Realms → Tokens.**
 
-## Core architecture
+- **Account** — a human with UI login. `user_alias` (used in tokens, not the username), 2FA, approval state.
+- **AccountRealm** — grant of a DNS scope: `domain` + `realm_type` + `realm_value`.
+  `host` = exact FQDN; `subdomain` = apex and all children; `subdomain_only` = children only.
+- **APIToken** — machine credential scoped to one realm, `naf_<user_alias>_<random>`; only a bcrypt hash and 8-char prefix are stored.
+- **Backends** — a realm resolves to a platform `ManagedDomainRoot` (`DomainRootGrant` gates private roots) or a user's own `BackendService`.
+- **Authorization** is `token_auth.check_permission()`: zone, hostname scope, operation, record type. Reason about that function for any record-level change.
+- **2FA** — email mandatory for regular accounts; TOTP/Telegram optional; recovery codes are the fallback. A method is offered only if it can deliver.
 
-**Account → Realms → Tokens.** This is the domain model; internalize it before editing auth/DNS code.
+Module map: read `src/netcup_api_filter/` (blueprints in `api/`). Reference docs: [`docs/README.md`](docs/README.md).
 
-- **Account** — a human who logs into the UI. Has `user_alias` (used in tokens, *not* the username), 2FA, approval state.
-- **AccountRealm** — a grant of access to a DNS scope. Fields: `domain` (the zone, e.g. `example.com`) + `realm_type` + `realm_value`.
-  - `host` — exact FQDN only (`vpn.example.com`).
-  - `subdomain` — apex **and** all children (whole-zone management).
-  - `subdomain_only` — children only, not the apex.
-- **APIToken** — a machine credential scoped to one realm. Format `naf_<user_alias>_<random>`; only a bcrypt hash + 8-char prefix are stored.
+## Conventions (non-negotiable)
 
-**Authorization** lives in `token_auth.check_permission()`: it verifies the zone
-(`realm.matches_domain`), the **hostname scope** (`realm.matches_hostname`), the operation,
-and the record type. Changing record-level auth? That's the function to reason about.
+1. **Config-driven.** `.env.defaults` → environment → DB settings (`get_setting`). No hardcoded credentials, hosts, ports, timeouts or cookie flags. Fail fast, never fall back across environments ([`docs/FAIL_FAST_PRINCIPLE.md`](docs/FAIL_FAST_PRINCIPLE.md)); shell: `PORT="${PORT:?...}"`.
+2. **Reuse helpers** — `utils.py` (`parse_bool`, `sha256_hex`, `generate_token`, `hash_password`), `netcup_client.py` (`extract_dns_records`, `mutation_failed`, `mutation_message`).
+3. **Logging, not `print`.** `logging.getLogger(__name__)`, f-strings with context. Never log full tokens, passwords, secrets or chat IDs; prefixes/IDs only.
+4. **Security boundary.** `hmac.compare_digest` for secrets; audit sensitive actions to `ActivityLog`; enforce scope per record, not just per zone; new POST routes need CSRF (cookie auth) or Bearer/shared-secret (API) and the auth decorators their siblings use.
+5. **Database.** SQLite, no Alembic. `init_db()` → `create_all()` + `run_lightweight_migrations()` adds missing nullable/scalar-default columns and simple indexes. Drops, renames, type changes, NOT NULL without default, backfills, new constraints need a hand-written migration.
+6. **Python floor.** Webhosting variants run **3.9 and 3.11**; the OCI image is 3.14. No 3.10+ syntax or cp314-only deps in shipped code.
 
-**Backends.** Realms resolve either to a platform-**managed domain root**
-(`ManagedDomainRoot`, with `DomainRootGrant` controlling who may request realms under
-private roots) or to a user's **own backend** (`BackendService`, BYOD).
+## Run, test, release — never in the cockpit
 
-**Auth surfaces.**
-- UI: Flask session + DB-backed `AccountSession` (revocable). See `account_auth.py`.
-- API: Bearer token. See `token_auth.py` (`@require_auth`).
-- **2FA**: email is **mandatory** for regular accounts; TOTP and Telegram are optional; recovery codes are the fallback. A method is only *offered* if it can actually deliver.
+The devcontainer only inspects and drives. **App and test execution happen in containers**, through
+the supported verbs:
 
-**Entry point.** `src/netcup_api_filter/passenger_wsgi.py` → app factory `create_app()` in `app.py`.
+| Concern | Verb |
+|---|---|
+| Gate (unit per Python version, trove, e2e) | `run-gate <lane>` |
+| Local app, mocks, pwmcp | `ciu` stacks (`tooling/*/`) |
+| Release (OCI image + Passenger tarballs, `scm` version) | `cmru release` |
+| Deploy to webhoster | `ciu up --host webhoster --thin -- --variant py311` |
 
-### Source map (`src/netcup_api_filter/`)
+Webhoster inventory, pinned host key and activation contract: `.ciu.hosts.toml`. Webhosting releases are
+greenfield (fresh seeded DB, default `admin`/`admin`, `must_change_password`); only `SECRET_KEY` carries over.
+Credentials are tracked in `deployment_state_*.json` (never hardcode a password); browser tests use pwmcp via
+`PLAYWRIGHT_SERVER_WS`, never an engine installed here.
 
-| Area | Modules |
-|------|---------|
-| App / config | `app.py` (factory), `config_defaults.py` (`.env.defaults` loader), `utils.py` (shared helpers) |
-| Data | `models.py` (all SQLAlchemy models), `database.py` (init, migrations, settings, seeding) |
-| Auth | `account_auth.py` (UI/session/2FA), `token_auth.py` (Bearer + `check_permission`), `recovery_codes.py`, `password_reset.py` |
-| DNS | `netcup_client.py` (+ `_mock`), `realm_token_service.py`, `filter_proxy.py` |
-| Notifications | `notification_service.py`, `email_notifier.py`, `telegram_service.py` |
-| Other | `geoip_service.py`, `bootstrap/seeding.py`, `templates/` |
-| Blueprints (`api/`) | `account.py` (portal), `admin.py` (admin UI), `dns_api.py` (REST DNS), `ddns_protocols.py` (DynDNS2/No-IP), `telegram.py` (bot callback) |
+> **Migration pending** (trove backlog): the gate is still `tooling/test-runner/testing-exec.sh` and
+> `nyxloom-trove/nyxloom.toml` `[gates.*]`; `run-local-tests.sh` / `build_deployment.py --local` still build
+> and drive `deploy-local/` from the cockpit. They are being replaced by `run-gate.toml` lanes and ciu stacks;
+> until then they are the only available gate, not the target.
 
-Reference docs: [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md), [`docs/ADMIN_GUIDE.md`](docs/ADMIN_GUIDE.md), [`docs/DDNS_PROTOCOLS.md`](docs/DDNS_PROTOCOLS.md), [`docs/TELEGRAM_LINKING.md`](docs/TELEGRAM_LINKING.md).
-
-## Project conventions (non-negotiable)
-
-1. **Config-driven — no hardcoded values.** Configuration flows `.env.defaults` (version-controlled source of truth) → environment variables (per-environment override) → DB settings (runtime, via admin UI). Don't bake credentials, hosts, ports, timeouts, or cookie flags into code. Read them via `config_defaults.get_default(...)` / `os.environ` / `get_setting(...)`.
-
-2. **Fail-fast — no silent fallbacks.** Never fall back across environments (a missing local config must *fail*, not load production config). In shell, require variables explicitly: `PORT="${PORT:?PORT not set (check .env.defaults)}"`. See [`docs/FAIL_FAST_PRINCIPLE.md`](docs/FAIL_FAST_PRINCIPLE.md).
-
-3. **Reuse shared helpers; don't re-implement.** Before writing a utility, check `utils.py` (`parse_bool`, `sha256_hex`, `generate_token`, `hash_password`) and `netcup_client.py` (`extract_dns_records`, `mutation_failed`, `mutation_message`). Boolean-env parsing, token hashing, and Netcup response-envelope handling already have one home each — keep it that way.
-
-4. **Logging, not `print`.** `logger = logging.getLogger(__name__)`; level from `LOG_LEVEL`. Use f-strings with context (token *prefix*, username, realm) and the right level. **Never log full tokens, passwords, secrets, or chat IDs** — log prefixes/IDs only.
-
-5. **Security expectations** (this is a security boundary):
-   - Compare secrets in constant time (`hmac.compare_digest`), never `==`.
-   - Audit sensitive actions to `ActivityLog` (grants, linking, auth failures).
-   - Enforce scope at the *record* level, not just the zone (see `check_permission`).
-   - New POST routes need CSRF (cookie-auth) or a shared-secret/Bearer check (API); new account/admin routes need the auth decorators their siblings use.
-
-## Database & migrations
-
-SQLite + SQLAlchemy. There is **no Alembic**. `init_db()` calls `db.create_all()` (creates
-missing *tables*) and then **`run_lightweight_migrations()`** (`database.py`), which adds
-**missing columns and indexes** to existing tables so a deployment that keeps its
-`netcup_filter.db` across an upgrade doesn't crash with "no such column".
-
-- **Additive, nullable / scalar-default columns and simple indexes migrate automatically.** Just add the column to the model.
-- **Anything else** — dropping/renaming columns, type changes, `NOT NULL` without a default, data backfills, new constraints — needs a **hand-written migration**; the lightweight pass will not (and must not) attempt it.
-
-Settings live in the `settings` table via `get_setting`/`set_setting` (JSON-encoded values).
-
-## Build, deploy, run
-
-There are deliberately separate local and webhosting flows.
-
-```bash
-# Local development and UI tests: builds deploy-local/ via build_deployment.py --local.
-./run-local-tests.sh
-./run-local-tests.sh --with-mocks
-
-# Release all published artifacts: py3.14 OCI image and Passenger py39/py311 tarballs.
-cmru release
-
-# Deploy one published Passenger variant to the webhoster.
-ciu up --host webhoster --thin -- --variant py311
-```
-
-`build_deployment.py --local` is the only builder of `deploy-local/`; do not replace it with a
-webhosting release command. CMRU uses `scripts/build_webhosting_tarball.py` to build the
-ABI-matched Passenger tarballs in the matching test-runner image. CIU reads the webhoster
-inventory from `.ciu.hosts.toml`, transfers the selected variant, and invokes
-`scripts/activate.py`. Activation extracts the tarball, preserves the existing `SECRET_KEY`,
-touches `tmp/restart.txt` for Passenger, then health-probes the application.
-
-Webhosting releases are **greenfield**: every tarball contains a freshly seeded database
-(default `admin`/`admin`, `must_change_password=true`); only `SECRET_KEY` is carried forward.
-
-**Credentials are tracked in `deployment_state_{local,webhosting}.json`**, never hardcoded.
-Tests change the default password on first login and persist the generated value there.
-
-```bash
-jq -r '.admin.password'             deployment_state_local.json   # current password
-jq -r '.admin.password_changed_at'  deployment_state_local.json   # null => fresh (use admin/admin)
-```
-
-If the local state file and DB disagree, rebuild to a known state (`./run-local-tests.sh`) rather than
-guessing. Never hardcode a password anywhere (code, tests, docs).
-
-The webhosting target (host, remote directory, pinned host key, and activation contract) is
-defined by `.ciu.hosts.toml` — read it there rather than copying literals around.
-
-## Testing
-
-Two distinct layers:
-
-- **`tests/`** — fast pytest **unit/integration** tests (no browser). Run with `pytest tests/`.
-  - `tests/conftest.py` provides `app`/`client`/`db` fixtures and `make_account`/`make_realm`/`make_token` factories. New unit tests should use these rather than building their own fixtures.
-- **`ui_tests/`** — **Playwright** end-to-end tests against a running deployment (`ui_tests/tests/`, plus multi-step `ui_tests/tests/journeys/`).
-
-> **Cockpit vs. ship-gate (base-image doctrine).** The devcontainer is a *cockpit*: use it to
-> *inspect* the running app + mock services (`http`/`curl`/`httpie`, `dig`, `redis-cli` if used,
-> `w3m` for static HTML, quick `python` with `httpx`/`requests`) and to *drive* deploys — never treat
-> an ad-hoc run in the devcontainer as a ship signal. Fidelity here comes from the **production-parity
-> deployment**: `deploy-local`/`deploy-webhosting` build and run the *same package, same DB, same
-> entry point* (`run-local-tests.sh` tests that parity tree, not the bare devcontainer). For
-> JS-rendered UI, drive **pwmcp** via `PLAYWRIGHT_SERVER_WS` — never install a browser engine in the
-> devcontainer. Base-image rationale and what belongs in this file:
-> `modern-debian-tools-python-debug` → `CONTAINER-DOCTRINE.md` and `CONSUMER-AI-GUIDANCE.md`
-> (in the **base-image repo**, not this one).
->
-> **The gate is `tooling/test-runner/`, and it is the only ship signal.** The devcontainer runs
-> python **3.14**; webhosting Passenger variants target **3.9** and **3.11** (with wheels
-> vendored for the matching ABI). A 3.10+ construct, or a dep with a cp314 wheel but
-> no cp311 wheel, is green in the cockpit and a post-deploy 500 in production. Run:
->
-> ```bash
-> ./tooling/test-runner/testing-exec.sh unit      # pytest tests/ on python 3.11 — the primary gate
-> ./tooling/test-runner/testing-exec.sh e2e       # ui_tests against a deployment + pwmcp
-> ./tooling/test-runner/testing-exec.sh trove     # nyxloom handoff frontmatter lint
-> ```
->
-> Rationale and the 3.9 secondary-target rebuild: [`tooling/test-runner/README.md`](tooling/test-runner/README.md).
->
-> **Host cgroup placement.** This host runs production workloads alongside dev/test work, so
-> `test-runner` (and any other container spawned for gating/build work) should land in a bounded
-> tier, not Docker's unconfined default. The devcontainer's `containerEnv` exposes
-> `$CGROUP_PARENT_DEV_INTERACTIVE` (this devcontainer's own tier — already applied) and
-> `$CGROUP_PARENT_DEV_BACKGROUND` (the shared dev/test/build tier) — read the latter, never
-> hardcode a slice name (see vbpub's `AGENTS.md` "Host cgroup placement for spawned containers" and
-> `modern-debian-tools-python-debug/host-setup/README.md` for the host-side tiers). **Not yet wired
-> up here**: `tooling/test-runner/testing-exec.sh` calls `docker run` directly (no `--cgroup-parent`)
-> — unlike dstdns's ciu-governed `test-runner`, this repo's runner doesn't yet read the env var, so
-> its containers currently rely on whatever the Docker daemon-wide default resolves to.
-
-The standard runner builds a production-parity deployment and runs the suite:
-
-```bash
-./run-local-tests.sh                       # build + run ui_tests against deploy-local
-./run-local-tests.sh --with-mocks          # also start Mailpit / GeoIP / Netcup-API mocks
-./run-local-tests.sh --skip-build          # reuse existing deploy-local
-./run-local-tests.sh --with-mocks ui_tests/tests/security/   # a subset
-```
-
-Playwright runs in-process by default.  To offload to an external
-Playwright-as-a-Service container, set `PLAYWRIGHT_SERVER_WS`:
-
-```bash
-export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
-pytest ui_tests/tests -v
-```
-
-**Route-smoke suite (`ui_tests/tests/smoke/test_route_smoke.py`)**: parametrized over every app
-route discovered at import time — 86 tests, automatically cover new routes as they are added.
-Contributors get smoke coverage for free; they must still add round-trip tests that assert
-backend state changes for any new behavior (smoke only checks status codes and basic page
-loading).
-
-**CI `e2e-smoke` job** (`.github/workflows/ci.yml`): boots the app on the GitHub Actions
-runner, seeds a fresh DB via `scripts/ci_bootstrap_e2e.py`, and runs all tests tagged
-`@pytest.mark.ci_smoke` (93 tests). This gives PRs E2E regression coverage without needing a
-full Playwright container. Tag new tests `ci_smoke` when they are fast, hermetic, and do not
-require external services beyond Mailpit.
-
-**Before writing any Playwright login / 2FA / navigation test, read
-[`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md)** — it documents the
-patterns (JS `form.submit()` for 2FA, live `browser._page.url`, verification channels,
-`wait_for` poller) that prevent most flakiness.
-
-**Test hygiene:** a test that can't fail is worse than no test. Don't downgrade a load-bearing
-`assert` to `pytest.skip` to make a suite green — skip only when a feature is genuinely
-disabled by config, and gate the skip on that specific condition. Restore/clean any global
-state (e.g. the admin `netcup_config`) you mutate.
+**Testing:** `tests/` (pytest unit/integration; use the `make_account`/`make_realm`/`make_token` fixtures in
+`tests/conftest.py`) and `ui_tests/` (Playwright; read [`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md)
+before writing login/2FA/navigation tests). Layout and counts: [`docs/TESTING_INFRASTRUCTURE.md`](docs/TESTING_INFRASTRUCTURE.md).
+A test that can't fail is worse than none: never downgrade a load-bearing `assert` to `skip`; skip only on a
+specific config condition. Restore global state you mutate.
 
 ## Local environment
 
-- **Dynamic FQDN.** The public hostname is auto-detected (reverse DNS) into `.env.workspace` as `PUBLIC_FQDN`. Never hardcode a hostname; `source .env.workspace` in scripts. See [`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md).
-- **Config files (by scope):** `.env.defaults` (project defaults) → `.env.workspace` (auto-generated, environment-specific) → `.env.services` (service hostnames/URLs) → `tooling/<service>/.env` (per-service).
-- **HTTPS parity** is provided by the host-owned `edge-traefik` edge. Exposed naf stacks join
-  `ingress_public` and declare ciu/traefik labels; Traefik owns TLS and certificates. naf holds
-  no TLS material. See [`docs/DEV_INFRA_SETUP.md`](docs/DEV_INFRA_SETUP.md) and
-  `tooling/app-local/`.
-- **Mock services** for offline/deterministic runs — all named with the `naf-` prefix:
+Public hostname is auto-detected into `.env.workspace` (`PUBLIC_FQDN`); never hardcode one
+([`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md)). Config layers: `.env.defaults` → `.env.workspace` →
+`.env.services` → `tooling/<service>/.env`. HTTPS comes from the host `edge-traefik`; naf holds no TLS material
+([`docs/DEV_INFRA_SETUP.md`](docs/DEV_INFRA_SETUP.md)). Mock services (`naf-` prefix: mailpit, geoip, netcup-api, app-local) each have a ciu stack under `tooling/<name>/`.
+`deploy*/` trees are generated and gitignored. Python deps: `requirements.webhosting.txt` (runtime),
+`requirements-dev.txt`; see [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
 
-  | Container | Tooling dir | Purpose |
-  |-----------|-------------|---------|
-  | `naf-mailpit` | `tooling/mailpit/` | SMTP capture ([`docs/MAILPIT_CONFIGURATION.md`](docs/MAILPIT_CONFIGURATION.md)) |
-  | `naf-mock-geoip` | `tooling/geoip-mock/` | GeoIP API mock |
-  | `naf-mock-netcup-api` | `tooling/netcup-api-mock/` | Netcup CCP API mock |
-  | `naf-app-local` | `tooling/app-local/` | Local app, exposed through host Traefik |
+## Docs are part of the change
 
-- **Python**: the devcontainer installs dependencies for the `vscode` user directly (no project `venv` by design). Runtime deps: `requirements.webhosting.txt`; dev/test: `requirements-dev.txt`. See [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
-- **`/deploy`, `/deploy-local`, `/deploy-webhosting`** are generated (gitignored) staging trees — don't edit them by hand; they're rebuilt from `src/`.
-- **FUSE/sshfs** for remote file access is available (host provides `/dev/fuse`); use `sshfs` from the devcontainer, never install `fuse` inside it.
-
-## Documentation
-
-[`docs/README.md`](docs/README.md) is the index of living guides; [`docs/FEATURES.md`](docs/FEATURES.md)
-is the canonical capability + roadmap map. Superseded write-ups live in `docs/deprecated/` —
-don't treat them as current or update them. Must-reads by task: **capabilities/roadmap** →
-[`docs/FEATURES.md`](docs/FEATURES.md); **security/auth** → [`docs/SECURITY.md`](docs/SECURITY.md);
-**API/DDNS** → [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md), [`docs/DDNS_PROTOCOLS.md`](docs/DDNS_PROTOCOLS.md);
-**config/seeding** → [`docs/TOML_CONFIGURATION.md`](docs/TOML_CONFIGURATION.md);
-**deploy** → [`docs/DEPLOYMENT_WORKFLOW.md`](docs/DEPLOYMENT_WORKFLOW.md);
-**UI tests** → [`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md).
-
-### Keep the canonical docs in sync (definition of done)
-
-A change is not done until its docs match the code **in the same change**. Before finishing:
-
-- **New/changed/removed capability** → update [`docs/FEATURES.md`](docs/FEATURES.md) (and move
-  the item out of the roadmap table if you just shipped it) **and** [`CHANGELOG.md`](CHANGELOG.md).
-- **Auth / 2FA / rate-limit / secrets** → [`docs/SECURITY.md`](docs/SECURITY.md) (incl. its
-  "Not yet implemented" list — keep it honest).
-- **API/DDNS endpoint, param, or response shape** → [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) / [`docs/DDNS_PROTOCOLS.md`](docs/DDNS_PROTOCOLS.md).
-- **New `.env.defaults` key or config behaviour** → [`docs/CONFIGURATION_GUIDE.md`](docs/CONFIGURATION_GUIDE.md) / [`docs/TOML_CONFIGURATION.md`](docs/TOML_CONFIGURATION.md).
-- **Deploy/ops flow or script flags** → [`docs/DEPLOYMENT_WORKFLOW.md`](docs/DEPLOYMENT_WORKFLOW.md).
-- **Test suite structure, type, or count change** → update [`docs/TESTING_INFRASTRUCTURE.md`](docs/TESTING_INFRASTRUCTURE.md) (table row + counts) **and** the suite-type table in the `README.md` Testing section.
-
-Rules: don't invent doc claims the code doesn't back; if you find a doc describing something
-that isn't implemented, either fix the doc or move it to the roadmap — never leave an
-aspirational claim stated as current. Don't create new top-level Markdown files; extend an
-existing canonical guide and link it from [`docs/README.md`](docs/README.md). Retire stale
-write-ups to `docs/deprecated/` rather than deleting context.
-
-## Running shell commands (VS Code Copilot)
-
-To keep terminal commands auto-approvable, this repo funnels execution through a single
-whitelisted script. Set the intent/command in **`.vscode/copilot-plan.sh`**
-(`COPILOT_PLAN`, `COPILOT_EXEC`) and run **`bash ./.vscode/copilot-cmd.sh`** — it prints a
-`[PLAN]`/`[EXEC]` line then runs the command from the repo root. Avoid compound one-liners
-(`cd … && X=… cmd`) and **never put secrets on the command line** (export them or read them
-inside the script). The two script files contain the full template.
+A change is done only when its docs match the code in the same change: [`docs/FEATURES.md`](docs/FEATURES.md) +
+[`CHANGELOG.md`](CHANGELOG.md) for capabilities, [`docs/SECURITY.md`](docs/SECURITY.md) for auth/2FA/secrets
+(keep "Not yet implemented" honest). Other areas: find the guide via [`docs/README.md`](docs/README.md).
+Never state an aspiration as current; no new top-level Markdown files; retire stale write-ups to `docs/deprecated/`.
