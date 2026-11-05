@@ -44,6 +44,25 @@ CMRU invokes `scripts/build_webhosting_tarball.py` for the Passenger assets. Tha
 seeding run under the target interpreter. It is separate from the local
 `build_deployment.py --local` build.
 
+### What the artifacts contain
+
+Neither artifact ships a secret, a demo account or `.env.defaults` (it holds the documented pre-set
+admin password and test fixtures). Both ship `app-defaults.env` instead: `.env.defaults` minus every
+build/test-only key, rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
+
+- **Passenger tarball** (`naf-<variant>.tar.xz`): the runtime tree, vendored wheels, `app-defaults.env`
+  and a freshly seeded `netcup_filter.db` with exactly one account, the pre-set admin
+  (`is_admin=1`, `must_change_password=1`). No `secret_key` row (created at first start), no `.env*`,
+  no `deployment_state_*.json`. `tests/test_release_artifacts.py` asserts this on the builder's real
+  staging steps.
+- **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
+  and `VOLUME /data`; no database and no account. The first start creates the database through the
+  normal `init_db` path and **fails fast** unless the first admin is supplied:
+  `NAF_BOOTSTRAP_ADMIN_USERNAME`, `NAF_BOOTSTRAP_ADMIN_EMAIL` and `NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE`
+  (a mounted secret; or an `app-config.toml` admin). Also mount `SECRET_KEY_FILE` (otherwise the app
+  persists a generated key in the database) and keep `/data` on a persistent volume so the database
+  and that key survive container recreation.
+
 ## Webhosting deployment
 
 Deploy a released Passenger variant with CIU:

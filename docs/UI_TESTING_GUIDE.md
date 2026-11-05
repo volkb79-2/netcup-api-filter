@@ -20,7 +20,6 @@ The testing framework has three layers:
 # From Playwright container (after local deployment)
 cd /workspaces/netcup-api-filter
 SCREENSHOT_DIR=/tmp/screenshots \
-DEPLOYED_ADMIN_PASSWORD=YourPassword \
 python ui_tests/capture_ui_screenshots.py
 ```
 
