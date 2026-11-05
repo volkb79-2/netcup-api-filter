@@ -12,7 +12,7 @@ import pytest
 
 from ui_tests import workflows
 from ui_tests.browser import browser_session
-from ui_tests.config import settings
+from ui_tests.config import TARGET_REMOTE, selected_target, settings
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.remote_smoke]
 
@@ -30,6 +30,10 @@ async def _assert_page_ok(browser, path: str) -> None:
         assert fragment not in body, f"error fragment {fragment!r} on {path}"
 
 
+@pytest.mark.skipif(
+    selected_target() != TARGET_REMOTE,
+    reason="the local throwaway instance allows writes by design; the guard applies to the remote profile",
+)
 async def test_remote_profile_is_read_only():
     """The smoke profile never permits writes; load-bearing guard for the whole subset."""
     assert settings.allow_writes is False
