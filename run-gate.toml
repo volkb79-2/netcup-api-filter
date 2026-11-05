@@ -85,7 +85,7 @@ budget = "5m"
 [lanes.local-build]
 kind = "command"
 environment = "test-runner-py311"
-argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python build_deployment.py --local --python-version 3.11 && rm -rf deploy-local && /opt/tester-venv/bin/python -m zipfile -e deploy.zip deploy-local"]
+argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python build_deployment.py --local --python-version 3.11 --build-dir deploy-local"]
 clean_tree = false
 budget = "15m"
 description = "build + seed deploy-local/ (runs app code, so inside the 3.11 runner, never the cockpit)"

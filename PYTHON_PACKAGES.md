@@ -37,7 +37,7 @@ ui_tests/requirements.txt (UI test dependencies)
 cmru release
 ```
 
-CMRU calls `scripts/build_webhosting_tarball.py` for each Passenger target (Python 3.11). The builder runs through `tooling/test-runner/testing-exec.sh build <version>` so wheels
+CMRU calls `scripts/build_webhosting_tarball.py` for each Passenger target (Python 3.11). The builder runs through `docker exec` into the matching ciu runner (`naf-dev-test-runner-py311`) so wheels
 from `requirements-runtime.txt` are downloaded, vendored, and database seeding is performed
 under the matching ABI. It publishes the `py311` tarball.
 
@@ -94,8 +94,7 @@ pytest ui_tests/tests -v
 export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
 pytest ui_tests/tests -v
 
-# Or use automated validation script
-./tooling/run-ui-validation.sh
+# Or run the lanes (see run-gate.toml): run-gate local-build, then run-gate e2e
 ```
 
 See `tooling/PLAYWRIGHT-TESTING.md` for the full guide.

@@ -50,7 +50,7 @@ gate_doctrine = "tooling/test-runner/README.md"
 
 # --- gates: NEVER the devcontainer (cockpit doctrine) ------------------------
 # Every gate is a one-lane pointer into run-gate.toml (the SSOT); no test logic,
-# paths or docker argv live here. Certified by tests/config/test_run_gate_pointers.py.
+# paths or docker argv live here. Certified by tests/test_run_gate_pointers.py.
 [gates.unit]
 argv = ["bash", "-c", "cd {worktree} && run-gate --worktree {worktree} gate"]
 phase = "implementation"

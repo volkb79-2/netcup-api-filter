@@ -121,7 +121,7 @@ run-gate gate --worktree "$PWD"
   turns a mismatch into a loud `[S1.2]` error instead of silently operating on the wrong
   repo (ciu ≥ the CIU-11 fix).
 - **The gate image doesn't rebuild on dependency drift** (`ensure_image` builds only if
-  missing) — `docker rmi netcup-api-filter/test-runner:{local,py39}` after changing
+  missing) — `docker rmi netcup-api-filter/test-runner:{py311,py314}` after changing
   requirements, or the gate proves a stale closure (backlog B-INFRA).
 - Committed ciu sources are `.j2` templates only; `ciu.toml` / `ciu.compose.yml` / `ciu.env`
   / `.ciu/` are rendered and gitignored — never edit the rendered files.

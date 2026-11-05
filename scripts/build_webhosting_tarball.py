@@ -159,11 +159,30 @@ def _runner_container(variant: str) -> str:
     return f"{project}-{tag}-test-runner-{variant}"
 
 
+def _docker_out(*args: str) -> str:
+    return subprocess.check_output(["docker", *args], text=True).strip()
+
+
 def build_all() -> None:
+    host_head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
     for variant, python_version in _target_versions():
         output = DIST_DIR / f"naf-{variant}.tar.xz"
+        container = _runner_container(variant)
+        # The runner bind-mounts ONE checkout. Refuse to build a release from a
+        # tree other than the one cmru is releasing.
+        runner_head = _docker_out(
+            "exec", "-w", str(REPO_ROOT), container,
+            "git", "-c", "safe.directory=*", "rev-parse", "HEAD",
+        )
+        if runner_head != host_head:
+            raise RuntimeError(
+                f"{container} sees {runner_head[:12]} at {REPO_ROOT}, release tree is {host_head[:12]}: "
+                "the runner mounts a different checkout; start it from this tree"
+            )
+        image_id = _docker_out("inspect", "-f", "{{.Image}}", container)
         command = [
-            "docker", "exec", "-w", str(REPO_ROOT), _runner_container(variant),
+            "docker", "exec", "-e", f"NAF_BUILDER_IMAGE_DIGEST={image_id}",
+            "-w", str(REPO_ROOT), container,
             "/opt/tester-venv/bin/python", "scripts/build_webhosting_tarball.py", "build-one",
             "--python-version", python_version, "--output", str(output.relative_to(REPO_ROOT)),
         ]

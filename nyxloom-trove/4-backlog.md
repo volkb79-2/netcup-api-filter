@@ -192,10 +192,10 @@ remains the status dashboard; completed B-AUTH work is intentionally not re-open
 
 ## B-INFRA (added 2026-11-05, run-gate/assay conversion)
 
-- **Step 3 landed, unverified:** bake group `release` (py311+py314), tarball build via `docker exec` into the ciu runner, cockpit scripts removed, `local-build`/`e2e` lanes. Nothing has been run. Still open: `build_deployment.py` line ~123/306 mention the retired shim; many docs still describe `flask-manager.sh`/`start-ui-stack.sh`/`.vscode/run-*.sh` (grep and sweep); e2e `forward_env` list is a first guess; app-local uses the py311 runner image tag (`py311`).
+- **Step 3 landed, unverified:** bake group `release` (py311+py314), tarball build via `docker exec` into the ciu runner, cockpit scripts removed, `local-build`/`e2e` lanes. Nothing has been run. Still open: docs may still describe `flask-manager.sh`/`start-ui-stack.sh`/`.vscode/run-*.sh` (grep and sweep); e2e `forward_env` list is a first guess; app-local uses the py311 runner image tag (`py311`).
 - Assay R1 lanes (`token_auth`, `account_auth`, `recovery_codes`) are `advisory` with `fail_under = 100`: measure, then set honest floors and promote to `gate`; add lanes for the remaining modules, R2 (replaces mutmut) and R3 canary.
 - Dead code at the 3.11 floor: `tomli` fallbacks in `passenger_wsgi.py` and `database.py`; vestigial `create_app(config_path="config.yaml")`.
 - `ui_tests/requirements.txt` is a bare manifest name (estate: `requirements-<use>.txt`); `.devcontainer/finalize.post.d/10-netcup-setup.sh` installs test deps into the cockpit venv (cockpit must not run tests).
 - Cgroup placement: `ciu.compose` runners rely on the ciu governance overlay; verify `$CGROUP_PARENT_DEV_GATES` for exec runners after first `ciu up`.
 - Add a run-gate docs-example test and a freshness check of the assay pin against the latest release.
-- Ruff baseline is red (241 at py39, 256 at py311, mostly UP006/UP045/F401); CI step is advisory-by-intent but fails the job: autofix or scope it.
+- Ruff: `ruff check src` clean at py311 as of 2026-11-05 (commit 5288060); keep it that way.

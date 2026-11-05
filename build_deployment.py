@@ -87,7 +87,7 @@ def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
     manylinux2014_x86_64``, which is safe under ANY host interpreter because it never
     executes the downloaded code. ``initialize_database`` is different: it puts
     ``vendor/`` on ``sys.path`` and IMPORTS the app (and therefore the vendored
-    cp39/cp311 ``.so`` extensions) to seed the SQLite DB. If that import happens under
+    cp311/cp314 ``.so`` extensions) to seed the SQLite DB. If that import happens under
     a different interpreter than the one those wheels were resolved for,
     version-tagged C extensions are silently NOT import candidates at all (packages
     with a pure-Python fallback silently use it; C-only ones ImportError), and an
@@ -853,7 +853,7 @@ def main():
     parser.add_argument("--python-version", default="3.11",
                         help="Target Python version for vendored wheel download (default: 3.11). "
                              "Cross-resolves binary wheels for the given version via pip download. "
-                             "Example: --python-version 3.9 produces a 3.9-compatible vendor/ dir.")
+                             "Example: --python-version 3.11 produces a 3.11-compatible vendor/ dir.")
     parser.add_argument("--seed-demo", action="store_true",
                         help="Seed comprehensive demo data for UI screenshots")
     parser.add_argument("--bundle-app-config", action="store_true",

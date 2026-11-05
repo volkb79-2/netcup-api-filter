@@ -199,51 +199,11 @@ pytest ui_tests/tests -v --ignore=ui_tests/tests/test_journey_master.py
 3. Export any environment overrides before running the suite. Defaults cover
    the current deployment documented in `AGENTS.md`.
 
-## One-command local validation
+## Local validation
 
-When you need to spin up the seeded backend, TLS proxy, and the pytest suite in
-one go, run `tooling/run-ui-validation.sh` from the repository root. The script will:
-
-- Render/stage the nginx config and cert bundle under `/tmp/netcup-local-proxy`.
-- Start gunicorn on port `LOCAL_APP_PORT` (default 5100) with a seeded SQLite
-   database inside `tmp/local-netcup.db`.
-- Launch the nginx proxy via docker compose.
-- Install `ui_tests/requirements.txt` (skip via `SKIP_UI_TEST_DEPS=1`).
-- Export sensible defaults for `UI_BASE_URL` (`https://<host-gateway>:443`).
-- Execute `pytest ui_tests/tests -vv` and tear everything down afterwards.
-
-To use a remote Playwright-as-a-Service container instead of in-process launch:
-
-```bash
-export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
-tooling/run-ui-validation.sh
-```
-
-Override `UI_BASE_URL`, `PLAYWRIGHT_HEADLESS`, `UI_ADMIN_PASSWORD`, and similar
-variables before running the helper if you need to target a different host or
-credentials.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `UI_BASE_URL` | `https://naf.vxxu.de` | Target deployment root |
-| `UI_ADMIN_USERNAME` | `admin` | Admin login |
-| `UI_ADMIN_PASSWORD` | `admin` | Current admin password |
-| `UI_ADMIN_NEW_PASSWORD` | _(unset)_ | Provide if the server still forces password rotation |
-| `UI_CLIENT_ID` | `test_qweqweqwe_vi` | Expected client row in the admin UI |
-| `UI_CLIENT_TOKEN` | `qweqweqwe-vi-readonly` | Token for the client portal |
-| `UI_CLIENT_DOMAIN` | `qweqweqwe.vi` | Domain shown for the seeded token |
-| `UI_SCREENSHOT_PREFIX` | `ui-regression` | Prefix when capturing screenshots |
-| `UI_ALLOW_WRITES` | `1` | Set to `0` to skip destructive admin flows |
-| `UI_SMOKE_BASE_URL` | _(unset)_ | Optional second target (e.g., production host) |
-| `UI_SMOKE_ALLOW_WRITES` | `0` | Controls whether smoke profile may perform writes |
-| `UI_SMOKE_ADMIN_*` etc. | inherit primary | Override credentials/domain for smoke profile |
-
-When `UI_SMOKE_BASE_URL` is provided, each test parametrizes over both the
-primary (usually local) environment and the smoke target, automatically
-reusing credentials unless the `UI_SMOKE_*` overrides are supplied. Write-heavy
-flows (client creation, Netcup config saves, etc.) automatically skip any
-profile that sets `*_ALLOW_WRITES=0`, allowing safe read-only validation
-against production.
+The app, mocks and browser all run as ciu stacks; the lanes run inside the 3.11 test-runner.
+The sequence is documented at the top of `run-gate.toml` (`run-gate local-build`, then
+`run-gate e2e`). Point a remote Playwright service with `PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/`.
 
 ## Running the suite
 

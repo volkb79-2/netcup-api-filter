@@ -213,7 +213,7 @@ invite form, realm/token creation).
 
 ```bash
 # Check logs
-./tooling/flask-manager.sh logs
+docker logs naf-dev-app-local
 
 # Check if port is in use
 netstat -tuln | grep 5100

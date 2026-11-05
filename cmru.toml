@@ -1,7 +1,7 @@
 # cmru.toml — CMRU project config for netcup-api-filter (naf)
 # =============================================================================
 # Phase 2 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
-# one tagged release publishes the py3.14 OCI image plus cp39/cp311 Passenger
+# one tagged release publishes the py3.14 OCI image plus cp311 Passenger
 # tarball variants.  The tarball builder is deliberately project-local: it is the
 # only naf-specific part of the release flow.
 #

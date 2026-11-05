@@ -23,7 +23,7 @@ The precedence for any setting is: `env override > database value > .env.default
 Scripts intentionally abort unless every variable they rely on is exported. Common ones:
 
 - `DEPLOYMENT_ENV_FILE` – Points to the env file that mirrors the target deployment (`.env.local`, `.env.webhosting`, etc.). Used by local test/UI tooling; release and webhosting deployment follow the `cmru` and `ciu` workflows in [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md).
-- `UI_*` variables – Used by `tooling/run-ui-validation.sh` and `ui_tests/tests`. Export `UI_BASE_URL`, `UI_ADMIN_USERNAME`, `UI_ADMIN_PASSWORD`, `UI_CLIENT_ID`, `UI_CLIENT_TOKEN`, `UI_CLIENT_DOMAIN`, `UI_SCREENSHOT_PREFIX`, `PLAYWRIGHT_HEADLESS`, and `KEEP_UI_STACK` before running the validation script.
+- `UI_*` variables – Used by `ui_tests/tests` (forwarded by `run-gate.toml`). Export `UI_BASE_URL`, `UI_ADMIN_USERNAME`, `UI_ADMIN_PASSWORD`, `UI_CLIENT_ID`, `UI_CLIENT_TOKEN`, `UI_CLIENT_DOMAIN`, `UI_SCREENSHOT_PREFIX`, `PLAYWRIGHT_HEADLESS`, and `KEEP_UI_STACK` before running the validation script.
 - Host-edge settings are operator infrastructure, not naf application settings. Exposed ciu
   stacks join `ingress_public` and use Traefik labels; TLS and certificates remain owned by
   the host edge. See [`DEV_INFRA_SETUP.md`](DEV_INFRA_SETUP.md).
@@ -57,6 +57,6 @@ When a feature requires new settings:
 2. **Document it** in this guide under an appropriate section (Security, Email, Proxy, etc.).
 3. **Consume it** in code using the `os.environ[...]` helpers (or the existing `config` utilities) and avoid fallbacks—require callers to provide it.
 4. **Expose overrides** where relevant (admin UI fields, deployment scripts, tests) so every environment can set it without editing code.
-5. **Test it** via `run-gate local-build` (HTTP) and `tooling/run-ui-validation.sh` (HTTPS + Playwright) to ensure defaults and overrides behave as expected.
+5. **Test it** via `run-gate local-build` (HTTP) and `run-gate e2e` (Playwright) to ensure defaults and overrides behave as expected.
 
 Following these steps keeps the entire system consistent with the configuration-driven policy and prevents regressions across deployments.

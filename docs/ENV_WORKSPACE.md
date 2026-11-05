@@ -11,7 +11,7 @@ The `.env.workspace` file is **auto-generated** by `.devcontainer/post-create.sh
 ### Problem
 When `post-create.sh` runs, it detects environment characteristics and exports variables to its shell environment. However:
 
-1. **Scripts run in separate processes** (e.g., `start-mcp.sh`, `deploy-test-fix-loop.sh`) don't inherit these variables
+1. **Scripts run in separate processes** (e.g., `start-mcp.sh`, `ensure-mcp-connection.sh`) don't inherit these variables
 2. **New terminal sessions** don't have access to variables from post-create.sh
 3. **Docker compose** needs host paths that were detected during devcontainer startup
 4. **Manual script invocations** need consistent configuration across all tools
@@ -43,7 +43,6 @@ Generated content example:
 # Purpose: Provides workspace variables to scripts running outside post-create.sh
 # 
 # Used by:
-#   - .vscode/deploy-test-fix-loop.sh (needs all workspace paths)
 #   - .vscode/ensure-mcp-connection.sh (needs SHARED_DOCKER_NETWORK)
 #   - Any other scripts that need workspace configuration
 # 
@@ -61,8 +60,8 @@ export DOCKER_NETWORK_INTERNAL="naf-dev-network"
 
 ## Who Uses It?
 
-### 1. `.vscode/deploy-test-fix-loop.sh`
-**Needs**: All workspace paths for deployment operations
+### 1. Scripts that touch host paths
+**Needs**: the workspace paths for file operations
 
 ```bash
 if [[ -f ".env.workspace" ]]; then

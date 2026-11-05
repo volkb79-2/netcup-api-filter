@@ -23,8 +23,10 @@ ARG PYTHON_VERSION
 FROM python:${PYTHON_VERSION}-slim-trixie
 
 ARG PYTHON_VERSION
-ARG RUN_UID=1003
-ARG RUN_GID=994
+# No defaults: ciu passes the host-owned uid/gid (CONTAINER_UID / DOCKER_GID); an unset
+# value fails the build instead of baking a host-specific number.
+ARG RUN_UID
+ARG RUN_GID
 
 # git (>= 2.38, run-gate's exec-mode safe.directory contract), curl (health probes),
 # procps (hang inspection). Thin on purpose: this is a gate, not a debug cockpit.
@@ -65,6 +67,7 @@ ENV HOME=/home/tester \
     XDG_CACHE_HOME=/home/tester/.cache \
     XDG_STATE_HOME=/home/tester/.local/state \
     TESTER_VENV=/opt/tester-venv \
+    PATH=/opt/tester-venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

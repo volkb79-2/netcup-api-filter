@@ -32,7 +32,7 @@ and the individual tooling READMEs for TLS and service-stack operation.
 `cmru release` creates a source-control-versioned release and publishes all release artifacts:
 
 - the Python 3.14 OCI image for self-hosting;
-- ABI-matched Passenger tarballs for Python 3.9 (`py39`) and Python 3.11 (`py311`); and
+- an ABI-matched Passenger tarball for Python 3.11 (`py311`); and
 - the variant-selecting installer.
 
 ```bash
@@ -40,7 +40,7 @@ cmru release
 ```
 
 CMRU invokes `scripts/build_webhosting_tarball.py` for the Passenger assets. That builder uses
-`tooling/test-runner/testing-exec.sh build <version>` so dependency vendoring and database
+`docker exec` into the matching ciu runner (`naf-dev-test-runner-py311`) so dependency vendoring and database
 seeding run under the target interpreter. It is separate from the local
 `build_deployment.py --local` build.
 

@@ -5,7 +5,7 @@
 # This replaces the previously hand-written `docker-compose.yml`. Mailpit is a
 # prebuilt-image mock SMTP server: the app sends real mail traffic to it (password
 # reset, 2FA, invites) and the test suite (ui_tests/mailpit_client.py,
-# run-2fa-security-tests.sh, build_deployment.py) asserts against its HTTP API to
+# build_deployment.py) asserts against its HTTP API to
 # verify delivery. It has no build step and no persisted data — captured mail lives
 # only in the container's memory for the life of the run.
 #
