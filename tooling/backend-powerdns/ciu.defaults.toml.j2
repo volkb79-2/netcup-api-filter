@@ -25,7 +25,7 @@
 [backend_powerdns]
 name = "powerdns"
 image = "powerdns/pdns-auth-48"
-image_tag = "latest"
+image_tag = "4.8.5"   # pinned from versions/oci-images.json (cmru versions, 7-day window)
 
 # UID 953 = the `pdns` user baked into the powerdns/pdns-auth-* images (README
 # Architecture section, carried over unchanged). The GID half of `user:` in
