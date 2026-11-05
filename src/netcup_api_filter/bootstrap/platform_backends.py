@@ -17,6 +17,7 @@ from netcup_api_filter.models import (
     BackendService,
     BackendProvider,
     ManagedDomainRoot,
+    Settings,
 )
 from netcup_api_filter.bootstrap.seeding import (
     seed_backend_providers,
@@ -25,6 +26,18 @@ from netcup_api_filter.bootstrap.seeding import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _decoded_list(value, key: str) -> list:
+    """Return a settings-stored array: get_setting() already JSON-decodes values.
+
+    (A legacy row may still hold a JSON string; anything else is a hard error.)
+    """
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list):
+        raise TypeError(f"settings.{key} must be a JSON array, got {type(value).__name__}")
+    return value
 
 
 def get_public_fqdn() -> str | None:
@@ -317,7 +330,7 @@ def initialize_platform_backends():
         users_created = {}
         if users_str:
             try:
-                users_config = json.loads(users_str)
+                users_config = _decoded_list(users_str, 'users_config')
                 for user_data in users_config:
                     username = user_data.get('username', '')
                     email = user_data.get('email', '')
@@ -338,11 +351,21 @@ def initialize_platform_backends():
                         users_created[username] = existing
                         continue
                     
-                    # Generate password if needed
+                    # 'generate': a random password nobody knows; the user sets their own
+                    # through the "forgot password" flow. It is never logged or stored.
+                    # (Admins need an explicit password: see bootstrap/admin.py.)
                     if password == 'generate':
+                        if is_admin:
+                            raise ValueError(
+                                f"[[users]] {username}: an admin needs an explicit password, not 'generate'"
+                            )
                         from netcup_api_filter.utils import generate_token
                         password = generate_token(32)
-                        logger.info(f"Generated password for {username}: {password} (SAVE THIS - shown once)")
+                        must_change_password = True
+                        logger.info(
+                            f"Generated an unknown password for {username}; "
+                            "the user must set one via the password-reset flow"
+                        )
                     
                     # Create user account
                     from netcup_api_filter.utils import hash_password
@@ -365,12 +388,17 @@ def initialize_platform_backends():
                 db.session.commit()
             except (json.JSONDecodeError, TypeError) as e:
                 logger.error(f"Failed to parse users_config: {e}")
+            finally:
+                # The imported [[users]] entries may carry plaintext passwords: never
+                # keep them in the settings table once the accounts exist.
+                Settings.query.filter_by(key='users_config').delete()
+                db.session.commit()
         
         # Step 2: Process [[backends]] arrays
         backends_created = {}
         if backends_str:
             try:
-                backends_config = json.loads(backends_str)
+                backends_config = _decoded_list(backends_str, 'backends_config')
                 for backend_data in backends_config:
                     service_name = backend_data.get('service_name', '')
                     provider = backend_data.get('provider', '')
@@ -433,7 +461,7 @@ def initialize_platform_backends():
         # Step 3: Process [[domain_roots]] arrays
         if domain_roots_str:
             try:
-                domain_roots_config = json.loads(domain_roots_str)
+                domain_roots_config = _decoded_list(domain_roots_str, 'domain_roots_config')
                 for domain_data in domain_roots_config:
                     backend_name = domain_data.get('backend', '')
                     domain = domain_data.get('domain', '')

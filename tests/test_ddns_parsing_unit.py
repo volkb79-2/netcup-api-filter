@@ -255,7 +255,6 @@ def app(monkeypatch, tmp_path):
     monkeypatch.setenv("SECRET_KEY", "test_secret_key_for_testing_only")
     monkeypatch.setenv("NETCUP_FILTER_DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.delenv("NETCUP_FILTER_APP_ROOT", raising=False)
-    monkeypatch.delenv("SEED_DEMO_ACCOUNTS", raising=False)
     application = create_app()
     application.config["TESTING"] = True
     with application.app_context():

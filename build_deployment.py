@@ -465,6 +465,22 @@ def create_initial_env_webhosting(deploy_dir):
     logger.info(f"Created {env_webhosting_path} with initial deployment state (including SECRET_KEY)")
 
 
+def _local_mock_email():
+    """Mailpit email config of a LOCAL build: host from .env.services, rest from .env.defaults."""
+    from netcup_api_filter.bootstrap import MockEmail
+    from netcup_api_filter.config_defaults import require_default
+
+    host = os.environ.get("SERVICE_MAILPIT", "").strip()
+    if not host:
+        raise RuntimeError("SERVICE_MAILPIT is not set (it comes from .env.services)")
+    return MockEmail(
+        smtp_host=host,
+        smtp_port=int(require_default("LOCAL_MAILPIT_SMTP_PORT")),
+        from_email=require_default("LOCAL_MAIL_FROM"),
+        admin_email=require_default("LOCAL_MAIL_ADMIN_EMAIL"),
+    )
+
+
 def initialize_database(
     deploy_dir,
     is_local: bool = False,
@@ -527,16 +543,6 @@ def initialize_database(
         else:
             logger.warning(f".env.services not found at {env_services_path}")
         
-        # Set MOCK_SMTP_HOST to use dynamic service name
-        # For local deployments, use the actual container name from .env.services
-        if is_local and 'SERVICE_MAILPIT' in os.environ:
-            os.environ['MOCK_SMTP_HOST'] = os.environ['SERVICE_MAILPIT']
-            logger.info(f"Set MOCK_SMTP_HOST={os.environ['MOCK_SMTP_HOST']} for local deployment")
-        elif is_local:
-            # Fallback if .env.services not loaded
-            os.environ['MOCK_SMTP_HOST'] = 'naf-dev-mailpit'
-            logger.info(f"Set MOCK_SMTP_HOST={os.environ['MOCK_SMTP_HOST']} (fallback)")
-        
         # Change to deploy directory so SQLite can create the database
         os.chdir(deploy_path)
 
@@ -551,7 +557,7 @@ def initialize_database(
         # Import required modules (netcup_api_filter is under src/)
         from flask import Flask
         from netcup_api_filter import database
-        from netcup_api_filter.bootstrap import AdminSeedOptions, seed_default_entities, seed_comprehensive_demo_data
+        from netcup_api_filter.bootstrap import seed_shipped_database, seed_comprehensive_demo_data
         
         # Create Flask app with template_folder in deploy directory
         app = Flask(__name__, template_folder=str(deploy_path / "src" / "netcup_api_filter" / "templates"))
@@ -570,32 +576,17 @@ def initialize_database(
             database.db.create_all()
             logger.info("Database tables created")
             
-            # Seed Settings table from env defaults (BEFORE seeding accounts)
-            # This ensures rate limits and security settings are available immediately
-            from netcup_api_filter.bootstrap.seeding import seed_settings_from_env
-            seeded_count = seed_settings_from_env()
-            if seeded_count > 0:
-                logger.info(f"Seeded {seeded_count} settings from env defaults")
-
-            # Seed with defaults - enable demo clients for comprehensive local testing
-            # Demo clients provide multiple permission configurations for E2E tests
-            generated_client_id, generated_secret_key, all_demo_clients = seed_default_entities(
-                seed_demo_clients_flag=True,  # Enable demo clients with varied permissions
-                seed_mock_email=is_local,  # Seed Mailpit config for local builds
-            )
+            # The one shipped-database seeder: enums/providers, default settings,
+            # the pre-set admin and (local only) the Mailpit email config.
+            admin = seed_shipped_database(mock_email=_local_mock_email() if is_local else None)
+            # No demo clients any more: e2e personas are provisioned per session.
+            all_demo_clients = []
             # Seed comprehensive demo data if requested
             if seed_demo:
-                from netcup_api_filter.models import Account
-                admin = Account.query.filter_by(is_admin=1).first()
-                if admin:
-                    seed_comprehensive_demo_data(admin)
-                    logger.info("Comprehensive demo data seeded for UI screenshots")
+                seed_comprehensive_demo_data(admin)
+                logger.info("Comprehensive demo data seeded for UI screenshots")
             
-            logger.info(
-                "Database seeded with default admin and %d demo clients (primary: %s)",
-                len(all_demo_clients),
-                generated_client_id,
-            )
+            logger.info("Database seeded with the shipped admin (must_change_password)")
         
         logger.info(f"Database initialized at {db_path}")
         
