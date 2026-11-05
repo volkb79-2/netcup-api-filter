@@ -23,7 +23,8 @@ The precedence for any setting is: `env override > database value > .env.default
 Scripts intentionally abort unless every variable they rely on is exported. Common ones:
 
 - `DEPLOYMENT_ENV_FILE` – Points to the env file that mirrors the target deployment (`.env.local`, `.env.webhosting`, etc.). Used by local test/UI tooling; release and webhosting deployment follow the `cmru` and `ciu` workflows in [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md).
-- `UI_*` variables – Used by `ui_tests/tests` (forwarded by `run-gate.toml`). Export `UI_BASE_URL`, `UI_ADMIN_USERNAME`, `UI_ADMIN_PASSWORD`, `UI_CLIENT_ID`, `UI_CLIENT_TOKEN`, `UI_CLIENT_DOMAIN`, `UI_SCREENSHOT_PREFIX`, `PLAYWRIGHT_HEADLESS`, and `KEEP_UI_STACK` before running the validation script.
+- The e2e suite takes no target or credentials from the environment: it starts its own app per session and provisions random personas (`E2E_*` keys in `.env.defaults`; see [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md)). Only `PLAYWRIGHT_SERVER_WS` and the mock-service URLs are forwarded by `run-gate.toml`.
+- **Shipped defaults catalog**: `.env.defaults` is never shipped (it holds the documented pre-set admin password and test fixtures). Builds write `app-defaults.env` into every shipped tree instead — `.env.defaults` minus the build/test-only keys (`config_defaults.render_shipped_defaults`; prefixes `DEFAULT_ADMIN_`, `DEFAULT_TEST_`, `LOCAL_`, `E2E_`, `UI_`, …). `config_defaults` reads it first, so `require_default()` keeps working in a deployment; environment variables still override every value. `tests/test_shipped_defaults.py` fails when runtime code reads a key the shipped catalog lacks.
 - Host-edge settings are operator infrastructure, not naf application settings. Exposed ciu
   stacks join `ingress_public` and use Traefik labels; TLS and certificates remain owned by
   the host edge. See [`DEV_INFRA_SETUP.md`](DEV_INFRA_SETUP.md).

@@ -134,6 +134,12 @@ def build_one(python_version: str, output: Path) -> None:
         vendor_dir.mkdir()
         _vendor_dependencies(vendor_dir, python_version)
         seed_database(staging)
+        # .env.defaults was needed for seeding only (it holds the pre-set admin password and
+        # test fixtures): ship the filtered runtime catalog instead.
+        (staging / ".env.defaults").unlink()
+        sys.path.insert(0, str(REPO_ROOT / "src"))
+        from netcup_api_filter.config_defaults import write_shipped_defaults
+        write_shipped_defaults(REPO_ROOT / ".env.defaults", staging)
         _tar_xz(staging, output)
     print(f"[INFO] built {output.relative_to(REPO_ROOT)} for Python {python_version}")
 
