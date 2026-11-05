@@ -56,34 +56,6 @@ async def _mock_is_reachable(base_url: str) -> bool:
         return False
 
 
-async def _read_current_netcup_config(browser) -> dict[str, str]:
-    """Read the currently-saved Netcup API config from the admin form fields.
-
-    The config_netcup.html template pre-populates every field (including the
-    password inputs) with the stored values, so we can capture the prior config
-    here and restore it after the test instead of leaving the deployment pointed
-    at the mock with no teardown.
-    """
-    await workflows.open_admin_netcup_config(browser)
-    return await browser.evaluate(
-        """
-        () => {
-            const val = (sel) => {
-                const el = document.querySelector(sel);
-                return el ? (el.value || "") : "";
-            };
-            return {
-                customer_id: val('input[name="customer_id"]'),
-                api_key: val('input[name="api_key"]'),
-                api_password: val('input[name="api_password"]'),
-                api_url: val('input[name="api_url"]'),
-                timeout: val('input[name="timeout"]'),
-            };
-        }
-        """
-    )
-
-
 async def test_dns_api_crud_success_path_with_mock_backend(active_profile):
     mock_base = _mock_base_url()
     mock_api_url = _mock_endpoint_url()
@@ -103,7 +75,7 @@ async def test_dns_api_crud_success_path_with_mock_backend(active_profile):
 
         # Capture the deployment's current Netcup config so we can restore it in
         # teardown (this test rewrites the GLOBAL config Setting toward the mock).
-        prior_config = await _read_current_netcup_config(browser)
+        prior_config = await workflows.read_current_netcup_config(browser)
 
         try:
             # Configure app to use mock Netcup API.
@@ -118,28 +90,7 @@ async def test_dns_api_crud_success_path_with_mock_backend(active_profile):
             await _run_crud_assertions(active_profile)
         finally:
             # Restore the previous global config so other tests are not affected.
-            await _restore_netcup_config(browser, prior_config)
-
-
-async def _restore_netcup_config(browser, prior_config: dict[str, str]) -> None:
-    """Re-apply a previously captured Netcup config via the admin form.
-
-    The form requires customer_id/api_key/api_password, so only restore when we
-    actually captured non-empty credentials; otherwise leave a best-effort log
-    instead of submitting an invalid form.
-    """
-    if not (prior_config.get("customer_id") and prior_config.get("api_key")
-            and prior_config.get("api_password")):
-        # Nothing meaningful to restore (deployment had no prior credentials).
-        return
-    await workflows.admin_configure_netcup_api(
-        browser=browser,
-        customer_id=prior_config["customer_id"],
-        api_key=prior_config["api_key"],
-        api_password=prior_config["api_password"],
-        api_url=prior_config.get("api_url") or "",
-        timeout=str(prior_config.get("timeout") or "30"),
-    )
+            await workflows.restore_netcup_config(browser, prior_config)
 
 
 async def _run_crud_assertions(active_profile):
@@ -247,7 +198,7 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
 
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
-        prior_config = await _read_current_netcup_config(browser)
+        prior_config = await workflows.read_current_netcup_config(browser)
 
         try:
             await workflows.admin_configure_netcup_api(
@@ -376,7 +327,7 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
                 )
         finally:
             await workflows.ensure_admin_dashboard(browser)
-            await _restore_netcup_config(browser, prior_config)
+            await workflows.restore_netcup_config(browser, prior_config)
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +436,7 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
 
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
-        prior_config = await _read_current_netcup_config(browser)
+        prior_config = await workflows.read_current_netcup_config(browser)
 
         try:
             await workflows.admin_configure_netcup_api(
@@ -615,4 +566,4 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
 
         finally:
             await workflows.ensure_admin_dashboard(browser)
-            await _restore_netcup_config(browser, prior_config)
+            await workflows.restore_netcup_config(browser, prior_config)

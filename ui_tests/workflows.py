@@ -1293,6 +1293,55 @@ async def admin_create_client_and_extract_token(browser: Browser, data: ClientFo
     return token
 
 
+async def read_current_netcup_config(browser) -> dict[str, str]:
+    """Read the currently-saved Netcup API config from the admin form fields.
+
+    The config_netcup.html template pre-populates every field (including the
+    password inputs) with the stored values, so we can capture the prior config
+    here and restore it after the test instead of leaving the deployment pointed
+    at the mock with no teardown.
+    """
+    await open_admin_netcup_config(browser)
+    return await browser.evaluate(
+        """
+        () => {
+            const val = (sel) => {
+                const el = document.querySelector(sel);
+                return el ? (el.value || "") : "";
+            };
+            return {
+                customer_id: val('input[name="customer_id"]'),
+                api_key: val('input[name="api_key"]'),
+                api_password: val('input[name="api_password"]'),
+                api_url: val('input[name="api_url"]'),
+                timeout: val('input[name="timeout"]'),
+            };
+        }
+        """
+    )
+
+
+async def restore_netcup_config(browser, prior_config: dict[str, str]) -> None:
+    """Re-apply a previously captured Netcup config via the admin form.
+
+    The form requires customer_id/api_key/api_password, so only restore when we
+    actually captured non-empty credentials; otherwise leave a best-effort log
+    instead of submitting an invalid form.
+    """
+    if not (prior_config.get("customer_id") and prior_config.get("api_key")
+            and prior_config.get("api_password")):
+        # Nothing meaningful to restore (deployment had no prior credentials).
+        return
+    await admin_configure_netcup_api(
+        browser=browser,
+        customer_id=prior_config["customer_id"],
+        api_key=prior_config["api_key"],
+        api_password=prior_config["api_password"],
+        api_url=prior_config.get("api_url") or "",
+        timeout=str(prior_config.get("timeout") or "30"),
+    )
+
+
 async def admin_save_netcup_config(browser: Browser) -> None:
     await open_admin_netcup_config(browser)
     defaults = {

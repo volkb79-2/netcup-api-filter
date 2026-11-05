@@ -33,6 +33,17 @@ async def test_netcup_config_test_connection(active_profile, mock_netcup_api_ser
     """Test-connection button on Netcup config triggers a success response (mock server)."""
     async with browser_session() as browser:
         await workflows.ensure_admin_dashboard(browser)
+        # The button posts the form: whatever it saves must not outlive this test (the session
+        # app is shared; a leftover 127.0.0.1 mock URL turned every later DNS call into a 500).
+        prior_config = await workflows.read_current_netcup_config(browser)
+        try:
+            await _test_connection(browser, mock_netcup_api_server, mock_netcup_credentials)
+        finally:
+            await workflows.restore_netcup_config(browser, prior_config)
+
+
+async def _test_connection(browser, mock_netcup_api_server, mock_netcup_credentials):
+    if True:
         await workflows.open_admin_netcup_config(browser)
 
         await browser.fill('input[name="customer_id"]', str(mock_netcup_credentials["customer_id"]))
