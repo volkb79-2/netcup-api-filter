@@ -17,7 +17,8 @@ hypothesis>=6.100  # Property-based testing (parsers/validators) — see TESTING
 gunicorn>=21.0.0
 
 websockets>=15.0  # Ensure WebSocket support to access playwright standalone service
-playwright==1.61.*  # Client for the pwmcp browser-offload path (e2e gate); pinned to the
+playwright==1.64.*  # Client for the pwmcp browser-offload path (e2e gate); MUST equal the server's
+# `playwright.python` in http://pwmcp:3000/contract (1.64.1 on 1.64.1-r2); pinned to the
 # ghcr.io/volkb79-2/pwmcp image's Playwright version. NO browser download (pwmcp owns the
 # engine). The unit gate runs tests/ (never imports playwright).
 

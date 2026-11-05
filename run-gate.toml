@@ -34,6 +34,18 @@ state_root = "/run-gate-state"
 forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET",
     "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
 
+# Native R2 needs run-gate's cgroup observer, which a persistent exec runner cannot give
+# (NO_MEASUREMENT/CGROUP_OBSERVATION_UNAVAILABLE): R2 lanes run in an ephemeral container of the
+# same 3.14 image (assay B229: judged on 3.14). Limits are hints; the host owns the ceilings.
+[environments.test-runner-r2]
+image = "netcup-api-filter/test-runner:py314"
+mode = "ephemeral"
+user = "invoker"
+cgroup_slice_env = "CGROUP_PARENT_DEV_GATES"
+
+[environments.test-runner-r2.resources]
+cpus = "2"
+
 # --- hermetic suite (assay R0, one verdict per interpreter) -------------------
 [lanes.unit-py311]
 kind = "command"
@@ -75,6 +87,14 @@ clean_tree = false
 # The host CoW area is not mounted in the runner: plain file-copy snapshots (declared, not ambient).
 resources = { cowtree = { mode = "off" } }
 
+[lanes.utils]
+kind = "assay"
+environment = "test-runner-py314"
+assay_lane = "utils"
+clean_tree = false
+# The host CoW area is not mounted in the runner: plain file-copy snapshots (declared, not ambient).
+resources = { cowtree = { mode = "off" } }
+
 # --- trove hygiene (interpreter-agnostic) ------------------------------------
 [lanes.trove]
 kind = "command"
@@ -88,7 +108,7 @@ budget = "5m"
 #   set -a; . ./.env.services; set +a            # service URLs for the lanes
 #   ciu up --dir tooling/mailpit; ciu up --dir tooling/geoip-mock; ciu up --dir tooling/netcup-api-mock
 #   run-gate local-build --worktree "$PWD"      # seeds deploy-local/ + deployment_state_local.json
-#   ciu up --dir tooling/app-local; ciu up --dir infra/pwmcp
+#   ciu up --dir tooling/app-local   # pwmcp is the estate instance, not ours
 #   export UI_BASE_URL=http://<app-local container>:5100 DEPLOYMENT_TARGET=local PLAYWRIGHT_SERVER_WS=ws://...
 #   run-gate e2e --worktree "$PWD"
 [lanes.local-build]
@@ -103,14 +123,113 @@ description = "build + seed deploy-local/ (runs app code, so inside the 3.11 run
 [lanes.e2e]
 kind = "command"
 environment = "test-runner-py311"
-argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider --no-cov"]
+argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider -o addopts="]
 required_env = ["PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET"]
 clean_tree = false
 budget = "60m"
+
+
+# --- R3 canaries (import-break): the suite must go red when the module cannot be imported ---
+[lanes.token_auth_r3]
+kind = "assay"
+environment = "test-runner-py314"
+assay_lane = "token_auth_r3"
+clean_tree = false
+resources = { cowtree = { mode = "off" } }
+
+[lanes.account_auth_r3]
+kind = "assay"
+environment = "test-runner-py314"
+assay_lane = "account_auth_r3"
+clean_tree = false
+resources = { cowtree = { mode = "off" } }
+
+[lanes.recovery_codes_r3]
+kind = "assay"
+environment = "test-runner-py314"
+assay_lane = "recovery_codes_r3"
+clean_tree = false
+resources = { cowtree = { mode = "off" } }
+
+[lanes.utils_r3]
+kind = "assay"
+environment = "test-runner-py314"
+assay_lane = "utils_r3"
+clean_tree = false
+resources = { cowtree = { mode = "off" } }
+
+
+# --- R2 native mutation: asynchronous, serial, never a gate member (run: run-gate <m>_r2 --worktree $PWD) ---
+[lanes.token_auth_r2]
+kind = "assay"
+environment = "test-runner-r2"
+assay_lane = "token_auth_r2"
+resource_observer = "cgprofile"
+clean_tree = false
+budget = "8h"
+
+[lanes.token_auth_r2.resources]
+memory = "2g"
+pids = 8192
+
+[lanes.token_auth_r2.resources.cowtree]
+mode = "off"
+
+[lanes.account_auth_r2]
+kind = "assay"
+environment = "test-runner-r2"
+assay_lane = "account_auth_r2"
+resource_observer = "cgprofile"
+clean_tree = false
+budget = "8h"
+
+[lanes.account_auth_r2.resources]
+memory = "2g"
+pids = 8192
+
+[lanes.account_auth_r2.resources.cowtree]
+mode = "off"
+
+[lanes.recovery_codes_r2]
+kind = "assay"
+environment = "test-runner-r2"
+assay_lane = "recovery_codes_r2"
+resource_observer = "cgprofile"
+clean_tree = false
+budget = "8h"
+
+[lanes.recovery_codes_r2.resources]
+memory = "2g"
+pids = 8192
+
+[lanes.recovery_codes_r2.resources.cowtree]
+mode = "off"
+
+[lanes.utils_r2]
+kind = "assay"
+environment = "test-runner-r2"
+assay_lane = "utils_r2"
+resource_observer = "cgprofile"
+clean_tree = false
+budget = "8h"
+
+[lanes.utils_r2.resources]
+memory = "2g"
+pids = 8192
+
+[lanes.utils_r2.resources.cowtree]
+mode = "off"
 
 # --- composite: the ship signal ----------------------------------------------
 [lanes.gate]
 kind = "sequence"
 description = "Implementation gate: hermetic suite on both interpreters, then trove hygiene"
-lanes = ["unit-py311", "unit-py314", "trove"]
+lanes = ["unit-py311", "unit-py314", "trove", "token_auth", "account_auth", "recovery_codes", "utils"]
+stop_on = "FAIL"
+
+# Release gate: the ship signal plus the R3 canaries. R2 is asynchronous and never a member.
+[lanes.release-gate]
+kind = "sequence"
+description = "Release gate: gate + R3 canaries (R2 mutation runs asynchronously afterwards)"
+lanes = ["gate", "token_auth_r3", "account_auth_r3", "recovery_codes_r3", "utils_r3"]
 stop_on = "FAIL"

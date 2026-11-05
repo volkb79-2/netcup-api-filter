@@ -39,7 +39,7 @@ post_compose = []
 # The browser is ALWAYS external: no engine is installed in the gate image. The
 # e2e gate drives the Playwright-as-a-Service container over PLAYWRIGHT_SERVER_WS.
 # naf uses the raw `chromium.connect(ws://pwmcp:3000/)` path — it does NOT need
-# the pwmcp lease/contract client. See infra/pwmcp/ (naf-I02).
+# the pwmcp lease/contract client. The pwmcp instance is provided by the estate (/srv/pwmcp-instance); see [topology.pwmcp].
 [test_runner.pwmcp]
 required = false
 ws_url = "ws://pwmcp:3000/"

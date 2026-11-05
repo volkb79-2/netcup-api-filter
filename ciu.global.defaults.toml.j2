@@ -146,9 +146,6 @@ path = "tooling/netcup-api-mock"
 [[deploy.phases.phase_0.services]]
 path = "tooling/backend-powerdns"
 
-[[deploy.phases.phase_0.services]]
-path = "infra/pwmcp"
-
 # phase_1 — the app itself, then the gating peer. The app is a CONTAINER now (naf-I04):
 # it used to be a host gunicorn process in the devcontainer, which traefik's docker
 # provider could not discover because there were no container labels to read.
@@ -164,7 +161,7 @@ path = "tooling/app-local"
 path = "tooling/test-runner"
 
 [deploy.profiles.test]
-stacks = ["infra/pwmcp", "tooling/test-runner"]
+stacks = ["tooling/test-runner"]
 
 [deploy.profiles.mocks]
 stacks = ["tooling/mailpit", "tooling/geoip-mock", "tooling/netcup-api-mock", "tooling/backend-powerdns"]
@@ -175,7 +172,6 @@ stacks = [
     "tooling/geoip-mock",
     "tooling/netcup-api-mock",
     "tooling/backend-powerdns",
-    "infra/pwmcp",
     "tooling/app-local",
     "tooling/test-runner",
 ]
@@ -203,6 +199,14 @@ tls = true
 # Exposed containers join this IN ADDITION to the project network; backends stay
 # project-internal. naf terminates no TLS and holds no certs (naf-I04).
 ingress_network = "ingress_public"
+
+# [topology.pwmcp] — the Playwright service is NOT ours: the estate runs one pwmcp instance
+# (/srv/pwmcp-instance) and naf is a consumer. The browser lives in that container, so the
+# app (browser target) and the test runners (clients) must share a network with it. The
+# network name is a host fact: export PWMCP_NETWORK=<network_name from
+# /srv/pwmcp-instance/ciu.global.toml>. Unset => ciu refuses to render (no default, on purpose).
+[topology.pwmcp]
+network = "$PWMCP_NETWORK"
 
 # ---------------------------------------------------------------------------
 # [topology.dns] — the delegated DNS zone that makes up naf's dev/test DNS infra.

@@ -50,6 +50,7 @@ services:
     networks:
       - {{ deploy.network_name }}
       - {{ topology.external.ingress_network }}
+      - {{ topology.pwmcp.network }}   # the pwmcp browser must reach the app
     labels:
       - "{{ deploy.labels.prefix }}.component={{ app_local.name }}"
       - "{{ deploy.labels.prefix }}.stack=app"
@@ -80,3 +81,6 @@ networks:
   {{ topology.external.ingress_network }}:
     external: true
     name: {{ topology.external.ingress_network }}
+  {{ topology.pwmcp.network }}:
+    external: true
+    name: {{ topology.pwmcp.network }}

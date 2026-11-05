@@ -46,6 +46,7 @@ services:
     working_dir: {{ ciu.repo_root }}
     networks:
       - {{ deploy.network_name }}
+      - {{ topology.pwmcp.network }}   # ws://pwmcp:3000 (the provided instance)
     stdin_open: true
     tty: true
     labels:
@@ -59,6 +60,9 @@ networks:
   {{ deploy.network_name }}:
     external: true
     name: {{ deploy.network_name }}
+  {{ topology.pwmcp.network }}:
+    external: true
+    name: {{ topology.pwmcp.network }}
 
 volumes:
 {% for v in test_runner.variants %}

@@ -1,18 +1,22 @@
 # Assay lane declarations for naf: the machine-readable test-rigor judge.
 # The assay pin (version, vendored zipapp, SHA-256 sidecar) is single-sourced in
-# run-gate.toml [assay]; this file never restates a version. run-gate.toml maps
-# each lane to a runner (one per shipped interpreter); the lanes here are
-# judged on the 3.14 runner (assay 12.0.0 cannot import on 3.11, assay B229); the 3.11
+# run-gate.toml [assay]; this file never restates a version. Every lane is judged on the
+# 3.14 runner (assay 12.0.0 cannot import on 3.11, assay backlog B229); the 3.11
 # interpreter is gated by the plain pytest lane `unit-py311` in run-gate.toml.
 #
-# R0 `unit` is the authoritative hermetic gate. The R1 whole-target lanes on the
-# auth boundary are `advisory` until a first measured run sets honest floors
-# (fail_under starts at 100 by assay convention; lower it WITH a written reason,
-# never silently). R2 mutation (assay's, replacing manual mutmut runs) and R3
-# canary are adopted per module after R1 is green: see nyxloom-trove/4-backlog.md.
+# Lane families (generated shape, edit by hand freely):
+#   unit            R0   the whole hermetic suite
+#   <module>        R0+R1 whole-target line+branch floor on one security-relevant module
+#   <module>_r3     R0+R1+R3 the same floor plus an import-break canary: the suite must go red
+#                   when the module cannot be imported (proves the tests guard the module)
+#   <module>_r2     R0+R2 native mutation of the module, narrow test selection, run async
+#
+# R1 floors are the MEASURED baseline, not a target: they only ratchet UP (raise fail_under
+# with the tests that earn it; never lower it without a written reason). A floor of 100.0 on
+# an `advisory` lane means "not measured yet".
 schema_version = 2
 
-# -o addopts="" drops pytest.ini's -x/--cov so the lane owns its own flags.
+# -o addopts="" drops pytest.ini's -x/--cov so each lane owns its own flags.
 [lanes.unit]
 scope = "S1"
 rigor = ["R0"]
@@ -23,11 +27,12 @@ env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "30m"
 allow_argv_append = false
 
+# measured 2026-11-05: 163/216 lines, 65/86 branches
 [lanes.token_auth]
 scope = "S1"
 rigor = ["R0", "R1"]
-enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.token_auth", "--cov-branch", "--cov-report=json:.assay/coverage.json"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.token_auth", "--cov-branch", "--cov-report=json:.assay/coverage-token_auth.json"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "30m"
@@ -39,7 +44,7 @@ snapshot_selection = "repository"
 [lanes.token_auth.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 100.0
+fail_under = 75.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -47,13 +52,71 @@ targets = ["src/netcup_api_filter/token_auth.py"]
 
 [lanes.token_auth.judge.coverage]
 format = "coverage-py-json"
-artifact = ".assay/coverage.json"
+artifact = ".assay/coverage-token_auth.json"
 
+# measured 2026-11-05: 163/216 lines, 65/86 branches
+[lanes.token_auth_r3]
+scope = "S1"
+rigor = ["R0", "R1", "R3"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.token_auth", "--cov-branch", "--cov-report=json:.assay/coverage-token_auth.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "60m"
+allow_argv_append = false
+
+[lanes.token_auth_r3.isolation]
+snapshot_selection = "repository"
+
+[lanes.token_auth_r3.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 75.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/token_auth.py"]
+
+[lanes.token_auth_r3.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage-token_auth.json"
+[lanes.token_auth_r3.judge.canary]
+mechanism = "import-break"
+target = "src/netcup_api_filter/token_auth.py"
+budget_per_attempt = "20m"
+
+# R2: narrow selection (modules that import token_auth), fail-fast; run asynchronously, serial.
+[lanes.token_auth_r2]
+scope = "S1"
+rigor = ["R0", "R2"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests/test_token_auth_unit.py", "tests/test_realm_scope.py", "tests/test_validators_property.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "8h"
+allow_argv_append = false
+
+[lanes.token_auth_r2.isolation]
+snapshot_selection = "repository"
+
+[lanes.token_auth_r2.judge]
+language = "python"
+source_roots = ["src"]
+mode = "whole_target"
+targets = ["src/netcup_api_filter/token_auth.py"]
+
+[lanes.token_auth_r2.judge.mutation]
+jobs_max = 1
+max_mutants = 1000
+budget_per_candidate = "120s"
+operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
+
+# measured 2026-11-05: 210/500 lines, 34/160 branches
 [lanes.account_auth]
 scope = "S1"
 rigor = ["R0", "R1"]
-enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.account_auth", "--cov-branch", "--cov-report=json:.assay/coverage.json"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.account_auth", "--cov-branch", "--cov-report=json:.assay/coverage-account_auth.json"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "30m"
@@ -65,7 +128,7 @@ snapshot_selection = "repository"
 [lanes.account_auth.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 100.0
+fail_under = 21.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -73,13 +136,71 @@ targets = ["src/netcup_api_filter/account_auth.py"]
 
 [lanes.account_auth.judge.coverage]
 format = "coverage-py-json"
-artifact = ".assay/coverage.json"
+artifact = ".assay/coverage-account_auth.json"
 
+# measured 2026-11-05: 210/500 lines, 34/160 branches
+[lanes.account_auth_r3]
+scope = "S1"
+rigor = ["R0", "R1", "R3"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.account_auth", "--cov-branch", "--cov-report=json:.assay/coverage-account_auth.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "60m"
+allow_argv_append = false
+
+[lanes.account_auth_r3.isolation]
+snapshot_selection = "repository"
+
+[lanes.account_auth_r3.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 21.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/account_auth.py"]
+
+[lanes.account_auth_r3.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage-account_auth.json"
+[lanes.account_auth_r3.judge.canary]
+mechanism = "import-break"
+target = "src/netcup_api_filter/account_auth.py"
+budget_per_attempt = "20m"
+
+# R2: narrow selection (modules that import account_auth), fail-fast; run asynchronously, serial.
+[lanes.account_auth_r2]
+scope = "S1"
+rigor = ["R0", "R2"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests/test_2fa_security_functional.py", "tests/test_telegram_2fa.py", "tests/test_totp_lockout.py", "tests/test_portal_record_scope.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "8h"
+allow_argv_append = false
+
+[lanes.account_auth_r2.isolation]
+snapshot_selection = "repository"
+
+[lanes.account_auth_r2.judge]
+language = "python"
+source_roots = ["src"]
+mode = "whole_target"
+targets = ["src/netcup_api_filter/account_auth.py"]
+
+[lanes.account_auth_r2.judge.mutation]
+jobs_max = 1
+max_mutants = 1000
+budget_per_candidate = "120s"
+operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
+
+# measured 2026-11-05: 75/76 lines, 11/12 branches
 [lanes.recovery_codes]
 scope = "S1"
 rigor = ["R0", "R1"]
-enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.recovery_codes", "--cov-branch", "--cov-report=json:.assay/coverage.json"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.recovery_codes", "--cov-branch", "--cov-report=json:.assay/coverage-recovery_codes.json"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "30m"
@@ -91,7 +212,7 @@ snapshot_selection = "repository"
 [lanes.recovery_codes.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 100.0
+fail_under = 91.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -99,4 +220,145 @@ targets = ["src/netcup_api_filter/recovery_codes.py"]
 
 [lanes.recovery_codes.judge.coverage]
 format = "coverage-py-json"
-artifact = ".assay/coverage.json"
+artifact = ".assay/coverage-recovery_codes.json"
+
+# measured 2026-11-05: 75/76 lines, 11/12 branches
+[lanes.recovery_codes_r3]
+scope = "S1"
+rigor = ["R0", "R1", "R3"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.recovery_codes", "--cov-branch", "--cov-report=json:.assay/coverage-recovery_codes.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "60m"
+allow_argv_append = false
+
+[lanes.recovery_codes_r3.isolation]
+snapshot_selection = "repository"
+
+[lanes.recovery_codes_r3.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 91.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/recovery_codes.py"]
+
+[lanes.recovery_codes_r3.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage-recovery_codes.json"
+[lanes.recovery_codes_r3.judge.canary]
+mechanism = "import-break"
+target = "src/netcup_api_filter/recovery_codes.py"
+budget_per_attempt = "20m"
+
+# R2: narrow selection (modules that import recovery_codes), fail-fast; run asynchronously, serial.
+[lanes.recovery_codes_r2]
+scope = "S1"
+rigor = ["R0", "R2"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests/test_recovery_codes_unit.py", "tests/test_2fa_security_functional.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "8h"
+allow_argv_append = false
+
+[lanes.recovery_codes_r2.isolation]
+snapshot_selection = "repository"
+
+[lanes.recovery_codes_r2.judge]
+language = "python"
+source_roots = ["src"]
+mode = "whole_target"
+targets = ["src/netcup_api_filter/recovery_codes.py"]
+
+[lanes.recovery_codes_r2.judge.mutation]
+jobs_max = 1
+max_mutants = 1000
+budget_per_candidate = "120s"
+operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
+
+# NOT YET MEASURED: first run decides the floor
+[lanes.utils]
+scope = "S1"
+rigor = ["R0", "R1"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.utils", "--cov-branch", "--cov-report=json:.assay/coverage-utils.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "30m"
+allow_argv_append = false
+
+[lanes.utils.isolation]
+snapshot_selection = "repository"
+
+[lanes.utils.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 100.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/utils.py"]
+
+[lanes.utils.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage-utils.json"
+
+# NOT YET MEASURED: first run decides the floor
+[lanes.utils_r3]
+scope = "S1"
+rigor = ["R0", "R1", "R3"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.utils", "--cov-branch", "--cov-report=json:.assay/coverage-utils.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "60m"
+allow_argv_append = false
+
+[lanes.utils_r3.isolation]
+snapshot_selection = "repository"
+
+[lanes.utils_r3.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 100.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/utils.py"]
+
+[lanes.utils_r3.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage-utils.json"
+[lanes.utils_r3.judge.canary]
+mechanism = "import-break"
+target = "src/netcup_api_filter/utils.py"
+budget_per_attempt = "20m"
+
+# R2: narrow selection (modules that import utils), fail-fast; run asynchronously, serial.
+[lanes.utils_r2]
+scope = "S1"
+rigor = ["R0", "R2"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests/test_validators_unit.py", "tests/test_validators_property.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "8h"
+allow_argv_append = false
+
+[lanes.utils_r2.isolation]
+snapshot_selection = "repository"
+
+[lanes.utils_r2.judge]
+language = "python"
+source_roots = ["src"]
+mode = "whole_target"
+targets = ["src/netcup_api_filter/utils.py"]
+
+[lanes.utils_r2.judge.mutation]
+jobs_max = 1
+max_mutants = 1000
+budget_per_candidate = "120s"
+operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
