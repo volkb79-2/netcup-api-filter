@@ -111,7 +111,7 @@ def test_enforce_without_spec_is_an_error(bare_app):
 
 
 def test_initialized_db_without_any_admin_fails_fast(bare_app):
-    with pytest.raises(BootstrapAdminError, match="No administrator account exists"):
+    with pytest.raises(BootstrapAdminError, match="No active administrator account exists"):
         init_instance(admin=None)
 
 
@@ -214,7 +214,7 @@ def test_toml_without_admin_users_is_no_spec(no_bootstrap_env, tmp_path):
 def test_first_boot_without_bootstrap_config_refuses_to_start(no_bootstrap_env, monkeypatch, tmp_path):
     monkeypatch.setenv("NETCUP_FILTER_DB_PATH", str(tmp_path / "fresh.db"))
     monkeypatch.setenv("SECRET_KEY", secrets.token_hex(32))
-    with pytest.raises(BootstrapAdminError, match="No administrator account exists"):
+    with pytest.raises(BootstrapAdminError, match="No active administrator account exists"):
         create_app()
 
 
@@ -389,3 +389,126 @@ def test_users_import_deletes_plaintext_and_never_logs_generated_password(bare_a
     assert Settings.query.filter_by(key="users_config").first() is None
     assert explicit not in caplog.text
     assert "SAVE THIS" not in caplog.text
+
+
+# --- review #3: configured bootstrap admins obey the password policy -----------
+
+@pytest.mark.parametrize("weak", ["a", "short-Pass1@", "b" * 19, "has-a-quote'-" + "Q1" * 10])
+def test_configured_admin_with_a_weak_password_is_rejected(bare_app, weak):
+    with pytest.raises(BootstrapAdminError, match="password policy") as excinfo:
+        init_instance(admin=_spec(password=weak))
+    if len(weak) > 3:
+        assert weak not in str(excinfo.value)  # the reason names the rule, never the value
+    assert Account.query.count() == 0
+
+
+def test_weak_password_from_environment_fails_the_start(monkeypatch, tmp_path):
+    from netcup_api_filter.bootstrap.admin import configured_admin_spec
+
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_USERNAME", "ops-admin")
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_EMAIL", "ops@example.com")
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_PASSWORD", "a")
+    spec = configured_admin_spec(None)
+    with pytest.raises(BootstrapAdminError, match="password policy"):
+        spec.validate()
+
+
+def test_shipped_tarball_admin_is_exempt_from_the_policy(bare_app):
+    spec = shipped_admin_spec()
+    assert spec.apply_password_policy is False
+    spec.validate()  # the documented admin/admin; forced to change on first login
+
+
+# --- review #6: never report success without an active admin -------------------
+
+def test_username_taken_by_a_non_admin_is_an_error(bare_app, ):
+    init_instance(admin=_spec(username="first-admin", email="first@example.com"))
+    portal = Account(username="ops-admin", user_alias="u" * 16, email="portal@example.com",
+                     is_admin=0, is_active=1, email_verified=1)
+    portal.set_password(_password())
+    database.db.session.add(portal)
+    database.db.session.commit()
+    with pytest.raises(BootstrapAdminError, match="taken by an existing non-admin account"):
+        init_instance(admin=_spec())
+
+
+def test_username_of_a_deactivated_admin_is_an_error(bare_app):
+    init_instance(admin=_spec(username="first-admin", email="first@example.com"))
+    init_instance(admin=_spec())
+    Account.query.filter_by(username="ops-admin").one().is_active = 0
+    database.db.session.commit()
+    with pytest.raises(BootstrapAdminError, match="deactivated"):
+        init_instance(admin=_spec())
+
+
+def test_configured_email_collision_is_a_clear_error_not_integrity_error(bare_app):
+    init_instance(admin=_spec(username="first-admin", email="ops@example.com"))
+    with pytest.raises(BootstrapAdminError, match="already belongs to account 'first-admin'"):
+        init_instance(admin=_spec(username="second-admin"))
+
+
+def test_enforce_with_an_email_owned_by_another_account_is_an_error(bare_app):
+    init_instance(admin=_spec(username="first-admin", email="first@example.com"))
+    init_instance(admin=_spec())
+    with pytest.raises(BootstrapAdminError, match="already belongs to account 'ops-admin'"):
+        init_instance(admin=_spec(username="first-admin", email="ops@example.com"), enforce_admin=True)
+
+
+def test_existing_database_with_only_deactivated_admins_fails(bare_app):
+    init_instance(admin=_spec())
+    Account.query.filter_by(username="ops-admin").one().is_active = 0
+    database.db.session.commit()
+    with pytest.raises(BootstrapAdminError, match="No active administrator"):
+        init_instance(admin=None)
+
+
+# --- review #7: the mock email config is created once, never overwritten ------
+
+def test_mock_email_config_is_create_only(bare_app):
+    import json
+
+    from netcup_api_filter.bootstrap import MockEmail
+    from netcup_api_filter.models import Settings
+
+    mock = MockEmail(smtp_host="mailpit", smtp_port=1025, from_email="naf@example.com",
+                     admin_email="admin@example.com")
+    init_instance(admin=_spec(), mock_email=mock)
+    row = Settings.query.filter_by(key="email_config").one()
+    changed = dict(json.loads(row.value), smtp_host="smtp.operator.example", smtp_server="smtp.operator.example")
+    row.value = json.dumps(changed)  # what the admin UI does
+    database.db.session.commit()
+
+    init_instance(admin=None, mock_email=mock)  # the hook on the next `ciu up`
+    stored = json.loads(Settings.query.filter_by(key="email_config").one().value)
+    assert stored["smtp_host"] == "smtp.operator.example"
+    assert stored["smtp_server"] == "smtp.operator.example"
+
+
+# --- review #10: a bad [[users]] entry imports nothing ---------------------------
+
+def test_admin_with_generate_password_rolls_back_the_whole_users_import(bare_app):
+    from netcup_api_filter.bootstrap.platform_backends import initialize_platform_backends
+    from netcup_api_filter.database import set_setting
+
+    init_instance(admin=_spec())
+    set_setting("users_config", [
+        {"username": "earlier-user", "email": "earlier@example.com", "password": _password(),
+         "is_approved": True, "is_admin": False},
+        {"username": "bad-admin", "email": "bad@example.com", "password": "generate", "is_admin": True},
+    ])
+    with pytest.raises(ValueError, match="explicit password"):
+        initialize_platform_backends()
+    database.db.session.remove()
+    assert Account.query.filter_by(username="earlier-user").first() is None
+    assert Settings.query.filter_by(key="users_config").first() is None  # plaintext still purged
+
+
+# --- review #11: users_config rows from older releases are purged on init -------
+
+def test_init_purges_a_stale_persisted_users_import(bare_app):
+    from netcup_api_filter.database import set_setting
+
+    init_instance(admin=_spec())
+    set_setting("users_config", [{"username": "old", "password": "plaintext-from-an-old-release"}])
+    init_instance(admin=None)
+    assert Settings.query.filter_by(key="users_config").first() is None

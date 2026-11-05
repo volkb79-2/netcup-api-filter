@@ -85,7 +85,9 @@ try:
         
         # Load app-config.toml if present (first-run customization)
         # This file is read once and then deleted
-        config_path = os.path.join(app_root, 'app-config.toml')
+        # Same location init_db reads the bootstrap admin from: NETCUP_FILTER_APP_ROOT (defaults
+        # to this file's directory above; the OCI image points it at the writable /config).
+        config_path = os.path.join(os.environ['NETCUP_FILTER_APP_ROOT'], 'app-config.toml')
         # NOTE: gunicorn may start multiple workers; protect this one-time import
         # from races by atomically "claiming" the file.
         claimed_config_path: str | None = None
@@ -98,6 +100,14 @@ try:
             except FileNotFoundError:
                 # Another worker likely claimed it first.
                 claimed_config_path = None
+            except OSError as exc:
+                # A bind-mounted FILE (EBUSY) or a read-only directory cannot be claimed and
+                # deleted, so the one-shot import cannot run safely (review finding #9).
+                raise RuntimeError(
+                    f"cannot claim {config_path} for its one-time import ({exc.strerror}). "
+                    "Mount the DIRECTORY that contains app-config.toml (writable), not the file "
+                    "itself; see docs/DEPLOYMENT_WORKFLOW.md."
+                ) from exc
 
         if claimed_config_path:
             try:
@@ -628,60 +638,16 @@ try:
     # WSGI application
     application = app
 
-except ImportError as e:
-    error_msg = str(e)
-    logger.error(f"Failed to import required module: {error_msg}", exc_info=True)
-    logger.error(f"Python path: {sys.path[:5]}")
-    
-    def application(environ, start_response):
-        status = '500 Internal Server Error'
-        response_headers = [('Content-type', 'text/html; charset=utf-8')]
-        start_response(status, response_headers)
-        
-        error_html = f"""
-        <html>
-        <head><title>Application Error</title></head>
-        <body>
-            <h1>Application Failed to Start</h1>
-            <h2>Import Error</h2>
-            <p><strong>Error:</strong> {error_msg}</p>
-            <h3>Troubleshooting Steps:</h3>
-            <ol>
-                <li>Verify all files were uploaded (especially vendor/ directory)</li>
-                <li>Check that Passenger App Root points to this directory</li>
-                <li>Ensure Python version is 3.11 or higher</li>
-                <li>Review error logs for more details</li>
-            </ol>
-            <h3>Python Path (first 5):</h3>
-            <pre>{sys.path[:5]}</pre>
-            <h3>Application Directory:</h3>
-            <pre>{app_root}</pre>
-        </body>
-        </html>
-        """
-        return [error_html.encode('utf-8')]
-
-except Exception as e:
-    error_msg = str(e)
-    logger.error(f"Failed to start application: {error_msg}", exc_info=True)
-    
-    def application(environ, start_response):
-        status = '500 Internal Server Error'
-        response_headers = [('Content-type', 'text/html; charset=utf-8')]
-        start_response(status, response_headers)
-        
-        error_html = f"""
-        <html>
-        <head><title>Application Error</title></head>
-        <body>
-            <h1>Application Failed to Start</h1>
-            <p><strong>Error:</strong> {error_msg}</p>
-            <h3>Application Directory:</h3>
-            <pre>{app_root}</pre>
-        </body>
-        </html>
-        """
-        return [error_html.encode('utf-8')]
+except Exception:
+    # Fail fast (review findings #1/#2): a start-up failure (bad/missing bootstrap
+    # config, unreadable DB, missing dependency) must stop this process instead of
+    # serving a stand-in WSGI app. gunicorn then reports "Worker failed to boot" and
+    # exits non-zero (a container restart policy or the operator sees it); Passenger
+    # shows its own generic error page. The details go to the log only — never into an
+    # HTTP response (an IntegrityError's text can contain row values).
+    logger.critical("Netcup API Filter failed to start; see the traceback above/below", exc_info=True)
+    logger.critical(f"Python path (first 5): {sys.path[:5]}; application directory: {app_root}")
+    raise
 
 if __name__ == "__main__":
     debug_mode = os.environ.get('FLASK_DEBUG', '').lower() == 'true'

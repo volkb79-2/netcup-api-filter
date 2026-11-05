@@ -23,6 +23,60 @@
 
 ### Security
 
+- **Fixed (review #15):** the OCI image ran gunicorn as root and had no `.dockerignore` (`.env*`
+  and `.ciu/secrets` reached the builder context). It now runs as `naf` (uid/gid 10001) with only
+  `/data` and `/config` writable, and the build context is an allowlist.
+
+- **Fixed (review #14):** e2e session apps no longer accept the documented `admin`/`admin` (they
+  listen on the shared pwmcp network; only the forced-change test keeps it), the session fixture
+  stops gunicorn on any setup error, and a port taken between choosing and binding is retried.
+
+- **Fixed (review #10):** a `[[users]]` admin entry with `password = "generate"` aborted the import,
+  but the cleanup commit still saved the accounts flushed before it; the import is now all or nothing.
+
+- **Fixed (review #11):** `users_config` rows persisted by older releases (plaintext `[[users]]`
+  passwords) were never removed; `init_instance` now purges the row on every start.
+
+- **Fixed (review #8):** the `e2e` run-gate lane requires `PLAYWRIGHT_SERVER_WS` again (without it
+  the runner tried an in-process browser and every test errored one by one).
+
+- **Fixed (review #7):** every `ciu up` of app-local re-wrote the Mailpit `email_config`,
+  resetting SMTP settings changed in the admin UI. The mock email config is now create-only.
+
+- **Fixed (review #5):** `app-defaults.env` shipped `SECRET_KEY=local-dev-secret-change-me` (and
+  every other non-test key, e.g. `TELEGRAM_BOT_USERNAME`, `POWERDNS_SOA`). The dev `SECRET_KEY` line
+  is deleted and the shipped catalog is now an allowlist (`config_defaults.RUNTIME_DEFAULT_KEYS`) that
+  never contains a credential-like name.
+
+- **Fixed (review #6):** init could report success with no admin: a configured username owned by a
+  non-admin or deactivated account was returned "unchanged", and a colliding email raised a raw
+  `IntegrityError`. Both are now `BootstrapAdminError`s naming the collision, and an existing
+  database needs an *active* admin.
+
+- **Fixed (review #3):** a configured bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, TOML) accepted any
+  non-empty password; it must now satisfy the password policy. Docs no longer claim email 2FA turns
+  on by itself for a configured admin.
+
+- **Fixed (review #9):** a bind-mounted `app-config.toml` file could not be claimed (`EBUSY`) and
+  fell into the generic start-up error; the start now fails with "mount the directory" guidance.
+  The `docker exec`-ed bootstrap CLI now resolves the app root like `passenger_wsgi.py` (it ignored
+  `app-config.toml` before).
+
+- **Fixed (review #1/#2):** a fresh database could be initialized by several gunicorn workers
+  at once (check-then-insert races on the bootstrap admin, ~1/N requests failing), and any start-up
+  error was swallowed into a stand-in WSGI app that rendered the exception text to clients (an
+  `IntegrityError` can include row values). Initialization now runs under an exclusive lock file
+  (`<db>.init.lock`, `NAF_INIT_LOCK_TIMEOUT_SECONDS`) in every process, and a failed start re-raises:
+  gunicorn exits non-zero ("Worker failed to boot"); details are logged only.
+||||||| 697f5a0
+- **Activation no longer silently rotates `SECRET_KEY`** (review #18): `scripts/activate.py` now fails
+  with an error when a non-empty preserved secret cannot be restored into the new database (it only
+  warned before). An absent or empty preserved secret is still a no-op.
+- **`/account/2fa/resend` checks the method** (review #19): a method the account has not enabled is
+  rejected (no code sent, session method unchanged), matching the login page's offered methods.
+- **App-local seed hook keeps the PowerDNS API key off the command line** (review #17): it is passed to
+  `docker exec` as `-e NAME` with the value in the hook's process environment, not in argv.
+
 - **One database initializer, no published secrets** (credentials/test-setup plan, S2):
   `bootstrap.instance.init_instance()` is the only seeder (tarball build, local golden DB, app
   start, ciu `post_compose` hook via `python -m netcup_api_filter.bootstrap init`). The tarball

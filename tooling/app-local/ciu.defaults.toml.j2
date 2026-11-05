@@ -55,8 +55,8 @@ from_email = "naf@example.com"
 admin_email = "admin@example.com"
 
 # Per-instance secrets, generated once into the project store (.ciu/secrets/, gitignored) and mounted
-# at /run/secrets/<name> (S4.17 *_FILE convention). The SECRET_KEY arriving from outside the database
-# also removes any multi-worker first-start race at the source.
+# at /run/secrets/<name> (S4.17 *_FILE convention). First-start initialization across the gunicorn
+# workers and the hook's CLI is serialized by <db>.init.lock (bootstrap/init_lock.py).
 [app_local.secrets]
 secret_key = "GEN_LOCAL:naf/app_local_secret_key"
 bootstrap_admin_password = "GEN_LOCAL:naf/app_local_bootstrap_admin_password"

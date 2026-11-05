@@ -3,8 +3,8 @@
 Sources (per directory: the app/repo root and the cwd), lowest precedence first:
 
 * ``app-defaults.env`` — the SHIPPED runtime catalog that the builds write into the
-  Passenger tarball, the local deploy tree and the OCI image: ``.env.defaults`` minus every
-  build/test-only key (``render_shipped_defaults``). ``.env.defaults`` itself is never shipped
+  Passenger tarball, the local deploy tree and the OCI image: the allowlisted runtime keys of
+  ``.env.defaults`` (``RUNTIME_DEFAULT_KEYS``, ``render_shipped_defaults``). ``.env.defaults`` itself is never shipped
   (it holds the documented pre-set admin password and test fixtures).
 * ``.env.defaults`` — the version-controlled catalog (repository / build time only).
 * ``.env`` — a local developer override layer (gitignored).
@@ -18,28 +18,49 @@ from pathlib import Path
 
 SHIPPED_DEFAULTS_FILENAME = "app-defaults.env"
 
-# Keys of .env.defaults that exist for builds and tests only and must never reach a shipped
-# tree: the pre-set admin's password, test personas/fixtures, local mock wiring, test-tool
-# tuning, and placeholders that are only valid in local tests.
-BUILD_AND_TEST_ONLY_PREFIXES = (
-    "DEFAULT_ADMIN_", "DEFAULT_TEST_", "DEFAULT_READONLY_TEST_", "LOCAL_", "E2E_", "UI_",
-    "PYTEST_", "SCREENSHOT_", "DNS_TEST_", "DNS_PROPAGATION_", "DNS_CHECK_", "IMAP_", "WEBHOSTING_",
-)
-BUILD_AND_TEST_ONLY_KEYS = frozenset({"ADMIN_2FA_SKIP", "TELEGRAM_LINK_CALLBACK_SECRET"})
+# ALLOWLIST (review #5): the only keys of .env.defaults that ship in app-defaults.env — exactly
+# the keys the RUNNING app resolves through this module (get_default / require_default /
+# load_defaults). Everything else (the pre-set admin password, test fixtures, local mock wiring,
+# test-tool tuning, values read only from the environment) stays in the repository: a new key does
+# NOT ship until it is added here, and tests/test_shipped_defaults.py fails if runtime code reads a
+# key that is missing from this set.
+RUNTIME_DEFAULT_KEYS = frozenset({
+    # rate limits (bootstrap/seeding.seed_settings_from_env, app.py)
+    "ADMIN_RATE_LIMIT", "ACCOUNT_RATE_LIMIT", "API_RATE_LIMIT",
+    # admin security (api/admin.py)
+    "ADMIN_IP_WHITELIST", "ADMIN_SESSION_BIND_IP", "ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS",
+    "ADMIN_LOGIN_LOCKOUT_THRESHOLD", "ADMIN_LOGIN_LOCKOUT_MINUTES",
+    # session cookies (app.py)
+    "FLASK_SESSION_COOKIE_SECURE", "FLASK_SESSION_COOKIE_HTTPONLY", "FLASK_SESSION_COOKIE_SAMESITE",
+    "FLASK_SESSION_LIFETIME", "FLASK_SESSION_COOKIE_DOMAIN",
+    # demo pages switch (bootstrap/seeding.seed_settings_from_env)
+    "DEMO_PAGES_ENABLED_LOCAL", "DEMO_PAGES_ENABLED_WEBHOSTING",
+    # email references / 2FA mail subject (email_reference.py, notification_service.py)
+    "NAF_EMAIL_REF_RANDOM_GROUPS", "NAF_EMAIL_REF_RANDOM_GROUP_SIZE", "NAF_2FA_EMAIL_SUBJECT_TEMPLATE",
+    # first-boot initialization lock (bootstrap/init_lock.py)
+    "NAF_INIT_LOCK_TIMEOUT_SECONDS",
+})
+
+# Never shipped, whatever the allowlist says (defence in depth): credential-like names.
+SECRET_LOOKING_MARKERS = ("PASSWORD", "SECRET", "TOKEN", "API_KEY", "LICENSE_KEY", "PRIVATE")
 
 
-def is_build_or_test_only(key: str) -> bool:
-    return key in BUILD_AND_TEST_ONLY_KEYS or key.startswith(BUILD_AND_TEST_ONLY_PREFIXES)
+def is_shipped_key(key: str) -> bool:
+    return key in RUNTIME_DEFAULT_KEYS and not any(m in key for m in SECRET_LOOKING_MARKERS)
 
 
 def render_shipped_defaults(source: Path) -> str:
-    """The shipped runtime catalog: ``source`` (.env.defaults) minus build/test-only keys."""
+    """The shipped runtime catalog: the RUNTIME_DEFAULT_KEYS of ``source`` (.env.defaults)."""
+    catalog = _parse_env_file(source)
+    missing = sorted(RUNTIME_DEFAULT_KEYS - catalog.keys())
+    if missing:
+        raise RuntimeError(f"{source} lacks runtime default keys {missing} (config_defaults.RUNTIME_DEFAULT_KEYS)")
     lines = [
         "# GENERATED from .env.defaults by netcup_api_filter.config_defaults.render_shipped_defaults.",
         "# Runtime defaults only; environment variables override every value. Do not edit.",
     ]
-    for key, value in _parse_env_file(source).items():
-        if not is_build_or_test_only(key):
+    for key, value in catalog.items():
+        if is_shipped_key(key):
             lines.append(f"{key}={value}")
     return "\n".join(lines) + "\n"
 

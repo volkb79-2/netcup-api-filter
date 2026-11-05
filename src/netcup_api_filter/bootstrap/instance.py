@@ -8,7 +8,8 @@ caller                                     admin spec / mode
 Passenger tarball build                    shipped_admin_spec() (must_change_password)
 local golden DB (``run-gate local-build``) shipped_admin_spec() + Mailpit email config + mock Netcup
 app start (``init_db``; OCI first boot)    configured_admin_spec() only if no admin exists
-ciu post_compose hook of the app stack     configured_admin_spec(), ``enforce_admin=True``
+ciu post_compose hook of the app stack     configured_admin_spec(), create-only (never
+                                           ``enforce_admin``: a re-run changes no state)
                                            (via ``python -m netcup_api_filter.bootstrap``)
 ========================================  ==============================================
 
@@ -102,6 +103,7 @@ def init_instance(
         seed_multi_backend_infrastructure,
         seed_settings_from_env,
     )
+    from .platform_backends import purge_users_config
 
     if enforce_admin and admin is None:
         raise BootstrapAdminError("enforce_admin requires an admin spec. " + CONFIG_HINT)
@@ -110,15 +112,16 @@ def init_instance(
     run_lightweight_migrations()
     seed_multi_backend_infrastructure()
     seed_settings_from_env()
+    purge_users_config()  # review #11: never keep plaintext [[users]] passwords from older releases
 
     if admin is not None:
         account, action = seed_bootstrap_admin(admin, enforce=enforce_admin)
         report = InitReport(account.username, action, admin.source)
     else:
-        existing = Account.query.filter_by(is_admin=1).order_by(Account.id).first()
+        existing = Account.query.filter_by(is_admin=1, is_active=1).order_by(Account.id).first()
         if existing is None:
             raise BootstrapAdminError(
-                "No administrator account exists and no bootstrap admin is configured. " + CONFIG_HINT
+                "No active administrator account exists and no bootstrap admin is configured. " + CONFIG_HINT
             )
         report = InitReport(existing.username, "existing", "database")
 

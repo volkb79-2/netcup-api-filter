@@ -88,3 +88,95 @@ def test_e2e_app_does_not_throttle_admin_2fa_mail():
     throttle would suppress the mail and the login would never reach /admin/2fa."""
     assert e2e_env._setting("E2E_ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS") == "0"
     assert int(require_default("ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS")) > 0  # production default untouched
+
+
+# --- review #14 ---------------------------------------------------------------
+
+def _accounts_db(path, username, password_hash="$2b$12$shipped"):
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE accounts (username TEXT, is_admin INTEGER, must_change_password INTEGER, password_hash TEXT)")
+    conn.execute("INSERT INTO accounts VALUES (?, 1, 1, ?)", (username, password_hash))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_retire_shipped_admin_replaces_the_documented_password(tmp_path, shipped):
+    import bcrypt
+
+    db = _accounts_db(tmp_path / "s.db", shipped)
+    e2e_env.retire_shipped_admin(db)
+    (stored,) = sqlite3.connect(db).execute("SELECT password_hash FROM accounts").fetchone()
+    assert stored != "$2b$12$shipped"
+    assert not bcrypt.checkpw(require_default("DEFAULT_ADMIN_PASSWORD").encode(), stored.encode())
+
+
+def test_retire_shipped_admin_requires_the_shipped_admin(tmp_path):
+    db = _accounts_db(tmp_path / "s.db", "somebody-else")
+    with pytest.raises(E2EEnvironmentError, match="shipped admin not found"):
+        e2e_env.retire_shipped_admin(db)
+
+
+class _FakeProc:
+    pid = 0
+
+    def poll(self):
+        return 0
+
+
+def test_a_port_taken_before_gunicorn_binds_is_retried(tmp_path, monkeypatch):
+    tree = tmp_path / "deploy"
+    tree.mkdir()
+    attempts = []
+    monkeypatch.setattr(e2e_env, "deploy_dir", lambda: tree)
+    monkeypatch.setattr(e2e_env, "advertise_host", lambda: "runner")
+    monkeypatch.setattr(e2e_env, "copy_golden_db", lambda dest: None)
+    monkeypatch.setattr(e2e_env, "retire_shipped_admin", lambda db: None)
+    monkeypatch.setattr(e2e_env.subprocess, "Popen", lambda *a, **k: _FakeProc())
+
+    def wait_ready(proc, port, log_path):
+        attempts.append(port)
+        if len(attempts) == 1:
+            raise e2e_env._PortTaken("taken")
+
+    monkeypatch.setattr(e2e_env, "_wait_ready", wait_ready)
+    with e2e_env.app_instance() as (instance, prepared):
+        assert instance.base_url == f"http://runner:{attempts[-1]}"
+        assert prepared is None
+    assert len(attempts) == 2
+
+
+def test_port_retries_are_bounded(tmp_path, monkeypatch):
+    tree = tmp_path / "deploy"
+    tree.mkdir()
+    monkeypatch.setattr(e2e_env, "deploy_dir", lambda: tree)
+    monkeypatch.setattr(e2e_env, "advertise_host", lambda: "runner")
+    monkeypatch.setattr(e2e_env, "copy_golden_db", lambda dest: None)
+    monkeypatch.setattr(e2e_env, "retire_shipped_admin", lambda db: None)
+    monkeypatch.setattr(e2e_env.subprocess, "Popen", lambda *a, **k: _FakeProc())
+
+    def always_taken(proc, port, log_path):
+        raise e2e_env._PortTaken("taken")
+
+    monkeypatch.setattr(e2e_env, "_wait_ready", always_taken)
+    with pytest.raises(E2EEnvironmentError, match="no free port"):
+        with e2e_env.app_instance():
+            pass  # pragma: no cover
+
+
+def test_keep_shipped_admin_skips_the_retirement(tmp_path, monkeypatch):
+    tree = tmp_path / "deploy"
+    tree.mkdir()
+    retired = []
+    monkeypatch.setattr(e2e_env, "deploy_dir", lambda: tree)
+    monkeypatch.setattr(e2e_env, "advertise_host", lambda: "runner")
+    monkeypatch.setattr(e2e_env, "copy_golden_db", lambda dest: None)
+    monkeypatch.setattr(e2e_env, "retire_shipped_admin", retired.append)
+    monkeypatch.setattr(e2e_env.subprocess, "Popen", lambda *a, **k: _FakeProc())
+    monkeypatch.setattr(e2e_env, "_wait_ready", lambda *a: None)
+    with e2e_env.app_instance(keep_shipped_admin=True):
+        pass
+    assert retired == []
+    with e2e_env.app_instance():
+        pass
+    assert len(retired) == 1

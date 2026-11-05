@@ -54,6 +54,10 @@ class BootstrapAdmin:
     source: str
     """Where the inputs came from, e.g. 'environment (password file /run/secrets/x)'.
     Safe to log: it names a location, never a value."""
+    apply_password_policy: bool = True
+    """Operator-configured specs must satisfy the product password policy
+    (models.validate_password). Only the documented shipped tarball admin (admin/admin,
+    forced to change on first login) is exempt."""
 
     def __repr__(self) -> str:  # never leak the password through logs/tracebacks
         return (
@@ -70,6 +74,16 @@ class BootstrapAdmin:
             raise BootstrapAdminError(f"bootstrap admin email is missing or invalid (source: {self.source})")
         if not self.password:
             raise BootstrapAdminError(f"bootstrap admin password is empty (source: {self.source})")
+        if self.apply_password_policy:
+            from ..models import validate_password
+
+            ok, reason = validate_password(self.password)
+            if not ok:
+                # The reason describes the rule, never the password itself.
+                raise BootstrapAdminError(
+                    f"bootstrap admin password does not meet the password policy: {reason} "
+                    f"(source: {self.source})"
+                )
 
 
 def seed_bootstrap_admin(spec: BootstrapAdmin, *, enforce: bool = False) -> tuple[Account, str]:
@@ -84,13 +98,21 @@ def seed_bootstrap_admin(spec: BootstrapAdmin, *, enforce: bool = False) -> tupl
       password, email and ``must_change_password``, and its failed-login lockout is
       cleared — the configured secret is the source of truth for that instance.
 
-    A new admin has no 2FA method enabled: email 2FA is switched on when an email is
-    confirmed through the forced password change, or by the admin once SMTP works.
+    A new admin has no 2FA method enabled. Only the forced password change (the shipped
+    tarball admin) switches email 2FA on, when an email is entered there; a configured
+    bootstrap admin (no forced change) logs in without 2FA, sees the warning banner, and
+    sets up TOTP itself.
     """
     spec.validate()
     account = Account.query.filter_by(username=spec.username).first()
 
     if account is None:
+        email_owner = Account.query.filter_by(email=spec.email).first()
+        if email_owner is not None:
+            raise BootstrapAdminError(
+                f"bootstrap admin email {spec.email} already belongs to account "
+                f"{email_owner.username!r}; configure a different email (source: {spec.source})"
+            )
         account = Account(
             username=spec.username,
             user_alias=generate_user_alias(),
@@ -114,8 +136,21 @@ def seed_bootstrap_admin(spec: BootstrapAdmin, *, enforce: bool = False) -> tupl
         return account, "created"
 
     if not enforce:
+        if not account.is_admin or not account.is_active:
+            raise BootstrapAdminError(
+                f"bootstrap admin username {spec.username!r} is taken by an existing "
+                f"{'non-admin' if not account.is_admin else 'deactivated'} account; configure a "
+                f"different username (source: {spec.source})"
+            )
         logger.info("Bootstrap admin %s already exists; left unchanged", spec.username)
         return account, "unchanged"
+
+    email_owner = Account.query.filter(Account.email == spec.email, Account.id != account.id).first()
+    if email_owner is not None:
+        raise BootstrapAdminError(
+            f"bootstrap admin email {spec.email} already belongs to account "
+            f"{email_owner.username!r} (source: {spec.source})"
+        )
 
     account.set_password(spec.password)
     account.email = spec.email
@@ -137,6 +172,7 @@ def shipped_admin_spec() -> BootstrapAdmin:
         password=require_default("DEFAULT_ADMIN_PASSWORD"),
         must_change_password=True,
         source=".env.defaults DEFAULT_ADMIN_* (documented shipped default)",
+        apply_password_policy=False,
     )
 
 

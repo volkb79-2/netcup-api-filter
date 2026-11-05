@@ -95,7 +95,8 @@ jobs:
     # is unauthenticated (as in the ciu mailpit stack).
     services:
       mailpit:
-        image: axllent/mailpit
+        # Exact ref = tooling/mailpit + versions/oci-images.json (oci.mailpit); bump together.
+        image: ghcr.io/axllent/mailpit:v1.32.0
         ports:
           - 8025:8025
           - 1025:1025

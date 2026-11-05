@@ -11,7 +11,7 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | 846 | minutes (bcrypt-bound) |
+| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | many (see `tests/`) | minutes (bcrypt-bound) |
 | Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
 | Round-trip | UI action → backend state via 3 channels | Playwright | ~25 | Medium |
@@ -91,7 +91,11 @@ needs no running app, no target URL and no credentials from the cockpit:
 Tests that change credentials start their **own** instance (`e2e_env.app_instance(prepare=...)`):
 the shipped admin's forced first-login change is tested exactly once
 (`smoke/test_installation_workflow.py`); voluntary password changes use a throwaway admin
-(`personas.provision_throwaway_admin`). Nothing is ever written back to a state file. Keep the work
+(`personas.provision_throwaway_admin`). Nothing is ever written back to a state file. Every session
+DB except the forced-change test's (`app_instance(keep_shipped_admin=True)`) gets an unknown random
+password for the shipped admin, because the session app listens on the shared pwmcp network. The
+port is chosen free and retried if gunicorn finds it taken; the fixture stops the app on any setup
+error. Keep the work
 dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env.defaults`.
 
 ```bash

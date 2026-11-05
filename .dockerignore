@@ -1,0 +1,14 @@
+# Build context ALLOWLIST (review #15) for every image built from the repo root
+# (Dockerfile.release via docker-bake.hcl, tooling/test-runner/Dockerfile).
+# Everything is excluded unless listed: .env*, .ciu/secrets, databases, deploy trees and
+# worktrees never reach the builder. Add a path here when a Dockerfile starts to COPY it.
+*
+!src/
+!gunicorn.conf.py
+!requirements-runtime.txt
+!requirements-test.txt
+# Bind-mounted for one RUN step of Dockerfile.release only (renders app-defaults.env); never
+# copied into a layer.
+!.env.defaults
+**/__pycache__
+**/*.pyc

@@ -95,6 +95,18 @@ def login():
     return render_template('account/login.html')
 
 
+def _offered_2fa_methods(account):
+    """2FA methods the account has enabled (the ones the login page offers)."""
+    methods = []
+    if account.email_2fa_enabled:
+        methods.append('email')
+    if account.totp_enabled:
+        methods.append('totp')
+    if account.telegram_enabled:
+        methods.append('telegram')
+    return methods
+
+
 @account_bp.route('/login/2fa', methods=['GET', 'POST'])
 def login_2fa():
     """Login page - step 2: 2FA verification."""
@@ -109,13 +121,7 @@ def login_2fa():
         return redirect(url_for('account.login'))
     
     # Determine available 2FA methods
-    tfa_methods = []
-    if account.email_2fa_enabled:
-        tfa_methods.append('email')
-    if account.totp_enabled:
-        tfa_methods.append('totp')
-    if account.telegram_enabled:
-        tfa_methods.append('telegram')
+    tfa_methods = _offered_2fa_methods(account)
     
     if request.method == 'GET':
         # Default to email if available. send_2fa_code() records the chosen method in
@@ -951,7 +957,18 @@ def resend_2fa_code():
     if not account_id:
         return redirect(url_for('account.login'))
     
+    account = Account.query.get(account_id)
+    if not account:
+        session.clear()
+        return redirect(url_for('account.login'))
+    
     method = request.form.get('method', 'email')
+    if method not in _offered_2fa_methods(account):
+        # Same gate as login_2fa: never send a code via (or switch the session to) a method
+        # the account has not enabled.
+        logger.warning(f"2FA resend rejected: method {method!r} not offered for account {account.id}")
+        flash('That verification method is not available for this account', 'error')
+        return redirect(url_for('account.login_2fa'))
     success, error = send_2fa_code(account_id, method, request.remote_addr)
     
     if success:

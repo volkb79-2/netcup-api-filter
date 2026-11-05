@@ -64,3 +64,19 @@ def test_preserved_secret_round_trip(tmp_path):
     _make_db(new)
     activate._restore_secret(new, activate._preserved_secret(old))
     assert _value(new) == "stable-key"
+
+
+def test_restore_failure_with_a_nonempty_secret_fails_loudly(tmp_path):
+    import pytest
+
+    activate = _load()
+    db = tmp_path / "no_settings_table.db"
+    with sqlite3.connect(db) as con:
+        con.execute("CREATE TABLE unrelated (x INTEGER)")
+    with pytest.raises(RuntimeError, match="could not restore existing SECRET_KEY"):
+        activate._restore_secret(db, "carried-over-value")
+
+
+def test_restore_with_an_empty_secret_is_a_noop_even_if_db_is_broken(tmp_path):
+    activate = _load()
+    activate._restore_secret(tmp_path / "missing_dir" / "x.db", "")

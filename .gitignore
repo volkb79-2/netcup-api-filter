@@ -154,6 +154,7 @@ geoIP.conf
 
 # Database and logs (contains sensitive data)
 netcup_filter.db
+*.db.init.lock
 netcup_filter_audit.log
 netcup_filter.log
 

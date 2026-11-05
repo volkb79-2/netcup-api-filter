@@ -33,6 +33,29 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_app_root() -> str | None:
+    """The app root exactly as passenger_wsgi.py defines it (review finding #9).
+
+    passenger_wsgi.py sets NETCUP_FILTER_APP_ROOT to its own directory, which is the deploy
+    tree that holds ``src/netcup_api_filter``. A ``docker exec``-ed CLI never imported
+    passenger_wsgi, so without this it would silently ignore ``app-config.toml``. Resolved
+    from this package's location; only a real deploy tree (it has ``passenger_wsgi.py``) is
+    an app root — a source checkout is not, so no ``app-config.toml`` is read there.
+    """
+    explicit = os.environ.get("NETCUP_FILTER_APP_ROOT", "").strip()
+    if explicit:
+        return explicit
+    from pathlib import Path
+
+    return app_root_of_module(Path(__file__))
+
+
+def app_root_of_module(module_file) -> str | None:
+    """``<app root>/src/netcup_api_filter/bootstrap/__main__.py`` -> ``<app root>`` if it is a deploy tree."""
+    candidate = module_file.resolve().parents[3]  # bootstrap -> package -> src -> app root
+    return str(candidate) if (candidate / "passenger_wsgi.py").is_file() else None
+
+
 def _mock_email(args: argparse.Namespace):
     from .instance import MockEmail
 
@@ -61,13 +84,15 @@ def main(argv: list[str] | None = None) -> int:
         print("error: NETCUP_FILTER_DB_PATH is not set (the app's database path)", file=sys.stderr)
         return 2
 
+    from .init_lock import InitLockTimeout, init_lock
+
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     database.db.init_app(app)
     try:
-        with app.app_context():
-            spec = configured_admin_spec(os.environ.get("NETCUP_FILTER_APP_ROOT"))
+        with init_lock(db_path), app.app_context():
+            spec = configured_admin_spec(resolve_app_root())
             if args.enforce_admin and spec is None:
                 raise BootstrapAdminError("--enforce-admin needs a configured bootstrap admin")
             if not args.enforce_admin:
@@ -78,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
                 if Account.query.filter_by(is_admin=1).first() is not None:
                     spec = None
             report = init_instance(admin=spec, enforce_admin=args.enforce_admin, mock_email=_mock_email(args))
-    except (BootstrapAdminError, ValueError) as exc:
+    except (BootstrapAdminError, InitLockTimeout, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

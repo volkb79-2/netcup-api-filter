@@ -59,11 +59,20 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   race-free, in the database (`docs/CONFIGURATION_GUIDE.md`).
 - **Only the Passenger tarball ships an account**: the pre-set admin (`DEFAULT_ADMIN_*`) with
   `must_change_password`. The OCI image ships none; a fresh container needs an operator-supplied
-  bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start.
+  bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start
+  (the process exits non-zero; first-start initialization is serialized by a lock file, so
+  concurrent workers cannot race on it).
+- **Configured bootstrap admin passwords obey the password policy** (`validate_password`); only
+  the documented tarball default (`admin`/`admin`, forced change on first login) is exempt. A
+  configured bootstrap admin starts **without 2FA** (warning banner) until it enrolls TOTP.
+- **Start-up errors are never shown to clients**: `passenger_wsgi` logs the traceback and
+  re-raises; there is no stand-in WSGI app rendering the exception text (which could contain row
+  values such as an email or a password hash).
   The database is the only credential store: no password is copied into state files.
 - **`.env.defaults` never ships** (it documents the pre-set admin password and holds test
   fixtures). Shipped trees carry `app-defaults.env`, the runtime-only subset
-  (`config_defaults.render_shipped_defaults`), checked by `tests/test_shipped_defaults.py`.
+  (`config_defaults.render_shipped_defaults`): an allowlist of runtime keys that never contains a
+  credential-like name, checked by `tests/test_shipped_defaults.py`. There is no `SECRET_KEY` default.
 - **Known window:** a freshly deployed tarball on a public host accepts the documented default
   admin password until someone completes the forced change. Deploy and log in immediately.
 - `[[users]]` imports never log or retain passwords (the imported list is deleted from the

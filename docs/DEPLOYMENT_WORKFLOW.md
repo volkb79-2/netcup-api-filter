@@ -47,8 +47,8 @@ seeding run under the target interpreter. It is separate from the local
 ### What the artifacts contain
 
 Neither artifact ships a secret, a demo account or `.env.defaults` (it holds the documented pre-set
-admin password and test fixtures). Both ship `app-defaults.env` instead: `.env.defaults` minus every
-build/test-only key, rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
+admin password and test fixtures). Both ship `app-defaults.env` instead: only the allowlisted runtime keys
+of `.env.defaults` (`config_defaults.RUNTIME_DEFAULT_KEYS`), rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
 
 - **Passenger tarball** (`naf-<variant>.tar.xz`): the runtime tree, vendored wheels, `app-defaults.env`
   and a freshly seeded `netcup_filter.db` with exactly one account, the pre-set admin
@@ -56,12 +56,23 @@ build/test-only key, rendered by `netcup_api_filter.config_defaults.write_shippe
   no `deployment_state_*.json`. `tests/test_release_artifacts.py` asserts this on the builder's real
   staging steps.
 - **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
-  and `VOLUME /data`; no database and no account. The first start creates the database through the
-  normal `init_db` path and **fails fast** unless the first admin is supplied:
+  and `VOLUME /data`; no database and no account. It runs as the non-root user `naf`
+  (`APP_UID`/`APP_GID` build args, default 10001): `/app` is read-only for it, `/data` (DB, init lock,
+  `NETCUP_FILTER_LOG_FILE`) and `/config` (`NETCUP_FILTER_APP_ROOT`, optional `app-config.toml`) are
+  writable — a bind-mounted `/data` must be writable by that uid. The build context is an allowlist
+  (`.dockerignore`): no `.env*` except the bind-mounted `.env.defaults`, no `.ciu/secrets`. The first start creates the database through the
+  normal `init_db` path (serialized across workers by `<db>.init.lock`) and **fails fast** — gunicorn
+  exits non-zero with "Worker failed to boot", the error is in the log only — unless the first admin is supplied:
   `NAF_BOOTSTRAP_ADMIN_USERNAME`, `NAF_BOOTSTRAP_ADMIN_EMAIL` and `NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE`
   (a mounted secret; or an `app-config.toml` admin). Also mount `SECRET_KEY_FILE` (otherwise the app
   persists a generated key in the database) and keep `/data` on a persistent volume so the database
   and that key survive container recreation.
+- **`app-config.toml` in a container**: it is a one-shot import that the app claims (renames) and
+  deletes, so bind-mount a **writable directory** containing it at `NETCUP_FILTER_APP_ROOT` (the
+  deploy tree on Passenger; `/config` in the image), never the file itself — a bind-mounted file or a read-only directory cannot be renamed
+  and the start fails with a message saying so. `python -m netcup_api_filter.bootstrap init` (e.g.
+  via `docker exec`) resolves the app root the same way as `passenger_wsgi.py` (the deploy tree that
+  holds `src/netcup_api_filter`, or `NETCUP_FILTER_APP_ROOT`), so it reads the same file.
 
 ## Webhosting deployment
 
