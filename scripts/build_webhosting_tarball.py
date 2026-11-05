@@ -49,7 +49,7 @@ def _assert_target_interpreter(python_version: str) -> None:
     if actual != python_version:
         raise RuntimeError(
             f"refusing to build {python_version} wheels under Python {actual}; run "
-            f"testing-exec.sh build {python_version} -- python scripts/build_webhosting_tarball.py build-one ..."
+            "run build-one inside the matching ciu test-runner (see build_all)"
         )
 
 
@@ -142,12 +142,29 @@ def build_one(python_version: str, output: Path) -> None:
     print(f"[INFO] built {output.relative_to(REPO_ROOT)} for Python {python_version}")
 
 
+def _runner_container(variant: str) -> str:
+    """Name of the ciu-managed runner for a variant: <project>-<tag>-test-runner-<variant>.
+
+    Derived from the rendered ciu.global.toml (the same rule run-gate uses); absence
+    fails loudly instead of guessing a name.
+    """
+    toml_path = REPO_ROOT / "ciu.global.toml"
+    if not toml_path.is_file():
+        raise RuntimeError(f"{toml_path} missing: render it and start the runners (ciu up --dir tooling/test-runner)")
+    with toml_path.open("rb") as handle:
+        deploy = tomllib.load(handle).get("deploy", {})
+    project, tag = deploy.get("project_name"), deploy.get("environment_tag")
+    if not project or not tag:
+        raise RuntimeError(f"{toml_path}: [deploy] project_name and environment_tag are required")
+    return f"{project}-{tag}-test-runner-{variant}"
+
+
 def build_all() -> None:
     for variant, python_version in _target_versions():
         output = DIST_DIR / f"naf-{variant}.tar.xz"
         command = [
-            "./tooling/test-runner/testing-exec.sh", "build", python_version, "--",
-            "scripts/build_webhosting_tarball.py", "build-one",
+            "docker", "exec", "-w", str(REPO_ROOT), _runner_container(variant),
+            "/opt/tester-venv/bin/python", "scripts/build_webhosting_tarball.py", "build-one",
             "--python-version", python_version, "--output", str(output.relative_to(REPO_ROOT)),
         ]
         print("[INFO] " + " ".join(command))

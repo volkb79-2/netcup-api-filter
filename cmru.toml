@@ -30,7 +30,7 @@ strategy = "scm"
 
 [project.naf.oci]
 bake_file = "docker-bake.hcl"
-target    = "py314"
+target    = "release"  # bake group: py311 + py314
 
 # CMRU-FEAT: one tagged release, ABI-specific assets.  The build script
 # reads these build args from this config and invokes the matching INFRA-3
