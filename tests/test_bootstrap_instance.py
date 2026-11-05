@@ -482,3 +482,14 @@ def test_mock_email_config_is_create_only(bare_app):
     stored = json.loads(Settings.query.filter_by(key="email_config").one().value)
     assert stored["smtp_host"] == "smtp.operator.example"
     assert stored["smtp_server"] == "smtp.operator.example"
+
+
+# --- review #11: users_config rows from older releases are purged on init -------
+
+def test_init_purges_a_stale_persisted_users_import(bare_app):
+    from netcup_api_filter.database import set_setting
+
+    init_instance(admin=_spec())
+    set_setting("users_config", [{"username": "old", "password": "plaintext-from-an-old-release"}])
+    init_instance(admin=None)
+    assert Settings.query.filter_by(key="users_config").first() is None

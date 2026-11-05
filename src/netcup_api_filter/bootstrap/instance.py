@@ -69,6 +69,7 @@ def init_instance(
     """
     from ..database import run_lightweight_migrations
     from .seeding import seed_mock_email_config, seed_multi_backend_infrastructure, seed_settings_from_env
+    from .platform_backends import purge_users_config
 
     if enforce_admin and admin is None:
         raise BootstrapAdminError("enforce_admin requires an admin spec. " + CONFIG_HINT)
@@ -77,6 +78,7 @@ def init_instance(
     run_lightweight_migrations()
     seed_multi_backend_infrastructure()
     seed_settings_from_env()
+    purge_users_config()  # review #11: never keep plaintext [[users]] passwords from older releases
 
     if admin is not None:
         account, action = seed_bootstrap_admin(admin, enforce=enforce_admin)

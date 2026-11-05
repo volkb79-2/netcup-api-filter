@@ -301,6 +301,20 @@ def setup_free_domains(backend_service: BackendService) -> list[ManagedDomainRoo
     return created_roots
 
 
+def purge_users_config() -> bool:
+    """Delete the persisted ``[[users]]`` import (it can hold plaintext passwords).
+
+    Called after every import and by init_instance on every start, which also purges rows
+    written by releases before the import deleted them itself (review #11). Returns whether
+    a row was removed.
+    """
+    removed = Settings.query.filter_by(key='users_config').delete()
+    db.session.commit()
+    if removed:
+        logger.info("Purged the persisted [[users]] import (users_config) from settings")
+    return bool(removed)
+
+
 def initialize_platform_backends():
     """
     Main entry point for platform backend initialization.
@@ -391,8 +405,7 @@ def initialize_platform_backends():
             finally:
                 # The imported [[users]] entries may carry plaintext passwords: never
                 # keep them in the settings table once the accounts exist.
-                Settings.query.filter_by(key='users_config').delete()
-                db.session.commit()
+                purge_users_config()
         
         # Step 2: Process [[backends]] arrays
         backends_created = {}

@@ -13,6 +13,9 @@
 
 ### Security
 
+- **Fixed (review #11):** `users_config` rows persisted by older releases (plaintext `[[users]]`
+  passwords) were never removed; `init_instance` now purges the row on every start.
+
 - **Fixed (review #8):** the `e2e` run-gate lane requires `PLAYWRIGHT_SERVER_WS` again (without it
   the runner tried an in-process browser and every test errored one by one).
 
