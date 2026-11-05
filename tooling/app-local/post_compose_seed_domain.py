@@ -60,13 +60,25 @@ def _docker_exec(
     *args: str,
     timeout: int = 30,
     env: dict[str, str] | None = None,
+    secret_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
+    """`docker exec` helper.
+
+    ``env`` values travel on the command line (non-secret only). ``secret_env`` values are
+    passed as ``-e NAME`` (no value) with the value in this subprocess's own environment,
+    which docker reads — so a secret never appears in ``ps``/``/proc/<pid>/cmdline``.
+    """
     cmd = ["docker", "exec"]
     if env:
         for key, value in env.items():
             cmd += ["-e", f"{key}={value}"]
+    proc_env = None
+    if secret_env:
+        proc_env = {**os.environ, **secret_env}
+        for key in secret_env:
+            cmd += ["-e", key]
     cmd += [container, *args]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=proc_env)
 
 
 # One-shot seed script executed INSIDE the app container via `docker exec`.
@@ -177,13 +189,13 @@ def run(config: dict, ctx) -> dict:
     seed_env = {
         "NAF_SEED_DELEGATED_ZONE": zone,
         "NAF_SEED_POWERDNS_API_URL": powerdns_api_url_internal,
-        "NAF_SEED_POWERDNS_API_KEY": powerdns_api_key,
     }
     result = _docker_exec(
         app_container,
         "/opt/tester-venv/bin/python", "-c", _SEED_SNIPPET,
         timeout=60,
         env=seed_env,
+        secret_env={"NAF_SEED_POWERDNS_API_KEY": powerdns_api_key},
     )
     if result.returncode != 0:
         raise RuntimeError(

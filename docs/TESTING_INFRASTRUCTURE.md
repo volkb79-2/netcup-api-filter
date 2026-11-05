@@ -11,7 +11,7 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | 846 | minutes (bcrypt-bound) |
+| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | many (see `tests/`) | minutes (bcrypt-bound) |
 | Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
 | Round-trip | UI action → backend state via 3 channels | Playwright | ~25 | Medium |

@@ -1,3 +1,5 @@
+> Historical: written when `deployment_state_{local,webhosting}.json` tracked credentials; those state files were removed (see docs/plans/credentials-and-test-setup-STATUS.md).
+
 # Deep Dive Review: Deployment & Operations Workflow
 
 ## Context
