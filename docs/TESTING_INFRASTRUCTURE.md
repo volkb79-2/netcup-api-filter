@@ -68,7 +68,12 @@ pwmcp instance: the runners and `app-local` join its network (`PWMCP_NETWORK`).
 needs no running app, no target URL and no credentials from the cockpit:
 
 1. `run-gate local-build` builds `deploy-local/` and its **golden DB** (`netcup_filter.db`: exactly
-   the shipped admin with `must_change_password`, nothing else). Nothing may serve that file.
+   the shipped admin with `must_change_password`, the Mailpit email config and the **mock Netcup
+   backend** as `netcup_config`: URL `MOCK_NETCUP_API_URL` (environment or `.env.services`, the build
+   fails without it), credentials the `LOCAL_MOCK_NETCUP_*` keys of `.env.defaults` = the public test
+   credentials of `ui_tests/mock_netcup_api.py`, checked for drift by `tests/test_mock_netcup_seed.py`.
+   Without it every DNS read is an HTTP 500. Tarball and OCI never get it. Tests that rewrite
+   `netcup_config` through the admin UI must restore it. Nothing may serve that file.
 2. The session fixture (`ui_tests/conftest.py` → `ui_tests/e2e_env.py`) copies the golden DB (SQLite
    backup API) into a temp work dir, checks it is pristine, and **provisions personas** into the copy
    (`ui_tests/personas.py`): `e2e-admin` (TOTP, deterministic logins), `e2e-mail-admin` (email 2FA;
@@ -172,17 +177,18 @@ Uploads `coverage.xml` as an artifact on every run.
 
 Builds the deploy tree with `python build_deployment.py --local --python-version 3.11 --build-dir deploy-local`
 (the same builder as `run-gate local-build`; the golden DB holds only the shipped admin with
-`must_change_password=1` plus the Mailpit email config), then runs all tests tagged
+`must_change_password=1` plus the Mailpit email config and the mock Netcup backend), then runs all tests tagged
 `@pytest.mark.ci_smoke` (93 tests) with in-process Playwright. There is no external app server and no
 bootstrap script: the `e2e_environment` session fixture (`ui_tests/e2e_env.py`) starts a per-session app
 on a copy of the golden DB and provisions the personas, exactly as in the local lane. Services: Mailpit
-on ports 1025/8025 (no authentication).
+on ports 1025/8025 (no authentication), and the Netcup CCP mock (`flask --app ui_tests.mock_netcup_api`, port 5555, started before the build).
 
 Env vars set by the job:
 
 | Var | Value | Purpose |
 |-----|-------|---------|
 | `SERVICE_MAILPIT` | `localhost` | Mailpit host written into the golden DB's email config (`build_deployment.py --local`; locally it comes from `.env.services`) |
+| `MOCK_NETCUP_API_URL` | `http://localhost:5555` | Netcup mock written into the golden DB's `netcup_config` (`build_deployment.py --local`; locally from `.env.services`) |
 | `NAF_E2E_ADVERTISE_HOST` | `127.0.0.1` | Host under which the browser reaches the per-session app (same host as the runner) |
 | `MAILPIT_URL` | `http://localhost:8025` | Mailpit REST client |
 | `NAF_E2E_KEEP_WORKDIR` | `1` | Keeps the per-session work dir so the app logs can be uploaded on failure |

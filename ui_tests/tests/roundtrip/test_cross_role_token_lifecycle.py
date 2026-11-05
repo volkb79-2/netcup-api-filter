@@ -221,11 +221,17 @@ async def _dns_get(token: str, domain: str) -> tuple[int, dict]:
 
 
 async def _dns_create(token: str, domain: str) -> tuple[int, dict]:
-    """POST /api/dns/<domain>/records; return (status_code, body_dict)."""
+    """POST /api/dns/<domain>/records at the apex; return (status_code, body_dict).
+
+    The realm built by ``_admin_create_account_with_realm`` is a ``host`` realm on the apex
+    FQDN, so the apex ("@") is the only in-scope record name: any other name would be denied
+    by the hostname check (``Hostname not in authorized scope``) before the operation check
+    this test is about.
+    """
     url = base_url() + f"/api/dns/{domain}/records"
     payload = {
         "type": "A",
-        "hostname": f"test-{secrets.token_hex(3)}",
+        "hostname": "@",
         "destination": "1.2.3.4",
     }
     async with httpx.AsyncClient() as client:

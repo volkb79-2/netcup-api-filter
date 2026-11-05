@@ -7,7 +7,7 @@ from .admin import (
     seed_bootstrap_admin,
     shipped_admin_spec,
 )
-from .instance import InitReport, MockEmail, init_instance
+from .instance import InitReport, MockEmail, MockNetcup, init_instance
 from .seeding import (
     DemoAccountSeedOptions,
     RealmSeedOptions,
@@ -20,6 +20,7 @@ from .seeding import (
     seed_demo_audit_logs,
     seed_demo_domain_roots,
     seed_mock_email_config,
+    seed_mock_netcup_config,
     seed_shipped_database,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "BootstrapAdminError",
     "InitReport",
     "MockEmail",
+    "MockNetcup",
     "DemoAccountSeedOptions",
     "RealmSeedOptions",
     "TokenSeedOptions",
@@ -42,6 +44,7 @@ __all__ = [
     "seed_demo_audit_logs",
     "seed_demo_domain_roots",
     "seed_mock_email_config",
+    "seed_mock_netcup_config",
     "shipped_admin_spec",
     "seed_shipped_database",
 ]

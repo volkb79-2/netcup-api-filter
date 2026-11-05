@@ -63,6 +63,11 @@ def test_database_has_no_demo_or_secret_state(staging):
         assert _query(staging, f"SELECT COUNT(*) FROM {table}") == [(0,)], table
 
 
+def test_database_has_no_mock_backend_or_mail_config(staging):
+    """Mock Netcup / Mailpit settings are local-build only (bootstrap.instance.MockNetcup)."""
+    assert _query(staging, "SELECT key FROM settings WHERE key IN ('netcup_config', 'email_config')") == []
+
+
 def test_tree_ships_runtime_catalog_and_no_env_or_state_files(staging):
     names = {p.name for p in staging.rglob("*") if p.is_file()}
     assert SHIPPED_DEFAULTS_FILENAME in names

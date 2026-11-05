@@ -312,26 +312,31 @@ def write_build_metadata(deploy_dir):
     )
 
 
-def _service_mailpit_host() -> str:
-    """Mailpit host of a LOCAL build: SERVICE_MAILPIT from the environment, else from .env.services.
+def _local_service_var(name: str) -> str:
+    """Service value of a LOCAL build: *name* from the environment, else from .env.services.
 
     .env.services is bash syntax (``${VAR:-default}``), so it is evaluated by bash into a
-    dict; this process's environment is never modified.
+    dict; this process's environment is never modified. Missing or empty is an error.
     """
-    host = os.environ.get("SERVICE_MAILPIT", "").strip()
-    if host:
-        return host
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
     services = Path(".env.services")
     if not services.is_file():
-        raise RuntimeError("SERVICE_MAILPIT is not set and .env.services is missing")
+        raise RuntimeError(f"{name} is not set and .env.services is missing")
     result = subprocess.run(
-        ["/bin/bash", "-c", f'set -a && source "{services}" >/dev/null && printf %s "$SERVICE_MAILPIT"'],
+        ["/bin/bash", "-c", f'set -a && source "{services}" >/dev/null && printf %s "${{{name}:-}}"'],
         capture_output=True, text=True, check=True,
     )
-    host = result.stdout.strip()
-    if not host:
-        raise RuntimeError(f"SERVICE_MAILPIT is empty after evaluating {services}")
-    return host
+    value = result.stdout.strip()
+    if not value:
+        raise RuntimeError(f"{name} is empty after evaluating {services}")
+    return value
+
+
+def _service_mailpit_host() -> str:
+    """Mailpit host of a LOCAL build (SERVICE_MAILPIT)."""
+    return _local_service_var("SERVICE_MAILPIT")
 
 
 def _local_mock_email():
@@ -344,6 +349,21 @@ def _local_mock_email():
         smtp_port=int(require_default("LOCAL_MAILPIT_SMTP_PORT")),
         from_email=require_default("LOCAL_MAIL_FROM"),
         admin_email=require_default("LOCAL_MAIL_ADMIN_EMAIL"),
+    )
+
+
+def _local_mock_netcup():
+    """Mock Netcup backend of a LOCAL build: URL from MOCK_NETCUP_API_URL, rest from the defaults catalog."""
+    from netcup_api_filter.bootstrap import MockNetcup
+    from netcup_api_filter.config_defaults import require_default
+
+    base = _local_service_var("MOCK_NETCUP_API_URL").rstrip("/")
+    return MockNetcup(
+        api_url=f"{base}/run/webservice/servers/endpoint.php",
+        customer_id=require_default("LOCAL_MOCK_NETCUP_CUSTOMER_ID"),
+        api_key=require_default("LOCAL_MOCK_NETCUP_API_KEY"),
+        api_password=require_default("LOCAL_MOCK_NETCUP_API_PASSWORD"),
+        timeout=int(require_default("LOCAL_MOCK_NETCUP_TIMEOUT")),
     )
 
 
@@ -382,6 +402,7 @@ def initialize_database(
     try:
         # Resolved against the repo root, i.e. BEFORE the chdir below.
         mock_email = _local_mock_email() if is_local else None
+        mock_netcup = _local_mock_netcup() if is_local else None
 
         # Change to deploy directory so SQLite can create the database
         os.chdir(deploy_path)
@@ -414,8 +435,8 @@ def initialize_database(
             logger.info("Database tables created")
             
             # The one shipped-database seeder: enums/providers, default settings,
-            # the pre-set admin and (local only) the Mailpit email config.
-            admin = seed_shipped_database(mock_email=mock_email)
+            # the pre-set admin and (local only) the Mailpit email config and the mock Netcup backend.
+            admin = seed_shipped_database(mock_email=mock_email, mock_netcup=mock_netcup)
             # Seed comprehensive demo data if requested
             if seed_demo:
                 seed_comprehensive_demo_data(admin)
