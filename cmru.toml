@@ -14,6 +14,7 @@
 owner      = "volkb79-2"
 repo       = "netcup-api-filter"
 owner_type = "user"          # matches vbpub/cmru.toml's owner_type for the same account
+token_source = "gh"          # credential comes from the user's `gh auth` login
 
 [targets]
 host     = "github"

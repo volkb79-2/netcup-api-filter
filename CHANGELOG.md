@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — Planned SCRAM API authentication — 2026-10-15
+
+### Added
+
+- **SCRAM-SHA-256 API authentication backlog item.** Added the RFC 7804 HTTP
+  challenge-response option for scoped DNS API clients to the product definition and
+  roadmap (F027/M8, B040). This records planned work; the app still uses Bearer tokens.
+
 ## [Unreleased] — CMRU release and CIU webhosting deployment — 2026-07-21
 
 ### Changed

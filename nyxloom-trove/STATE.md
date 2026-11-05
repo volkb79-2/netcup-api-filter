@@ -70,7 +70,8 @@ Done handoffs are in [`archive/`](archive/); only P06 remains open in [`handoffs
 background SMTP dispatch, security-alert stub), B-DEAD (`netcup_client_mock.py`, `backends/`
 wiring = D-002/naf-P20), B-DATA (plaintext credential logging), B-CONFIG (hardcoded TFA
 constants, example-config live values, dead TOML sections), B-QUALITY (duplicated
-`get_netcup_client`, rate-limiter `memory://`), B-TESTS (`pytest.ini` strictness, naf-P06 O2/O3).
+`get_netcup_client`, rate-limiter `memory://`), B-TESTS (`pytest.ini` strictness, naf-P06 O2/O3),
+and B-API-AUTH (HTTP SCRAM-SHA-256 for scoped DNS API clients; added 2026-10-15).
 
 ## Doc debt — ✅ reconciled (2026-07-21)
 

@@ -86,6 +86,8 @@ Documented honestly so the doc and code stay in sync:
 
 - **TOTP secret encryption at rest**, **password-history reuse checks**, and response
   **`Content-Security-Policy` / `Strict-Transport-Security`** headers.
+- **SCRAM-SHA-256 HTTP authentication for scoped DNS API clients** (B040/F027). Machine
+  DNS requests currently authenticate with Bearer tokens only.
 - **User-facing security alerts** — `token_auth._trigger_security_notification` only
   logs; the `send_security_alert` call is commented out, so brute-force / `ip_denied` /
   `token_revoked` events never reach the account owner despite

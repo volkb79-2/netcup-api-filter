@@ -41,6 +41,7 @@ items:
   - {id: B037, title: Replace assert-free UI tests, type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F009}
   - {id: B038, title: Remove colliding mock SMTP fixture, type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F009}
   - {id: B039, title: "Adopt a meaningful, verified gate: confirm/build a separate runtime-faithful test env (not the cockpit) + coverage floor + parallelism, and prove the gate rejects a known-bad canary — nyxloom reference/STANDARD.md gate contract + docs/plan-gate-adoption.md checklist", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
+  - {id: B040, title: Offer HTTP SCRAM-SHA-256 for scoped DNS API clients, type: feature, component: api-auth, context_estimate: large, folds_into: F027}
 ---
 
 # Backlog
@@ -65,6 +66,16 @@ remains the status dashboard; completed B-AUTH work is intentionally not re-open
 - **B006 — Deliver documented security alerts.** `token_auth.py:507` and
   `notification_service.py:2230`: connect the security-notification stub to the alert sender,
   or correct the documentation claim.
+
+## B-API-AUTH
+
+- **B040 — Offer HTTP SCRAM-SHA-256 for scoped DNS API clients.** The app currently offers
+  Bearer tokens for machine DNS requests and has no SCRAM/SASL authentication path. Add the
+  RFC 7804 HTTP SCRAM-SHA-256 exchange for REST and DDNS requests. Define credential
+  issuance, rotation, revocation, and mapping to an account realm; store a SCRAM verifier
+  rather than a reusable plaintext password; verify server proofs and protect against
+  nonce replay; rate-limit and audit failures. Successful requests must continue through
+  the existing record-level authorization checks. Keep Bearer authentication available.
 
 ## B-UI
 

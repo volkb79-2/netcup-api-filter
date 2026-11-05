@@ -37,10 +37,15 @@ milestones:
     target_product_version: 1
     features: [F021, F022, F023, F024, F025]
     status: planned
+  - id: M8
+    title: Alternative scoped client authentication
+    target_product_version: 1
+    features: [F027]
+    status: planned
 ---
 
 # Roadmap
 
-Milestones preserve naf's existing M1–M7 identifiers and order. STATE.md is the live
+Milestones preserve naf's existing M1–M8 identifiers and order. STATE.md is the live
 dashboard: M1 is open only for read scope, M2 and M3 have landed, and M4 is active because
-P06 completed only O1 part 1. M5–M7 are the remaining planned product ladder.
+P06 completed only O1 part 1. M5–M8 are the remaining planned product ladder.

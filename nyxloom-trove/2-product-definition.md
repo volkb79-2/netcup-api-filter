@@ -27,6 +27,13 @@ features:
       - When a user retries TOTP, presents spoofed forwarding headers, or resets or accepts an invite with a weak password, the account flow enforces the corresponding lockout, trusted client-IP, and shared password-policy controls.
     status: shipped
     milestone: M1
+  - id: F027
+    title: Machine clients can authenticate DNS API requests with HTTP SCRAM-SHA-256
+    acceptance:
+      - When a client with provisioned realm-scoped credentials completes the RFC 7804 SCRAM-SHA-256 HTTP exchange, the API verifies the client and server proofs without sending the reusable password.
+      - When the exchange succeeds, requests use the provisioned realm scope and existing record-level authorization; failed or replayed exchanges are rate-limited and audited.
+    status: planned
+    milestone: M8
   - id: F004
     title: Sensitive DNS and revoke actions leave usable audit records
     acceptance:
