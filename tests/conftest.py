@@ -3,6 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import secrets
+
 import pytest
 from datetime import datetime
 
@@ -28,16 +30,29 @@ from netcup_api_filter.models import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _bootstrap_admin_env(monkeypatch):
+    """Every create_app() in this suite gets an explicit bootstrap admin.
+
+    init_db() refuses to start without an administrator (bootstrap/admin.py); a fresh
+    test DB has none, so the app creates "admin" from these variables. The password
+    is random per test: no test may depend on knowing it (create your own admin with
+    make_account(..., is_admin=1, password=...) instead).
+    """
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost")
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_PASSWORD", secrets.token_urlsafe(18) + "Aa1@")
+    monkeypatch.delenv("NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE", raising=False)
+
+
 @pytest.fixture
 def app(monkeypatch, tmp_path):
-    # init_db() always seeds one admin (DEFAULT_ADMIN_USERNAME, default "admin").
-    # SEED_DEMO_ACCOUNTS is neutralised so no extra accounts appear.
+    # init_db() creates the bootstrap admin "admin" from _bootstrap_admin_env.
     # NETCUP_FILTER_APP_ROOT is cleared so app-config.toml is not loaded.
     # Factory tests must use usernames/emails that don't collide with "admin".
     monkeypatch.setenv("SECRET_KEY", "test_secret_key_for_testing_only")
     monkeypatch.setenv("NETCUP_FILTER_DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.delenv("NETCUP_FILTER_APP_ROOT", raising=False)
-    monkeypatch.delenv("SEED_DEMO_ACCOUNTS", raising=False)
     application = create_app()
     application.config["TESTING"] = True
     with application.app_context():
@@ -104,7 +119,7 @@ def make_token(db):
     def _make(realm, *, name="test-token", operations=None, record_types=None,
               ip_ranges=None, is_active=1, expires_at=None):
         plain = generate_token(realm.account.user_alias)
-        # Slice mirrors database.seed_demo_accounts: skip "naf_" + alias + "_"
+        # Slice mirrors bootstrap.seeding.ensure_token: skip "naf_" + alias + "_"
         random_part_start = len(TOKEN_PREFIX) + USER_ALIAS_LENGTH + 1
         prefix = plain[random_part_start:random_part_start + 8]
         token = APIToken(

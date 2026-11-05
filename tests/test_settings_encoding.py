@@ -117,7 +117,6 @@ def _run_real_toml_import(tmp_path: Path) -> dict:
     # test-runner environment.
     env.pop("NETCUP_FILTER_APP_ROOT", None)
     env.pop("NETCUP_FILTER_DB_PATH", None)
-    env.pop("SEED_DEMO_ACCOUNTS", None)
     env["SECRET_KEY"] = "test-secret-key-for-passenger-wsgi-subprocess-import"
     env["NETCUP_FILTER_DB_PATH"] = str(app_root / "netcup_filter.db")
     # netcup_api_filter itself isn't pip-installed in this repo (see

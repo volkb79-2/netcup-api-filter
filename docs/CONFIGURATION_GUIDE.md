@@ -22,8 +22,9 @@ The precedence for any setting is: `env override > database value > .env.default
 
 Scripts intentionally abort unless every variable they rely on is exported. Common ones:
 
-- `DEPLOYMENT_ENV_FILE` – Points to the env file that mirrors the target deployment (`.env.local`, `.env.webhosting`, etc.). Used by local test/UI tooling; release and webhosting deployment follow the `cmru` and `ciu` workflows in [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md).
-- `UI_*` variables – Used by `ui_tests/tests` (forwarded by `run-gate.toml`). Export `UI_BASE_URL`, `UI_ADMIN_USERNAME`, `UI_ADMIN_PASSWORD`, `UI_CLIENT_ID`, `UI_CLIENT_TOKEN`, `UI_CLIENT_DOMAIN`, `UI_SCREENSHOT_PREFIX`, `PLAYWRIGHT_HEADLESS`, and `KEEP_UI_STACK` before running the validation script.
+- Release and webhosting deployment follow the `cmru` and `ciu` workflows in [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md); no env file is shipped or copied to the webhoster except the generated `app-defaults.env`.
+- The e2e suite takes no target or credentials from the environment: it starts its own app per session and provisions random personas (`E2E_*` keys in `.env.defaults`; see [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md)). Only `PLAYWRIGHT_SERVER_WS` and the mock-service URLs are forwarded by `run-gate.toml`.
+- **Shipped defaults catalog**: `.env.defaults` is never shipped (it holds the documented pre-set admin password and test fixtures). Builds write `app-defaults.env` into every shipped tree instead — `.env.defaults` minus the build/test-only keys (`config_defaults.render_shipped_defaults`; prefixes `DEFAULT_ADMIN_`, `DEFAULT_TEST_`, `LOCAL_`, `E2E_`, `UI_`, …). `config_defaults` reads it first, so `require_default()` keeps working in a deployment; environment variables still override every value. `tests/test_shipped_defaults.py` fails when runtime code reads a key the shipped catalog lacks.
 - Host-edge settings are operator infrastructure, not naf application settings. Exposed ciu
   stacks join `ingress_public` and use Traefik labels; TLS and certificates remain owned by
   the host edge. See [`DEV_INFRA_SETUP.md`](DEV_INFRA_SETUP.md).
@@ -36,18 +37,41 @@ Session cookie behavior stays config-driven via env vars:
 
 - `FLASK_SESSION_COOKIE_SECURE=auto` switches between Secure cookies when HTTPS is available and HTTP for `FLASK_ENV=local_test`.
 - `FLASK_SESSION_COOKIE_HTTPONLY`, `FLASK_SESSION_COOKIE_SAMESITE`, and `FLASK_SESSION_LIFETIME` (seconds) control browser session handling.
+- `ADMIN_LOGIN_LOCKOUT_THRESHOLD` (default `5`) and `ADMIN_LOGIN_LOCKOUT_MINUTES` (default `15`) control the admin login brute-force lockout. They are read at call time (environment first, then `.env.defaults`); a non-integer or `< 1` value raises an error instead of silently defaulting.
 - Timeouts, rate limits, and admin/client credentials all follow the same pattern.
 
 Whenever you add a new security-relevant constant, update `.env.defaults`, document it in this guide, and use `os.environ[...]` (or equivalent) in code.
 
-## Preseeded Accounts & Test Clients
+## Bootstrap admin, first start and SECRET_KEY
 
-The build pipeline seeds the database using the values from `.env.defaults`:
+Every database is initialized by one idempotent function, `bootstrap.instance.init_instance()`:
+schema + lightweight migrations, enum tables and backend providers, default settings (absent keys
+only), the administrator, and (local stacks only) the Mailpit email config. Its callers differ only
+in where the administrator comes from:
 
-- **Admin user** – Default username/password (`DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_PASSWORD`). The first login forces a password change, and UI tests expect the rotated password stored under `/screenshots/.env.webhosting` when running against staging/production-like targets.
-- **Preseeded client** – `DEFAULT_TEST_CLIENT_ID`, `DEFAULT_TEST_CLIENT_REALM_TYPE`, `DEFAULT_TEST_CLIENT_REALM_VALUE`, `DEFAULT_TEST_CLIENT_RECORD_TYPES`, and `DEFAULT_TEST_CLIENT_OPERATIONS` create a ready-to-use client (token issued at seed time) for smoke testing and automated flows.
+| Artifact / caller | Administrator | Notes |
+|---|---|---|
+| Passenger tarball (`cmru release`) | the **pre-set admin** `DEFAULT_ADMIN_USERNAME` / `DEFAULT_ADMIN_PASSWORD` / `DEFAULT_ADMIN_EMAIL` from `.env.defaults`, `must_change_password` | the only account in the tarball. The first login must replace the password (and set the 2FA email). No demo data. |
+| Local golden DB (`run-gate local-build`) | same pre-set admin + Mailpit email config | `deploy-local/netcup_filter.db`; never served, the e2e gate copies it per session |
+| OCI image / any fresh container (first start) | **operator-configured**, no default: `NAF_BOOTSTRAP_ADMIN_USERNAME`, `NAF_BOOTSTRAP_ADMIN_EMAIL` and `NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE` (a mounted secret; `NAF_BOOTSTRAP_ADMIN_PASSWORD` also accepted, not both), or an `[[users]]` entry with `is_admin = true` and an explicit password in `app-config.toml` | created only when the DB has no admin yet; `must_change_password` off (the operator chose the password). Without either source the start **fails** with a message naming these keys. |
+| ciu app stack (`tooling/app-local`) | as the OCI image, with the password a ciu `GEN_LOCAL` secret | its `post_compose` hook runs `python -m netcup_api_filter.bootstrap init --enforce-admin` inside the container: create-or-update from the secret, lockout cleared. It prints the secret's store path, never the value. |
 
-If you change any of these defaults, also update the Playwright environment variables or the UI tests will fail.
+A configured bootstrap admin is a **first-start input only**: an initialized database never gets a
+second admin from it, and its password is never reset — except through the explicit
+`--enforce-admin` of a stack that owns the secret. Admin usernames are not bound by the portal's
+self-registration rules (the shipped default is the short `admin`). A new bootstrap admin has no 2FA
+method yet: email 2FA is enabled once the admin confirms an email (forced change) or configures SMTP.
+
+**SECRET_KEY** (sessions, CSRF): `SECRET_KEY_FILE` (mounted secret) or `SECRET_KEY` (not both,
+at least 16 characters). Unset, the app creates a random key **once** in `settings.secret_key`
+(`INSERT OR IGNORE`, so all gunicorn workers agree) and reuses it; `scripts/activate.py` carries
+that row across greenfield webhosting releases. There is no published default key.
+
+**Local Mailpit config** (local builds and the app stack only): host from `SERVICE_MAILPIT`
+(`.env.services`), `LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, `LOCAL_MAIL_ADMIN_EMAIL`.
+
+Test personas (admin, portal user, read-only client) are **not** seeded into any artifact: the e2e
+gate provisions them per session (see `docs/TESTING_INFRASTRUCTURE.md`).
 
 ## Adding New Configuration
 

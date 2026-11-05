@@ -21,8 +21,9 @@ services:
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}
     hostname: {{ app_local.name }}
     restart: unless-stopped
-    # Host-owned uid so the bind-mounted repo (and the SQLite db under deploy-local/)
-    # stay writable from both sides.
+    # Host-owned uid so the bind-mounted repo and the instance data hostdir stay writable from
+    # both sides. The code runs from deploy-local/, but the DB is this instance's own (/data):
+    # deploy-local/netcup_filter.db is the e2e GOLDEN DB and must never be served.
     user: "${CONTAINER_UID}:${DOCKER_GID}"
     working_dir: {{ ciu.repo_root }}/{{ app_local.deploy_dir }}
     command:
@@ -36,14 +37,23 @@ services:
       - {{ key }}={{ value }}
       {% endfor %}
       - GUNICORN_BIND=0.0.0.0:{{ app_local.port }}
-      # Dev/test instance reached over plain HTTP by hostname (the e2e browser): a Secure cookie would be
-      # dropped and every login would bounce. Stated, not inferred (FLASK_ENV=local_test also did this).
+      # Stated, never inferred: see app_local.cookie_secure.
       - FLASK_SESSION_COOKIE_SECURE={{ app_local.cookie_secure }}
+      # Instance data + first-boot inputs (bootstrap/admin.py, app.py). Secrets arrive as files.
+      - NETCUP_FILTER_DB_PATH=/data/netcup_filter.db
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - NAF_BOOTSTRAP_ADMIN_USERNAME={{ app_local.bootstrap_admin.username }}
+      - NAF_BOOTSTRAP_ADMIN_EMAIL={{ app_local.bootstrap_admin.email }}
+      - NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/bootstrap_admin_password
+    secrets:
+      - secret_key
+      - bootstrap_admin_password
     expose:
       - "{{ app_local.port }}"
     volumes:
       # HOST path (DooD) — the daemon resolves bind sources on the host, not in here.
       - ${PHYSICAL_REPO_ROOT}:{{ ciu.repo_root }}:rw
+      - {{ app_local.app.hostdir.data }}:/data:rw
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:{{ app_local.port }}/admin/login', timeout=3).status==200 else 1)\""]
       interval: {{ deploy.health.interval }}
@@ -68,7 +78,8 @@ services:
       - "traefik.http.services.{{ deploy.project_name }}-{{ app_local.name }}.loadbalancer.server.port={{ app_local.port }}"
     {%- if topology.guard.enabled %}
       # basicauth: the product is not production ready and must not be publicly reachable.
-      # The e2e suite passes this via Playwright http_credentials (see .env.guard).
+      # For humans only (credentials in .env.guard): the e2e suite targets the app over
+      # the internal docker network and never goes through traefik.
       # The hash comes from the ENVIRONMENT at compose-up time, not from ciu config: a
       # bcrypt hash begins "$2b$", which ciu's placeholder pass would reject as an
       # unresolved "$2b". This also keeps the hash out of every rendered artifact.

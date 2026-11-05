@@ -17,7 +17,7 @@ import pytest
 from ui_tests import verification, workflows
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
-from ui_tests.env_defaults import get_env_default
+from netcup_api_filter.config_defaults import get_default as get_env_default
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.security]
@@ -50,11 +50,7 @@ class TestRecoveryCodesAccountUI:
         generate_path = "/account/settings/recovery-codes/generate"
         display_path = "/account/settings/recovery-codes/display"
 
-        demo_username = (
-            os.environ.get("DEFAULT_TEST_CLIENT_ID")
-            or get_env_default("DEFAULT_TEST_CLIENT_ID")
-            or ""
-        ).strip()
+        demo_username = settings.user_username
 
         async with browser_session() as browser:
             await workflows.ensure_user_dashboard(browser)
@@ -68,12 +64,7 @@ class TestRecoveryCodesAccountUI:
             form_action = await browser.get_attribute("#generate-codes-form", "action")
             assert generate_path in (form_action or "")
 
-            demo_password = os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD") or get_env_default(
-                "DEFAULT_TEST_ACCOUNT_PASSWORD"
-            )
-            if not demo_password:
-                # ensure_user_dashboard() already skips if defaults are missing
-                raise AssertionError("DEFAULT_TEST_ACCOUNT_PASSWORD missing; ensure_user_dashboard should have skipped")
+            demo_password = settings.user_password
 
             await browser.fill("#password", demo_password)
             await browser.click("#generate-codes-form button[type='submit']")
@@ -96,7 +87,6 @@ class TestRecoveryCodesAccountUI:
             # whole test skips (not just the backend-truth assertion). When the DB IS
             # present, the assertion below ALWAYS runs — no silent skip-to-green.
             verification.require_db()
-            assert demo_username, "DEFAULT_TEST_CLIENT_ID required for the Channel A oracle"
             verification.wait_for(
                 lambda: verification.count_recovery_codes(demo_username) == expected_count,
                 timeout=10.0,
@@ -142,19 +132,8 @@ class TestRecoveryCodesAccountUI:
 
         generate_path = "/account/settings/recovery-codes/generate"
 
-        demo_username = (
-            os.environ.get("DEFAULT_TEST_CLIENT_ID")
-            or get_env_default("DEFAULT_TEST_CLIENT_ID")
-            or ""
-        ).strip()
-        demo_password = (
-            os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD")
-            or get_env_default("DEFAULT_TEST_ACCOUNT_PASSWORD")
-            or ""
-        ).strip()
-        assert demo_username and demo_password, (
-            "DEFAULT_TEST_CLIENT_ID / DEFAULT_TEST_ACCOUNT_PASSWORD required for round-trip"
-        )
+        demo_username = settings.user_username
+        demo_password = settings.user_password
 
         expected_count_str = os.environ.get("RECOVERY_CODE_COUNT") or get_env_default("RECOVERY_CODE_COUNT")
         expected_count = int(expected_count_str or "3")

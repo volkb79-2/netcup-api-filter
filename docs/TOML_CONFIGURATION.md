@@ -120,7 +120,7 @@ description = "Admin-controlled DNS zone"
 [[users]]
 username = "alice"
 email = "alice@example.com"
-password = "generate"  # Special value: generates random password (logged once)
+password = "generate"  # Special value (non-admin only): random, never shown; user sets one via password reset
 # password = "SetMe123!"  # Or set explicit password
 is_approved = true  # Auto-approve (skip admin workflow)
 must_change_password = false
@@ -200,7 +200,7 @@ Preseeds user accounts (useful for user-owned backends).
 |-------|------|----------|-------------|
 | `username` | string | Yes | Unique username |
 | `email` | string | Yes | User email |
-| `password` | string | Yes | Password or `"generate"` for random |
+| `password` | string | Yes | Password, or `"generate"` (non-admin users only) for an unknown random one |
 | `is_approved` | bool | No | Auto-approve? (default: true) |
 | `must_change_password` | bool | No | Force password change on first login? (default: false) |
 | `is_admin` | bool | No | Create as admin account? (default: false) |
@@ -210,7 +210,12 @@ Notes:
 - Setting `is_admin = true` makes the account eligible to log into the admin console.
 
 **Special Values:**
-- `password = "generate"`: Generates random password (logged once in startup logs - **SAVE IT!**)
+- `password = "generate"`: non-admin users only. A random password is set that nobody knows (it is
+  never logged or stored); `must_change_password` is forced and the user sets a password through
+  the "forgot password" flow. An admin entry with `"generate"` is rejected at start-up.
+- The first `is_admin = true` entry is the **bootstrap admin** when the database has no admin yet
+  (see `docs/CONFIGURATION_GUIDE.md`, "Bootstrap admin"). The imported `[[users]]` list (with
+  any plaintext passwords) is deleted from the settings table once the accounts exist.
 
 ## Environment Variable Substitution
 

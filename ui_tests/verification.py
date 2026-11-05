@@ -10,19 +10,16 @@ import time
 from contextlib import contextmanager
 from typing import Any
 
-DEFAULT_LOCAL_DB_PATH = "/workspaces/netcup-api-filter/deploy-local/netcup_filter.db"
 
 
 # ---- Channel A: read-only sqlite ----
 
 def db_path() -> str | None:
-    """Return the database path: NAF_VERIFY_DB_PATH env > DEFAULT_LOCAL_DB_PATH if it exists > None."""
-    override = os.environ.get("NAF_VERIFY_DB_PATH", "").strip()
-    if override:
-        return override
-    if os.path.exists(DEFAULT_LOCAL_DB_PATH):
-        return DEFAULT_LOCAL_DB_PATH
-    return None
+    """The session instance's private DB (NAF_VERIFY_DB_PATH, set by the e2e session fixture).
+
+    None when the target has no direct DB access (a remote smoke target).
+    """
+    return os.environ.get("NAF_VERIFY_DB_PATH", "").strip() or None
 
 
 def db_available() -> bool:
@@ -397,8 +394,8 @@ def wait_for(predicate, *, timeout: float = 5.0, interval: float = 0.25, message
 
 async def admin_api_accounts(browser) -> list[dict]:
     """Return list of accounts from GET /admin/api/accounts."""
-    from ui_tests.deployment_state import get_base_url, get_deployment_target  # lazy
-    base = get_base_url(get_deployment_target())
+    from ui_tests.config import settings
+    base = settings.base_url
     url = base.rstrip("/") + "/admin/api/accounts"
     resp = await browser.request_get_json(url)
     assert resp["status"] == 200, f"admin_api_accounts: status={resp['status']}"
@@ -407,8 +404,8 @@ async def admin_api_accounts(browser) -> list[dict]:
 
 async def admin_api_stats(browser) -> dict:
     """Return stats dict from GET /admin/api/stats."""
-    from ui_tests.deployment_state import get_base_url, get_deployment_target  # lazy
-    base = get_base_url(get_deployment_target())
+    from ui_tests.config import settings
+    base = settings.base_url
     url = base.rstrip("/") + "/admin/api/stats"
     resp = await browser.request_get_json(url)
     assert resp["status"] == 200, f"admin_api_stats: status={resp['status']}"
@@ -417,8 +414,8 @@ async def admin_api_stats(browser) -> dict:
 
 async def admin_security_events(browser, *, hours: int = 24, limit: int = 50) -> list[dict]:
     """Return list of security events from GET /admin/api/security/events."""
-    from ui_tests.deployment_state import get_base_url, get_deployment_target  # lazy
-    base = get_base_url(get_deployment_target())
+    from ui_tests.config import settings
+    base = settings.base_url
     url = base.rstrip("/") + "/admin/api/security/events"
     resp = await browser.request_get_json(url, params={"hours": hours, "limit": limit})
     assert resp["status"] == 200, f"admin_security_events: status={resp['status']}"
@@ -427,8 +424,8 @@ async def admin_security_events(browser, *, hours: int = 24, limit: int = 50) ->
 
 async def account_api_realms(browser) -> list[dict]:
     """Return list of realms from GET /account/api/realms."""
-    from ui_tests.deployment_state import get_base_url, get_deployment_target  # lazy
-    base = get_base_url(get_deployment_target())
+    from ui_tests.config import settings
+    base = settings.base_url
     url = base.rstrip("/") + "/account/api/realms"
     resp = await browser.request_get_json(url)
     assert resp["status"] == 200, f"account_api_realms: status={resp['status']}"
@@ -437,8 +434,8 @@ async def account_api_realms(browser) -> list[dict]:
 
 async def account_api_realm_tokens(browser, realm_id: int) -> list[dict]:
     """Return list of tokens from GET /account/api/realms/<realm_id>/tokens."""
-    from ui_tests.deployment_state import get_base_url, get_deployment_target  # lazy
-    base = get_base_url(get_deployment_target())
+    from ui_tests.config import settings
+    base = settings.base_url
     url = base.rstrip("/") + f"/account/api/realms/{realm_id}/tokens"
     resp = await browser.request_get_json(url)
     assert resp["status"] == 200, f"account_api_realm_tokens: status={resp['status']}"
@@ -453,8 +450,8 @@ async def dns_api_list_records(token: str, domain: str) -> tuple[int, list[dict]
     Returns (status_code, records_list).
     """
     import httpx  # lazy: not always installed in unit-test environments
-    from ui_tests.deployment_state import get_base_url, get_deployment_target  # lazy
-    base = get_base_url(get_deployment_target())
+    from ui_tests.config import settings
+    base = settings.base_url
     url = base.rstrip("/") + f"/api/dns/{domain}/records"
     async with httpx.AsyncClient() as client:
         resp = await client.get(

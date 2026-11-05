@@ -96,9 +96,8 @@ service, set `PLAYWRIGHT_SERVER_WS` as a repo secret/env and remove the
 |---|---|---|
 | `PLAYWRIGHT_SERVER_WS` | _(unset)_ | WebSocket URL of remote `run-server`; empty = in-process |
 | `PLAYWRIGHT_HEADLESS` | `true` | Headless mode for in-process launch (ignored for remote) |
-| `UI_BASE_URL` | `http://127.0.0.1:5100` | Flask app base URL |
-| `SCREENSHOT_DIR` | `deploy-local/screenshots` | Screenshot output directory |
-| `DEPLOYMENT_TARGET` | `local` | `local` or `webhosting` |
+| `NAF_E2E_ADVERTISE_HOST` | _(set by tooling/test-runner)_ | Runner container name; the browser reaches the per-session app at `http://<it>:<port>` |
+| `SCREENSHOT_DIR` | `E2E_SCREENSHOT_DIR` (`tmp/e2e-screenshots`) | Screenshot output directory |
 
 ---
 

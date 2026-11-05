@@ -99,7 +99,7 @@ async def test_failed_token_auth_produces_security_event(session_manager):
         pytest.skip("Channel A (sqlite) not available for this target")
 
     # Get a valid token from Channel A to derive a tampered version.
-    # Use the demo-user primary token (token_prefix='vt7zyENg' from deployment state).
+    # Use the user persona's token (provisioned per session; was the demo-user token from deployment state).
     from ui_tests.config import settings as _settings
     token_plaintext = (_settings.client_token or "").strip()
     assert token_plaintext, "No client token available in settings"
@@ -172,10 +172,8 @@ async def test_failed_token_auth_produces_security_event(session_manager):
 
     # --- Channel B: /admin/api/security/events has a new event ---
     def _new_mismatch_event_present() -> bool:
-        import urllib.request
-        import json as _json
-        from ui_tests.deployment_state import get_base_url, get_deployment_target
-        base = get_base_url(get_deployment_target()).rstrip("/")
+        from ui_tests.config import settings
+        base = settings.base_url.rstrip("/")
         url = base + "/admin/api/security/events"
         # We can't use the browser here (sync predicate); use a fresh channel-B
         # request via the Channel A data instead — the security event is sourced

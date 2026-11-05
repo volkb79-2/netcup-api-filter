@@ -23,7 +23,6 @@ from ..models import (
     generate_token,
     generate_user_alias,
     hash_token,
-    validate_username,
     # Multi-backend models
     BackendProvider,
     BackendService,
@@ -33,7 +32,7 @@ from ..models import (
     TestStatusEnum,
     VisibilityEnum,
 )
-from ..config_defaults import get_default, load_defaults, require_default
+from ..config_defaults import load_defaults
 from ..utils import parse_bool
 
 logger = logging.getLogger(__name__)
@@ -120,25 +119,6 @@ def seed_settings_from_env():
 
 
 @dataclass
-class AdminSeedOptions:
-    """Options for seeding admin account."""
-    username: str = None
-    password: str = None
-    email: str = None
-    must_change_password: bool = True
-    
-    def __post_init__(self):
-        # Admin credentials come from env defaults (DEFAULT_ADMIN_*).
-        # app-config.toml preseeding uses [[users]] with is_admin=true.
-        if self.username is None:
-            self.username = require_default("DEFAULT_ADMIN_USERNAME")
-        if self.password is None:
-            self.password = require_default("DEFAULT_ADMIN_PASSWORD")
-        if self.email is None:
-            self.email = get_default("DEFAULT_ADMIN_EMAIL", "admin@localhost")
-
-
-@dataclass
 class RealmSeedOptions:
     """Options for seeding a realm."""
     domain: str
@@ -173,46 +153,6 @@ class DemoAccountSeedOptions:
 
 
 # Backwards compatibility aliases
-ClientSeedOptions = TokenSeedOptions
-
-
-def ensure_admin_account(options: AdminSeedOptions) -> Account:
-    """Create or update admin account.
-    
-    Returns:
-        The admin Account object
-    """
-    account = Account.query.filter_by(username=options.username).first()
-    if not account:
-        # Generate unique user_alias for token attribution
-        user_alias = generate_user_alias()
-        account = Account(
-            username=options.username,
-            user_alias=user_alias,
-            email=options.email,
-            email_verified=0,  # Not verified yet
-            email_2fa_enabled=0,  # Will be set up after initial password change
-            totp_enabled=0,
-            telegram_enabled=0,
-            is_active=1,
-            is_admin=1,
-            approved_at=datetime.utcnow()
-        )
-        account.set_password(options.password)
-        account.must_change_password = 1 if options.must_change_password else 0
-        db.session.add(account)
-        logger.info(f"Created admin account: {options.username} (alias: {user_alias[:4]}...) - 2FA setup required")
-    else:
-        # Ensure existing account has user_alias
-        if not account.user_alias:
-            account.user_alias = generate_user_alias()
-            logger.info(f"Added user_alias to existing admin: {options.username}")
-        logger.info(f"Admin account {options.username} already exists, keeping existing settings")
-    return account
-
-
-# Backwards compatibility alias
-ensure_admin_user = ensure_admin_account
 
 
 def ensure_account(options: DemoAccountSeedOptions, approved_by: Account = None) -> Account:
@@ -337,37 +277,6 @@ def ensure_token(realm: AccountRealm, options: TokenSeedOptions) -> tuple[APITok
 
 
 # Legacy compatibility - no-op, new schema doesn't use this
-def ensure_client(options):
-    """Legacy compatibility stub. New schema uses ensure_account + ensure_realm + ensure_token."""
-    logger.warning("ensure_client() is deprecated - use ensure_account/ensure_realm/ensure_token instead")
-    return None
-
-
-def generate_test_client_credentials() -> tuple[str, str]:
-    """Generate secure random credentials for test account.
-    
-    Returns:
-        Tuple of (username, token)
-    """
-    # Generate random username suffix
-    random_suffix = secrets.token_urlsafe(6)[:8].lower()
-    username = f"test_{random_suffix}"
-    
-    # For new schema, token is generated when creating the actual token
-    # This returns a placeholder password for the account
-    password = secrets.token_urlsafe(16)
-    
-    return username, password
-
-
-def create_default_test_client_options() -> TokenSeedOptions:
-    """Create default test token options."""
-    return TokenSeedOptions(
-        token_name="test-token",
-        description=_ENV_DEFAULTS.get("DEFAULT_TEST_CLIENT_DESCRIPTION", "Sample read-only token"),
-    )
-
-
 def seed_demo_audit_logs(account: Account = None) -> None:
     """Seed demo audit logs for testing."""
     import json
@@ -408,22 +317,17 @@ def seed_demo_audit_logs(account: Account = None) -> None:
     logger.info(f"Seeded {len(demo_logs)} demo activity logs")
 
 
-def seed_mock_email_config() -> None:
-    """Seed email config for mock/test mode (uses Mailpit).
-    
-    This configures the app to send emails to a local Mailpit instance
-    which is used during local testing.
-    
-    Fields are stored with both internal names (smtp_server, sender_email)
-    and HTML form names (smtp_host, from_email) for template compatibility.
+def seed_mock_email_config(*, smtp_host: str, smtp_port: int, from_email: str, admin_email: str) -> None:
+    """Point the app's email config at a local Mailpit-style capture (no auth, no TLS).
+
+    Local stacks only; every value is explicit (the caller resolves it from its own
+    configuration, see bootstrap.instance.MockEmail). Fields are stored with both
+    internal names (smtp_server, sender_email) and HTML form names (smtp_host,
+    from_email) for template compatibility.
     """
     from ..models import Settings
     import json
-    
-    smtp_host = os.environ.get("MOCK_SMTP_HOST", "mailpit")
-    smtp_port = int(os.environ.get("MOCK_SMTP_PORT", "1025"))
-    from_email = os.environ.get("MOCK_SMTP_FROM", "naf@example.com")
-    
+
     email_config = {
         # Internal field names (used by email_notifier)
         "smtp_server": smtp_host,
@@ -434,18 +338,18 @@ def seed_mock_email_config() -> None:
         "from_email": from_email,
         "from_name": "Netcup API Filter",
         # Common fields
-        "smtp_port": smtp_port,
+        "smtp_port": int(smtp_port),
         "smtp_security": "none",  # Mailpit doesn't use TLS
         "smtp_username": "",  # Mailpit doesn't require auth
         "smtp_password": "",
         "use_ssl": False,
         "reply_to": "",
-        "admin_email": os.environ.get("MOCK_ADMIN_EMAIL", "admin@example.com"),
+        "admin_email": admin_email,
         "notify_new_account": True,
         "notify_realm_request": True,
         "notify_security": True,
     }
-    
+
     setting = Settings.query.filter_by(key="email_config").first()
     if not setting:
         setting = Settings(key="email_config")
@@ -455,221 +359,20 @@ def seed_mock_email_config() -> None:
     logger.info(f"Seeded email config for mock mode: {smtp_host}:{smtp_port} from {from_email}")
 
 
-def seed_default_entities(
-    admin_options: AdminSeedOptions | None = None,
-    client_options = None,  # Ignored for backwards compat
-    seed_demo_clients_flag: bool = False,
-    seed_mock_email: bool = False,
-) -> tuple[str | None, str | None, list]:
-    """Seed default admin and optionally demo accounts.
-    
-    Args:
-        admin_options: Optional admin account configuration
-        client_options: Ignored (backwards compatibility)
-        seed_demo_clients_flag: Whether to seed demo accounts
-        seed_mock_email: Whether to seed email config for mock mode (Mailpit)
-    
-    Returns:
-        Tuple of (primary_client_id, primary_secret_key, all_demo_clients)
+def seed_shipped_database(*, mock_email=None) -> Account:
+    """Seed everything a shipped/golden database contains — and nothing else.
+
+    Thin wrapper over bootstrap.instance.init_instance with the pre-set admin
+    (``DEFAULT_ADMIN_*``, ``must_change_password``) and, for local builds only, a
+    Mailpit email config (*mock_email*: bootstrap.instance.MockEmail). No demo
+    accounts, tokens, domain roots or audit logs: e2e personas are provisioned per
+    session (ui_tests/personas.py), screenshot data only via ``--seed-demo``.
     """
-    # Seed multi-backend infrastructure first (enum tables + providers)
-    seed_multi_backend_infrastructure()
-    
-    # Ensure admin account exists
-    admin = ensure_admin_account(admin_options or AdminSeedOptions())
-    db.session.commit()
-    
-    # Seed mock email config if requested (for local testing)
-    if seed_mock_email:
-        seed_mock_email_config()
-    
-    all_demo_clients: list[tuple[str, str, str]] = []
-    primary_client_id = None
-    primary_secret = None
-    
-    if seed_demo_clients_flag:
-        # Seed demo backend and domain root for testing
-        seed_demo_domain_roots()
-        
-        # Get demo account config from env/defaults
-        demo_username = os.environ.get('DEFAULT_TEST_CLIENT_ID') or get_default('DEFAULT_TEST_CLIENT_ID', 'demo-user')
-        
-        # Validate username format
-        is_valid, error = validate_username(demo_username)
-        if not is_valid:
-            # Generate valid username
-            demo_username = f"demouser{secrets.token_urlsafe(4)[:4].lower()}"
-            logger.warning(f"Demo username invalid, using generated: {demo_username}")
-        
-        demo_password = (
-            os.environ.get('DEFAULT_TEST_ACCOUNT_PASSWORD')
-            or get_default('DEFAULT_TEST_ACCOUNT_PASSWORD', 'DemoPassword123!')
-        )
-        
-        # Parse realm config
-        realm_fqdn = os.environ.get('DEFAULT_TEST_CLIENT_REALM_VALUE') or get_default('DEFAULT_TEST_CLIENT_REALM_VALUE', 'example.com')
-        realm_type = os.environ.get('DEFAULT_TEST_CLIENT_REALM_TYPE') or get_default('DEFAULT_TEST_CLIENT_REALM_TYPE', 'host')
-        
-        # Extract domain from FQDN
-        fqdn_parts = realm_fqdn.split('.')
-        if len(fqdn_parts) > 2:
-            realm_value = '.'.join(fqdn_parts[:-2])
-            domain = '.'.join(fqdn_parts[-2:])
-        else:
-            realm_value = ''
-            domain = realm_fqdn
-        
-        record_types_str = os.environ.get('DEFAULT_TEST_CLIENT_RECORD_TYPES') or get_default('DEFAULT_TEST_CLIENT_RECORD_TYPES', 'A,AAAA')
-        record_types = [rt.strip() for rt in record_types_str.split(',')]
-        
-        operations_str = os.environ.get('DEFAULT_TEST_CLIENT_OPERATIONS') or get_default('DEFAULT_TEST_CLIENT_OPERATIONS', 'read')
-        operations = [op.strip() for op in operations_str.split(',')]
-        
-        # Create demo account options
-        demo_options = DemoAccountSeedOptions(
-            username=demo_username,
-            password=demo_password,
-            email=f"{demo_username}@example.com",
-            realm=RealmSeedOptions(
-                domain=domain,
-                realm_type=realm_type,
-                realm_value=realm_value,
-                record_types=record_types,
-                operations=operations
-            ),
-            token=TokenSeedOptions(
-                token_name='primary-token',
-                description='Primary demo token'
-            )
-        )
-        
-        # Create account
-        demo_account = ensure_account(demo_options, approved_by=admin)
-        db.session.flush()
-        
-        # Create realm
-        realm = ensure_realm(demo_account, demo_options.realm, approved_by=admin)
-        db.session.flush()
-        
-        # Create token
-        token, plain_token = ensure_token(realm, demo_options.token)
-        db.session.commit()
-        
-        if plain_token:
-            primary_client_id = demo_username
-            primary_secret = plain_token
-            all_demo_clients.append((demo_username, plain_token, "Primary demo account"))
-            logger.info(f"Created demo account: {demo_username} with token")
+    from .admin import shipped_admin_spec
+    from .instance import init_instance
 
-        # Create a separate read-only demo account + token for authorization tests.
-        readonly_username = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_ID") or get_default(
-            "DEFAULT_READONLY_TEST_CLIENT_ID",
-            f"{demo_username}-readonly",
-        )
-
-        is_valid, error = validate_username(readonly_username)
-        if not is_valid:
-            readonly_username = f"demoreadonly{secrets.token_urlsafe(4)[:4].lower()}"
-            logger.warning(f"Read-only demo username invalid, using generated: {readonly_username}")
-
-        readonly_realm_fqdn = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_REALM_VALUE") or get_default(
-            "DEFAULT_READONLY_TEST_CLIENT_REALM_VALUE",
-            realm_fqdn,
-        )
-        readonly_realm_type = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_REALM_TYPE") or get_default(
-            "DEFAULT_READONLY_TEST_CLIENT_REALM_TYPE",
-            realm_type,
-        )
-
-        fqdn_parts = readonly_realm_fqdn.split(".")
-        if len(fqdn_parts) > 2:
-            readonly_realm_value = ".".join(fqdn_parts[:-2])
-            readonly_domain = ".".join(fqdn_parts[-2:])
-        else:
-            readonly_realm_value = ""
-            readonly_domain = readonly_realm_fqdn
-
-        readonly_record_types_str = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_RECORD_TYPES") or get_default(
-            "DEFAULT_READONLY_TEST_CLIENT_RECORD_TYPES",
-            record_types_str,
-        )
-        readonly_record_types = [rt.strip() for rt in readonly_record_types_str.split(",")]
-
-        readonly_operations_str = os.environ.get("DEFAULT_READONLY_TEST_CLIENT_OPERATIONS") or get_default(
-            "DEFAULT_READONLY_TEST_CLIENT_OPERATIONS",
-            "read",
-        )
-        readonly_operations = [op.strip() for op in readonly_operations_str.split(",")]
-
-        # Password is not used by API tests, but the account requires a valid value.
-        # Generate a strong value at seed time (no hardcoded secrets).
-        readonly_password = secrets.token_urlsafe(32) + "@#$%"
-
-        readonly_options = DemoAccountSeedOptions(
-            username=readonly_username,
-            password=readonly_password,
-            email=f"{readonly_username}@example.com",
-            realm=RealmSeedOptions(
-                domain=readonly_domain,
-                realm_type=readonly_realm_type,
-                realm_value=readonly_realm_value,
-                record_types=readonly_record_types,
-                operations=readonly_operations,
-            ),
-            token=TokenSeedOptions(
-                token_name="readonly-token",
-                description="Read-only demo token",
-            ),
-        )
-
-        readonly_account = ensure_account(readonly_options, approved_by=admin)
-        db.session.flush()
-        readonly_realm = ensure_realm(readonly_account, readonly_options.realm, approved_by=admin)
-        db.session.flush()
-        readonly_token, readonly_plain_token = ensure_token(readonly_realm, readonly_options.token)
-        db.session.commit()
-
-        if readonly_plain_token:
-            all_demo_clients.append((readonly_username, readonly_plain_token, "Read-only demo account"))
-            logger.info(f"Created read-only demo account: {readonly_username} with token")
-        
-        # Seed demo activity logs
-        seed_demo_audit_logs(demo_account)
-    
-    return primary_client_id, primary_secret, all_demo_clients
-
-
-def seed_from_config(config: dict) -> None:
-    """Apply structured config to the database.
-    
-    This is for backwards compatibility - new schema uses database Settings.
-    """
-    from ..models import Settings
-    import json
-    
-    netcup_config = config.get("netcup")
-    if netcup_config:
-        logger.info("Applying Netcup API configuration from config")
-        setting = Settings.query.filter_by(key="netcup_config").first()
-        if not setting:
-            setting = Settings(key="netcup_config")
-            db.session.add(setting)
-        setting.value = json.dumps({
-            "customer_id": netcup_config.get("customer_id", ""),
-            "api_key": netcup_config.get("api_key", ""),
-            "api_password": netcup_config.get("api_password", ""),
-            "api_url": netcup_config.get(
-                "api_url",
-                "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON",
-            ),
-            "timeout": int(netcup_config.get("timeout", 30)),
-        })
-        db.session.commit()
-    
-    # Legacy token import not supported - use admin UI instead
-    tokens = config.get("tokens", [])
-    if tokens:
-        logger.warning("Token import from config not supported in new schema - use admin UI")
+    init_instance(admin=shipped_admin_spec(), mock_email=mock_email)
+    return Account.query.filter_by(username=shipped_admin_spec().username).one()
 
 
 def seed_comprehensive_demo_data(admin: Account) -> None:
@@ -715,13 +418,8 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
     
     created_accounts = {}
     for acc_data in demo_accounts:
-        # Get-or-create (B-BUILD). Another seed path may already own this username:
-        # seed_default_entities() creates a 'demo-readonly' account from
-        # DEFAULT_READONLY_TEST_CLIENT_ID, and build_deployment.initialize_database()
-        # runs it BEFORE this function under --seed-demo. A blind INSERT then trips
-        # `UNIQUE constraint failed: accounts.username` and aborts the entire build.
-        # Reuse the existing row instead; the realms/tokens created below use names
-        # distinct from the other path's, so nothing downstream collides.
+        # Get-or-create (B-BUILD): re-running the demo seed on the same DB must not trip
+        # `UNIQUE constraint failed: accounts.username`; reuse the existing row instead.
         existing = Account.query.filter_by(username=acc_data["username"]).first()
         if existing is not None:
             created_accounts[acc_data["username"]] = existing
@@ -740,7 +438,8 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
             approved_at=datetime.utcnow() if acc_data["approved"] else None,
             created_at=datetime.utcnow() - timedelta(days=30)
         )
-        account.set_password("DemoPassword123!")
+        # Screenshot data: nobody logs in as these accounts; never a known password.
+        account.set_password(secrets.token_urlsafe(24) + "Aa1@")
         db.session.add(account)
         created_accounts[acc_data["username"]] = account
         logger.info(f"Created account: {acc_data['username']} (alias: {user_alias[:4]}...)")

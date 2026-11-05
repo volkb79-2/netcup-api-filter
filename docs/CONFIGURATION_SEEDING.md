@@ -17,12 +17,11 @@ Use this mental model:
 1. **`app-config.toml`**: initial seeding only (first start)
 2. **DB (admin UI)**: runtime configuration and subsequent changes
 3. **`.env.defaults` + env vars**: runtime process settings (cookie flags, ports, log level, test harness knobs)
-4. **UI test state**: `deployment_state_local.json` / `deployment_state_webhosting.json` track *what tests changed* (passwords, and now admin email)
+4. **No UI test state**: there is no credentials state file. e2e sessions run on a throwaway copy of the golden DB with random in-memory personas (`ui_tests/personas.py`)
 
-If you need deterministic prod-parity credentials for UI tests, prefer:
-
-- putting them in `app-config.toml` for the *deployment bundle*, and
-- persisting any test-driven changes in the deployment state JSON.
+UI tests never need deterministic credentials: each session provisions its own personas. For a
+deployment bundle that needs a known first admin, use `app-config.toml` (`[[users]]`, `is_admin = true`)
+or the `NAF_BOOTSTRAP_ADMIN_*` environment (see `CONFIGURATION_GUIDE.md`).
 
 ## Admin Seeding
 

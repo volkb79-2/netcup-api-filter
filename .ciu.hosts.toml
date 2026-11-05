@@ -17,5 +17,5 @@ known_host = "REPLACE_WITH_PINNED_SSH_HOST_KEY"
 bundle_dir = "/netcup-api-filter"
 docker_optional = true
 push_mode = "auto"
-bundle_excludes = [".git", ".env", ".env.workspace", ".env.guard", ".ciu", "deploy", "deploy-local", "deploy-webhosting", "deployment_state_local.json", "deployment_state_webhosting.json", "tmp"]
+bundle_excludes = [".git", ".env", ".env.workspace", ".env.guard", ".ciu", "deploy", "deploy-local", "deploy-webhosting", "tmp"]
 activate = "python3 scripts/activate.py"

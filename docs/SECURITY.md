@@ -29,6 +29,9 @@ buggy client trying to reach out of scope, and credential probing/brute force.
   **lockout** (`TFA_MAX_ATTEMPTS` / `TFA_LOCKOUT_MINUTES`); recovery-code attempts are
   rate-limited too. The session token is **regenerated on login** (fixation defence). See
   `SECURITY_IMPROVEMENTS_2FA.md`.
+- **Admin login lockout**: after `ADMIN_LOGIN_LOCKOUT_THRESHOLD` (default 5) consecutive failed
+  password logins for a username, the admin account is locked for `ADMIN_LOGIN_LOCKOUT_MINUTES`
+  (default 15). Both are config-driven (`.env.defaults`, env override); invalid values fail loudly.
 
 ## Authorization (the heart of it)
 
@@ -51,10 +54,20 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
 
 - **Secret comparisons are constant-time** (`hmac.compare_digest`) — e.g. the Telegram bot
   callback secret. Passwords and tokens use bcrypt.
-- **`SECRET_KEY` and all provider credentials come from configuration** (`.env.defaults` →
-  environment → DB settings), never hardcoded. Fresh deployments ship with `admin`/`admin` and
-  force a password change on first login; the real password lives only in
-  `deployment_state_{target}.json`.
+- **`SECRET_KEY` and all provider credentials come from configuration**, never hardcoded and
+  with no published default: `SECRET_KEY_FILE`/`SECRET_KEY`, else a random key created once,
+  race-free, in the database (`docs/CONFIGURATION_GUIDE.md`).
+- **Only the Passenger tarball ships an account**: the pre-set admin (`DEFAULT_ADMIN_*`) with
+  `must_change_password`. The OCI image ships none; a fresh container needs an operator-supplied
+  bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start.
+  The database is the only credential store: no password is copied into state files.
+- **`.env.defaults` never ships** (it documents the pre-set admin password and holds test
+  fixtures). Shipped trees carry `app-defaults.env`, the runtime-only subset
+  (`config_defaults.render_shipped_defaults`), checked by `tests/test_shipped_defaults.py`.
+- **Known window:** a freshly deployed tarball on a public host accepts the documented default
+  admin password until someone completes the forced change. Deploy and log in immediately.
+- `[[users]]` imports never log or retain passwords (the imported list is deleted from the
+  settings table after the accounts exist); `"generate"` yields an unknown password (non-admin only).
 - **Logging never includes full tokens, passwords, secrets, or chat IDs** — prefixes/IDs only.
 - The Telegram link callback rejects the public placeholder secret on any non-local deployment,
   is rate-limited, and binds a `chat_id` to at most one account. See `TELEGRAM_LINKING.md`.
@@ -84,6 +97,8 @@ resets to a fresh, password-change-forced state. See `DEPLOYMENT_WORKFLOW.md`.
 
 Documented honestly so the doc and code stay in sync:
 
+- **Closing the first-login window of the tarball** (setting the pre-set admin's password from an
+  operator-held value at activation) is not implemented.
 - **TOTP secret encryption at rest**, **password-history reuse checks**, and response
   **`Content-Security-Policy` / `Strict-Transport-Security`** headers.
 - **SCRAM-SHA-256 HTTP authentication for scoped DNS API clients** (B040/F027). Machine

@@ -11,20 +11,20 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 373 | ~1 min (total) |
+| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | 846 | minutes (bcrypt-bound) |
 | Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
-| Round-trip | UI action → backend state via 3 channels | Playwright | ~30 | Medium |
-| Security | Auth, 2FA, recovery codes, IP allowlist | Playwright | ~60 | Medium |
-| Feature E2E | Full feature workflows (registration, DNS, audit, etc.) | Playwright | ~200 | Slow |
+| Round-trip | UI action → backend state via 3 channels | Playwright | ~25 | Medium |
+| Security | 2FA, recovery codes, IP allowlist, attack attribution (REST API security moved to `tests/`) | Playwright | ~45 | Medium |
+| Feature E2E | Full browser feature workflows (registration, DNS, audit, etc.) | Playwright | ~165 | Slow |
 | Journey | Multi-step stateful scenario suites (j1/j2/j3) | Playwright | ~20 | Slow |
 | Nonfunctional | Accessibility + performance | Playwright | ~20 | Slow |
 | Upstream resilience | netcup_client / filter_proxy bad-response paths | pytest + unittest.mock | 24 | <30 s |
-| Mocks / live | Mock-service self-tests + real-backend tests | Playwright | ~15 | Varies |
-| **Total (ui_tests)** | | | **450** | |
+| Mocks / live | Mock-service self-tests (GeoIP mock moved to `tests/`) + real-backend tests | Playwright | ~15 | Varies |
+| **Total (ui_tests)** | | | **~355** | |
 
 The unit suite runs in CI on every push (<60 s). A tagged `@pytest.mark.ci_smoke` subset
-of 93 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
+of 93 Playwright tests also runs in CI against a per-session app + Mailpit on every PR.
 See **CI jobs** below.
 
 ---
@@ -40,6 +40,15 @@ Run with `python -m pytest tests/` (or plain `pytest tests/`). No running app re
 - Unit modules cover: token auth (`authenticate_token`, `check_permission`, `check_ip_allowed`),
   realm matching, validators, password policy, recovery codes, DDNS parsing, netcup client
   envelope helpers, and lightweight migrations.
+- **Hermetic HTTP modules** (`tests/test_*_http.py`, moved from the browser lane in S8): requests
+  that need no browser/JS run through the Flask test client against a tmp SQLite DB with an
+  in-memory Netcup upstream (`tests/fake_netcup.py`) and real CSRF (`tests/http_helpers.py`).
+  They cover the DynDNS2/No-IP endpoints (`test_ddns_protocols_http.py`), REST API security
+  (`test_api_security_http.py`), registration/approval negatives and CSRF
+  (`test_registration_negative_http.py`), admin bulk actions (`test_admin_bulk_http.py`), the
+  DDNS quick-update/realm UI routes (`test_ddns_quick_update_http.py`) and the GeoIP mock
+  self-test (`test_mock_geoip_http.py`). Assertions check the DB (ActivityLog, token usage,
+  account/realm rows) and the upstream zone contents, not only status codes.
 - Hypothesis property tests live in `tests/test_*_property.py`, default profile `ci` (50 examples), set `HYPOTHESIS_PROFILE=dev` for 500.
 - CI runs this suite on every push/PR (see **`unit-tests` job** below).
 
@@ -55,23 +64,41 @@ pwmcp instance: the runners and `app-local` join its network (`PWMCP_NETWORK`).
 
 ### `ui_tests/` — Playwright E2E (browser required)
 
-Requires a running deployment.  Browser runs in-process by default (requires
-`playwright install --with-deps chromium`), or remotely via `PLAYWRIGHT_SERVER_WS`.
+**Every e2e session owns its app and database** (credentials/test-setup plan, S1/S3/S4). The suite
+needs no running app, no target URL and no credentials from the cockpit:
+
+1. `run-gate local-build` builds `deploy-local/` and its **golden DB** (`netcup_filter.db`: exactly
+   the shipped admin with `must_change_password`, nothing else). Nothing may serve that file.
+2. The session fixture (`ui_tests/conftest.py` → `ui_tests/e2e_env.py`) copies the golden DB (SQLite
+   backup API) into a temp work dir, checks it is pristine, and **provisions personas** into the copy
+   (`ui_tests/personas.py`): `e2e-admin` (TOTP, deterministic logins), `e2e-mail-admin` (email 2FA;
+   the 2FA failure/lockout tests may lock it), `e2e-user01` (email 2FA, full-CRUD realm + token),
+   `e2e-readonly` (read-only realm + token), the demo domain root and some activity history. All
+   passwords, TOTP seeds and tokens are random per session and live in memory only.
+3. It starts `gunicorn passenger_wsgi:application` from the deploy tree (same package, same entry
+   point as production) on a free port inside the 3.11 runner, with `FLASK_ENV=local_test` and
+   `FLASK_SESSION_COOKIE_SECURE=false` stated explicitly (plain HTTP). The pwmcp browser reaches it
+   at `http://$NAF_E2E_ADVERTISE_HOST:<port>` (the runner's container name, set by
+   `tooling/test-runner`).
+4. A broken environment (no deploy tree, mutated golden DB, app not ready) stops the whole session
+   with one message (`pytest.exit`, exit code 3) instead of hundreds of failing logins.
+
+Tests that change credentials start their **own** instance (`e2e_env.app_instance(prepare=...)`):
+the shipped admin's forced first-login change is tested exactly once
+(`smoke/test_installation_workflow.py`); voluntary password changes use a throwaway admin
+(`personas.provision_throwaway_admin`). Nothing is ever written back to a state file. Keep the work
+dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env.defaults`.
 
 ```bash
-# In-process (default)
-pytest ui_tests/tests -v
-
-# Remote Playwright-as-a-Service
-PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/ pytest ui_tests/tests -v
+run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runner)
+run-gate e2e --worktree "$PWD"           # full suite, per-session app, estate pwmcp
 ```
 
-Or via the standard runner (builds a fresh deployment first):
-
-```bash
-the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)    # Mailpit + GeoIP + Netcup-API mocks
-run-gate local-build (see run-gate.toml)    # reuse existing deploy-local
-```
+**Remote read-only smoke.** `NAF_E2E_TARGET=remote` (default: local) starts no instance and binds
+`ui_tests.config.settings.bind_remote()` to a deployed host from `NAF_REMOTE_*` env vars (password via
+`*_FILE`); `allow_writes=False`, no user persona/tokens/DB path. Only tests marked `remote_smoke`
+run (`smoke/test_remote_smoke.py`); the rest are skipped by that explicit condition. Hermetic checks:
+`tests/test_e2e_remote_config.py`. How to run it: [`WEBHOSTING_TESTING_GUIDE.md`](WEBHOSTING_TESTING_GUIDE.md).
 
 **Directory layout** under `ui_tests/tests/` (E2 schema — applied 2026-06-14):
 
@@ -84,7 +111,7 @@ ui_tests/tests/
   journeys/       # Stateful multi-step sequences (j1/j2/j3 + test_journey_master)
   nonfunctional/  # Accessibility and performance
   live/           # @live — require real external dependencies
-  mocks/          # Mock-service self-tests (test the mock, not the app)
+  mocks/          # Mock-service self-tests that need real sockets/fixed ports (test the mock, not the app)
 ```
 
 **Marker taxonomy** (registered in `pytest.ini`):
@@ -101,8 +128,9 @@ ui_tests/tests/
 | `accessibility` | Accessibility-specific (subset of nonfunctional) |
 | `performance` | Performance-specific (subset of nonfunctional) |
 | `live` | Requires real external dependencies |
-| `ci_smoke` | Runs in CI against live gunicorn + Mailpit |
-| `installation` | Requires default credentials |
+| `remote_smoke` | Read-only subset allowed against a deployed instance (`NAF_E2E_TARGET=remote`) |
+| `ci_smoke` | Runs in CI against a per-session app + Mailpit |
+| `installation` | The forced first-login change of the shipped admin (own instance) |
 | `e2e_local` | Requires local deployment with mock services |
 
 Use `-m <marker>` to select by bucket regardless of path.
@@ -111,19 +139,11 @@ Use `-m <marker>` to select by bucket regardless of path.
 
 ## Standard local runner
 
-**`run-gate local-build`** — the single entry point for local testing:
-
-```bash
-run-gate local-build (see run-gate.toml)                          # build + run full ui_tests suite
-the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)             # also start mock services
-run-gate local-build (see run-gate.toml)             # reuse existing deploy-local
-the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e) <file>      # run a single test file
-```
-
-The script invokes `build_deployment.py --local` to build a production-parity deployment
-under `deploy-local/`, starts the app, and runs the `ui_tests` suite. Pass a test path to
-`run-gate local-build` to select a subset; keep its documented CLI and the suite layout in sync
-when adding or removing tests.
+There is no cockpit runner script: the e2e flow is the two run-gate lanes above (header of
+`run-gate.toml` has the full sequence including the mock stacks). To run a subset, use the
+lane's command inside the runner, e.g.
+`docker exec -w "$PWD" naf-dev-test-runner-py311 /opt/tester-venv/bin/python -m pytest ui_tests/tests/smoke -q -p no:cacheprovider -o addopts=`.
+`tooling/app-local` is the long-lived instance for humans; the e2e lane never uses it.
 
 ---
 
@@ -150,22 +170,27 @@ Uploads `coverage.xml` as an artifact on every run.
 
 ### `e2e-smoke`
 
-Boots the full app in the CI runner (gunicorn, plain HTTP :5100) and runs all tests
-tagged `@pytest.mark.ci_smoke` (93 tests). Services: Mailpit on ports 1025/8025.
+Builds the deploy tree with `python build_deployment.py --local --python-version 3.11 --build-dir deploy-local`
+(the same builder as `run-gate local-build`; the golden DB holds only the shipped admin with
+`must_change_password=1` plus the Mailpit email config), then runs all tests tagged
+`@pytest.mark.ci_smoke` (93 tests) with in-process Playwright. There is no external app server and no
+bootstrap script: the `e2e_environment` session fixture (`ui_tests/e2e_env.py`) starts a per-session app
+on a copy of the golden DB and provisions the personas, exactly as in the local lane. Services: Mailpit
+on ports 1025/8025 (no authentication).
 
-**Bootstrap**: `scripts/ci_bootstrap_e2e.py` initialises the DB and writes
-`deployment_state_local.json` so the test helpers find the admin credentials.
-
-Key env vars that make plain-HTTP CI work:
+Env vars set by the job:
 
 | Var | Value | Purpose |
 |-----|-------|---------|
-| `FLASK_ENV` | `local_test` | Clears `SESSION_COOKIE_SECURE`, disables rate limiting |
-| `DEPLOYMENT_TARGET` | `local` | Selects local state-file path |
-| `NAF_VERIFY_DB_PATH` | `ci-deploy/netcup_filter.db` | Directs `verification.py` channel A to the CI DB |
-| `UI_BASE_URL` | `http://127.0.0.1:5100` | Playwright base URL |
+| `SERVICE_MAILPIT` | `localhost` | Mailpit host written into the golden DB's email config (`build_deployment.py --local`; locally it comes from `.env.services`) |
+| `NAF_E2E_ADVERTISE_HOST` | `127.0.0.1` | Host under which the browser reaches the per-session app (same host as the runner) |
+| `MAILPIT_URL` | `http://localhost:8025` | Mailpit REST client |
+| `NAF_E2E_KEEP_WORKDIR` | `1` | Keeps the per-session work dir so the app logs can be uploaded on failure |
 
-**Failure artifacts**: on failure the job uploads `gunicorn.log`, `mailpit-messages.json`,
+The app instance itself states `FLASK_ENV=local_test` and `FLASK_SESSION_COOKIE_SECURE=false` (plain
+HTTP origin); the job does not set them.
+
+**Failure artifacts**: on failure the job uploads the per-session app logs (`/tmp/naf-e2e-*/*.log`), `mailpit-messages.json`,
 and `tmp/ui-screenshots` for debugging.
 
 To tag a test for the `e2e-smoke` job:

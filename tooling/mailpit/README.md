@@ -29,22 +29,8 @@ ciu down --define-root /workspaces/netcup-api-filter
 
 ## Authentication
 
-Configured via `.env` file:
-- Username: `admin` (default)
-- Password: `MailpitDev123` (default)
-
-Authentication is enabled by default (Mailpit runs with `MP_UI_AUTH`). Do not disable it unless you fully trust the network.
-
-**Change credentials** by editing `.env`:
-```bash
-MAILPIT_USERNAME=myuser
-MAILPIT_PASSWORD=MySecurePassword123!
-```
-
-Then restart:
-```bash
-docker restart naf-dev-mailpit
-```
+None. Mailpit is internal-only (no traefik labels, no host ports), so its UI/API
+runs without auth and test processes need no credentials. Never publish it.
 
 ## Configuration
 
@@ -52,8 +38,6 @@ All settings in `.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAILPIT_USERNAME` | `admin` | Web UI username |
-| `MAILPIT_PASSWORD` | `MailpitDev123` | Web UI password |
 | `MAILPIT_WEB_PORT` | `8025` | Web UI/API port |
 | `MAILPIT_SMTP_PORT` | `1025` | SMTP port |
 | `DOCKER_NETWORK_INTERNAL` | `naf-dev-network` | Docker network |

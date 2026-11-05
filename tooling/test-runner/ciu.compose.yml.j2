@@ -37,6 +37,9 @@ services:
       - PWMCP_REQUIRED={{ 1 if test_runner.pwmcp.required else 0 }}
       - PWMCP_SESSION_LABEL={{ test_runner.pwmcp.session_label }}
       - PWMCP_LEASE_SECONDS={{ test_runner.pwmcp.lease_seconds }}
+      # The per-session e2e app (ui_tests/e2e_env.py) is reached by the pwmcp browser at
+      # http://<this container's name>:<port> — the container name is unique on the shared network.
+      - NAF_E2E_ADVERTISE_HOST={{ deploy.project_name }}-{{ deploy.environment_tag }}-test-runner-{{ v.name }}
     volumes:
       - ${PHYSICAL_REPO_ROOT:?required host path — source ciu.env}:{{ ciu.repo_root }}:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw

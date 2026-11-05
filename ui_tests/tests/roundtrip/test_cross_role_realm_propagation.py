@@ -52,7 +52,6 @@ import pytest
 from ui_tests import verification, workflows
 from ui_tests.browser import Browser
 from ui_tests.config import settings
-from ui_tests.deployment_state import get_base_url, get_deployment_target
 from ui_tests.mailpit_client import MailpitClient
 from ui_tests.parallel_session_manager import ParallelSessionManager
 
@@ -66,7 +65,7 @@ def _make_password(tag: str) -> str:
 
 
 def _base_url() -> str:
-    return get_base_url(get_deployment_target()).rstrip("/")
+    return settings.base_url.rstrip("/")
 
 
 # --------------------------------------------------------------------------
@@ -353,11 +352,11 @@ async def _admin_approve_realm(admin: Browser, realm_id: int) -> None:
     """Approve a realm via the admin realm detail page."""
     await admin.goto(settings.url(f"/admin/realms/{realm_id}"))
     await admin.evaluate(
-        f"""
-        () => {{
+        """
+        () => {
             const f = document.querySelector("form[action*='/approve']");
             if (f) f.submit();
-        }}
+        }
         """
     )
     verification.wait_for(
@@ -376,21 +375,21 @@ async def _admin_reject_realm(admin: Browser, realm_id: int, reason: str) -> Non
     """
     await admin.goto(settings.url(f"/admin/realms/{realm_id}"))
     submitted = await admin.evaluate(
-        f"""
-        (reason) => {{
+        """
+        (reason) => {
             const f = document.querySelector("form[action*='/reject']");
             if (!f) return false;
             let r = f.querySelector("input[name='reason'], textarea[name='reason']");
-            if (!r) {{
+            if (!r) {
                 r = document.createElement('input');
                 r.type = 'hidden';
                 r.name = 'reason';
                 f.appendChild(r);
-            }}
+            }
             r.value = reason;
             f.submit();
             return true;
-        }}
+        }
         """,
         reason,
     )
@@ -504,10 +503,7 @@ async def _admin_delete_account(admin: Browser, account_id: int, username: str) 
 
 @pytest.fixture
 def _demo_username() -> str:
-    import os
-    from ui_tests.env_defaults import get_env_default
-
-    return os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_env_default("DEFAULT_TEST_CLIENT_ID")
+    return settings.user_username
 
 
 # --------------------------------------------------------------------------

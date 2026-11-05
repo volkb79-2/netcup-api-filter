@@ -2,7 +2,7 @@
 
 ## Overview
 
-Mailpit is a modern SMTP testing server with a web UI for viewing captured emails during development and testing. This document covers its local configuration and authentication.
+Mailpit is a modern SMTP testing server with a web UI for viewing captured emails during development and testing. This document covers its local configuration.
 
 **Container Name**: `naf-mailpit` (as of 2024-12-08, prefixed for easy identification)
 
@@ -25,51 +25,6 @@ open http://localhost:8025
 # Port: 1025
 ```
 
-### 2. With Basic Authentication
-
-Update [`tooling/mock-services/docker-compose.yml`](../tooling/mock-services/docker-compose.yml):
-
-```yaml
-services:
-  mailpit:
-    image: axllent/mailpit:latest
-    container_name: naf-mailpit
-    hostname: naf-mailpit
-    environment:
-      # ... existing settings ...
-      
-      # Basic auth for web UI and API
-      MP_UI_AUTH: "admin:SecurePassword123"
-      
-      # Or use password file (more secure)
-      # MP_UI_AUTH_FILE: /config/passwords.txt
-    # volumes:
-    #   - ./mailpit-config/passwords.txt:/config/passwords.txt:ro
-```
-
-**Password File Format** (`passwords.txt`):
-```
-admin:$apr1$abc123def$HashedPasswordHere
-user:$apr1$xyz789abc$AnotherHashedPassword
-```
-
-Generate passwords with Apache `htpasswd`:
-```bash
-htpasswd -n admin
-# Enter password when prompted
-# Output: admin:$apr1$...
-```
-
-### 3. Access with Authentication
-
-```bash
-# Browser (prompts for credentials)
-open http://localhost:8025
-
-# API with credentials
-curl -u admin:SecurePassword123 http://localhost:8025/api/v1/messages
-```
-
 ---
 
 ## Access model
@@ -87,8 +42,6 @@ by container name (`http://naf-mailpit:8025`) from the project network. The ciu 
 |----------|---------|-------------|
 | `MP_UI_BIND_ADDR` | `0.0.0.0:8025` | Web UI listen address |
 | `MP_SMTP_BIND_ADDR` | `0.0.0.0:1025` | SMTP listen address |
-| `MP_UI_AUTH` | - | Space-separated `user:pass` pairs (ENV only, not CLI) |
-| `MP_UI_AUTH_FILE` | - | Path to htpasswd-style password file |
 | `MP_SMTP_AUTH_ACCEPT_ANY` | `false` | Accept any SMTP auth credentials |
 | `MP_SMTP_AUTH_ALLOW_INSECURE` | `false` | Allow SMTP auth without TLS |
 | `MP_MAX_MESSAGE_SIZE` | `10485760` | Max email size (bytes, default 10MB) |
@@ -108,12 +61,6 @@ from ui_tests.mailpit_client import MailpitClient
 # Connect (uses hostname 'naf-mailpit' or localhost)
 mailpit = MailpitClient(base_url="http://naf-mailpit:8025")
 
-# With authentication
-mailpit = MailpitClient(
-    base_url="http://naf-mailpit:8025",
-    auth=("admin", "SecurePassword123")
-)
-
 # Wait for specific email
 msg = mailpit.wait_for_message(
     predicate=lambda m: "verification" in m.subject.lower(),
@@ -130,53 +77,20 @@ mailpit.delete_message(msg.id)
 mailpit.close()
 ```
 
-**Authentication in Tests**:
-```python
-# Read credentials from environment or .env file
-MAILPIT_USER = os.environ.get("MAILPIT_USER", "admin")
-MAILPIT_PASS = os.environ.get("MAILPIT_PASSWORD", "")
-
-if MAILPIT_PASS:
-    mailpit = MailpitClient(auth=(MAILPIT_USER, MAILPIT_PASS))
-else:
-    mailpit = MailpitClient()  # No auth
-```
+**Authentication**: none. Mailpit is internal-only (no traefik labels, no host ports),
+so `MailpitClient` takes no credentials.
 
 ---
 
 ## Security Considerations
 
-### Development vs Production
+### Access control
 
-| Environment | Authentication | Access |
-|-------------|----------------|--------|
-| **Local Development** | Optional | Localhost only |
-| **CI/CD** | Optional | Isolated network |
-| **Staging/Production** | **Required** | Do not expose Mailpit; use an authenticated internal test service |
-
-### Best Practices
-
-1. **Enable authentication** when exposing Mailpit outside localhost
-2. **Use password file** instead of `MP_UI_AUTH` (ENV vars visible in `docker inspect`)
-3. **Restrict network access** - Mailpit should not be internet-facing
-4. **Keep it internal** - Do not add public ingress for Mailpit
-5. **Rotate passwords** - Change default credentials immediately
-
-### Password File Security
-
-```bash
-# Generate secure password file
-htpasswd -c mailpit-passwords.txt admin
-# Enter password (min 12 chars, mixed case + numbers + symbols)
-
-# Set restrictive permissions
-chmod 600 mailpit-passwords.txt
-
-# Mount read-only in container
-# docker-compose.yml:
-#   volumes:
-#     - ./mailpit-passwords.txt:/config/passwords.txt:ro
-```
+Mailpit runs **without UI/API auth**. That is safe only because the stack is
+internal-only: no traefik labels, no host ports, reachable solely by peers on the
+project network. Never add a public ingress or host port for it; if that ever becomes
+necessary, put auth back first (`MP_UI_AUTH_FILE`, not `MP_UI_AUTH`, to keep secrets out
+of `docker inspect`).
 
 ---
 
@@ -293,32 +207,6 @@ await browser.goto(verify_link)
    SMTP_PORT = 1025
    ```
 
-### Issue: Authentication Always Fails
-
-**Symptoms**: Web UI shows 401 Unauthorized despite correct credentials
-
-**Solutions**:
-1. Verify credentials format in `MP_UI_AUTH`:
-   ```yaml
-   # ✅ Correct
-   MP_UI_AUTH: "admin:password"
-   
-   # ❌ Wrong
-   MP_UI_AUTH: "admin password"  # Missing colon
-   MP_UI_AUTH: "admin:password user:pass"  # Multiple users need space
-   ```
-
-2. Check password file format:
-   ```bash
-   cat mailpit-passwords.txt
-   # Should be: username:$apr1$salt$hash
-   ```
-
-3. Restart container after config change:
-   ```bash
-   docker restart naf-mailpit
-   ```
-
 ### Issue: WebSocket Connection Failed (Real-time Updates)
 
 **Symptoms**: Web UI shows stale data, requires manual refresh
@@ -345,9 +233,6 @@ await browser.goto(verify_link)
 ```bash
 # Get all messages
 curl http://naf-mailpit:8025/api/v1/messages
-
-# With auth
-curl -u admin:password http://naf-mailpit:8025/api/v1/messages
 ```
 
 ### Get Message Content
@@ -390,6 +275,7 @@ curl -X DELETE http://naf-mailpit:8025/api/v1/messages
 |------|--------|--------|
 | 2024-12-08 | Initial documentation | AI Agent |
 | 2024-12-08 | Renamed container to `naf-mailpit` | AI Agent |
+| 2026-11-05 | UI/API auth removed (internal-only stack); client takes no credentials | AI Agent |
 
 ---
 

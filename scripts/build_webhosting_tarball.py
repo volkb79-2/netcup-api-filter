@@ -71,12 +71,13 @@ def _vendor_dependencies(vendor_dir: Path, python_version: str) -> None:
                         archive.extract(member, vendor_dir)
 
 
-def seed_database(staging: Path, *, target: str = "webhosting") -> tuple:
-    """Seed a fresh database while the matching ABI is importable.
+def seed_database(staging: Path) -> None:
+    """Seed the release database while the matching ABI is importable.
 
-    This small public helper is also used by CI's source-tree bootstrap; unlike
-    the release build, CI passes ``target=local`` so its Mailpit settings are
-    seeded.  It never creates release state or an archive.
+    Exactly the shipped content (bootstrap.seeding.seed_shipped_database): the
+    pre-set admin with must_change_password, enums/providers, default settings.
+    No demo data, no secret_key row (created at first start). Never writes
+    release state or an archive.
     """
     original_cwd = Path.cwd()
     src_dir = staging / "src"
@@ -84,12 +85,11 @@ def seed_database(staging: Path, *, target: str = "webhosting") -> tuple:
     sys.path[:0] = [str(vendor_dir), str(src_dir), str(staging)]
     try:
         os.chdir(staging)
-        os.environ["DEPLOYMENT_TARGET"] = target
+        os.environ["DEPLOYMENT_TARGET"] = "webhosting"
         os.environ["NETCUP_FILTER_DB_PATH"] = str(staging / "netcup_filter.db")
         from flask import Flask
         from netcup_api_filter import database
-        from netcup_api_filter.bootstrap import seed_default_entities
-        from netcup_api_filter.bootstrap.seeding import seed_settings_from_env
+        from netcup_api_filter.bootstrap import seed_shipped_database
 
         app = Flask(__name__, template_folder=str(src_dir / "netcup_api_filter" / "templates"))
         app.config.update(
@@ -100,10 +100,7 @@ def seed_database(staging: Path, *, target: str = "webhosting") -> tuple:
         database.db.init_app(app)
         with app.app_context():
             database.db.create_all()
-            seed_settings_from_env()
-            return seed_default_entities(
-                seed_demo_clients_flag=True, seed_mock_email=(target == "local")
-            )
+            seed_shipped_database(mock_email=None)
     finally:
         os.chdir(original_cwd)
         del sys.path[:3]
@@ -123,20 +120,45 @@ def _tar_xz(source: Path, output: Path) -> None:
                 archive.addfile(info, handle)
 
 
+def stage_application_files(staging: Path) -> None:
+    """Copy the runtime tree into ``staging``.
+
+    ``.env.defaults`` is copied for seeding only; ``ship_runtime_defaults`` removes it again.
+    """
+    staging.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REPO_ROOT / ".env.defaults", staging / ".env.defaults")
+    shutil.copy2(REPO_ROOT / "src/netcup_api_filter/passenger_wsgi.py", staging / "passenger_wsgi.py")
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover")
+    shutil.copytree(REPO_ROOT / "src", staging / "src", ignore=ignore)
+    shutil.copytree(REPO_ROOT / "scripts", staging / "scripts", ignore=ignore)
+
+
+def ship_runtime_defaults(staging: Path) -> None:
+    """Replace the build-time ``.env.defaults`` by the filtered runtime catalog ``app-defaults.env``.
+
+    .env.defaults holds the pre-set admin password and test fixtures: it must never ship.
+    """
+    (staging / ".env.defaults").unlink()
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    try:
+        from netcup_api_filter.config_defaults import write_shipped_defaults
+
+        write_shipped_defaults(REPO_ROOT / ".env.defaults", staging)
+    finally:
+        sys.path.remove(str(REPO_ROOT / "src"))
+
+
 def build_one(python_version: str, output: Path) -> None:
     _assert_target_interpreter(python_version)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f"naf-webhosting-py{python_version.replace('.', '')}-", dir=DIST_DIR) as temp:
         staging = Path(temp) / "app"
-        staging.mkdir(parents=True)
-        shutil.copy2(REPO_ROOT / ".env.defaults", staging / ".env.defaults")
-        shutil.copy2(REPO_ROOT / "src/netcup_api_filter/passenger_wsgi.py", staging / "passenger_wsgi.py")
-        shutil.copytree(REPO_ROOT / "src", staging / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover"))
-        shutil.copytree(REPO_ROOT / "scripts", staging / "scripts", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover"))
+        stage_application_files(staging)
         vendor_dir = staging / "vendor"
         vendor_dir.mkdir()
         _vendor_dependencies(vendor_dir, python_version)
         seed_database(staging)
+        ship_runtime_defaults(staging)
         _tar_xz(staging, output)
     print(f"[INFO] built {output.relative_to(REPO_ROOT)} for Python {python_version}")
 

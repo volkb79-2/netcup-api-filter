@@ -2,7 +2,56 @@
 
 ## [Unreleased] — Gate on run-gate + assay; Python 3.11/3.14 — 2026-11-05
 
+### Added
+
+- **Remote read-only webhosting smoke** (credentials/test-setup plan, S7): `NAF_E2E_TARGET=remote`
+  binds the e2e settings to a deployed host from `NAF_REMOTE_BASE_URL` / `NAF_REMOTE_ADMIN_*`
+  (password and TOTP seed via `*_FILE`, value/file mutually exclusive), `allow_writes=False`; only
+  tests marked `remote_smoke` run, everything else is skipped. `deployment_state_webhosting.json`,
+  hardcoded production hostnames and the stale `WEBHOSTING_TESTING_GUIDE.md` flow are gone. The local
+  mode stays the default.
+
 ### Security
+
+- **One database initializer, no published secrets** (credentials/test-setup plan, S2):
+  `bootstrap.instance.init_instance()` is the only seeder (tarball build, local golden DB, app
+  start, ciu `post_compose` hook via `python -m netcup_api_filter.bootstrap init`). The tarball
+  ships only the pre-set admin (`must_change_password`); the OCI image ships no account and refuses
+  a first start without `NAF_BOOTSTRAP_ADMIN_*` (password via `*_FILE`) or an `app-config.toml`
+  admin. The implicit runtime admin/demo seeders (`seed_admin_account`, `SEED_DEMO_ACCOUNTS`) and
+  the legacy demo-client seeding are removed.
+- `SECRET_KEY`: `SECRET_KEY_FILE`/`SECRET_KEY`, else one database row created with
+  `INSERT OR IGNORE` (all gunicorn workers share it; the per-worker temporary key and the
+  `.env.webhosting` loader in `passenger_wsgi.py` are gone). The dev `SECRET_KEY` default is removed
+  from `.env.defaults`; the start-up error no longer echoes part of a key.
+- `[[users]]` import: generated passwords are never logged; the imported list (plaintext
+  passwords) is deleted from `settings` after the accounts exist; an admin may not use `"generate"`.
+- **Fixed:** TOML `[[users]]` / `[[backends]]` / `[[domain_roots]]` were silently skipped
+  (`get_setting` already decodes JSON; a second `json.loads` raised `TypeError`).
+- `tooling/app-local` is a ciu-initialized instance: per-instance `GEN_LOCAL` secrets
+  (`secret_key`, `bootstrap_admin_password`) mounted as files, its own data hostdir, and a
+  `post_compose_init_instance.py` hook (readiness, then create-or-update init via `docker exec`).
+
+- **Clean release artifacts** (S5): the OCI image ships `app-defaults.env` instead of nothing,
+  `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db` and `VOLUME /data` (still no account, no
+  `.env.defaults`). `build_deployment.py` no longer writes `deployment_state_*.json` or
+  `.env.webhosting` (the latter carried `DEPLOYED_ADMIN_PASSWORD`), no longer mutates `os.environ`
+  from `.env.services` (`SERVICE_MAILPIT` from the environment, else evaluated read-only), and is
+  ruff-clean. CI `e2e-smoke` uses the per-session fixture on the `--local` deploy tree;
+  `scripts/ci_bootstrap_e2e.py` is deleted. New `tests/test_release_artifacts.py` pins the tarball
+  contents (one admin with `must_change_password`, no `secret_key` row, no `.env*`/state files).
+
+- **e2e without shared credentials** (S1/S3/S4): every session starts its own app inside the 3.11
+  runner on a copy of the golden DB (`ui_tests/e2e_env.py`) and provisions random in-memory personas
+  (`ui_tests/personas.py`; admin with TOTP). `ui_tests/deployment_state.py`, `ui_tests/env_defaults.py`,
+  `refresh_credentials()` and every state-file write are removed; the e2e lane no longer needs
+  `UI_BASE_URL`/`DEPLOYMENT_TARGET`. The forced first-login change is one test on its own instance; a
+  mutated golden DB or broken environment stops the session with one message.
+- `.env.defaults` is never shipped: builds write `app-defaults.env` (runtime keys only; no pre-set
+  admin password, no test fixtures). `DEFAULT_TEST_ACCOUNT_PASSWORD`, `DEFAULT_TEST_CLIENT_ID` and
+  `DEFAULT_READONLY_TEST_CLIENT_ID` are removed.
+- **Fixed:** account-portal login with TOTP never succeeded: choosing TOTP on `/account/login/2fa`
+  did not record the method, so the TOTP code was checked as an email code.
 
 - `token_auth.check_permission` no longer skips the record-type check for an empty-string type, and
   `validate_dns_records_update` denies records without a type (fail closed). The REST routes already
@@ -10,6 +59,20 @@
 
 ### Changed
 
+- **S6 dev-infra separation:** Mailpit UI/API auth removed (internal-only stack; `MailpitClient`
+  takes no credentials; `MAILPIT_USERNAME`/`MAILPIT_PASSWORD` gone from compose, CI and docs). The
+  traefik basicauth guard is for humans only; the Playwright client no longer sends guard
+  credentials (e2e targets the app over the internal network). Admin login lockout threshold/duration
+  are now `ADMIN_LOGIN_LOCKOUT_THRESHOLD` / `ADMIN_LOGIN_LOCKOUT_MINUTES` in `.env.defaults`.
+  Dead code removed: `global-config.{defaults,active}.toml`, `ui_tests/auth_state.py`.
+- **Browser lane shrunk (S8):** the HTTP-only e2e suites moved to the hermetic `tests/` suite
+  (Flask test client, tmp SQLite DB, in-memory Netcup fake, real CSRF): DDNS protocols, REST API
+  security, registration/approval negatives, admin bulk actions, DDNS quick update, and the GeoIP
+  mock self-test (`tests/test_*_http.py`, `tests/fake_netcup.py`, `tests/http_helpers.py`). The
+  originals under `ui_tests/tests/` are deleted. Assertions are exact (no `in [200, 403, 502]`)
+  and check ActivityLog/token-usage/account rows and the upstream zone. Tautological checks
+  (self-computed capability table, badge-colour dict, "list contains its own element") were
+  replaced by tests against the real rendered pages / endpoints.
 - **Rigor ladder:** assay R1 floors at the measured baseline, R3 import-break canaries and R2 mutation
   lanes for `token_auth`, `account_auth`, `recovery_codes`, `utils`; `release-gate` sequence.
 - **pwmcp is consumed, not hosted:** `infra/pwmcp` removed; runners and `app-local` join the estate

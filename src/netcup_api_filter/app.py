@@ -12,7 +12,7 @@ from flask import Flask
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .config_defaults import get_default, require_default
+from .config_defaults import get_default
 from .database import init_db
 from .api import account_bp, admin_bp, dns_api_bp, ddns_protocols_bp, telegram_bp
 from .utils import parse_bool
@@ -78,29 +78,29 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     # Security Configuration
     # =========================================================================
     
-    # Secret key for sessions (with production validation)
-    secret_key = os.environ.get('SECRET_KEY')
-    
-    # In production, SECRET_KEY must be set and not use default
+    # Secret key for sessions/CSRF. Single rule for every entry point (Passenger,
+    # OCI image, ciu app stack, e2e instance, unit tests):
+    #   1. SECRET_KEY_FILE (a mounted secret, e.g. a ciu GEN_LOCAL secret) or the
+    #      SECRET_KEY environment variable (not both; must not be trivially short);
+    #   2. otherwise the database-persisted key, created race-free on first start
+    #      (database.ensure_persisted_secret_key, finalized right after init_db).
     flask_env = os.environ.get('FLASK_ENV', '')
-    if not flask_env or flask_env == 'production':
-        default_secret = get_default('SECRET_KEY', '')
-        if not secret_key:
-            raise RuntimeError(
-                "SECRET_KEY environment variable not set. "
-                "Generate one with: openssl rand -hex 32"
-            )
-        if secret_key == default_secret and default_secret:
-            raise RuntimeError(
-                f"SECRET_KEY is using insecure default value ('{default_secret[:20]}...'). "
-                "Generate a secure key with: openssl rand -hex 32"
-            )
-    
-    # Development/testing can use default if not provided
-    if not secret_key:
-        secret_key = require_default('SECRET_KEY')
-    
-    app.config['SECRET_KEY'] = secret_key
+    env_secret_key = os.environ.get('SECRET_KEY', '')
+    secret_key_file = os.environ.get('SECRET_KEY_FILE', '').strip()
+    if secret_key_file:
+        if env_secret_key:
+            raise RuntimeError("Set only one of SECRET_KEY and SECRET_KEY_FILE")
+        try:
+            with open(secret_key_file, encoding='utf-8') as handle:
+                env_secret_key = handle.read().strip()
+        except OSError as exc:
+            raise RuntimeError(f"SECRET_KEY_FILE is not readable: {secret_key_file}") from exc
+    if env_secret_key and len(env_secret_key) < 16:
+        raise RuntimeError(
+            "SECRET_KEY is set but shorter than 16 characters. "
+            "Generate one with: openssl rand -hex 32 (or unset it to use the persisted key)"
+        )
+    app.config['SECRET_KEY'] = env_secret_key or None
     
     # Maximum request size (10 MB)
     app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 10 * 1024 * 1024))
@@ -202,6 +202,12 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     # =========================================================================
     
     init_db(app)
+
+    if not app.config['SECRET_KEY']:
+        from .database import ensure_persisted_secret_key
+        with app.app_context():
+            app.config['SECRET_KEY'] = ensure_persisted_secret_key()
+        logger.info("SECRET_KEY: using the database-persisted key (no SECRET_KEY env var)")
 
     # =========================================================================
     # Feature Flags (config-driven)

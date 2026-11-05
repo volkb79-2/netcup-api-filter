@@ -5,9 +5,9 @@ Build deployment package for netcup webhosting FTP-only deployment.
 This script creates a ready-to-deploy package containing:
 - All application files
 - Vendored dependencies (no pip install needed)
-- Pre-initialized SQLite database with default credentials from .env/.env.defaults
+- Pre-initialized SQLite database holding only the shipped admin (must_change_password)
 - DEPLOY_README.md with upload instructions
-- .env.webhosting with initial deployment state
+- app-defaults.env (runtime defaults; no .env.defaults, no credentials)
 
 Output: deploy.zip and deploy.zip.sha256
 """
@@ -22,8 +22,7 @@ import hashlib
 import logging
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional, Tuple
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Configure logging
@@ -74,12 +73,12 @@ def _utc_now_iso() -> str:
 
     Equivalent to the old (deprecated) ``datetime.utcnow().replace(microsecond=0)
     .isoformat() + "Z"`` pattern, but built on the timezone-aware
-    ``datetime.now(timezone.utc)`` API.
+    ``datetime.now(UTC)`` API.
     """
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
+def _assert_interpreter_matches_target(python_version: str | None) -> None:
     """Refuse to seed the database under a mismatched interpreter (naf-I03).
 
     ``download_and_extract_dependencies`` resolves target-ABI wheels via
@@ -94,10 +93,8 @@ def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
     abi3 extension (e.g. bcrypt) loads a wrong-version binary without complaint. Either
     way, seeding proves nothing about the real target closure.
 
-    Pass ``python_version=None`` to skip this check entirely — used by callers that
-    seed a database with NO vendored cross-version wheels involved at all (e.g.
-    ``scripts/ci_bootstrap_e2e.py``, which imports straight from ``src/`` under
-    whatever interpreter the CI runner provides).
+    Pass ``python_version=None`` to skip this check entirely — for callers that seed a
+    database with NO vendored cross-version wheels involved at all.
     """
     if python_version is None:
         return
@@ -270,17 +267,10 @@ def copy_application_files(deploy_dir):
         logger.info("Copied src directory")
 
 
-def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_clients: list):
+def write_build_metadata(deploy_dir):
     """Write build metadata (timestamp, git info) to deploy directory.
     
     NOTE: This file is deployed to webhosting and MUST NOT contain secrets.
-    Secrets are stored separately in deployment_state_<target>.json in REPO_ROOT.
-    
-    Args:
-        deploy_dir: Path to deployment directory
-        client_id: (unused - kept for API compatibility)
-        secret_key: (unused - kept for API compatibility)  
-        all_demo_clients: (unused - kept for API compatibility)
     """
     logger.info("Recording build metadata (public, no secrets)...")
 
@@ -309,8 +299,6 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
         # invocation outside the managed build path).
         "builder_image_digest": os.environ.get("NAF_BUILDER_IMAGE_DIGEST", "unknown"),
         "source": "build_deployment.py",
-        # Count of clients for display purposes only
-        "demo_client_count": len(all_demo_clients),
     }
 
     metadata_path = Path(deploy_dir) / "build_info.json"
@@ -324,154 +312,48 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
     )
 
 
-def _load_env_defaults() -> dict:
-    """Load defaults from .env (preferred) or .env.defaults (fallback).
+def _service_mailpit_host() -> str:
+    """Mailpit host of a LOCAL build: SERVICE_MAILPIT from the environment, else from .env.services.
 
-    This is used only for non-secret defaults needed at build time (e.g.,
-    DEFAULT_ADMIN_USERNAME / DEFAULT_ADMIN_PASSWORD for fresh DB seeding).
+    .env.services is bash syntax (``${VAR:-default}``), so it is evaluated by bash into a
+    dict; this process's environment is never modified.
     """
-    defaults: dict[str, str] = {}
-
-    candidate_paths = [Path(".env"), Path(".env.defaults")]
-    env_path = next((p for p in candidate_paths if p.exists()), None)
-    if env_path is None:
-        raise RuntimeError(
-            "Neither .env nor .env.defaults found. "
-            "Create .env by copying .env.defaults and adding secrets/overrides."
-        )
-
-    with env_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            defaults[key.strip()] = value.strip()
-
-    return defaults
+    host = os.environ.get("SERVICE_MAILPIT", "").strip()
+    if host:
+        return host
+    services = Path(".env.services")
+    if not services.is_file():
+        raise RuntimeError("SERVICE_MAILPIT is not set and .env.services is missing")
+    result = subprocess.run(
+        ["/bin/bash", "-c", f'set -a && source "{services}" >/dev/null && printf %s "$SERVICE_MAILPIT"'],
+        capture_output=True, text=True, check=True,
+    )
+    host = result.stdout.strip()
+    if not host:
+        raise RuntimeError(f"SERVICE_MAILPIT is empty after evaluating {services}")
+    return host
 
 
-def create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients, target="local"):
-    """Create deployment state file with credentials in REPO_ROOT (not deployed).
-    
-    This file is the single source of truth for deployment state:
-    - Build-time metadata (git info, timestamps)
-    - Admin credentials (updated when passwords change)
-    - Client credentials (for testing)
-    
-    IMPORTANT: This file is written to REPO_ROOT, NOT the deploy directory.
-    It contains secrets and must NEVER be included in deploy.zip.
-    
-    Tests read this file FRESH each time to get the latest state.
-    
-    Args:
-        deploy_dir: Deploy directory (used only to derive REPO_ROOT and deploy_path)
-        client_id: Primary client ID
-        secret_key: Primary client secret
-        all_demo_clients: List of (client_id, secret, description) tuples
-        target: Deployment target ("local" or "webhosting")
-    """
-    # State file goes in REPO_ROOT, named by target
-    repo_root = Path(__file__).parent.absolute()
-    state_filename = f"deployment_state_{target}.json"
-    state_path = repo_root / state_filename
-    
-    logger.info(f"Creating {state_filename} in REPO_ROOT (contains secrets, not deployed)...")
-    
-    defaults = _load_env_defaults()
-    
-    def git_output(*args, default=""):
-        """Run git command and return output."""
-        try:
-            result = subprocess.run(
-                ["git"] + list(args),
-                capture_output=True, text=True, check=True
-            )
-            return result.stdout.strip() or default
-        except Exception:
-            return default
-    
-    admin_username = defaults.get('DEFAULT_ADMIN_USERNAME')
-    admin_password = defaults.get('DEFAULT_ADMIN_PASSWORD')
-    if not admin_username or not admin_password:
-        raise RuntimeError(
-            "DEFAULT_ADMIN_USERNAME/DEFAULT_ADMIN_PASSWORD not found in .env/.env.defaults. "
-            "Check your env files before building a deployment."
-        )
+def _local_mock_email():
+    """Mailpit email config of a LOCAL build: host per _service_mailpit_host, rest from the defaults catalog."""
+    from netcup_api_filter.bootstrap import MockEmail
+    from netcup_api_filter.config_defaults import require_default
 
-    # Build unified state structure
-    state = {
-        "target": target,
-        "deploy_dir": str(Path(deploy_dir).absolute()),
-        "build": {
-            "built_at": _utc_now_iso(),
-            "git_commit": git_output("rev-parse", "--short", "HEAD", default="unknown"),
-            "git_branch": git_output("rev-parse", "--abbrev-ref", "HEAD", default="unknown"),
-            "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
-            "source": "build_deployment.py",
-        },
-        "admin": {
-            "username": admin_username,
-            "password": admin_password,
-            "password_changed_at": None,  # Set when password is changed
-        },
-        "clients": [
-            {
-                "client_id": cid,
-                "secret_key": secret,
-                "description": desc,
-                "is_primary": (i == 0),  # First client is primary
-            }
-            for i, (cid, secret, desc) in enumerate(all_demo_clients)
-        ],
-        "last_updated_at": _utc_now_iso(),
-        "updated_by": "build_deployment.py",
-    }
-    
-    with open(state_path, 'w') as f:
-        json.dump(state, f, indent=2)
-    
-    logger.info(f"Created {state_path}")
-    return state
-
-
-def create_initial_env_webhosting(deploy_dir):
-    """Create .env.webhosting with initial deployment state from .env/.env.defaults.
-    
-    DEPRECATED: Use deployment_state.json instead.
-    This file is kept for backward compatibility with existing test infrastructure.
-    """
-    logger.info("Creating initial .env.webhosting (legacy compatibility)...")
-    
-    defaults = _load_env_defaults()
-    
-    # Generate unique SECRET_KEY for this deployment if not already set
-    import secrets
-    secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
-    
-    # Create .env.webhosting with deployment state
-    env_webhosting_path = Path(deploy_dir) / ".env.webhosting"
-    with open(env_webhosting_path, 'w') as f:
-        f.write("# DEPRECATED: Use deployment_state.json instead\n")
-        f.write("# Deployment state - updated by tests when passwords change\n\n")
-        f.write(f"# Flask Secret Key (generated at build time)\n")
-        f.write(f"SECRET_KEY={secret_key}\n\n")
-        f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', '')}\n")
-        f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', '')}\n")
-        f.write(f"DEPLOYED_AT={_utc_now_iso()}\n")
-    
-    logger.info(f"Created {env_webhosting_path} with initial deployment state (including SECRET_KEY)")
+    return MockEmail(
+        smtp_host=_service_mailpit_host(),
+        smtp_port=int(require_default("LOCAL_MAILPIT_SMTP_PORT")),
+        from_email=require_default("LOCAL_MAIL_FROM"),
+        admin_email=require_default("LOCAL_MAIL_ADMIN_EMAIL"),
+    )
 
 
 def initialize_database(
     deploy_dir,
     is_local: bool = False,
     seed_demo: bool = False,
-    python_version: Optional[str] = None,
-) -> Tuple[str, str, list]:
-    """Initialize SQLite database with default admin user and dynamically generated client credentials.
+    python_version: str | None = None,
+) -> None:
+    """Initialize the deploy tree's SQLite database with the shipped content only.
 
     Args:
         deploy_dir: Path to the deployment directory
@@ -480,10 +362,6 @@ def initialize_database(
         python_version: Expected "MAJOR.MINOR" of the RUNNING interpreter (naf-I03
             host-vs-target guard). Pass the same value used to resolve vendor/'s
             wheels; None skips the check (see _assert_interpreter_matches_target).
-
-    Returns:
-        Tuple of (client_id, secret_key, all_demo_clients)
-        where all_demo_clients is list of (client_id, secret_key, description) tuples
     """
     logger.info("Initializing database...")
     _assert_interpreter_matches_target(python_version)
@@ -502,41 +380,9 @@ def initialize_database(
     sys.path.insert(0, str(deploy_path / "vendor"))
     
     try:
-        # Load service names from .env.services BEFORE changing directory
-        # (file is in repo root, not deploy directory)
-        # Use bash to evaluate the file since it contains bash syntax like ${VAR:-default}
-        env_services_path = Path(original_dir) / ".env.services"
-        if env_services_path.exists():
-            try:
-                # Source the file with bash and export all variables
-                result = subprocess.run(
-                    ['/bin/bash', '-c', f'set -a && source "{env_services_path}" && env'],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                # Parse the output and set environment variables
-                for line in result.stdout.split('\n'):
-                    if '=' in line:
-                        key, _, value = line.partition('=')
-                        os.environ[key] = value
-                
-                logger.info(f"Loaded service names from .env.services (SERVICE_MAILPIT={os.environ.get('SERVICE_MAILPIT', 'mailpit')})")
-            except subprocess.CalledProcessError as e:
-                logger.warning(f"Failed to load .env.services: {e}")
-        else:
-            logger.warning(f".env.services not found at {env_services_path}")
-        
-        # Set MOCK_SMTP_HOST to use dynamic service name
-        # For local deployments, use the actual container name from .env.services
-        if is_local and 'SERVICE_MAILPIT' in os.environ:
-            os.environ['MOCK_SMTP_HOST'] = os.environ['SERVICE_MAILPIT']
-            logger.info(f"Set MOCK_SMTP_HOST={os.environ['MOCK_SMTP_HOST']} for local deployment")
-        elif is_local:
-            # Fallback if .env.services not loaded
-            os.environ['MOCK_SMTP_HOST'] = 'naf-dev-mailpit'
-            logger.info(f"Set MOCK_SMTP_HOST={os.environ['MOCK_SMTP_HOST']} (fallback)")
-        
+        # Resolved against the repo root, i.e. BEFORE the chdir below.
+        mock_email = _local_mock_email() if is_local else None
+
         # Change to deploy directory so SQLite can create the database
         os.chdir(deploy_path)
 
@@ -551,7 +397,7 @@ def initialize_database(
         # Import required modules (netcup_api_filter is under src/)
         from flask import Flask
         from netcup_api_filter import database
-        from netcup_api_filter.bootstrap import AdminSeedOptions, seed_default_entities, seed_comprehensive_demo_data
+        from netcup_api_filter.bootstrap import seed_shipped_database, seed_comprehensive_demo_data
         
         # Create Flask app with template_folder in deploy directory
         app = Flask(__name__, template_folder=str(deploy_path / "src" / "netcup_api_filter" / "templates"))
@@ -562,45 +408,22 @@ def initialize_database(
         # Initialize database
         database.db.init_app(app)
         
-        generated_client_id = None
-        generated_secret_key = None
-        
         with app.app_context():
             # Create all tables
             database.db.create_all()
             logger.info("Database tables created")
             
-            # Seed Settings table from env defaults (BEFORE seeding accounts)
-            # This ensures rate limits and security settings are available immediately
-            from netcup_api_filter.bootstrap.seeding import seed_settings_from_env
-            seeded_count = seed_settings_from_env()
-            if seeded_count > 0:
-                logger.info(f"Seeded {seeded_count} settings from env defaults")
-
-            # Seed with defaults - enable demo clients for comprehensive local testing
-            # Demo clients provide multiple permission configurations for E2E tests
-            generated_client_id, generated_secret_key, all_demo_clients = seed_default_entities(
-                seed_demo_clients_flag=True,  # Enable demo clients with varied permissions
-                seed_mock_email=is_local,  # Seed Mailpit config for local builds
-            )
+            # The one shipped-database seeder: enums/providers, default settings,
+            # the pre-set admin and (local only) the Mailpit email config.
+            admin = seed_shipped_database(mock_email=mock_email)
             # Seed comprehensive demo data if requested
             if seed_demo:
-                from netcup_api_filter.models import Account
-                admin = Account.query.filter_by(is_admin=1).first()
-                if admin:
-                    seed_comprehensive_demo_data(admin)
-                    logger.info("Comprehensive demo data seeded for UI screenshots")
+                seed_comprehensive_demo_data(admin)
+                logger.info("Comprehensive demo data seeded for UI screenshots")
             
-            logger.info(
-                "Database seeded with default admin and %d demo clients (primary: %s)",
-                len(all_demo_clients),
-                generated_client_id,
-            )
+            logger.info("Database seeded with the shipped admin (must_change_password)")
         
         logger.info(f"Database initialized at {db_path}")
-        
-        # Return primary credentials and all demo clients for build_info
-        return generated_client_id, generated_secret_key, all_demo_clients
         
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
@@ -613,8 +436,6 @@ def initialize_database(
         sys.path.remove(str(src_path))
         sys.path.remove(str(deploy_path))
         sys.path.remove(str(deploy_path / "vendor"))
-    
-    return generated_client_id, generated_secret_key, all_demo_clients
 
 
 def create_deploy_readme(deploy_dir):
@@ -918,25 +739,24 @@ def main():
         # this process MUST be running under the same interpreter that vendor/'s wheels
         # were resolved for, or seeding is refused (see _assert_interpreter_matches_target).
         is_local_build = deployment_target == "local"
-        client_id, secret_key, all_demo_clients = initialize_database(
+        initialize_database(
             deploy_dir,
             is_local=is_local_build,
             seed_demo=args.seed_demo,
             python_version=args.python_version,
         )
         
-        # Create unified deployment state (primary state file)
-        create_deployment_state(deploy_dir, client_id, secret_key, all_demo_clients, target=deployment_target)
-
-        # Record build metadata with generated credentials for runtime display
-        # NOTE: build_info.json is deprecated, use deployment_state.json instead
-        write_build_metadata(deploy_dir, client_id, secret_key, all_demo_clients)
+        # Record public build metadata (no secrets).
+        write_build_metadata(deploy_dir)
         
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
-        # Remove env files from deployment package (database already seeded)
-        # IMPORTANT: .env may contain secrets and must NEVER ship in deploy.zip.
+        # Ship the runtime defaults catalog (.env.defaults minus build/test-only keys), then
+        # remove the env files (database already seeded). .env may contain secrets and
+        # .env.defaults holds the pre-set admin password: neither may ship.
+        from netcup_api_filter.config_defaults import write_shipped_defaults
+        write_shipped_defaults(Path(".env.defaults"), Path(deploy_dir))
         for env_name in (".env", ".env.defaults"):
             env_path = Path(deploy_dir) / env_name
             if env_path.exists():
