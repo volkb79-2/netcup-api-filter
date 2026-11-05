@@ -122,9 +122,8 @@ with a single message (exit code 3). If the golden DB was ever served or modifie
 5. **No `--enforce-admin` in the app-local hook (changed by the operator, 2026-11-05).** `ciu up` must not change an
    initialized instance: the hook only initializes what is missing. To rotate the bootstrap credential, `ciu clean` the
    stack's volumes and `up` fresh. `--enforce-admin` remains an explicit operator command of the CLI, used by no hook.
-6. **The shipped catalog is a filter of `.env.defaults`.** It excludes build/test-only prefixes (`DEFAULT_ADMIN_`, `DEFAULT_TEST_`, `LOCAL_`, `E2E_`,
-   `UI_`, …) and is not a second hand-maintained file. `tests/test_shipped_defaults.py` fails if runtime code reads a key
-   the catalog lacks.
+6. **The shipped catalog is an allowlist** (changed by review #5): `config_defaults.RUNTIME_DEFAULT_KEYS`, never a
+   credential-like name. `tests/test_shipped_defaults.py` fails if runtime code reads a key the allowlist lacks.
 7. **S7 names:** the `NAF_E2E_TARGET=remote` switch, the `NAF_REMOTE_*` variables and the `remote_smoke` marker. The remote admin must
    have a TOTP seed; email-only 2FA on the remote target fails loudly.
 8. **Left in place on purpose:** the `.gitignore` entry for `deployment_state_*.json` (it guards old checkouts) and
@@ -134,4 +133,42 @@ with a single message (exit code 3). If the golden DB was ever served or modifie
 
 `cred` (integration), `cred-s2`, `cred-s3`, `cred-s5`, `cred-s6`, `cred-s7`, `cred-s8` under `.worktrees/`. No stack was
 started from any of them. Their `deploy-local/` trees are gitignored build output.
+
+## Review fixes (branch `cred-fixes`, 2026-11-05)
+
+Blind review of the merged S1–S8 (`main@0b020b4`). Fixed on `cred-fixes` (based on `main@697f5a0`), one commit per
+finding. Unit tests only (pwmcp slots were in use): the browser paths are for the coordinator to verify from main.
+
+| # | Finding | Commit | Fix | Test |
+|---|---|---|---|---|
+| 1 | first-boot init raced between gunicorn workers | `aef3f66` | exclusive `fcntl.flock` on `<db>.init.lock` around `init_db` and the bootstrap CLI (`bootstrap/init_lock.py`, `NAF_INIT_LOCK_TIMEOUT_SECONDS`). Chosen over an entrypoint / gunicorn `on_starting`: one mechanism for the OCI image, the ciu stack (incl. the hook's concurrent CLI) and Passenger | `tests/test_init_concurrency.py`: 4 processes boot one fresh DB at once (fails 3/3 without the lock with UNIQUE errors) |
+| 2 | "fails fast" untrue; error page rendered `str(e)` | `aef3f66` | `passenger_wsgi` logs and re-raises; no stand-in WSGI app. gunicorn: "Worker failed to boot", master exits non-zero | start without bootstrap config exits non-zero |
+| 3 | weak configured bootstrap password accepted; 2FA doc wrong | `9fc1d31` | `validate_password` on configured specs (shipped `admin/admin` exempt). Doc corrected: a configured admin starts without 2FA (banner) and enrolls TOTP; email 2FA is not auto-enabled (broken SMTP would lock out the only admin) | `test_bootstrap_instance.py` |
+| 5 | `SECRET_KEY=local-dev-…` shipped; denylist | `8e79e1f` | line deleted; shipped catalog = allowlist `RUNTIME_DEFAULT_KEYS`, credential-like names never ship | `test_shipped_defaults.py` |
+| 6 | success reported without an admin; IntegrityError on email | `eadf599` | non-admin/deactivated username or taken email → `BootstrapAdminError`; an initialized DB needs an **active** admin | `test_bootstrap_instance.py` |
+| 7 | hook overwrote `email_config` every up | `b03fbd0` | mock email config create-only | `test_bootstrap_instance.py` |
+| 8 | e2e lane lost `required_env` | `744a76d` | `required_env = ["PLAYWRIGHT_SERVER_WS"]`; forward_env reviewed (mock URLs reach tests and the session app; `PUBLIC_FQDN` is harmless because `local_test` leaves the cookie domain unset) | `test_run_gate_pointers.py` |
+| 9 | bind-mounted `app-config.toml` → EBUSY; CLI ignored TOML | `c896a34` | unclaimable file fails the start with "mount the directory"; CLI resolves the app root like `passenger_wsgi`; image uses `NETCUP_FILTER_APP_ROOT=/config` (#15) | `tests/test_app_config_claim.py` |
+| 10 | `finally` commit saved partial `[[users]]` | `d602035` | rollback on any error, plaintext row still purged | `test_bootstrap_instance.py` |
+| 11 | old `users_config` plaintext never purged | `76bf459` | `init_instance` purges it every start | `test_bootstrap_instance.py` |
+| 12 | stale docs/comments | `72226f3`, `f3fd090` | hook/enforce wording, no hard test counts, README e2e text, `.env.defaults` comment, unused `base_url` fixture removed, historical banners on `.vscode/REVIEW_PROMPT_*.md` | — |
+| 14 | conftest not exception-safe; port race; admin/admin on pwmcp net | `f3fd090` | `ExitStack` session fixture; bounded retry on "Address already in use"; `retire_shipped_admin()` in every session DB except `app_instance(keep_shipped_admin=True)` (installation test) | `test_e2e_env.py` |
+| 15 | image ran as root; no `.dockerignore` | `d72d170` | user `naf` (10001), `/data` + `/config` writable, log to `/data`; `.dockerignore` allowlist | `tests/test_image_hardening.py` (static) |
+| 16 | CI mailpit floating tag | `11da3ca` | `ghcr.io/axllent/mailpit:v1.32.0` | — |
+| 17 | PowerDNS key on `docker exec` argv | `2d72216` | `-e NAME`, value in the hook's env | `tests/test_seed_domain_hook_secret.py` |
+| 18 | `_restore_secret` swallowed errors | `e3de4f7` | raises for a non-empty preserved secret (`timezone.utc` kept) | `tests/test_activate_secret.py` |
+| 19 | `/account/2fa/resend` unchecked method | `2a3bb6b` | rejected unless offered (`_offered_2fa_methods`) | `test_portal_totp_login.py` |
+
+**Backlog (not fixed, per the brief):** #13 the regex heuristic in `test_shipped_defaults.py` (now also covers the
+int-setting helper and `*_KEY` constants, still a heuristic); #17 remainder: `post_compose_seed_domain` falls back to the
+cwd DB when `NETCUP_FILTER_DB_PATH` is unset.
+
+**Needs a running stack (coordinator, from main):**
+- OCI image: build it (`cmru`/bake), then first boot with and without `NAF_BOOTSTRAP_ADMIN_*` → healthy vs. exit non-zero
+  with "Worker failed to boot"; non-root user can write `/data` (named volume) and `/config`.
+- `ciu up --dir tooling/app-local` twice: second run changes nothing (admin, `email_config`), hook prints the secret path.
+- `run-gate e2e`: lane refuses without `PLAYWRIGHT_SERVER_WS`; installation test still logs in with `admin/admin` on its own
+  instance; other sessions reject it.
+- CI `e2e-smoke` with the pinned Mailpit image.
+- Passenger (webhoster): a failed start shows Passenger's generic page, details only in `netcup_filter.log`.
 
