@@ -56,18 +56,24 @@ kind = "assay"
 environment = "test-runner-py314"
 assay_lane = "token_auth"
 clean_tree = false
+# The host CoW area is not mounted in the runner: plain file-copy snapshots (declared, not ambient).
+resources = { memory = "2g", cowtree = { mode = "off" } }
 
 [lanes.account_auth]
 kind = "assay"
 environment = "test-runner-py314"
 assay_lane = "account_auth"
 clean_tree = false
+# The host CoW area is not mounted in the runner: plain file-copy snapshots (declared, not ambient).
+resources = { memory = "2g", cowtree = { mode = "off" } }
 
 [lanes.recovery_codes]
 kind = "assay"
 environment = "test-runner-py314"
 assay_lane = "recovery_codes"
 clean_tree = false
+# The host CoW area is not mounted in the runner: plain file-copy snapshots (declared, not ambient).
+resources = { memory = "2g", cowtree = { mode = "off" } }
 
 # --- trove hygiene (interpreter-agnostic) ------------------------------------
 [lanes.trove]
