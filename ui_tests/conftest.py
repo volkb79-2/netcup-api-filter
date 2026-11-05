@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ui_tests.browser import Browser
-from ui_tests.config import settings
+from ui_tests.config import RemoteConfigError, TARGET_REMOTE, selected_target, settings
 from ui_tests.e2e_env import E2EEnvironmentError, app_instance
 from ui_tests.personas import provision
 from ui_tests.playwright_client import PlaywrightClient
@@ -29,6 +29,23 @@ def e2e_environment():
     not pristine, app does not start, runner misconfigured) the WHOLE session stops with one
     clear message instead of every test timing out against a broken target.
     """
+    if selected_target() == TARGET_REMOTE:
+        # Read-only smoke against a deployed instance: start nothing, provision nothing.
+        import tempfile
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="naf-remote-smoke-") as workdir:
+                settings.bind_remote(workdir=Path(workdir))
+                if not os.environ.get("SCREENSHOT_DIR"):
+                    os.environ["SCREENSHOT_DIR"] = str(Path(workdir) / "screenshots")
+                os.makedirs(os.environ["SCREENSHOT_DIR"], exist_ok=True)
+                try:
+                    yield None
+                finally:
+                    settings.unbind()
+        except RemoteConfigError as exc:
+            pytest.exit(f"remote e2e target misconfigured: {exc}", returncode=3)
+        return
     try:
         context = app_instance(prepare=provision)
         instance, personas = context.__enter__()
@@ -51,6 +68,22 @@ def e2e_environment():
         else:
             os.environ["NAF_VERIFY_DB_PATH"] = previous_verify_db
         context.__exit__(None, None, None)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Remote target: only the read-only ``remote_smoke`` subset runs (config-gated skip)."""
+    try:
+        remote = selected_target() == TARGET_REMOTE
+    except RemoteConfigError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+    if not remote:
+        return
+    skip = pytest.mark.skip(
+        reason="NAF_E2E_TARGET=remote: only tests marked remote_smoke (read-only) run against a deployed instance"
+    )
+    for item in items:
+        if "remote_smoke" not in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest_asyncio.fixture()

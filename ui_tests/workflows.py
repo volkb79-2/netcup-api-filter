@@ -526,7 +526,6 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
         return None
 
     deployment_target = settings.deployment_target
-    deployment_mode = os.environ.get("DEPLOYMENT_MODE", "").strip().lower()
     default_channels = "imap" if deployment_target == "webhosting" else "mailpit,imap"
     channels = [
         c.strip().lower()

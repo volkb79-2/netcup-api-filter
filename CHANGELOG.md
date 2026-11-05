@@ -2,6 +2,15 @@
 
 ## [Unreleased] — Gate on run-gate + assay; Python 3.11/3.14 — 2026-11-05
 
+### Added
+
+- **Remote read-only webhosting smoke** (credentials/test-setup plan, S7): `NAF_E2E_TARGET=remote`
+  binds the e2e settings to a deployed host from `NAF_REMOTE_BASE_URL` / `NAF_REMOTE_ADMIN_*`
+  (password and TOTP seed via `*_FILE`, value/file mutually exclusive), `allow_writes=False`; only
+  tests marked `remote_smoke` run, everything else is skipped. `deployment_state_webhosting.json`,
+  hardcoded production hostnames and the stale `WEBHOSTING_TESTING_GUIDE.md` flow are gone. The local
+  mode stays the default.
+
 ### Security
 
 - **One database initializer, no published secrets** (credentials/test-setup plan, S2):
