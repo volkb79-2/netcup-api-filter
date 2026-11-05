@@ -19,7 +19,7 @@ services:
   {{ v.name | replace("py", "test-runner-py") }}:
     image: {% if deploy.registry.url %}{{ deploy.registry.url }}/{% endif %}{{ deploy.registry.namespace }}/{{ test_runner.image_name }}:{{ v.name }}
     build:
-      context: ../..
+      context: {{ ciu.repo_root }}
       dockerfile: tooling/test-runner/Dockerfile
       args:
         PYTHON_VERSION: "{{ v.python_version }}"

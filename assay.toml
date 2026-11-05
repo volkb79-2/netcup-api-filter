@@ -2,7 +2,8 @@
 # The assay pin (version, vendored zipapp, SHA-256 sidecar) is single-sourced in
 # run-gate.toml [assay]; this file never restates a version. run-gate.toml maps
 # each lane to a runner (one per shipped interpreter); the lanes here are
-# interpreter-agnostic (they use the runner's own python on PATH).
+# judged on the 3.14 runner (assay 12.0.0 cannot import on 3.11, assay B229); the 3.11
+# interpreter is gated by the plain pytest lane `unit-py311` in run-gate.toml.
 #
 # R0 `unit` is the authoritative hermetic gate. The R1 whole-target lanes on the
 # auth boundary are `advisory` until a first measured run sets honest floors

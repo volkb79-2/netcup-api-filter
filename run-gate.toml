@@ -9,7 +9,9 @@
 schema_version = 1
 
 [assay]
-environment = "test-runner-py311"
+# Assay 12.0.0 does not import on Python 3.11 (assay backlog B229): the judge and every
+# assay lane run on the 3.14 runner; 3.11 is gated by a plain pytest command lane.
+environment = "test-runner-py314"
 command = ["python3", "tools/assay/assay-12.0.0.pyz"]
 
 [assay.pins.assay]
@@ -34,11 +36,12 @@ forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS", "UI_BASE_
 
 # --- hermetic suite (assay R0, one verdict per interpreter) -------------------
 [lanes.unit-py311]
-kind = "assay"
+kind = "command"
 environment = "test-runner-py311"
-assay_lane = "unit"
+argv = ["bash", "-c", "cd {worktree} && python -m pytest tests -q -p no:cacheprovider -o addopts="]
 clean_tree = false
-description = "tests/ on python 3.11 (Passenger runtime), judged by assay lane 'unit'"
+budget = "30m"
+description = "tests/ on python 3.11 (Passenger runtime); plain pytest verdict until assay runs on 3.11 (B229)"
 
 [lanes.unit-py314]
 kind = "assay"
@@ -50,19 +53,19 @@ description = "tests/ on python 3.14 (OCI image runtime), judged by assay lane '
 # --- whole-target R1 on the security boundary (advisory until measured) -------
 [lanes.token_auth]
 kind = "assay"
-environment = "test-runner-py311"
+environment = "test-runner-py314"
 assay_lane = "token_auth"
 clean_tree = false
 
 [lanes.account_auth]
 kind = "assay"
-environment = "test-runner-py311"
+environment = "test-runner-py314"
 assay_lane = "account_auth"
 clean_tree = false
 
 [lanes.recovery_codes]
 kind = "assay"
-environment = "test-runner-py311"
+environment = "test-runner-py314"
 assay_lane = "recovery_codes"
 clean_tree = false
 
