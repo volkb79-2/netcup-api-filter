@@ -159,6 +159,12 @@ finding. Unit tests only (pwmcp slots were in use): the browser paths are for th
 | 18 | `_restore_secret` swallowed errors | `e3de4f7` | raises for a non-empty preserved secret (`timezone.utc` kept) | `tests/test_activate_secret.py` |
 | 19 | `/account/2fa/resend` unchecked method | `2a3bb6b` | rejected unless offered (`_offered_2fa_methods`) | `test_portal_totp_login.py` |
 
+**Unit results on `cred-fixes`:** py311 `tests/`: 999 passed, R1 coverage token_auth/account_auth/recovery_codes 100%
+lines+branches, utils 98%. py314 `tests/`: 981 passed + 18 setup errors in one run made while two other agents' pytest
+runs shared the py314 runner; the five affected files (`test_recovery_codes_edge`, `test_registration_negative_http`,
+`test_settings_encoding`, `test_token_auth_activity_and_decorator`, `test_token_auth_unit`) re-run on py314: 166 passed.
+Not reproduced; re-run the py314 lane on an idle runner to close it.
+
 **Backlog (not fixed, per the brief):** #13 the regex heuristic in `test_shipped_defaults.py` (now also covers the
 int-setting helper and `*_KEY` constants, still a heuristic); #17 remainder: `post_compose_seed_domain` falls back to the
 cwd DB when `NETCUP_FILTER_DB_PATH` is unset.
