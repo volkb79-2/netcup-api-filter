@@ -47,8 +47,8 @@ seeding run under the target interpreter. It is separate from the local
 ### What the artifacts contain
 
 Neither artifact ships a secret, a demo account or `.env.defaults` (it holds the documented pre-set
-admin password and test fixtures). Both ship `app-defaults.env` instead: `.env.defaults` minus every
-build/test-only key, rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
+admin password and test fixtures). Both ship `app-defaults.env` instead: only the allowlisted runtime keys
+of `.env.defaults` (`config_defaults.RUNTIME_DEFAULT_KEYS`), rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
 
 - **Passenger tarball** (`naf-<variant>.tar.xz`): the runtime tree, vendored wheels, `app-defaults.env`
   and a freshly seeded `netcup_filter.db` with exactly one account, the pre-set admin

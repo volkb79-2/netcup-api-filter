@@ -49,8 +49,8 @@ COPY src/ ./src/
 COPY src/netcup_api_filter/passenger_wsgi.py ./passenger_wsgi.py
 COPY gunicorn.conf.py ./gunicorn.conf.py
 
-# app-defaults.env = .env.defaults minus build/test-only keys (incl. the pre-set admin
-# password), rendered by the same function the Passenger tarball and deploy-local builds use.
+# app-defaults.env = the allowlisted runtime keys of .env.defaults (never the pre-set admin
+# password or any credential), rendered by the same function the Passenger tarball and deploy-local builds use.
 # .env.defaults is only bind-mounted for this one step: it is never copied into a layer.
 RUN --mount=type=bind,source=.env.defaults,target=/tmp/build-env.defaults \
     PYTHONPATH=/app/src python -c "from pathlib import Path; from netcup_api_filter.config_defaults import write_shipped_defaults; print(write_shipped_defaults(Path('/tmp/build-env.defaults'), Path('/app')))"

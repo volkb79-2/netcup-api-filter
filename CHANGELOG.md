@@ -13,6 +13,11 @@
 
 ### Security
 
+- **Fixed (review #5):** `app-defaults.env` shipped `SECRET_KEY=local-dev-secret-change-me` (and
+  every other non-test key, e.g. `TELEGRAM_BOT_USERNAME`, `POWERDNS_SOA`). The dev `SECRET_KEY` line
+  is deleted and the shipped catalog is now an allowlist (`config_defaults.RUNTIME_DEFAULT_KEYS`) that
+  never contains a credential-like name.
+
 - **Fixed (review #6):** init could report success with no admin: a configured username owned by a
   non-admin or deactivated account was returned "unchanged", and a colliding email raised a raw
   `IntegrityError`. Both are now `BootstrapAdminError`s naming the collision, and an existing

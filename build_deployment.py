@@ -752,7 +752,7 @@ def main():
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
-        # Ship the runtime defaults catalog (.env.defaults minus build/test-only keys), then
+        # Ship the runtime defaults catalog (allowlisted runtime keys of .env.defaults), then
         # remove the env files (database already seeded). .env may contain secrets and
         # .env.defaults holds the pre-set admin password: neither may ship.
         from netcup_api_filter.config_defaults import write_shipped_defaults
