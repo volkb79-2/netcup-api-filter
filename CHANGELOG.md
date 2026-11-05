@@ -4,6 +4,11 @@
 
 ### Changed
 
+- **Rigor ladder:** assay R1 floors at the measured baseline, R3 import-break canaries and R2 mutation
+  lanes for `token_auth`, `account_auth`, `recovery_codes`, `utils`; `release-gate` sequence.
+- **pwmcp is consumed, not hosted:** `infra/pwmcp` removed; runners and `app-local` join the estate
+  instance's network (`PWMCP_NETWORK`); lease headers sent from config; Playwright client `1.64.*`.
+
 - **Python targets are 3.11 (Passenger) and 3.14 (OCI).** The `py39` variant, the 3.9 test
   branch and the `tomli` marker are removed; ruff/mypy/CI target 3.11.
 - **Gate is `run-gate`** (`run-gate.toml` + assay-judged `assay.toml`, assay 12.0.0 vendored in

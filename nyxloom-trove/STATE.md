@@ -14,7 +14,7 @@ A Flask app that fronts DNS-provider APIs (netcup today; PowerDNS/BYOD in progre
 (newly) self-hostable as a container. Settings live in the `settings` DB table; the gate is
 `run-gate gate` (the only ship signal).
 
-- **Gate: converted to run-gate + assay (2026-11-05), not yet re-run** — last green: `unit` 441 × {py3.11, py3.9, py3.14}; now py3.11 + py3.14 (2026-07-21). Targets are now py3.11 + py3.14.
+- **Gate: green (2026-11-05)** — `run-gate gate`: `unit-py311` 443 passed, `unit-py314` (assay R0), `trove`; whole-target R1 floors are the measured baseline and only ratchet up. R3 canaries and R2 mutation (token_auth, account_auth, recovery_codes, utils) are declared in `assay.toml`; results are recorded below as they land. Targets: py3.11 (Passenger) and py3.14 (OCI). e2e uses the estate pwmcp instance (`PWMCP_NETWORK`).
 - **Version: `naf-v0.1.0`** (cmru `scm`, first tag pending).
 
 ## Release & infra model (current)

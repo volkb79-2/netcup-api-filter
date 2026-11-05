@@ -43,6 +43,16 @@ Run with `python -m pytest tests/` (or plain `pytest tests/`). No running app re
 - Hypothesis property tests live in `tests/test_*_property.py`, default profile `ci` (50 examples), set `HYPOTHESIS_PROFILE=dev` for 500.
 - CI runs this suite on every push/PR (see **`unit-tests` job** below).
 
+### Gate lanes (run-gate + assay)
+
+`run-gate.toml` is the single source for lanes; `assay.toml` declares what each assay lane proves.
+`run-gate --list` is authoritative. Rigor ladder per security-relevant module (`token_auth`,
+`account_auth`, `recovery_codes`, `utils`): `<m>` = R0+R1 whole-target coverage floor, `<m>_r3` = plus an
+import-break canary, `<m>_r2` = native mutation (asynchronous, never a gate member). `gate` = both unit
+lanes + trove + R1; `release-gate` adds the R3 canaries. Assay lanes are judged on the 3.14 runner
+(assay backlog B229); 3.11 is gated by the plain pytest lane `unit-py311`. Browser tests use the estate
+pwmcp instance: the runners and `app-local` join its network (`PWMCP_NETWORK`).
+
 ### `ui_tests/` — Playwright E2E (browser required)
 
 Requires a running deployment.  Browser runs in-process by default (requires
