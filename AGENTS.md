@@ -74,6 +74,7 @@ Public hostname is auto-detected into `.env.workspace` (`PUBLIC_FQDN`); never ha
 ([`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md)). Config layers: `.env.defaults` → `.env.workspace` →
 `.env.services` → `tooling/<service>/.env`. HTTPS comes from the host `edge-traefik`; naf holds no TLS material
 ([`docs/DEV_INFRA_SETUP.md`](docs/DEV_INFRA_SETUP.md)). Mock services (`naf-` prefix: mailpit, geoip, netcup-api, app-local) each have a ciu stack under `tooling/<name>/`.
+Browser tests use the estate's pwmcp instance (`/srv/pwmcp-instance`): export `PWMCP_NETWORK` (its `network_name`; ciu refuses to render without it) so the runners and `app-local` join it. Mocks and PowerDNS-API are internal-only (no published host ports); external reachability is traefik labels on `ingress_public` via the host `tls-edge`, as `tooling/app-local` does. Third-party image versions: `cmru versions` (age window 7 days, operator decision), `cmru.toml [versions]`.
 `deploy*/` trees are generated and gitignored. Python deps: `requirements-runtime.txt`, `requirements-test.txt`, `requirements-mutation.txt`; see [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
 
 ## Docs are part of the change

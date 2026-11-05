@@ -57,7 +57,7 @@ them. `ciu.compose.yml` is a RENDERED, gitignored artifact: edit `ciu.compose.ym
 ciu up --dir tooling/test-runner --define-root /workspaces/netcup-api-filter
 ```
 
-`--define-root` is needed because this devcontainer's shell exports dstdns's `REPO_ROOT`.
+Prerequisites: `PWMCP_NETWORK` (see AGENTS.md) and the per-stack env: `set -a; . ./ciu.env; . ./.env.workspace; . ./.env.guard; set +a`. `--define-root` is needed because this devcontainer's shell exports dstdns's `REPO_ROOT`.
 `ciu up` applies the cgroup/memory/IOPS governance overlay from `[governance]` in
 `ciu.global.defaults.toml.j2`.
 
