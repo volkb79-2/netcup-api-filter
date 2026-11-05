@@ -32,7 +32,7 @@ def test_nyxloom_gate_pointers_name_declared_lanes():
 def test_runner_variants_agree_across_cmru_ciu_run_gate_and_bake():
     ciu_text = (ROOT / "tooling/test-runner/ciu.defaults.toml.j2").read_text()
     ciu_variants = set(re.findall(r'^name = "(py\d+)"', ciu_text, re.M))
-    cmru_variants = {v["name"] for v in _toml("cmru.toml")["project"]["naf"]["variants"]}
+    cmru_variants = {v["name"] for v in _toml("cmru.toml")["project"]["variants"]}
     envs = _toml("run-gate.toml")["environments"]
     bake_targets = set(re.findall(r'^target "(py\d+)"', (ROOT / "docker-bake.hcl").read_text(), re.M))
 

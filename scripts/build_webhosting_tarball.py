@@ -17,7 +17,6 @@ import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 import tomllib
 
@@ -29,7 +28,7 @@ DIST_DIR = REPO_ROOT / "dist"
 def _target_versions() -> list[tuple[str, str]]:
     """Read cmru's single source of truth for Passenger variants."""
     with (REPO_ROOT / "cmru.toml").open("rb") as handle:
-        project = tomllib.load(handle)["project"]["naf"]
+        project = tomllib.load(handle)["project"]
     versions: list[tuple[str, str]] = []
     for variant in project.get("variants", []):
         arg = variant.get("build_arg", "")
@@ -190,46 +189,6 @@ def build_all() -> None:
         subprocess.run(command, cwd=REPO_ROOT, check=True)
 
 
-def _release_version() -> str:
-    tag = subprocess.check_output(
-        ["git", "describe", "--tags", "--exact-match", "--match", "naf-v*"],
-        cwd=REPO_ROOT, text=True,
-    ).strip()
-    return tag.removeprefix("naf-v")
-
-
-def publish() -> None:
-    """Use cmru's upstream variant publisher; do not duplicate its release logic."""
-    from cmru.release import GitHubReleases, VariantArtifact, publish_versioned_variants
-
-    token = os.environ.get("GITHUB_PUSH_PAT") or os.environ.get("GITHUB_TOKEN")
-    owner = os.environ.get("GITHUB_USERNAME", "")
-    repo = os.environ.get("GITHUB_REPO", "")
-    if not token or not owner or not repo:
-        raise RuntimeError("cmru must provide GITHUB_PUSH_PAT, GITHUB_USERNAME, and GITHUB_REPO")
-    labels = {name: label for name, _version, label in _variant_metadata()}
-    artifacts = [
-        VariantArtifact(name=name, asset_path=DIST_DIR / f"naf-{name}.tar.xz", label=labels[name])
-        for name, _python_version in _target_versions()
-    ]
-    missing = [str(item.asset_path) for item in artifacts if not item.asset_path.is_file()]
-    if missing:
-        raise RuntimeError("build the missing Passenger artifacts before publish: " + ", ".join(missing))
-    publish_versioned_variants(
-        GitHubReleases(owner, repo, token), prefix="naf", version=_release_version(),
-        variants=artifacts, asset_suffix=".tar.xz", target_commitish=os.environ.get("OCI_REVISION"),
-    )
-
-
-def _variant_metadata() -> list[tuple[str, str, Optional[str]]]:
-    with (REPO_ROOT / "cmru.toml").open("rb") as handle:
-        project = tomllib.load(handle)["project"]["naf"]
-    result = []
-    for variant in project.get("variants", []):
-        result.append((str(variant["name"]), str(variant["build_arg"]).partition("=")[2], variant.get("label")))
-    return result
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -237,14 +196,11 @@ def main() -> None:
     one = sub.add_parser("build-one")
     one.add_argument("--python-version", required=True)
     one.add_argument("--output", required=True, type=Path)
-    sub.add_parser("publish")
     args = parser.parse_args()
     if args.command == "build":
         build_all()
-    elif args.command == "build-one":
-        build_one(args.python_version, (REPO_ROOT / args.output).resolve())
     else:
-        publish()
+        build_one(args.python_version, (REPO_ROOT / args.output).resolve())
 
 
 if __name__ == "__main__":

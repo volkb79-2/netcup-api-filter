@@ -1,65 +1,118 @@
-# cmru.toml — CMRU project config for netcup-api-filter (naf)
-# =============================================================================
-# Phase 2 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
-# one tagged release publishes the py3.14 OCI image plus cp311 Passenger
-# tarball variants.  The tarball builder is deliberately project-local: it is the
-# only naf-specific part of the release flow.
-#
-# NO SECRETS here (this file is committed). The GitHub token is resolved at run
-# time from $GITHUB_PUSH_PAT / $GITHUB_TOKEN, or a gitignored cmru.secret.toml
-# overlay ([github].token) — see cmru SPEC S2.4.
-# =============================================================================
+# cmru.toml — CMRU 7.x project config for netcup-api-filter (naf).
+# One tagged release publishes the self-hosting OCI images (py311, py314) and the Passenger
+# py311 tarball variant. NO SECRETS here: the GitHub token comes from the user's `gh` login.
+schema_version = 1
+
+[runtime]
+kind = "none"
+
+[env]
+NAF_RELEASE_NOTES = "## netcup-api-filter\n\nScoped, audited DNS API in front of netcup and bring-your-own backends. Assets: `naf-v<ver>-py311.tar.xz` (Passenger webhosting, activate with `ciu up --host webhoster --thin -- --variant py311`) and the `app:py311` / `app:py314` container images."
 
 [github]
-owner      = "volkb79-2"
-repo       = "netcup-api-filter"
-owner_type = "user"          # matches vbpub/cmru.toml's owner_type for the same account
-token_source = "gh"          # credential comes from the user's `gh auth` login
+owner = "volkb79-2"
+repo = "netcup-api-filter"
+owner_type = "user"
+token_source = "gh"
 
 [targets]
-host     = "github"
+host = "github"
 registry = ["ghcr.io"]
 
-[project.naf]
-prefix    = "naf-v"
+[project]
+id = "naf"
+description = "Scoped, audited DNS API filter: Passenger tarball + OCI images."
+template_revision = 5
+prefix = "naf-v"
 artifacts = ["oci-image", "tarball"]
-cwd       = "."
 
-[project.naf.version]
+[project.version]
 strategy = "scm"
+bump = "conventional"
 
-[project.naf.oci]
-bake_file = "docker-bake.hcl"
-target    = "release"  # bake group: py311 + py314
+[project.release]
+git_tag = true
+build_step = "build"
+artifact_dirs = ["dist"]
 
-# CMRU-FEAT: one tagged release, ABI-specific assets.  The build script
-# reads these build args from this config and invokes the matching INFRA-3
-# build image for each one; cmru's landed variant publisher gives them their
-# canonical <tag>-<variant>.tar.xz release names.
-[[project.naf.variants]]
-name      = "py311"
+# Passenger deploys are GREENFIELD: each release ships a freshly seeded database; activation
+# extracts it and carries ONLY the SECRET_KEY across (scripts/activate.py). So there is
+# deliberately no `preserve` list.
+[project.installer]
+install_dir_system = "/srv/netcup-api-filter"
+install_dir_user = "netcup-api-filter"
+asset_suffix = ".tar.xz"
+entrypoint = "scripts/activate.py"
+required_commands = ["sh", "tar", "touch"]
+
+# One ABI-specific asset: the build runs inside the matching ciu runner (scripts/build_webhosting_tarball.py).
+# tests/test_run_gate_pointers.py keeps this list, the ciu runner variants, run-gate environments
+# and docker-bake targets in step.
+[[project.variants]]
+name = "py311"
 build_arg = "PYTHON_VERSION=3.11"
-label     = "Passenger Python 3.11"
+label = "Passenger Python 3.11"
 
-# naf's Passenger deploy is GREENFIELD (matches the retired deploy.sh
-# --preserve-secret-key): each release ships a freshly-seeded netcup_filter.db in
-# the tarball, activation extracts it over the deploy root, and ONLY the SECRET_KEY
-# is carried across (scripts/activate.py does this on the ciu --thin push path). So
-# there is deliberately NO `preserve` list here — declaring the whole DB preserved
-# would contradict the seeded-DB-per-release model.
-[project.naf.installer]
-install_dir_system = "/netcup-api-filter"
-install_dir_user   = "netcup-api-filter"
-asset_suffix       = ".tar.xz"
-entrypoint         = "scripts/activate.py"
-required_commands  = ["sh", "tar", "touch"]
-
-[project.naf.steps.build]
+[steps.run-tests]
+quiet = true
 commands = [
-  { label = "build Passenger tarball variants in matching ABI containers", argv = ["python3", "scripts/build_webhosting_tarball.py", "build"], cwd = "." },
+  { label = "naf: release gate (unit py311/py314, trove, R1 floors, R3 canaries)", argv = ["run-gate", "release-gate", "--worktree", "."], cwd = "." },
+  { label = "naf: resolved third-party versions still hold", argv = ["cmru", "versions", "check", "naf"], cwd = "." },
 ]
 
-[project.naf.steps.push]
+[steps.build]
+quiet = true
 commands = [
-  { label = "publish Passenger tarball variants", argv = ["python3", "scripts/build_webhosting_tarball.py", "publish"], cwd = "." },
+  { label = "naf: build Passenger tarball per variant (inside the ciu runner)", argv = ["python3", "scripts/build_webhosting_tarball.py", "build"], cwd = "." },
 ]
+
+[steps.push]
+quiet = true
+commands = [
+  { label = "naf: push OCI images (py311, py314)", argv = ["cmru", "handler", "oci-image-push", "--cwd", ".", "--bake-file", "docker-bake.hcl", "--bake-target", "release"], cwd = "." },
+  { label = "naf: publish Passenger tarball variant", argv = ["bash", "-c", "NAF_VERSION=\"${CMRU_RELEASE_TAG#naf-v}\" cmru handler tarball-publish --prefix naf --cwd . --glob 'dist/naf-py311.tar.xz' --version-env NAF_VERSION --notes-env NAF_RELEASE_NOTES --variant 'py311=Passenger Python 3.11'"], cwd = "." },
+]
+
+# --- third-party versions (age window: adopt only releases at least 14 days old) -------------
+[versions]
+age_window_days = 14
+
+[versions.discovery]
+scope = "shipped"
+
+# Test-mock services run from floating tags today (ciu defaults); these targets resolve the
+# newest eligible release so the pin is a reviewed, committed fact (versions/oci-images.json).
+[versions.targets."oci.mailpit"]
+mode = "single"
+constraint = ">=1.20.0,<2.0.0"
+
+[versions.targets."oci.mailpit".oci]
+image = "docker.io/axllent/mailpit"
+tag = "v{version}"
+
+[versions.targets."oci.powerdns-auth"]
+mode = "single"
+constraint = ">=4.8.0,<4.9.0"
+
+[versions.targets."oci.powerdns-auth".oci]
+image = "docker.io/powerdns/pdns-auth-48"
+tag = "{version}"
+
+# Base images of the runners and release images: rolling tags, digest recorded.
+[versions.targets."oci.python311"]
+mode = "single"
+constraint = "*"
+
+[versions.targets."oci.python311".oci]
+image = "docker.io/library/python"
+tag = "3.11-slim-trixie"
+selection = "rolling"
+
+[versions.targets."oci.python314"]
+mode = "single"
+constraint = "*"
+
+[versions.targets."oci.python314".oci]
+image = "docker.io/library/python"
+tag = "3.14-slim-trixie"
+selection = "rolling"
