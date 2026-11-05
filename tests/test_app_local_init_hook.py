@@ -35,9 +35,9 @@ CONFIG = {
         "name": "app",
         "init_python": "/opt/tester-venv/bin/python",
         "init_pythonpath": "vendor:src",
-        "mail": {"from_email": "naf@example.com", "admin_email": "admin@example.com"},
+        "mail": {"from_email": "naf@example.com", "admin_email": "admin@example.com",
+                 "smtp_service": "mailpit", "smtp_port": 1025},
     },
-    "mailpit": {"name": "mailpit", "smtp_port": 1025},
 }
 
 
@@ -110,8 +110,8 @@ def test_run_outside_the_engine_refuses():
 
 
 def test_missing_config_names_the_key():
-    broken = {**CONFIG, "mailpit": {"name": "mailpit"}}
-    with pytest.raises(ValueError, match="mailpit.smtp_port"):
+    broken = {**CONFIG, "app_local": {**CONFIG["app_local"], "mail": {**CONFIG["app_local"]["mail"], "smtp_port": ""}}}
+    with pytest.raises(ValueError, match="app_local.mail.smtp_port"):
         hook.build_init_argv(broken)
 
 
@@ -139,3 +139,20 @@ def test_compose_mounts_the_secrets_and_points_the_app_at_them():
     assert f"NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/{hook.PASSWORD_SECRET}" in compose
     assert "SECRET_KEY_FILE=/run/secrets/secret_key" in compose
     assert "NETCUP_FILTER_DB_PATH=/data/" in compose and "hostdir.data }}:/data" in compose
+
+
+def test_declared_mail_service_equals_the_mailpit_stack():
+    """app-local declares the Mailpit name/port itself (a lone `ciu up --dir` does not load the Mailpit
+    stack's config); this keeps the two declarations equal."""
+    import re
+    root = Path(__file__).resolve().parents[1]
+    mailpit = (root / "tooling/mailpit/ciu.defaults.toml.j2").read_text()
+    app = (root / "tooling/app-local/ciu.defaults.toml.j2").read_text()
+
+    def value(text, key):
+        found = re.search(rf'^{key}\s*=\s*"?([^"\n#]+?)"?\s*(?:#.*)?$', text, re.M)
+        assert found, key
+        return found.group(1)
+
+    assert value(app, "smtp_service") == value(mailpit, "name")
+    assert value(app, "smtp_port") == value(mailpit, "smtp_port")

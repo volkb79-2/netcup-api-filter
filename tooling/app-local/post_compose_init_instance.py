@@ -55,7 +55,7 @@ def mailpit_host(config: dict) -> str:
     return "-".join((
         str(_require(config, "deploy.project_name")),
         str(_require(config, "deploy.environment_tag")),
-        str(_require(config, "mailpit.name")),
+        str(_require(config, "app_local.mail.smtp_service")),
     ))
 
 
@@ -68,7 +68,7 @@ def build_init_argv(config: dict) -> list[str]:
         str(_require(config, "app_local.init_python")),
         "-m", "netcup_api_filter.bootstrap", "init",
         "--mock-smtp-host", mailpit_host(config),
-        "--mock-smtp-port", str(_require(config, "mailpit.smtp_port")),
+        "--mock-smtp-port", str(_require(config, "app_local.mail.smtp_port")),
         "--mock-from-email", str(_require(config, "app_local.mail.from_email")),
         "--mock-admin-email", str(_require(config, "app_local.mail.admin_email")),
     ]

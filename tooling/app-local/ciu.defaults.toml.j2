@@ -53,6 +53,11 @@ email = "admin@example.com"
 [app_local.mail]
 from_email = "naf@example.com"
 admin_email = "admin@example.com"
+# The Mailpit service this instance mails through. A stack run on its own (`ciu up --dir`) does not load
+# the Mailpit stack's config, so the two facts are declared here and tests/test_app_local_init_hook.py
+# keeps them equal to tooling/mailpit/ciu.defaults.toml.j2 (name, smtp_port).
+smtp_service = "mailpit"
+smtp_port = 1025
 
 # Per-instance secrets, generated once into the project store (.ciu/secrets/, gitignored) and mounted
 # at /run/secrets/<name> (S4.17 *_FILE convention). First-start initialization across the gunicorn
@@ -63,6 +68,9 @@ bootstrap_admin_password = "GEN_LOCAL:naf/app_local_bootstrap_admin_password"
 
 # The instance's own data directory (its SQLite DB lives here, not in the build tree): deploy-local/
 # netcup_filter.db stays the pristine golden DB that the e2e gate copies per session.
+[app_local.app]
+name = "app"   # ciu derives the hostdir path from the service name
+
 [app_local.app.hostdir]
 data = ""
 
