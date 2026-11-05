@@ -36,6 +36,7 @@ Session cookie behavior stays config-driven via env vars:
 
 - `FLASK_SESSION_COOKIE_SECURE=auto` switches between Secure cookies when HTTPS is available and HTTP for `FLASK_ENV=local_test`.
 - `FLASK_SESSION_COOKIE_HTTPONLY`, `FLASK_SESSION_COOKIE_SAMESITE`, and `FLASK_SESSION_LIFETIME` (seconds) control browser session handling.
+- `ADMIN_LOGIN_LOCKOUT_THRESHOLD` (default `5`) and `ADMIN_LOGIN_LOCKOUT_MINUTES` (default `15`) control the admin login brute-force lockout. They are read at call time (environment first, then `.env.defaults`); a non-integer or `< 1` value raises an error instead of silently defaulting.
 - Timeouts, rate limits, and admin/client credentials all follow the same pattern.
 
 Whenever you add a new security-relevant constant, update `.env.defaults`, document it in this guide, and use `os.environ[...]` (or equivalent) in code.

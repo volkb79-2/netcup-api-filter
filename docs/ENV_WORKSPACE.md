@@ -84,7 +84,7 @@ fi
 NETWORK="${DOCKER_NETWORK_INTERNAL:-naf-dev-network}"
 ```
 
-**Why**: Needs to know which network to verify connectivity for (read from global-config.active.toml).
+**Why**: Needs to know which network to verify connectivity for (from `DOCKER_NETWORK_INTERNAL`, default `naf-dev-network`).
 
 ### 4. Future Scripts
 Any new script that needs workspace configuration can simply `source .env.workspace`.

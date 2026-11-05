@@ -15,18 +15,11 @@ Configuration:
         - SMTP: mailpit:1025
     
     Authentication:
-        Mailpit requires basic auth for API access. Credentials are read from:
-        1. Constructor arguments: MailpitClient(username="...", password="...")
-        2. Environment variables: MAILPIT_USERNAME, MAILPIT_PASSWORD
-        3. Defaults: admin / MailpitDev123! (from tooling/mailpit/.env)
+        None. Mailpit is internal-only (no traefik labels, no host ports), so
+        its UI/API runs without auth.
 
 Usage:
-    # Uses environment variables or defaults
     client = MailpitClient()
-    client.clear()
-    
-    # Or pass credentials explicitly
-    client = MailpitClient(username="admin", password="secret")
     client.clear()
     
     # ... trigger email sending to mailpit:1025 ...
@@ -202,8 +195,6 @@ class MailpitClient:
         self,
         base_url: str | None = None,
         timeout: float = 10.0,
-        username: str | None = None,
-        password: str | None = None,
     ):
         # Read from environment (.env.services) or fall back to static value
         default_url = os.environ.get("MAILPIT_URL", self._DEFAULT_BASE_URL_FALLBACK)
@@ -214,22 +205,7 @@ class MailpitClient:
         self.api_url = f"{self.base_url}/api/v1"
         self.timeout = timeout
         
-        # Authentication credentials (from args or environment ONLY)
-        # NO DEFAULTS - must be set in environment from tooling/mailpit/.env
-        username = username or os.environ.get("MAILPIT_USERNAME")
-        password = password or os.environ.get("MAILPIT_PASSWORD")
-        
-        if not username or not password:
-            raise ValueError(
-                "Mailpit authentication required: set MAILPIT_USERNAME and MAILPIT_PASSWORD "
-                "environment variables (source tooling/mailpit/.env)"
-            )
-        
-        # Create httpx client with basic auth
-        self._client = httpx.Client(
-            timeout=timeout,
-            auth=(username, password),
-        )
+        self._client = httpx.Client(timeout=timeout)
     
     def _request(
         self,

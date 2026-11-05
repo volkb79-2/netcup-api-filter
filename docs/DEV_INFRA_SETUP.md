@@ -41,9 +41,11 @@ export NAF_DELEGATED_DNS_ZONE="managed.vxxu.de"
 ```
 
 The basicauth guard exists because the product is **not production-ready and must not be
-publicly reachable**, while e2e still needs to run through real TLS. Regenerate its
-credential any time (bcrypt hash for traefik + plaintext for Playwright's `http_credentials`)
-and re-`ciu up` the exposed stacks.
+publicly reachable**, while humans still reach it over real TLS. Regenerate its
+credential any time (bcrypt hash for traefik + plaintext for browsing and `curl` by humans)
+and re-`ciu up` the exposed stacks. The guard is for humans only: the e2e suite targets the
+app over the internal docker network and never goes through traefik, so it carries no guard
+credentials.
 
 ## 2. Load the env, then drive ciu
 

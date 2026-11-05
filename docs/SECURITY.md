@@ -29,6 +29,9 @@ buggy client trying to reach out of scope, and credential probing/brute force.
   **lockout** (`TFA_MAX_ATTEMPTS` / `TFA_LOCKOUT_MINUTES`); recovery-code attempts are
   rate-limited too. The session token is **regenerated on login** (fixation defence). See
   `SECURITY_IMPROVEMENTS_2FA.md`.
+- **Admin login lockout**: after `ADMIN_LOGIN_LOCKOUT_THRESHOLD` (default 5) consecutive failed
+  password logins for a username, the admin account is locked for `ADMIN_LOGIN_LOCKOUT_MINUTES`
+  (default 15). Both are config-driven (`.env.defaults`, env override); invalid values fail loudly.
 
 ## Authorization (the heart of it)
 

@@ -44,26 +44,6 @@ from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
 
 
-def _guard_credentials() -> dict:
-    """HTTP basicauth credentials for the traefik ingress guard, if configured.
-
-    naf's dev deployment is exposed through the host traefik behind a basicauth
-    middleware, because the product is not production ready and must not be
-    publicly reachable. Every request the browser makes therefore has to carry
-    those credentials, or the e2e suite gets a 401 before it ever reaches the app
-    — i.e. enabling the guard would silently kill the very tests it protects.
-
-    Credentials come from the gitignored ``.env.guard`` (the same file that holds
-    the bcrypt hash traefik is configured with). Returns an empty dict when unset,
-    so in-process/local runs against an unguarded app are unaffected.
-    """
-    user = os.environ.get("NAF_GUARD_USER", "").strip()
-    password = os.environ.get("NAF_GUARD_PASSWORD", "").strip()
-    if not user or not password:
-        return {}
-    return {"http_credentials": {"username": user, "password": password}}
-
-
 def _pwmcp_lease_headers() -> dict:
     """Lease headers the pwmcp :3000 policy gateway requires (else HTTP 428).
 
@@ -184,7 +164,7 @@ class PlaywrightClient:
             )
             storage_state_path = None
 
-        context_kwargs = dict(_guard_credentials())
+        context_kwargs = {}
         if storage_state_path:
             context_kwargs["storage_state"] = storage_state_path
         self._context = await self._browser.new_context(**context_kwargs)
@@ -218,10 +198,7 @@ class PlaywrightClient:
         if not self._browser:
             raise RuntimeError("Client not connected. Use 'async with' or call connect()")
         
-        # Callers may override, but by default every context carries the ingress
-        # basicauth credentials — see _guard_credentials().
-        merged = {**_guard_credentials(), **kwargs}
-        context = await self._browser.new_context(**merged)
+        context = await self._browser.new_context(**kwargs)
         context.set_default_timeout(self.timeout)
         return context
     

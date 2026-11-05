@@ -12,33 +12,7 @@ This used to happen when Flask set session cookies for an internal hostname whil
 
 **Takeaway**: you should not need any cookie-domain workaround anymore.
 
-**Recommended anyway: reuse Playwright auth state** (faster tests, fewer logins)
-
-```python
-from ui_tests.auth_state import ensure_authenticated
-
-async def test_against_webhosting():
-    async with browser_session() as browser:
-        page = browser._page
-        context = page.context
-        
-        # Authenticate once, reuse session
-        authenticated = await ensure_authenticated(
-            context=context,
-            page=page,
-            login_url=settings.url("/admin/login"),
-            target="webhosting",
-            auth_state_name="webhosting_admin",
-        )
-        
-        if not authenticated:
-            pytest.skip("Could not authenticate")
-        
-        # Now all subsequent requests use saved session
-        await page.goto(settings.url("/admin/dashboard"))
-```
-
----
+Log in through the UI per test (the former `ui_tests.auth_state` helper was removed as dead code).
 
 ### 2. 2FA Code Retrieval (Webhosting)
 
@@ -261,7 +235,6 @@ Example: Testing against webhosting deployment with production-like constraints.
 import pytest
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
-from ui_tests.auth_state import ensure_authenticated
 
 
 @pytest.fixture
@@ -279,18 +252,7 @@ class TestWebhostingSecurity:
             page = browser._page
             context = page.context
             
-            # Use saved auth state to bypass initial login
-            auth_loaded = await ensure_authenticated(
-                context=context,
-                page=page,
-                login_url=settings.url("/admin/login"),
-                target="webhosting",
-                auth_state_name="webhosting_admin",
-            )
-            
-            if not auth_loaded:
-                pytest.skip("Could not authenticate to webhosting")
-            
+            # Log in via the UI first (see ui_tests.workflows)
             # Now test security features via UI observation
             # Logout to test login lockout
             await page.goto(settings.url("/admin/logout"))

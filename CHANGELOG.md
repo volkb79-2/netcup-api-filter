@@ -10,6 +10,12 @@
 
 ### Changed
 
+- **S6 dev-infra separation:** Mailpit UI/API auth removed (internal-only stack; `MailpitClient`
+  takes no credentials; `MAILPIT_USERNAME`/`MAILPIT_PASSWORD` gone from compose, CI and docs). The
+  traefik basicauth guard is for humans only; the Playwright client no longer sends guard
+  credentials (e2e targets the app over the internal network). Admin login lockout threshold/duration
+  are now `ADMIN_LOGIN_LOCKOUT_THRESHOLD` / `ADMIN_LOGIN_LOCKOUT_MINUTES` in `.env.defaults`.
+  Dead code removed: `global-config.{defaults,active}.toml`, `ui_tests/auth_state.py`.
 - **Rigor ladder:** assay R1 floors at the measured baseline, R3 import-break canaries and R2 mutation
   lanes for `token_auth`, `account_auth`, `recovery_codes`, `utils`; `release-gate` sequence.
 - **pwmcp is consumed, not hosted:** `infra/pwmcp` removed; runners and `app-local` join the estate

@@ -45,7 +45,7 @@ from ..realm_token_service import (
     reject_realm,
 )
 from ..database import get_setting, set_setting
-from ..config_defaults import get_default
+from ..config_defaults import get_default, require_default
 
 import ipaddress
 import json
@@ -74,9 +74,33 @@ LOGIN_DELAY_MIN_MS = 100
 LOGIN_DELAY_MAX_MS = 300
 
 # Brute force protection thresholds
-FAILED_LOGIN_LOCKOUT_THRESHOLD = 5  # Failed attempts before lockout
-FAILED_LOGIN_LOCKOUT_MINUTES = 15  # Lockout duration
 FAILED_LOGIN_ALERT_THRESHOLD = 3  # Failed attempts before alerting user
+
+
+def _positive_int_setting(key: str) -> int:
+    """Read a positive-integer setting: environment first, then .env.defaults.
+
+    Fails fast (ValueError) on a non-integer or < 1 value; a missing key raises
+    from ``require_default``. No silent fallback.
+    """
+    raw = os.environ.get(key) or require_default(key)
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        raise ValueError(f"{key} must be an integer >= 1, got {raw!r}") from None
+    if value < 1:
+        raise ValueError(f"{key} must be an integer >= 1, got {raw!r}")
+    return value
+
+
+def get_login_lockout_threshold() -> int:
+    """Failed admin logins before lockout (ADMIN_LOGIN_LOCKOUT_THRESHOLD)."""
+    return _positive_int_setting('ADMIN_LOGIN_LOCKOUT_THRESHOLD')
+
+
+def get_login_lockout_minutes() -> int:
+    """Admin lockout duration in minutes (ADMIN_LOGIN_LOCKOUT_MINUTES)."""
+    return _positive_int_setting('ADMIN_LOGIN_LOCKOUT_MINUTES')
 
 
 def _add_timing_jitter():
@@ -128,8 +152,8 @@ def _track_failed_login(username: str, client_ip: str) -> tuple[bool, int]:
     
     # Check if we should lock out
     is_locked = False
-    if data['count'] >= FAILED_LOGIN_LOCKOUT_THRESHOLD:
-        data['lockout_until'] = (now + timedelta(minutes=FAILED_LOGIN_LOCKOUT_MINUTES)).isoformat()
+    if data['count'] >= get_login_lockout_threshold():
+        data['lockout_until'] = (now + timedelta(minutes=get_login_lockout_minutes())).isoformat()
         is_locked = True
         logger.warning(f"Account '{username}' locked out after {data['count']} failed attempts")
     
@@ -455,7 +479,7 @@ def login():
                 _notify_failed_login_attempt(admin, failed_count, client_ip)
             
             if is_locked:
-                flash(f'Too many failed attempts. Account locked for {FAILED_LOGIN_LOCKOUT_MINUTES} minutes.', 'error')
+                flash(f'Too many failed attempts. Account locked for {get_login_lockout_minutes()} minutes.', 'error')
             else:
                 flash('Invalid credentials', 'error')
             
