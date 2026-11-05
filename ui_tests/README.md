@@ -201,17 +201,18 @@ pytest ui_tests/tests/test_ui_functional.py::TestThemeAndCSS -v
 PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ pytest ui_tests/tests -q
 ```
 
-Screenshots are saved to `SCREENSHOT_DIR` (defaults to `deploy-local/screenshots`).
+Screenshots are saved to `SCREENSHOT_DIR` (default: `E2E_SCREENSHOT_DIR` in `.env.defaults`, `tmp/e2e-screenshots`). Every session starts its own app on a copy of the golden DB with random personas; see `docs/TESTING_INFRASTRUCTURE.md`.
 
 ## Test Organization
 
 ```
 ui_tests/
 ├── browser.py                        # Playwright browser wrapper
-├── config.py                         # Test configuration from environment
-├── conftest.py                       # Pytest fixtures (browser, auth)
+├── config.py                         # settings, bound per session to the instance + personas
+├── conftest.py                       # Pytest fixtures (session app instance, browser, auth)
+├── e2e_env.py                        # Per-session throwaway app on a copy of the golden DB
+├── personas.py                       # Random per-session admin/user/read-only personas
 ├── workflows.py                      # Reusable test workflows
-├── deployment_state.py               # Track deployment credentials
 ├── mailpit_client.py                 # Email verification helper
 ├── parallel_session_manager.py       # Multi-browser orchestration
 ├── playwright_client.py              # MCP server client
