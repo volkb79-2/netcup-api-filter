@@ -1629,7 +1629,7 @@ Ref: {email_ref}
 """
     
     try:
-        notifier.send_email_async(account.email, subject, body, html_body)
+        notifier.send_email_async(account.email, subject, body, html_body, delay=0)
         logger.info(f"Sent password changed notification to {account.email} [ref={email_ref}]")
         return True
     except Exception as e:
@@ -1775,7 +1775,7 @@ Ref: {email_ref}
 """
     
     try:
-        notifier.send_email_async(account.email, subject, body, html_body)
+        notifier.send_email_async(account.email, subject, body, html_body, delay=0)
         logger.info(f"Sent token revoked notification to {account.email} for token {token.token_prefix} [ref={email_ref}]")
         return True
     except Exception as e:
@@ -1921,7 +1921,7 @@ Ref: {email_ref}
 """
     
     try:
-        notifier.send_email_async(account.email, subject, body, html_body)
+        notifier.send_email_async(account.email, subject, body, html_body, delay=0)
         logger.info(f"Sent credential rotation notification to {account.email} ({tokens_invalidated} tokens) [ref={email_ref}]")
         return True
     except Exception as e:
@@ -2039,7 +2039,7 @@ Ref: {email_ref}
 """
     
     try:
-        notifier.send_email_async(old_email, subject, body, html_body)
+        notifier.send_email_async(old_email, subject, body, html_body, delay=0)
         logger.info(f"Sent email changed alert to old address {old_email} [ref={email_ref}]")
         return True
     except Exception as e:
@@ -2160,7 +2160,7 @@ Ref: {email_ref}
 """
     
     try:
-        notifier.send_email_async(new_email, subject, body, html_body)
+        notifier.send_email_async(new_email, subject, body, html_body, delay=0)
         logger.info(f"Sent email changed confirmation to new address {new_email} [ref={email_ref}]")
         return True
     except Exception as e:

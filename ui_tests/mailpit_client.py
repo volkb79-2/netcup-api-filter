@@ -395,15 +395,10 @@ class MailpitClient:
         self.close()
 
 
-# For backwards compatibility with aiosmtpd-based tests,
-# provide a CapturedEmail-like interface
+# Flat, immutable view of a received message (sender, recipients, subject, bodies)
 @dataclass
 class CapturedEmail:
-    """Adapter class for compatibility with aiosmtpd-based tests.
-    
-    Wraps MailpitMessage to provide same interface as the old
-    mock_smtp_server.CapturedEmail class.
-    """
+    """Flat view of a MailpitMessage."""
     
     sender: str
     recipients: list[str]

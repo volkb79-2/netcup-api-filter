@@ -102,9 +102,8 @@ Automated UI coverage using a multi-layer testing strategy:
 - Domain listing, record CRUD
 - Error simulation
 
-**`test_mock_smtp.py`** - Mailpit SMTP mock
-- Email delivery to test inbox
-- 2FA code extraction
+Mailpit is the SMTP mock: delivery and 2FA-code extraction are covered by the feature and security
+suites through `mailpit_client.py`.
 
 ### Performance and Accessibility
 
@@ -218,7 +217,6 @@ ui_tests/
 ├── playwright_client.py              # MCP server client
 ├── capture_ui_screenshots.py         # Automated screenshot capture
 ├── mock_netcup_api.py                # Netcup CCP API mock server
-├── mock_smtp_server.py               # SMTP testing server
 ├── mock_geoip_server.py              # GeoIP lookup mock
 ├── tests/
 │   ├── journeys/
@@ -244,7 +242,6 @@ ui_tests/
 │   ├── test_mobile_responsive.py     # Mobile layouts
 │   ├── test_console_errors.py        # JavaScript errors
 │   ├── test_mock_api_standalone.py   # Mock API verification
-│   ├── test_mock_smtp.py             # Mock SMTP verification
 │   ├── test_live_dns_verification.py # Real DNS (requires creds)
 │   ├── test_live_email_verification.py # Real email (requires creds)
 │   └── test_holistic_coverage.py     # Integration smoke test

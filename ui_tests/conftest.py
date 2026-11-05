@@ -249,36 +249,8 @@ async def browser_session():
 
 
 # ============================================================================
-# Mock SMTP server fixtures
+# Mailpit (the SMTP mock) fixture
 # ============================================================================
-
-@pytest_asyncio.fixture(scope='function')
-async def mock_smtp_server():
-    """Fixture that provides a running mock SMTP server.
-    
-    Captures all emails sent during the test for inspection.
-    
-    Usage:
-        async def test_email(mock_smtp_server):
-            # Configure app to use mock SMTP
-            smtp_host, smtp_port = "127.0.0.1", 1025
-            
-            # ... trigger email sending ...
-            
-            # Check captured emails
-            assert len(mock_smtp_server.captured_emails) == 1
-            email = mock_smtp_server.captured_emails[0]
-            assert email.subject == "Test Subject"
-    """
-    from ui_tests.mock_smtp_server import MockSMTPServer
-    
-    server = MockSMTPServer(host='127.0.0.1', port=1025)
-    await server.start()
-    
-    yield server
-    
-    await server.stop()
-
 
 @pytest.fixture(scope='function')
 def mailpit():
