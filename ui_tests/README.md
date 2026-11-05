@@ -156,10 +156,10 @@ Automated UI coverage using a multi-layer testing strategy:
 
 ```bash
 # Complete production-parity local build and test cycle (recommended)
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 
 # Reuse deploy-local if it already exists
-./run-local-tests.sh --skip-build
+run-gate local-build (see run-gate.toml)
 ```
 
 **Test Execution Order:**

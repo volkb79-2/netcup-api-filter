@@ -6,7 +6,7 @@ superseded) — and is only needed for the HTTPS PowerDNS-over-the-public-edge p
 (reached through the host traefik at naf-pdns.<PUBLIC_FQDN>, naf-I04). But the
 derivation used to be unconditional, so under `set -euo pipefail` (which every consumer
 uses) sourcing aborted with "PUBLIC_FQDN: unbound variable" whenever it wasn't set.
-That bricked deploy.sh / run-local-tests.sh on any devcontainer rebuild.
+That bricked deploy.sh / run-gate local-build on any devcontainer rebuild.
 
 These tests shell out (the contract is a shell contract) and run in the unit gate.
 """

@@ -4,12 +4,12 @@
 
 | Concern | Entry point | Output / effect |
 |---|---|---|
-| Local development and UI tests | `run-local-tests.sh` | Calls `build_deployment.py --local`, creates `deploy-local/`, starts the local app, and runs `ui_tests/`. |
+| Local development and UI tests | `run-gate local-build` | Calls `build_deployment.py --local`, creates `deploy-local/`, starts the local app, and runs `ui_tests/`. |
 | Published release | `cmru release` | Publishes the Python 3.14 OCI image plus Passenger `py39` and `py311` tarball variants and a variant-selecting installer. |
 | Passenger webhosting deployment | `ciu up --host webhoster --thin -- --variant <variant>` | Transfers a selected release tarball and runs the activation adapter on the webhoster. |
 
 `deploy-local/` is a local-test artifact, not a webhosting release artifact. It is built only by
-the `run-local-tests.sh` → `build_deployment.py --local` path.
+the `run-gate local-build` → `build_deployment.py --local` path.
 
 ## Passenger release path
 
@@ -29,7 +29,7 @@ value.
 
 ## Local test path
 
-`run-local-tests.sh` builds and extracts `deploy-local/`, starts the Flask manager, and runs the
+`run-gate local-build` builds and extracts `deploy-local/`, starts the Flask manager, and runs the
 requested `ui_tests` target. `--with-mocks` starts Mailpit, Mock GeoIP, and Mock Netcup API; use
 `--skip-build` to reuse an existing local deployment. Local tooling that consumes
 `deploy-local/` must keep using this path.

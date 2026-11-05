@@ -5,19 +5,19 @@ test deployment, and do not build or copy Passenger artifacts by hand.
 
 ## Local development and UI testing
 
-`run-local-tests.sh` is the local entry point. It runs `build_deployment.py --local`, extracts
+`run-gate local-build` is the local entry point. It runs `build_deployment.py --local`, extracts
 the resulting package into `deploy-local/`, starts the local Flask manager, and drives
 `ui_tests/` against that deployment.
 
 ```bash
 # Build deploy-local/ and run the UI suite.
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 
 # Also start Mailpit, GeoIP, and Netcup API mocks.
-./run-local-tests.sh --with-mocks
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)
 
 # Reuse an existing deploy-local/ build.
-./run-local-tests.sh --skip-build
+run-gate local-build (see run-gate.toml)
 ```
 
 `build_deployment.py --local` is the only builder of `deploy-local/`. Live test and coverage

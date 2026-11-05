@@ -163,12 +163,12 @@ async def test_ddns_update_mutates_backend_and_usage(active_profile):
     """
     mock_base = _mock_base_url()
     if not mock_base:
-        pytest.skip("MOCK_NETCUP_API_URL not set; run ./run-local-tests.sh --with-mocks")
+        pytest.skip("MOCK_NETCUP_API_URL not set; run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)")
 
     if not _mock_is_reachable(mock_base):
         pytest.skip(
             f"Mock Netcup API not reachable at {mock_base}/health; "
-            "run ./run-local-tests.sh --with-mocks"
+            "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
     if not verification.db_available():

@@ -59,7 +59,7 @@ UI, and token-authenticated REST/DDNS APIs, and runs on shared webhosting under 
 - **Config-driven, no hardcoded values**: `.env.defaults` → environment → DB settings.
 - **First-start seeding** from `app-config.toml` (`[[users]]`, `[[backends]]`, `[[domain_roots]]`).
   See [`TOML_CONFIGURATION.md`](TOML_CONFIGURATION.md).
-- **Production-parity local testing** via `run-local-tests.sh`, which invokes
+- **Production-parity local testing** via `run-gate local-build`, which invokes
   `build_deployment.py --local` to build `deploy-local/`; releases use `cmru release`, and
   webhosting deployment uses `ciu up --host webhoster --thin -- --variant py311`.
 - **Greenfield deploys** (see roadmap): each deploy provisions a fresh, freshly-seeded database.

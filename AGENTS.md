@@ -49,8 +49,8 @@ the supported verbs:
 | Concern | Verb |
 |---|---|
 | Gate (unit per Python version, trove, e2e) | `run-gate <lane>` |
-| Local app, mocks, pwmcp | `ciu` stacks (`tooling/*/`) |
-| Release (OCI image + Passenger tarballs, `scm` version) | `cmru release` |
+| Local app, mocks, pwmcp | `ciu up --dir tooling/<stack>` |
+| Release (OCI py311+py314, Passenger py311 tarball, `scm`) | `cmru release` |
 | Deploy to webhoster | `ciu up --host webhoster --thin -- --variant py311` |
 
 Webhoster inventory, pinned host key and activation contract: `.ciu.hosts.toml`. Webhosting releases are
@@ -58,10 +58,9 @@ greenfield (fresh seeded DB, default `admin`/`admin`, `must_change_password`); o
 Credentials are tracked in `deployment_state_*.json` (never hardcode a password); browser tests use pwmcp via
 `PLAYWRIGHT_SERVER_WS`, never an engine installed here.
 
-> **Migration pending (step 3):** `run-local-tests.sh` / `build_deployment.py --local` still build and drive
-> `deploy-local/` from the cockpit, and `scripts/build_webhosting_tarball.py` (used by `cmru release`) still
-> calls the retired `testing-exec.sh build`. The gate itself is `run-gate.toml` + `assay.toml` (SSOT);
-> `nyxloom-trove/nyxloom.toml` `[gates.*]` are pointers.
+Local flow (run-gate.toml header has the exact sequence): mocks and `app-local` via `ciu up --dir tooling/<name>`,
+`run-gate local-build` seeds `deploy-local/` inside the 3.11 runner, `run-gate e2e` drives pwmcp against the app.
+The old cockpit scripts (`run-local-tests.sh`, `tooling/flask-manager.sh`, `.vscode/run-*.sh`) are gone.
 
 **Testing:** `tests/` (pytest unit/integration; use the `make_account`/`make_realm`/`make_token` fixtures in
 `tests/conftest.py`) and `ui_tests/` (Playwright; read [`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md)

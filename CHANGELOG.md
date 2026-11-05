@@ -11,6 +11,10 @@
   `testing-exec.sh` and `runner.env` are removed.
 - **Manifests follow the estate naming:** `requirements-runtime.txt`, `requirements-test.txt`,
   new `requirements-mutation.txt` (mutmut). Unused `pyyaml` dropped from the runtime set.
+- **Release images:** bake group `release` builds `app:py311` and `app:py314`; the Passenger
+  tarball is built inside the matching ciu runner (`docker exec`), not via `testing-exec.sh`.
+- **Local flow runs in containers:** `run-gate local-build` / `e2e` replace `run-local-tests.sh`;
+  cockpit runner scripts (`flask-manager.sh`, `.vscode/run-*.sh`, `tooling/run-*.sh`) removed.
 
 ## [Unreleased] — Planned SCRAM API authentication — 2026-10-15
 

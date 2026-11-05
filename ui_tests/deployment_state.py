@@ -230,7 +230,7 @@ def load_state(target: Optional[DeploymentTarget] = None) -> DeploymentState:
     if not state_file.exists():
         raise FileNotFoundError(
             f"Deployment state file not found: {state_file}\n"
-            f"For local: Run ./run-local-tests.sh\n"
+            f"For local: Run run-gate local-build (see run-gate.toml)\n"
             f"For webhosting: Run cmru release, then ciu up --host webhoster --thin -- --variant py311 and sync state"
         )
     

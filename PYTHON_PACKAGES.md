@@ -59,7 +59,7 @@ pip install --user -r requirements-test.txt
 
 ### Local Deployment Build
 
-`build_deployment.py --local` remains the local builder. `run-local-tests.sh` invokes it,
+`build_deployment.py --local` remains the local builder. `run-gate local-build` invokes it,
 extracts the package into `deploy-local/`, and runs the local UI suite. It is not the webhosting
 release path.
 

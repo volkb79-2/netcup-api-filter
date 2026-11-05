@@ -15,7 +15,7 @@
 # gate proves — one image, one fidelity story. Production is unaffected: it ships to shared
 # webhosting under Passenger, not from this container.
 #
-# PREREQUISITE: `run-local-tests.sh` must have produced `deploy-local/` (via
+# PREREQUISITE: `run-gate local-build` must have produced `deploy-local/` (via
 # `build_deployment.py --local`, then unzip). This stack
 # serves that directory over the mounted repo; it does not build the app itself.
 # =============================================================================
@@ -24,7 +24,7 @@
 name = "app"
 # Same image the gate uses — see IMAGE REUSE above.
 image_name = "test-runner"
-image_tag = "local"
+image_tag = "py311"
 
 # The port gunicorn binds inside the container. gunicorn.conf.py defaults GUNICORN_BIND to
 # 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.

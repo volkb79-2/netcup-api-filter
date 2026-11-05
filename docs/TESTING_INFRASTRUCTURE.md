@@ -59,8 +59,8 @@ PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/ pytest ui_tests/tests -v
 Or via the standard runner (builds a fresh deployment first):
 
 ```bash
-./run-local-tests.sh --with-mocks    # Mailpit + GeoIP + Netcup-API mocks
-./run-local-tests.sh --skip-build    # reuse existing deploy-local
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)    # Mailpit + GeoIP + Netcup-API mocks
+run-gate local-build (see run-gate.toml)    # reuse existing deploy-local
 ```
 
 **Directory layout** under `ui_tests/tests/` (E2 schema — applied 2026-06-14):
@@ -101,18 +101,18 @@ Use `-m <marker>` to select by bucket regardless of path.
 
 ## Standard local runner
 
-**`run-local-tests.sh`** — the single entry point for local testing:
+**`run-gate local-build`** — the single entry point for local testing:
 
 ```bash
-./run-local-tests.sh                          # build + run full ui_tests suite
-./run-local-tests.sh --with-mocks             # also start mock services
-./run-local-tests.sh --skip-build             # reuse existing deploy-local
-./run-local-tests.sh --with-mocks <file>      # run a single test file
+run-gate local-build (see run-gate.toml)                          # build + run full ui_tests suite
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)             # also start mock services
+run-gate local-build (see run-gate.toml)             # reuse existing deploy-local
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e) <file>      # run a single test file
 ```
 
 The script invokes `build_deployment.py --local` to build a production-parity deployment
 under `deploy-local/`, starts the app, and runs the `ui_tests` suite. Pass a test path to
-`run-local-tests.sh` to select a subset; keep its documented CLI and the suite layout in sync
+`run-gate local-build` to select a subset; keep its documented CLI and the suite layout in sync
 when adding or removing tests.
 
 ---
@@ -219,7 +219,7 @@ invite form, realm/token creation).
 netstat -tuln | grep 5100
 
 # Rebuild from scratch
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 ```
 
 ### Tests fail with "Connection Refused"

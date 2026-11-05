@@ -57,6 +57,6 @@ When a feature requires new settings:
 2. **Document it** in this guide under an appropriate section (Security, Email, Proxy, etc.).
 3. **Consume it** in code using the `os.environ[...]` helpers (or the existing `config` utilities) and avoid fallbacks—require callers to provide it.
 4. **Expose overrides** where relevant (admin UI fields, deployment scripts, tests) so every environment can set it without editing code.
-5. **Test it** via `run-local-tests.sh` (HTTP) and `tooling/run-ui-validation.sh` (HTTPS + Playwright) to ensure defaults and overrides behave as expected.
+5. **Test it** via `run-gate local-build` (HTTP) and `tooling/run-ui-validation.sh` (HTTPS + Playwright) to ensure defaults and overrides behave as expected.
 
 Following these steps keeps the entire system consistent with the configuration-driven policy and prevents regressions across deployments.

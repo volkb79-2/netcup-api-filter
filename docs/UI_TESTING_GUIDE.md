@@ -111,12 +111,12 @@ The BS5 component demo at `/component-demo-bs5` serves as the canonical referenc
 
 ## Local test integration
 
-`run-local-tests.sh` builds `deploy-local/` through `build_deployment.py --local` and runs
+`run-gate local-build` builds `deploy-local/` through `build_deployment.py --local` and runs
 the UI suite. Capture screenshots as a separate explicit step when needed:
 
 ```bash
 # Run the production-parity local suite
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 
 # Capture screenshots
 python ui_tests/capture_ui_screenshots.py

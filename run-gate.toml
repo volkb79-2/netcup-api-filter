@@ -22,13 +22,15 @@ sha256 = "tools/assay/assay-12.0.0.pyz.sha256"
 image = "netcup-api-filter/test-runner:py311"
 mode = "exec"
 state_root = "/run-gate-state"
-forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS"]
+forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET",
+    "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
 
 [environments.test-runner-py314]
 image = "netcup-api-filter/test-runner:py314"
 mode = "exec"
 state_root = "/run-gate-state"
-forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS"]
+forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET",
+    "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
 
 # --- hermetic suite (assay R0, one verdict per interpreter) -------------------
 [lanes.unit-py311]
@@ -72,14 +74,28 @@ argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python tooling/test
 clean_tree = false
 budget = "5m"
 
-# --- e2e: Playwright through pwmcp against a RUNNING app + mocks --------------
-# Needs the app-local, mock and pwmcp ciu stacks up (PLAYWRIGHT_SERVER_WS set).
+# --- local app build + e2e ---------------------------------------------------
+# Local flow (all in containers; the cockpit only drives):
+#   set -a; . ./.env.services; set +a            # service URLs for the lanes
+#   ciu up --dir tooling/mailpit; ciu up --dir tooling/geoip-mock; ciu up --dir tooling/netcup-api-mock
+#   run-gate local-build --worktree "$PWD"      # seeds deploy-local/ + deployment_state_local.json
+#   ciu up --dir tooling/app-local; ciu up --dir infra/pwmcp
+#   export UI_BASE_URL=http://<app-local container>:5100 DEPLOYMENT_TARGET=local PLAYWRIGHT_SERVER_WS=ws://...
+#   run-gate e2e --worktree "$PWD"
+[lanes.local-build]
+kind = "command"
+environment = "test-runner-py311"
+argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python build_deployment.py --local --python-version 3.11 && rm -rf deploy-local && /opt/tester-venv/bin/python -m zipfile -e deploy.zip deploy-local"]
+clean_tree = false
+budget = "15m"
+description = "build + seed deploy-local/ (runs app code, so inside the 3.11 runner, never the cockpit)"
+
 # 3.11 only: it exercises a deployed app. Not part of the `gate` sequence.
 [lanes.e2e]
 kind = "command"
 environment = "test-runner-py311"
 argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider --no-cov"]
-required_env = ["PLAYWRIGHT_SERVER_WS"]
+required_env = ["PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET"]
 clean_tree = false
 budget = "60m"
 
