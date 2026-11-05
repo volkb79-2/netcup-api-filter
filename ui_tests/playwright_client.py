@@ -64,6 +64,23 @@ def _guard_credentials() -> dict:
     return {"http_credentials": {"username": user, "password": password}}
 
 
+def _pwmcp_lease_headers() -> dict:
+    """Lease headers the pwmcp :3000 policy gateway requires (else HTTP 428).
+
+    Both values come from the runner's environment (ciu renders them from
+    ``[test_runner.pwmcp]``); there is deliberately no default: a missing value is a
+    configuration error, not something to paper over with a guess.
+    """
+    lease = os.environ.get("PWMCP_LEASE_SECONDS", "").strip()
+    label = os.environ.get("PWMCP_SESSION_LABEL", "").strip()
+    if not lease or not label:
+        raise RuntimeError(
+            "PLAYWRIGHT_SERVER_WS is set but PWMCP_LEASE_SECONDS / PWMCP_SESSION_LABEL are not: "
+            "the pwmcp gateway needs both (they are set by tooling/test-runner/ciu.compose.yml.j2)"
+        )
+    return {"X-PWMCP-Lease-Seconds": lease, "X-PWMCP-Session-Label": label}
+
+
 class PlaywrightClient:
     """
     Direct Playwright client with full API access (no server required).
@@ -149,7 +166,7 @@ class PlaywrightClient:
             # Remote mode: connect to Playwright-as-a-Service container.
             # bt.connect() returns a real Browser with the full Playwright API.
             bt = getattr(self._playwright, self.browser_type, self._playwright.chromium)
-            self._browser = await bt.connect(server_ws)
+            self._browser = await bt.connect(server_ws, headers=_pwmcp_lease_headers())
         else:
             # In-process mode: launch a local browser (requires installed binaries).
             if self.browser_type == 'firefox':

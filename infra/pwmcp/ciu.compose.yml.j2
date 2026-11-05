@@ -44,6 +44,9 @@ services:
       # Only the :3000 WS path is used by naf; these keep the image's defaults explicit.
       PWMCP_MCP_ALLOWED_HOSTS: "{{ pwmcp.name }}:{{ pwmcp.ports.mcp }},{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ pwmcp.name }}:{{ pwmcp.ports.mcp }}"
       PWMCP_RUN_SERVER_PORT: "{{ pwmcp.ports.run_server }}"
+      # The :3000 policy gateway only honours these Host values (default: loopback), so the alias and
+      # the ciu-derived container name must be listed or every connect() is a 403.
+      PWMCP_RUN_SERVER_ALLOWED_HOSTS: "{{ pwmcp.name }}:{{ pwmcp.ports.run_server }},{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ pwmcp.name }}:{{ pwmcp.ports.run_server }}"
       PWMCP_RUN_SERVER_UPSTREAM_PORT: "{{ pwmcp.ports.run_server_upstream }}"
       PWMCP_RUN_SERVER_ADMIN_PORT: "{{ pwmcp.ports.run_server_admin }}"
       PWMCP_RUN_SERVER_DEFAULT_LEASE_S: "{{ pwmcp.tunables.default_lease_s }}"

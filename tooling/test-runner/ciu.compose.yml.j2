@@ -36,6 +36,7 @@ services:
       - PLAYWRIGHT_SERVER_WS={{ test_runner.pwmcp.ws_url }}
       - PWMCP_REQUIRED={{ 1 if test_runner.pwmcp.required else 0 }}
       - PWMCP_SESSION_LABEL={{ test_runner.pwmcp.session_label }}
+      - PWMCP_LEASE_SECONDS={{ test_runner.pwmcp.lease_seconds }}
     volumes:
       - ${PHYSICAL_REPO_ROOT:?required host path — source ciu.env}:{{ ciu.repo_root }}:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
