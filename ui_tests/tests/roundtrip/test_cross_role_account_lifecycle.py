@@ -80,7 +80,7 @@ def _base_url() -> str:
 # --------------------------------------------------------------------------
 
 def _mailpit() -> MailpitClient:
-    """Mailpit client. Requires MAILPIT_USERNAME/MAILPIT_PASSWORD in env."""
+    """Mailpit client (unauthenticated, internal-only service)."""
     return MailpitClient()
 
 

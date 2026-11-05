@@ -93,8 +93,7 @@ jobs:
 
     # Mailpit captures the app's 2FA / invite mail. MP_SMTP_AUTH_ACCEPT_ANY lets
     # the app's "no auth" SMTP config deliver without credentials; the REST API
-    # is unauthenticated here, so MAILPIT_USERNAME/PASSWORD are dummies the test
-    # client requires but Mailpit ignores.
+    # is unauthenticated (as in the ciu mailpit stack).
     services:
       mailpit:
         image: axllent/mailpit
@@ -120,8 +119,6 @@ jobs:
       MOCK_SMTP_PORT: "1025"
       # --- Mailpit REST client (ui_tests/mailpit_client.py) ---
       MAILPIT_URL: http://localhost:8025
-      MAILPIT_USERNAME: ci
-      MAILPIT_PASSWORD: ci
 
     steps:
       - uses: actions/checkout@v4

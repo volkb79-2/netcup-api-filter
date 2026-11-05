@@ -68,7 +68,8 @@ services:
       - "traefik.http.services.{{ deploy.project_name }}-{{ app_local.name }}.loadbalancer.server.port={{ app_local.port }}"
     {%- if topology.guard.enabled %}
       # basicauth: the product is not production ready and must not be publicly reachable.
-      # The e2e suite passes this via Playwright http_credentials (see .env.guard).
+      # For humans only (credentials in .env.guard): the e2e suite targets the app over
+      # the internal docker network and never goes through traefik.
       # The hash comes from the ENVIRONMENT at compose-up time, not from ciu config: a
       # bcrypt hash begins "$2b$", which ciu's placeholder pass would reject as an
       # unresolved "$2b". This also keeps the hash out of every rendered artifact.

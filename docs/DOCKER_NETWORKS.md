@@ -140,7 +140,7 @@ networks:
     driver: bridge
 ```
 
-Network name is read from `global-config.active.toml` by `.devcontainer/post-create.sh`.
+The network name comes from `DOCKER_NETWORK_INTERNAL` (default `naf-dev-network`).
 
 ### Architecture
 

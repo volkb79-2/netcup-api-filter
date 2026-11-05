@@ -227,14 +227,14 @@ pdns_subdomain = "naf-pdns"
 
 # ---------------------------------------------------------------------------
 # basicauth guard (operator decision 2026-07-20): the product is NOT production
-# ready and must not be publicly reachable, but e2e has to run through real TLS.
-# So EVERY exposed route sits behind a traefik basicauth middleware.
+# ready and must not be publicly reachable, so EVERY exposed route sits behind a
+# traefik basicauth middleware. The guard is for HUMANS only: the e2e suite targets
+# the app over the internal docker network and never goes through traefik, so test
+# code carries no guard credentials.
 #
 # guard_htpasswd is a bcrypt hash sourced from the environment — NEVER committed.
 # It lives with the plaintext in the gitignored .env.guard (see that file's header
-# for regeneration). The plaintext is what Playwright feeds to
-# browser.new_context(http_credentials=...) so the e2e gate can pass the guard;
-# enabling the guard without that would silently kill the very tests it protects.
+# for regeneration).
 # ---------------------------------------------------------------------------
 #
 # NOTE the hash is deliberately NOT a key here. A bcrypt hash starts with "$2b$", and
