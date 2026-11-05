@@ -8,7 +8,8 @@ caller                                     admin spec / mode
 Passenger tarball build                    shipped_admin_spec() (must_change_password)
 local golden DB (``run-gate local-build``) shipped_admin_spec() + Mailpit email config
 app start (``init_db``; OCI first boot)    configured_admin_spec() only if no admin exists
-ciu post_compose hook of the app stack     configured_admin_spec(), ``enforce_admin=True``
+ciu post_compose hook of the app stack     configured_admin_spec(), create-only (never
+                                           ``enforce_admin``: a re-run changes no state)
                                            (via ``python -m netcup_api_filter.bootstrap``)
 ========================================  ==============================================
 

@@ -13,6 +13,14 @@
 
 ### Security
 
+- **Activation no longer silently rotates `SECRET_KEY`** (review #18): `scripts/activate.py` now fails
+  with an error when a non-empty preserved secret cannot be restored into the new database (it only
+  warned before). An absent or empty preserved secret is still a no-op.
+- **`/account/2fa/resend` checks the method** (review #19): a method the account has not enabled is
+  rejected (no code sent, session method unchanged), matching the login page's offered methods.
+- **App-local seed hook keeps the PowerDNS API key off the command line** (review #17): it is passed to
+  `docker exec` as `-e NAME` with the value in the hook's process environment, not in argv.
+
 - **One database initializer, no published secrets** (credentials/test-setup plan, S2):
   `bootstrap.instance.init_instance()` is the only seeder (tarball build, local golden DB, app
   start, ciu `post_compose` hook via `python -m netcup_api_filter.bootstrap init`). The tarball

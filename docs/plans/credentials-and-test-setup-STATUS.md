@@ -98,8 +98,8 @@ ciu up --dir tooling/app-local
 Expected on step 5: the hook output names `.ciu/secrets/naf/app_local_bootstrap_admin_password`. It
 never prints the value. Log in as `admin` with the contents of that file; `must_change_password` is
 off for an operator-supplied bootstrap admin. The first `ciu up` creates the DB under the hostdir.
-Later runs are idempotent: `--enforce-admin` re-applies the username, email and password from the
-secret and clears a lockout.
+Later runs are idempotent and change nothing: the hook does not pass `--enforce-admin` (an explicit
+operator command that would re-apply the username, email and password from the secret and clear a lockout).
 
 Order matters: run step 3 before step 4. The e2e session refuses a missing or non-pristine golden DB
 with a single message (exit code 3). If the golden DB was ever served or modified, run step 3 again.
