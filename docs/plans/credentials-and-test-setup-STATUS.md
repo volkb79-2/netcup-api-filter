@@ -41,7 +41,7 @@ Operator decisions applied:
 4. The assay R1 coverage lanes were not run. `token_auth`, `account_auth`, `recovery_codes` and `utils` are unchanged by these stages;
    the changed product code is `api/account.py` (covered by `tests/test_portal_totp_login.py`).
 
-Unit results on the integration HEAD: py314 `tests/` gives **942 passed**; for py311 see the hand-back reply. `ui_tests` collects 364 tests.
+Unit results on the integration HEAD: py314 and py311 `tests/` each give **942 passed**. `ui_tests` collects 364 tests.
 
 
 ## How to verify (exact commands)
