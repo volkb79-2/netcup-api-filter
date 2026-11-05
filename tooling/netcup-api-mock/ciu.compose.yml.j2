@@ -17,7 +17,7 @@ services:
   {{ netcup_api_mock.name }}:
     image: {{ netcup_api_mock.image }}:{{ netcup_api_mock.tag }}
     # Always re-pull so a moving tag (:latest / :3.11-slim) never gets stuck stale.
-    pull_policy: always
+    pull_policy: missing
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ netcup_api_mock.name }}
     restart: unless-stopped
     working_dir: /app

@@ -18,7 +18,7 @@ services:
   {{ mailpit.name }}:
     image: {{ mailpit.image }}:{{ mailpit.image_tag }}
     # Always re-pull so a moving tag (:latest / :3.11-slim) never gets stuck stale.
-    pull_policy: always
+    pull_policy: missing
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ mailpit.name }}
     restart: unless-stopped
     # No host ports: peers reach this service by container name on the project network.
