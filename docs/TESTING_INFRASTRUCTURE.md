@@ -326,36 +326,11 @@ false-failing from ±1% variance across Python minor versions.
 
 ## Mutation testing
 
-**Tool:** [mutmut 3.6.0](https://mutmut.readthedocs.io/) — Python-level source mutation,
-single-module mode.
-
-**Runner:** `tooling/mutation/run.sh` — wraps mutmut, manages `setup.cfg` temporarily,
-logs survivors to `/tmp/mutation-results/<module>.log`.
-
-```bash
-# Run one module (takes 2–17 min depending on size):
-./tooling/mutation/run.sh run src/netcup_api_filter/token_auth.py
-
-# Inspect a survivor from the last-run module:
-source .venv/bin/activate
-mutmut show 'netcup_api_filter.token_auth.x_check_ip_allowed__mutmut_15'
-```
-
-Mutation testing is **NOT wired into CI or `pytest.ini`**. It is a periodic spot-check
-tool invoked manually by developers to validate that unit tests assert the right outcomes,
-not just achieve line coverage.
-
-**Report:** The M2 spot-check (all five security-critical modules) results and killing tests
-added are in [`docs/plans/testing-hardening/MUTATION_REPORT.md`](plans/testing-hardening/MUTATION_REPORT.md).
-
-**Summary of M2 findings (2026-06-14):**
-- 5 modules, ~1 637 total mutants generated
-- 215 survived the existing suite before this work
-- 22 real gaps identified and killed by new deterministic unit tests
-- ~193 survivors classified as equivalent/acceptable (logger messages, human error strings,
-  attribution fields, notification side-channels, measure-zero floating-point boundaries)
-
----
+Mutation testing is **assay R2** (native, asynchronous, never a gate member): lanes `<module>_r2` in
+`assay.toml` for `token_auth`, `account_auth`, `recovery_codes` and `utils`, run with
+`run-gate <module>_r2 --worktree <linked worktree>` in an ephemeral container with the cgroup observer.
+A surviving mutant gets a root-cause analysis first: add a test that kills it, or record a waiver only for a
+provably equivalent mutant. The former manual mutmut tooling was removed 2026-11-05.
 
 ## Gaps and next steps
 

@@ -662,18 +662,8 @@ real gap in assertions or an equivalent mutation (cosmetic, logger text, etc.).
 
 ### The runner
 
-`tooling/mutation/run.sh` wraps [mutmut 3.6.0](https://mutmut.readthedocs.io/) in
-single-module mode. It is **NOT wired into CI or `pytest.ini`** — it is a periodic
-spot-check invoked manually.
-
-```bash
-# Run one module (takes 2–17 min depending on size):
-./tooling/mutation/run.sh run src/netcup_api_filter/token_auth.py
-
-# Inspect a surviving mutant from the last-run module:
-source .venv/bin/activate
-mutmut show 'netcup_api_filter.token_auth.x_check_ip_allowed__mutmut_15'
-```
+Mutation testing is assay R2 (see `docs/TESTING_INFRASTRUCTURE.md` "Mutation testing"): lanes `<module>_r2` in
+`assay.toml`, run with `run-gate <module>_r2 --worktree <linked worktree>`. The older manual mutmut runner was removed.
 
 ### How to read survivors
 
@@ -682,7 +672,7 @@ A survivor is not automatically a bug. Classify each one:
 | Classification | What it means | Action |
 |---|---|---|
 | **Real gap** | The mutated logic would change real behavior but no test catches it | Add a deterministic assertion targeting the exact condition |
-| **Equivalent** | The mutant is semantically identical (e.g. swapping `True` to `not False`) | Annotate and skip in `mutmut_config` |
+| **Equivalent** | The mutant is semantically identical (e.g. swapping `True` to `not False`) | Record a waiver with the reasoning |
 | **Acceptable** | Logger messages, human-facing error strings, notification side-channels — wrong output doesn't break correctness | Document in MUTATION_REPORT.md; no test needed |
 
 ### Report

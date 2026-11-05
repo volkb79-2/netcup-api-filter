@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""tooling/app-local — post_compose hook: idempotent init of THIS app instance.
+"""tooling/app-local — post_compose hook: init-once of THIS app instance.
 
-Shape copied from dstdns's infra hooks (readiness probe, then create-or-UPDATE):
+Shape copied from dstdns's infra hooks (readiness probe, then idempotent init). A `ciu up` must
+NOT change state of an initialized instance: the hook only initializes what is missing. To change
+the bootstrap credential, `ciu clean` the stack's volumes and `up` fresh:
 
 1. wait until the app container is healthy (ctx.wait_healthy — the app's own
    healthcheck; the app has already created its bootstrap admin from the mounted
    ciu secret on first boot, see bootstrap/admin.py);
 2. `docker exec` the app package's own initializer inside the running container:
-   ``python -m netcup_api_filter.bootstrap init --enforce-admin --mock-...``. It
-   re-asserts the bootstrap admin from the secret (password, email, active, lockout
-   cleared) and points outgoing mail at the mailpit stack. The hook never writes
+   ``python -m netcup_api_filter.bootstrap init --mock-...``. On an uninitialized
+   database it creates the bootstrap admin from the secret; on an initialized one it
+   adds no second admin and rewrites no password. It points outgoing mail at the
+   mailpit stack. The hook never writes
    files into the container and never sees the password: the container reads it
    from /run/secrets itself;
 3. print WHERE the generated credential lives (the ciu store path), never the value.
@@ -63,7 +66,7 @@ def build_init_argv(config: dict) -> list[str]:
         "-e", f"PYTHONPATH={_require(config, 'app_local.init_pythonpath')}",
         app_container(config),
         str(_require(config, "app_local.init_python")),
-        "-m", "netcup_api_filter.bootstrap", "init", "--enforce-admin",
+        "-m", "netcup_api_filter.bootstrap", "init",
         "--mock-smtp-host", mailpit_host(config),
         "--mock-smtp-port", str(_require(config, "mailpit.smtp_port")),
         "--mock-from-email", str(_require(config, "app_local.mail.from_email")),

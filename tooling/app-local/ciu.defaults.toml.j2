@@ -81,8 +81,9 @@ pre_compose = []
 # tooling/backend-powerdns/post_compose_zone.py (which makes PowerDNS
 # authoritative for the same zone). No-op when the zone is empty. See
 # post_compose_seed_domain.py for the full contract.
-# 1. post_compose_init_instance.py — readiness, then the idempotent create-or-UPDATE init of THIS
-#    instance (bootstrap admin from the ciu secret, Mailpit email config) via `docker exec` of
-#    `python -m netcup_api_filter.bootstrap init --enforce-admin`. Never writes into the container.
+# 1. post_compose_init_instance.py — readiness, then the init-once of THIS instance (bootstrap
+#    admin from the ciu secret on first run, Mailpit email config) via `docker exec` of
+#    `python -m netcup_api_filter.bootstrap init`. `ciu up` never changes an initialized instance;
+#    to rotate the credential: `ciu clean` the volumes, then `ciu up` fresh. Never writes into the container.
 # 2. post_compose_seed_domain.py — D-007 delegated zone (below).
 post_compose = ["post_compose_init_instance.py", "post_compose_seed_domain.py"]

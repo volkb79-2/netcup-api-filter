@@ -119,8 +119,9 @@ with a single message (exit code 3). If the golden DB was ever served or modifie
 3. **Mailpit has no auth** (it is internal-only, a mock). The basicauth guard is for humans; e2e never goes through traefik.
 4. **app-local `cookie_secure = "true"`.** It is served over TLS by the host edge. e2e uses its own plain-HTTP instance with
    `FLASK_SESSION_COOKIE_SECURE=false` stated explicitly.
-5. **`--enforce-admin` in the app-local hook.** Every `ciu up` re-applies the admin from the ciu secret and clears a
-   lockout. The secret file is the single source of truth for that instance.
+5. **No `--enforce-admin` in the app-local hook (changed by the operator, 2026-11-05).** `ciu up` must not change an
+   initialized instance: the hook only initializes what is missing. To rotate the bootstrap credential, `ciu clean` the
+   stack's volumes and `up` fresh. `--enforce-admin` remains an explicit operator command of the CLI, used by no hook.
 6. **The shipped catalog is a filter of `.env.defaults`.** It excludes build/test-only prefixes (`DEFAULT_ADMIN_`, `DEFAULT_TEST_`, `LOCAL_`, `E2E_`,
    `UI_`, …) and is not a second hand-maintained file. `tests/test_shipped_defaults.py` fails if runtime code reads a key
    the catalog lacks.

@@ -70,8 +70,9 @@ def test_argv_execs_the_package_initializer_in_the_app_container():
     argv = hook.build_init_argv(CONFIG)
     assert argv[:2] == ["docker", "exec"]
     assert "naf-dev-app" in argv
-    assert argv[argv.index("naf-dev-app") + 1:][:5] == [
-        "/opt/tester-venv/bin/python", "-m", "netcup_api_filter.bootstrap", "init", "--enforce-admin"]
+    assert "--enforce-admin" not in argv, "ciu up must not change an initialized instance"
+    assert argv[argv.index("naf-dev-app") + 1:][:4] == [
+        "/opt/tester-venv/bin/python", "-m", "netcup_api_filter.bootstrap", "init"]
     assert argv[argv.index("--mock-smtp-host") + 1] == "naf-dev-mailpit"
     assert argv[argv.index("--mock-smtp-port") + 1] == "1025"
     assert "PYTHONPATH=vendor:src" in argv
@@ -81,12 +82,12 @@ def test_argv_execs_the_package_initializer_in_the_app_container():
 def test_run_waits_execs_and_prints_only_the_secret_path(capsys):
     ctx, calls = _ctx()
     runner, seen = _runner("log line\n" + json.dumps(
-        {"admin_username": "admin", "admin_action": "updated", "admin_source": "environment"}) + "\n")
+        {"admin_username": "admin", "admin_action": "created", "admin_source": "environment"}) + "\n")
     assert hook.run(CONFIG, ctx, runner=runner) == {}
     assert calls == [("app", hook.HEALTH_TIMEOUT_S)]
     assert seen == [hook.build_init_argv(CONFIG)]
     out = capsys.readouterr().out
-    assert "admin" in out and "updated" in out
+    assert "admin" in out and "created" in out
     assert "/repo/.ciu/secrets/naf/app_local_bootstrap_admin_password" in out
 
 
