@@ -181,22 +181,22 @@ Two independent test suites; run them separately:
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 373 | ~1 min total |
+| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | 846 | minutes (bcrypt-bound) |
 | Route smoke | Every Flask route returns the correct HTTP status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
-| Round-trip | UI action → backend state verified via 3 independent channels | Playwright | ~30 | Medium |
-| Security | Auth, 2FA, recovery codes, IP allowlist, attack attribution | Playwright | ~60 | Medium |
-| Feature E2E | Full feature workflows (registration, DNS, email, audit) | Playwright | ~200 | Slow |
+| Round-trip | UI action → backend state verified via 3 independent channels | Playwright | ~25 | Medium |
+| Security | 2FA, recovery codes, IP allowlist, attack attribution (REST API security moved to `tests/`) | Playwright | ~45 | Medium |
+| Feature E2E | Full browser feature workflows (registration, DNS, email, audit) | Playwright | ~165 | Slow |
 | Journey | Multi-step stateful scenario suites (j1/j2/j3) | Playwright | ~20 | Slow |
 | Nonfunctional | Accessibility + performance | Playwright | ~20 | Slow |
 | Upstream resilience | netcup_client / filter_proxy bad-response paths | pytest + mock | ~15 | <30 s |
-| Mocks / live | Mock-service self-tests + real-backend tests | Playwright | ~15 | Varies |
-| **Total (ui_tests)** | | | **450** | |
+| Mocks / live | Mock-service self-tests (GeoIP mock moved to `tests/`) + real-backend tests | Playwright | ~15 | Varies |
+| **Total (ui_tests)** | | | **~355** | |
 
 **Key commands:**
 
 ```bash
-pytest tests/                                  # unit + property (373 tests, no app needed)
+pytest tests/                                  # unit + property + hermetic HTTP (846 tests, no app needed)
 HYPOTHESIS_PROFILE=dev pytest tests/           # Hypothesis with 500 examples/property
 pytest ui_tests/tests                          # full Playwright suite (requires running deployment)
 pytest ui_tests/tests -m smoke                 # route-smoke + widget smoke (fast)

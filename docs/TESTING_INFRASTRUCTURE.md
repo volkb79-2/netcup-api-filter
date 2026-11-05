@@ -11,17 +11,17 @@ the local runners, the CI jobs, and the tooling that supports them.
 
 | Type | What it checks | Framework | Count | Speed |
 |---|---|---|---|---|
-| Unit + property | Pure functions, parsing, validation invariants | pytest + Hypothesis | 373 | ~1 min (total) |
+| Unit + property + hermetic HTTP | Pure functions, validation invariants, and HTTP-only behaviour (DDNS protocols, REST API security, registration negatives, admin bulk actions, quick update) via the Flask test client, tmp SQLite DB and in-memory Netcup fake | pytest + Hypothesis | 846 | minutes (bcrypt-bound) |
 | Route smoke | Every Flask route returns correct status | Playwright | 86 | Medium |
 | Widget | Individual UI components in isolation | Playwright | 19 | Medium |
-| Round-trip | UI action → backend state via 3 channels | Playwright | ~30 | Medium |
-| Security | Auth, 2FA, recovery codes, IP allowlist | Playwright | ~60 | Medium |
-| Feature E2E | Full feature workflows (registration, DNS, audit, etc.) | Playwright | ~200 | Slow |
+| Round-trip | UI action → backend state via 3 channels | Playwright | ~25 | Medium |
+| Security | 2FA, recovery codes, IP allowlist, attack attribution (REST API security moved to `tests/`) | Playwright | ~45 | Medium |
+| Feature E2E | Full browser feature workflows (registration, DNS, audit, etc.) | Playwright | ~165 | Slow |
 | Journey | Multi-step stateful scenario suites (j1/j2/j3) | Playwright | ~20 | Slow |
 | Nonfunctional | Accessibility + performance | Playwright | ~20 | Slow |
 | Upstream resilience | netcup_client / filter_proxy bad-response paths | pytest + unittest.mock | 24 | <30 s |
-| Mocks / live | Mock-service self-tests + real-backend tests | Playwright | ~15 | Varies |
-| **Total (ui_tests)** | | | **450** | |
+| Mocks / live | Mock-service self-tests (GeoIP mock moved to `tests/`) + real-backend tests | Playwright | ~15 | Varies |
+| **Total (ui_tests)** | | | **~355** | |
 
 The unit suite runs in CI on every push (<60 s). A tagged `@pytest.mark.ci_smoke` subset
 of 93 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
@@ -40,6 +40,15 @@ Run with `python -m pytest tests/` (or plain `pytest tests/`). No running app re
 - Unit modules cover: token auth (`authenticate_token`, `check_permission`, `check_ip_allowed`),
   realm matching, validators, password policy, recovery codes, DDNS parsing, netcup client
   envelope helpers, and lightweight migrations.
+- **Hermetic HTTP modules** (`tests/test_*_http.py`, moved from the browser lane in S8): requests
+  that need no browser/JS run through the Flask test client against a tmp SQLite DB with an
+  in-memory Netcup upstream (`tests/fake_netcup.py`) and real CSRF (`tests/http_helpers.py`).
+  They cover the DynDNS2/No-IP endpoints (`test_ddns_protocols_http.py`), REST API security
+  (`test_api_security_http.py`), registration/approval negatives and CSRF
+  (`test_registration_negative_http.py`), admin bulk actions (`test_admin_bulk_http.py`), the
+  DDNS quick-update/realm UI routes (`test_ddns_quick_update_http.py`) and the GeoIP mock
+  self-test (`test_mock_geoip_http.py`). Assertions check the DB (ActivityLog, token usage,
+  account/realm rows) and the upstream zone contents, not only status codes.
 - Hypothesis property tests live in `tests/test_*_property.py`, default profile `ci` (50 examples), set `HYPOTHESIS_PROFILE=dev` for 500.
 - CI runs this suite on every push/PR (see **`unit-tests` job** below).
 
@@ -84,7 +93,7 @@ ui_tests/tests/
   journeys/       # Stateful multi-step sequences (j1/j2/j3 + test_journey_master)
   nonfunctional/  # Accessibility and performance
   live/           # @live — require real external dependencies
-  mocks/          # Mock-service self-tests (test the mock, not the app)
+  mocks/          # Mock-service self-tests that need real sockets/fixed ports (test the mock, not the app)
 ```
 
 **Marker taxonomy** (registered in `pytest.ini`):
