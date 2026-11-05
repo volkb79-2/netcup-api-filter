@@ -62,6 +62,9 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start
   (the process exits non-zero; first-start initialization is serialized by a lock file, so
   concurrent workers cannot race on it).
+- **Configured bootstrap admin passwords obey the password policy** (`validate_password`); only
+  the documented tarball default (`admin`/`admin`, forced change on first login) is exempt. A
+  configured bootstrap admin starts **without 2FA** (warning banner) until it enrolls TOTP.
 - **Start-up errors are never shown to clients**: `passenger_wsgi` logs the traceback and
   re-raises; there is no stand-in WSGI app rendering the exception text (which could contain row
   values such as an email or a password hash).

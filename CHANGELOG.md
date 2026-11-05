@@ -13,6 +13,10 @@
 
 ### Security
 
+- **Fixed (review #3):** a configured bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, TOML) accepted any
+  non-empty password; it must now satisfy the password policy. Docs no longer claim email 2FA turns
+  on by itself for a configured admin.
+
 - **Fixed (review #9):** a bind-mounted `app-config.toml` file could not be claimed (`EBUSY`) and
   fell into the generic start-up error; the start now fails with "mount the directory" guidance.
   The `docker exec`-ed bootstrap CLI now resolves the app root like `passenger_wsgi.py` (it ignored

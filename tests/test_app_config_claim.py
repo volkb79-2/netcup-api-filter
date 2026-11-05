@@ -43,7 +43,7 @@ def test_unclaimable_app_config_fails_the_start_with_guidance(tmp_path):
         NETCUP_FILTER_DB_PATH=str(tmp_path / "x.db"), NETCUP_FILTER_LOG_FILE=str(tmp_path / "app.log"),
         SECRET_KEY="k" * 32, FLASK_ENV="testing",
         NAF_BOOTSTRAP_ADMIN_USERNAME="claim-admin", NAF_BOOTSTRAP_ADMIN_EMAIL="claim-admin@example.com",
-        NAF_BOOTSTRAP_ADMIN_PASSWORD="Claim-Test-" + "y" * 14 + "9!",
+        NAF_BOOTSTRAP_ADMIN_PASSWORD="Claim-Test-" + "y" * 14 + "9@",
     )
     result = subprocess.run([sys.executable, "-c", _WRAPPER, str(app_root / "passenger_wsgi.py")],
                             env=env, capture_output=True, text=True, timeout=120)

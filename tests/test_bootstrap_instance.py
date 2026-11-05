@@ -389,3 +389,32 @@ def test_users_import_deletes_plaintext_and_never_logs_generated_password(bare_a
     assert Settings.query.filter_by(key="users_config").first() is None
     assert explicit not in caplog.text
     assert "SAVE THIS" not in caplog.text
+
+
+# --- review #3: configured bootstrap admins obey the password policy -----------
+
+@pytest.mark.parametrize("weak", ["a", "short-Pass1@", "b" * 19, "has-a-quote'-" + "Q1" * 10])
+def test_configured_admin_with_a_weak_password_is_rejected(bare_app, weak):
+    with pytest.raises(BootstrapAdminError, match="password policy") as excinfo:
+        init_instance(admin=_spec(password=weak))
+    if len(weak) > 3:
+        assert weak not in str(excinfo.value)  # the reason names the rule, never the value
+    assert Account.query.count() == 0
+
+
+def test_weak_password_from_environment_fails_the_start(monkeypatch, tmp_path):
+    from netcup_api_filter.bootstrap.admin import configured_admin_spec
+
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_USERNAME", "ops-admin")
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_EMAIL", "ops@example.com")
+    monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_PASSWORD", "a")
+    spec = configured_admin_spec(None)
+    with pytest.raises(BootstrapAdminError, match="password policy"):
+        spec.validate()
+
+
+def test_shipped_tarball_admin_is_exempt_from_the_policy(bare_app):
+    spec = shipped_admin_spec()
+    assert spec.apply_password_policy is False
+    spec.validate()  # the documented admin/admin; forced to change on first login
+
