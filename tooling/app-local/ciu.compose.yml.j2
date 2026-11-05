@@ -21,8 +21,9 @@ services:
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}
     hostname: {{ app_local.name }}
     restart: unless-stopped
-    # Host-owned uid so the bind-mounted repo (and the SQLite db under deploy-local/)
-    # stay writable from both sides.
+    # Host-owned uid so the bind-mounted repo and the instance data hostdir stay writable from
+    # both sides. The code runs from deploy-local/, but the DB is this instance's own (/data):
+    # deploy-local/netcup_filter.db is the e2e GOLDEN DB and must never be served.
     user: "${CONTAINER_UID}:${DOCKER_GID}"
     working_dir: {{ ciu.repo_root }}/{{ app_local.deploy_dir }}
     command:
