@@ -195,9 +195,14 @@ async def test_account_totp_enable_then_disable(active_profile, session_manager)
             {"csrfToken": csrf_token2},
         )
 
+    # The disabled method is not offered any more: the app refuses to switch the session to it ...
+    resend_body = (await browser.text("body") or "").lower()
+    assert "verification method is not available" in resend_body
+
+    # ... so even a currently valid TOTP code does not complete the login.
     await browser.fill("#code", pyotp.TOTP(secret).now())
     async with browser._page.expect_navigation(wait_until="domcontentloaded", timeout=15000):
         await browser._page.click("form[action='/account/login/2fa'] button[type='submit']")
 
-    error_body = (await browser.text("body") or "").lower()
-    assert "totp not configured" in error_body
+    assert "/account/login/2fa" in browser._page.url, f"TOTP login succeeded after disable: {browser._page.url}"
+    assert "login successful" not in (await browser.text("body") or "").lower()

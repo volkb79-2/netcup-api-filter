@@ -14,6 +14,14 @@ Run with: pytest ui_tests/tests/test_registration_e2e.py -v
 """
 import os
 import pytest
+
+
+@pytest.fixture(autouse=True)
+async def _anonymous_visitor(playwright_client):
+    """Registration is for visitors: a login left in the session-wide context by an earlier test
+    would redirect /account/register away from the form."""
+    await playwright_client.context.clear_cookies()
+
 import re
 import time
 from pathlib import Path

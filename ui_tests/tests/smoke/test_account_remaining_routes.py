@@ -156,14 +156,10 @@ class TestAccountAuthenticatedRemainingRoutes:
         async with browser_session() as browser:
             await ensure_user_dashboard(browser)
 
-            # Obtain a CSRF token from the Telegram settings page.
-            await browser.goto(settings.url("/account/settings/telegram/link"), wait_until="domcontentloaded")
+            # The Telegram link page only renders forms (and so a CSRF token) when linking is
+            # configured/active; the account settings page always carries one.
+            await browser.goto(settings.url("/account/settings"), wait_until="domcontentloaded")
             csrf_token = await browser.get_attribute('input[name="csrf_token"]', "value")
-
-            if not csrf_token:
-                # Fallback: settings page generally includes CSRF tokens in forms.
-                await browser.goto(settings.url("/account/settings"), wait_until="domcontentloaded")
-                csrf_token = await browser.get_attribute('input[name="csrf_token"]', "value")
 
             assert csrf_token
 

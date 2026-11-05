@@ -30,6 +30,7 @@ _EXCLUDE = {
     "/admin/login/2fa",
     "/account/login/2fa",
     # API JSON endpoints – return JSON, not HTML pages
+    "/account/settings/telegram/status",  # JSON polling endpoint (covered in test_account_remaining_routes)
     "/admin/api/accounts",
     "/admin/api/stats",
     "/admin/api/security/events",

@@ -3,7 +3,7 @@
 PATTERN: DNS API call with out-of-range client IP
   -> exact HTTP 403
   -> Channel A: activity_log has error_code='ip_denied', severity='critical', is_attack=1.
-Second call with in-range IP (localhost, 127.0.0.1/8)
+Second call with in-range IP (the client's own address)
   -> not ip_denied (proceeds further, fails only at Netcup backend level).
 
 Anti-false-green gate: deliberately make check_ip_allowed return True unconditionally
@@ -35,12 +35,24 @@ pytestmark = [pytest.mark.security]
 # Constants
 # ---------------------------------------------------------------------------
 
-# CIDR that deliberately excludes 127.0.0.1 (the test client's remote_addr).
+# CIDR that deliberately excludes the test client's address (see _client_cidr()).
 # 203.0.113.0/24 is "TEST-NET-3" (RFC 5737) – documentation-only, never routed.
 EXCLUDED_CIDR = "203.0.113.0/24"
 
-# CIDR that includes 127.0.0.1.
-INCLUDED_CIDR = "127.0.0.0/8"
+
+
+def _client_cidr() -> str:
+    """The /32 of the address the app sees these requests come from.
+
+    The tests run in the runner container and reach the app over the container network, so the
+    source is the runner's own address towards the app's host (not 127.0.0.1)."""
+    import socket
+    from urllib.parse import urlparse
+
+    target = urlparse(_base_url())
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect((target.hostname, target.port or 80))
+        return f"{probe.getsockname()[0]}/32"
 
 # The user persona realm (id=1, domain=example.com) is provisioned per session (ui_tests/personas.py).
 DEMO_REALM_ID = 1
@@ -170,7 +182,7 @@ def test_ip_allowlist_denied_logs_and_returns_403():
 
     try:
         # ---- SETUP: insert two test tokens ----
-        # Token 1: IP range that EXCLUDES 127.0.0.1 (the test client remote_addr)
+        # Token 1: IP range that EXCLUDES the client address
         denied_id = _insert_test_token(
             conn,
             token_name=TOKEN_NAME_DENIED,
@@ -179,13 +191,13 @@ def test_ip_allowlist_denied_logs_and_returns_403():
             allowed_ip_ranges=[EXCLUDED_CIDR],
         )
 
-        # Token 2: IP range that INCLUDES 127.0.0.1
+        # Token 2: IP range that INCLUDES the client
         allowed_id = _insert_test_token(
             conn,
             token_name=TOKEN_NAME_ALLOWED,
             token_plain=allowed_token_plain,
             realm_id=DEMO_REALM_ID,
-            allowed_ip_ranges=[INCLUDED_CIDR],
+            allowed_ip_ranges=[_client_cidr()],
         )
 
         # ---- STEP 1: out-of-range IP -> expect 403 ----
@@ -218,7 +230,7 @@ def test_ip_allowlist_denied_logs_and_returns_403():
         )
 
         # ---- STEP 3: in-range IP -> NOT ip_denied ----
-        # The call will succeed auth+permission (127.0.0.1 is in 127.0.0.0/8),
+        # The call will succeed auth+permission (the client is in its own /32),
         # then fail at the Netcup backend (mock may or may not be running).
         # We only assert: status is NOT 403 with error_code ip_denied.
         # Acceptable outcomes: 200 (mock is up), 500/502 (no backend), anything != ip-403.

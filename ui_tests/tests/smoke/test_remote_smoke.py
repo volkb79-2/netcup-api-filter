@@ -42,6 +42,8 @@ async def test_remote_profile_is_read_only():
 @pytest.mark.parametrize("path", PUBLIC_PAGES)
 async def test_public_pages_render(path):
     async with browser_session() as browser:
+        # Public pages are for visitors: a login left in the shared context redirects them away.
+        await browser._page.context.clear_cookies()
         await _assert_page_ok(browser, path)
         assert await browser.query_selector("input[type='password']") is not None, (
             f"{path} has no password field"
