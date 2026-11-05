@@ -85,12 +85,12 @@ mechanism = "import-break"
 target = "src/netcup_api_filter/token_auth.py"
 budget_per_attempt = "20m"
 
-# R2: narrow selection (modules that import token_auth), fail-fast; run asynchronously, serial.
+# R2: narrow selection incl. the dedicated coverage tests (modules that import token_auth), fail-fast; run asynchronously, serial.
 [lanes.token_auth_r2]
 scope = "S1"
 rigor = ["R0", "R2"]
 enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests/test_token_auth_unit.py", "tests/test_realm_scope.py", "tests/test_validators_property.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+argv = ["python", "-m", "pytest", "tests/test_token_auth_unit.py", "tests/test_realm_scope.py", "tests/test_validators_property.py", "tests/test_token_auth_activity_and_decorator.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "8h"
@@ -169,12 +169,12 @@ mechanism = "import-break"
 target = "src/netcup_api_filter/account_auth.py"
 budget_per_attempt = "20m"
 
-# R2: narrow selection (modules that import account_auth), fail-fast; run asynchronously, serial.
+# R2: narrow selection incl. the dedicated coverage tests (modules that import account_auth), fail-fast; run asynchronously, serial.
 [lanes.account_auth_r2]
 scope = "S1"
 rigor = ["R0", "R2"]
 enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests/test_2fa_security_functional.py", "tests/test_telegram_2fa.py", "tests/test_totp_lockout.py", "tests/test_portal_record_scope.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+argv = ["python", "-m", "pytest", "tests/test_2fa_security_functional.py", "tests/test_telegram_2fa.py", "tests/test_totp_lockout.py", "tests/test_portal_record_scope.py", "tests/test_account_auth_login.py", "tests/test_account_auth_password_admin.py", "tests/test_account_auth_registration.py", "tests/test_account_auth_session.py", "tests/test_account_auth_verify_2fa.py", "tests/test_portal_totp_login.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "8h"
@@ -253,12 +253,12 @@ mechanism = "import-break"
 target = "src/netcup_api_filter/recovery_codes.py"
 budget_per_attempt = "20m"
 
-# R2: narrow selection (modules that import recovery_codes), fail-fast; run asynchronously, serial.
+# R2: narrow selection incl. the dedicated coverage tests (modules that import recovery_codes), fail-fast; run asynchronously, serial.
 [lanes.recovery_codes_r2]
 scope = "S1"
 rigor = ["R0", "R2"]
 enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests/test_recovery_codes_unit.py", "tests/test_2fa_security_functional.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+argv = ["python", "-m", "pytest", "tests/test_recovery_codes_unit.py", "tests/test_2fa_security_functional.py", "tests/test_recovery_codes_edge.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "8h"
@@ -337,12 +337,12 @@ mechanism = "import-break"
 target = "src/netcup_api_filter/utils.py"
 budget_per_attempt = "20m"
 
-# R2: narrow selection (modules that import utils), fail-fast; run asynchronously, serial.
+# R2: narrow selection incl. the dedicated coverage tests (modules that import utils), fail-fast; run asynchronously, serial.
 [lanes.utils_r2]
 scope = "S1"
 rigor = ["R0", "R2"]
 enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests/test_validators_unit.py", "tests/test_validators_property.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+argv = ["python", "-m", "pytest", "tests/test_validators_unit.py", "tests/test_validators_property.py", "tests/test_utils_helpers.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "8h"
