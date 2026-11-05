@@ -17,7 +17,7 @@
 
 1. **Sequential State Building**: Each journey builds on previous journey's state
 2. **Random Credentials**: All passwords/tokens are randomly generated, never hardcoded
-3. **State File is Truth**: `deployment_state_local.json` tracks current credentials
+3. **No State File**: credentials are per-session personas in memory (`ui_tests/personas.py`); nothing is persisted
 4. **Fail Fast**: Missing preconditions should fail immediately with clear message
 5. **Observable Actions**: Each action should be verifiable via UI or API
 6. **Screenshot Evidence**: Key states captured for visual verification
@@ -58,12 +58,9 @@ ui_tests/tests/journeys/j1_fresh_deployment.py
 ```
 
 ### Preconditions
-- [x] Database freshly created by `build_deployment.py --local`
-- [x] Admin account exists: `admin` / `admin`
-- [x] Admin `must_change_password`: `true`
-- [x] Demo client exists: `demo-user` with token
-- [x] Email config seeded for Mailpit (SMTP host: `mailpit`, port: `1025`)
-- [x] State file `deployment_state_local.json` has `admin`/`admin`
+- [x] The session app runs on a copy of the golden DB built by `run-gate local-build`
+- [x] Session personas are provisioned (`settings.admin_*` with TOTP, `settings.user_*`, tokens)
+- [x] Email config seeded for Mailpit
 
 ### Test: J1_01_login_page_accessible
 **Action**: Navigate to `/admin/login`
@@ -74,32 +71,16 @@ ui_tests/tests/journeys/j1_fresh_deployment.py
 - [ ] Submit button exists (`button[type='submit']`)
 **Screenshot**: `J1-01-login-page.webp`
 
-### Test: J1_02_default_credentials_work
-**Action**: Submit login form with credentials from state file
+### Test: J1_02_admin_persona_authenticates
+**Action**: Log out, submit the login form as the admin persona, complete TOTP
 **Verify**:
-- [ ] Form submits without error
-- [ ] Redirects away from login page (to 2FA, password change, or dashboard)
-- [ ] No "Invalid credentials" error shown
+- [ ] Lands on the dashboard ("Dashboard" in h1)
 **State Change**:
-- `journey_state.admin_password` = password used
-**Screenshot**: `J1-02-login-filled.webp`
+- `journey_state.admin_password` / `admin_logged_in` set (in memory only)
+**Screenshot**: `J1-02-login-page-empty.webp`, `J1-03-dashboard-after-login.webp`
 
-### Test: J1_03_forced_password_change
-**Precondition**: User is authenticated (from J1_02)
-**Action**: If on password change page:
-1. Generate random password: `generate_token()[:60] + "@#$%"`
-2. Fill current password (from state file)
-3. Fill new password + confirmation
-4. Submit form
-**Verify**:
-- [ ] Password change form accepts input
-- [ ] Submit redirects to dashboard
-- [ ] Dashboard shows "Dashboard" in h1
-**State Change**:
-- `journey_state.admin_password` = new random password
-- State file updated via `update_admin_password()`
-- `settings.refresh_credentials()` called
-**Screenshot**: `J1-03-post-login-state.webp`, `J1-04-dashboard.webp`
+The shipped admin's forced first-login change is NOT part of J1: it is one dedicated test on its
+own instance (`ui_tests/tests/smoke/test_installation_workflow.py`).
 
 ### Test: J1_04_dashboard_state
 **Action**: Verify dashboard elements
@@ -373,7 +354,7 @@ currently exercised by: ui_tests/tests/journeys/j3_comprehensive_states.py (toke
 - [ ] Token value displayed once (copy warning)
 - [ ] Token masked in subsequent views
 **State Change**:
-- Store token value in `deployment_state_local.json` under clients
+- Keep the token value in `journey_state` (in memory only)
 **Screenshot**: `J5-26-token-readonly-created.webp`
 
 ### Test: J5_02_create_ddns_token
@@ -549,46 +530,15 @@ currently exercised by: ui_tests/tests/journeys/j3_comprehensive_states.py (API 
 
 ---
 
-## State File Contract
+## Credentials Contract
 
-### File Location
-```
-/workspaces/netcup-api-filter/deployment_state_local.json
-```
-
-### Schema
-```json
-{
-  "target": "local",
-  "build": {
-    "built_at": "ISO-8601",
-    "git_commit": "short-sha",
-    "git_branch": "main"
-  },
-  "admin": {
-    "username": "admin",
-    "password": "<current-random-password>",
-    "password_changed_at": "ISO-8601 or null"
-  },
-  "clients": [
-    {
-      "client_id": "demo-user",
-      "secret_key": "naf_<alias>_<token>",
-      "description": "Primary demo account",
-      "is_primary": true
-    }
-  ],
-  "last_updated_at": "ISO-8601",
-  "updated_by": "j1_fresh_deployment|j7_security_ops|etc"
-}
-```
+There is no state file. Per session, `ui_tests/conftest.py` starts a throwaway app on a copy of the
+golden DB and binds `ui_tests.config.settings` to random personas (`ui_tests/personas.py`).
 
 ### Rules
-1. **ALWAYS read before login**: `settings.refresh_credentials()`
-2. **ALWAYS write after password change**: `update_admin_password(new_pw)`
-3. **NEVER hardcode passwords**: Use `generate_token()` or `secrets`
-4. **Include `updated_by`**: Track which journey made changes
-5. **Atomic updates**: Use helper functions, not direct file writes
+1. Log in only as a persona from `settings`; never type a username/password literal.
+2. A test that changes a credential owns its own instance (`e2e_env.app_instance(prepare=...)`).
+3. Never persist anything a later test depends on; `journey_state` is in-memory only.
 
 ---
 
@@ -604,25 +554,16 @@ Examples:
 - `J6-31-audit-api-calls.webp`
 
 ### Screenshot Directory
-```
-deploy-local/screenshots/
-```
+`$SCREENSHOT_DIR` (default `E2E_SCREENSHOT_DIR` = `tmp/e2e-screenshots`).
 
 ---
 
 ## Debugging Checklist
 
 ### When Login Fails
-1. Check state file password matches database:
-   ```bash
-   cat deployment_state_local.json | jq '.admin.password'
-   sqlite3 deploy-local/netcup_filter.db \
-     "SELECT password_hash FROM accounts WHERE username='admin';"
-   ```
-
+1. Re-run with `NAF_E2E_KEEP_WORKDIR=1` and inspect the session DB and `app.log` in the kept work dir
 2. Check for "Invalid credentials" flash message in page body
-
-3. Verify `refresh_credentials()` was called before login
+3. Confirm the test used `settings.*` persona credentials, not a literal
 
 ### When Test Order Matters
 1. Implemented journeys MUST run in order: J1 → J2 → J3 (the only journeys currently wired into `test_journey_master.py`). J4–J7 are planned extensions of this sequence.
@@ -630,9 +571,8 @@ deploy-local/screenshots/
 3. Skip gracefully if precondition missing (with clear message)
 
 ### When State Is Inconsistent
-1. Rebuild fresh: `python build_deployment.py --local`
-2. Check `updated_by` in state file to find last modifier
-3. Verify `password_changed_at` timestamp
+1. A non-pristine golden DB stops the session with one message: rebuild with `run-gate local-build --worktree "$PWD"`
+2. Never point `tooling/app-local` (or anything else) at `deploy-local/netcup_filter.db`
 
 ---
 
@@ -641,10 +581,9 @@ deploy-local/screenshots/
 Each journey test file MUST:
 
 - [ ] Import from `ui_tests.config import settings`
-- [ ] Import from `ui_tests.deployment_state import update_admin_password`
-- [ ] Call `settings.refresh_credentials()` before any login
-- [ ] Use `generate_token()` or `secrets` for passwords
-- [ ] Call `update_admin_password()` after password changes
+- [ ] Use persona credentials from `settings` (never literals)
+- [ ] Use `personas.new_password()` for any password a test chooses
+- [ ] Run credential changes on an own instance (`e2e_env.app_instance`)
 - [ ] Update `journey_state` with test results
 - [ ] Capture screenshots with consistent naming
 - [ ] Log clear progress messages

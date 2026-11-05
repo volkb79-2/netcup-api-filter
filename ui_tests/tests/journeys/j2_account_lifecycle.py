@@ -27,7 +27,6 @@ Verifications:
 import re
 import secrets
 import string
-from datetime import datetime
 
 from ui_tests.browser import Browser
 from ui_tests.config import settings
@@ -103,7 +102,7 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
                 mailpit.close()
                 return True
             else:
-                print(f"⚠️  Could not extract code from email")
+                print("⚠️  Could not extract code from email")
         else:
             print("⚠️  No 2FA email found in Mailpit")
         
@@ -378,7 +377,7 @@ class TestJourney2AccountLifecycle:
         if journey_state.test_account_username in page_text:
             print(f"✓ Found pending account: {journey_state.test_account_username}")
         else:
-            print(f"ℹ️  Account not in pending list - may need approval via different flow")
+            print("ℹ️  Account not in pending list - may need approval via different flow")
     
     async def test_J2_06_approve_account(self, browser: Browser, mailpit: MailpitClient):
         """Admin approves the pending account."""
@@ -486,46 +485,10 @@ class TestJourney2AccountLifecycle:
 
 
 async def _login_as_admin(browser: Browser):
-    """Helper to login as admin (including 2FA handling).
-    
-    If already logged in (session still valid), skips login form.
-    """
-    # Navigate to login page
-    await browser.goto(settings.url("/admin/login"))
-    await browser.wait_for_load_state('domcontentloaded')
-    
-    # Check if we were redirected (already logged in)
-    current_url = browser._page.url
-    if "/admin/login" not in current_url and "/login/2fa" not in current_url:
-        # Already logged in - redirected to admin area
-        if "/admin" in current_url:
-            print("ℹ️  Already logged in as admin (session valid)")
-            journey_state.admin_logged_in = True
-            return
-    
-    # Check if login form exists
-    username_field = await browser.query_selector("#username")
-    if not username_field:
-        # No login form - check if we're on admin page
-        if "/admin" in current_url and "/login" not in current_url:
-            print("ℹ️  Already on admin page (no login form)")
-            journey_state.admin_logged_in = True
-            return
-        else:
-            raise RuntimeError(f"Cannot find login form at {current_url}")
-    
-    await browser.fill("#username", "admin")
-    await browser.fill("#password", settings.admin_password)
-    await browser.click("button[type='submit']")
-    await browser.wait_for_timeout(1000)
-    
-    # Handle 2FA if redirected (use live URL)
-    current_url = browser._page.url
-    if "/2fa" in current_url or "/login/2fa" in current_url:
-        print("ℹ️  Redirected to 2FA - handling via Mailpit")
-        await _handle_2fa_via_mailpit(browser)
-        await browser.wait_for_load_state('domcontentloaded')
-    
+    """Log in as the session's admin persona (TOTP), reusing a still-valid session."""
+    from ui_tests import workflows
+
+    await workflows.ensure_admin_dashboard(browser)
     journey_state.admin_logged_in = True
 
 

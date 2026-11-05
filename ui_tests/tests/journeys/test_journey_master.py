@@ -11,17 +11,14 @@ Or run specific journeys:
     pytest ui_tests/tests/test_journey_master.py::TestJourneyMaster::test_journey_1 -v
 """
 
-import asyncio
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
-from ui_tests.browser import Browser, browser_session
-from ui_tests.config import settings
+from ui_tests.browser import browser_session
 from ui_tests.tests.journeys import journey_state
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.journey]
@@ -138,7 +135,7 @@ class TestJourneyMaster:
         
         # Print state summary
         state = journey_state.to_dict()
-        print(f"\nFinal State:")
+        print("\nFinal State:")
         for key, value in state.items():
             print(f"  {key}: {value}")
         
@@ -178,7 +175,6 @@ async def _save_journey_report():
         ],
         "summary": {
             "total_screenshots": len(journey_state.screenshots),
-            "admin_password_changed": journey_state.admin_password != "admin",
             "test_account_created": journey_state.test_account_username is not None,
             "test_account_approved": journey_state.test_account_approved,
             # Comprehensive state counts

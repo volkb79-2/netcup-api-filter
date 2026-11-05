@@ -9,7 +9,6 @@ This test is auth-boundary related and uses an isolated account session.
 
 from __future__ import annotations
 
-import os
 import re
 
 import pyotp
@@ -18,7 +17,6 @@ import pytest
 from ui_tests import verification, workflows
 from ui_tests.browser import Browser
 from ui_tests.config import settings
-from ui_tests.env_defaults import get_env_default
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.security]
@@ -33,13 +31,8 @@ async def test_account_totp_enable_then_disable(active_profile, session_manager)
     await browser.reset()
     await workflows.ensure_user_dashboard(browser)
 
-    demo_password = (os.environ.get("DEFAULT_TEST_ACCOUNT_PASSWORD") or get_env_default("DEFAULT_TEST_ACCOUNT_PASSWORD") or "").strip()
-    if not demo_password:
-        pytest.skip("DEFAULT_TEST_ACCOUNT_PASSWORD not configured")
-
-    demo_username = (os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_env_default("DEFAULT_TEST_CLIENT_ID") or "").strip()
-    if not demo_username:
-        pytest.skip("DEFAULT_TEST_CLIENT_ID not configured")
+    demo_password = settings.user_password
+    demo_username = settings.user_username
 
     # Enable TOTP
     await browser.goto(settings.url("/account/settings/totp/setup"), wait_until="domcontentloaded")

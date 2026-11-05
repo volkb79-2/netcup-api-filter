@@ -57,18 +57,17 @@ async def _add_grant_for_demo_user(browser: Browser, root_id: int) -> None:
     # Identify the demo user option.
     demo_username = await browser.evaluate(
         """
-        () => {
+        (wanted) => {
             const sel = document.querySelector("select[name='account_id']");
             if (!sel) return null;
             const opts = Array.from(sel.options || []);
-            const desired = opts.find(o => (o.value || '') !== '' && (o.textContent || '').includes('demo-user'));
+            const desired = opts.find(o => (o.value || '') !== '' && (o.textContent || '').includes(wanted));
             return desired ? desired.value : null;
         }
-        """
+        """,
+        settings.user_username,
     )
-
-    if not demo_username:
-        pytest.skip("demo-user not available in eligible_accounts for grants")
+    assert demo_username, f"user persona {settings.user_username} missing from eligible_accounts for grants"
 
     add_csrf = await browser.get_attribute(
         "form[action*='/grants/add'] input[name='csrf_token']",
@@ -94,7 +93,7 @@ async def _revoke_grant_for_demo_user(browser: Browser, root_id: int) -> None:
     await browser.goto(settings.url(f"/admin/domain-roots/{root_id}/grants"), wait_until="domcontentloaded")
     await browser.wait_for_text("body", "User Grants")
 
-    revoke_form_selector = "tr:has-text('demo-user') form[action*='/revoke']"
+    revoke_form_selector = f"tr:has-text('{settings.user_username}') form[action*='/revoke']"
     revoke_action_raw = await browser.get_attribute(revoke_form_selector, "action")
     revoke_csrf = await browser.get_attribute(f"{revoke_form_selector} input[name='csrf_token']", "value")
 
@@ -161,7 +160,7 @@ async def test_admin_domain_root_grants_add_and_revoke(active_profile):
 
             await browser.goto(settings.url(f"/admin/domain-roots/{root_id}/grants"))
             body = await browser.text("body")
-            assert "demo-user" in body
+            assert settings.user_username in body
             assert "Active" in body
 
             # Revoke grant.
@@ -169,7 +168,7 @@ async def test_admin_domain_root_grants_add_and_revoke(active_profile):
 
             await browser.goto(settings.url(f"/admin/domain-roots/{root_id}/grants"))
             body = await browser.text("body")
-            assert "demo-user" in body
+            assert settings.user_username in body
             assert "Revoked" in body or "Inactive" in body
         finally:
             await _delete_domain_root(browser, root_id)

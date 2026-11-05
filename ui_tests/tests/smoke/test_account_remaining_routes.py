@@ -21,7 +21,7 @@ import pytest
 
 from ui_tests.browser import browser_session
 from ui_tests.config import settings
-from ui_tests.env_defaults import get_env_default
+from netcup_api_filter.config_defaults import get_default as get_env_default
 from ui_tests.workflows import ensure_user_dashboard
 
 

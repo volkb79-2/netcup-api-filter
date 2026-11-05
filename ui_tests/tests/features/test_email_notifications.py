@@ -30,14 +30,20 @@ import re
 import uuid
 import pytest
 import pytest_asyncio
-from typing import Optional, List
-from dataclasses import dataclass
+from typing import Optional
+from dataclasses import dataclass, field
 
 from ui_tests.browser import Browser
 from ui_tests.config import settings
-from ui_tests.deployment_state import update_admin_password
+from dataclasses import replace
+from ui_tests.e2e_env import app_instance
+from ui_tests.personas import new_password, provision_throwaway_admin
+from ui_tests.playwright_client import PlaywrightClient
 from ui_tests.mailpit_client import MailpitClient, MailpitMessage
 from ui_tests.workflows import ensure_admin_dashboard
+
+# Random per run; never a literal (AGENTS.md).
+_REGISTRATION_PASSWORD = new_password()
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
@@ -88,7 +94,7 @@ class AccountTestData:
     """Test account data (not a test class)."""
     username: str
     email: str
-    password: str = "TestPassword123+Secure24Secure"
+    password: str = field(default_factory=new_password)
 
 
 # =============================================================================
@@ -241,12 +247,12 @@ class TestRegistrationEmails:
         # Fill and submit registration form
         await browser.fill('#username, input[name="username"]', unique_username)
         await browser.fill('#email, input[name="email"]', unique_email)
-        await browser.fill('#password, input[name="password"]', 'TestPassword123+Secure24')
+        await browser.fill('#password, input[name="password"]', _REGISTRATION_PASSWORD)
 
         # Check for confirm password field
         confirm = await browser.query_selector('#password_confirm, #confirm_password')
         if confirm:
-            await browser.fill('#password_confirm, #confirm_password', 'TestPassword123+Secure24')
+            await browser.fill('#password_confirm, #confirm_password', _REGISTRATION_PASSWORD)
         
         # Submit form and wait for navigation
         async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
@@ -305,12 +311,12 @@ class TestRegistrationEmails:
 
         await browser.fill('#username, input[name="username"]', unique_username)
         await browser.fill('#email, input[name="email"]', unique_email)
-        await browser.fill('#password, input[name="password"]', 'TestPassword123+Secure24')
+        await browser.fill('#password, input[name="password"]', _REGISTRATION_PASSWORD)
 
         # Confirm password is required on the registration page.
         confirm = await browser.query_selector('#password_confirm, #confirm_password')
         if confirm:
-            await browser.fill('#password_confirm, #confirm_password', 'TestPassword123+Secure24')
+            await browser.fill('#password_confirm, #confirm_password', _REGISTRATION_PASSWORD)
         
         await browser.click('button[type="submit"]')
         # Wait for email processing
@@ -643,7 +649,6 @@ class TestSecurityAlertEmails:
     """Test security-related email notifications."""
 
     async def _force_admin_login_form(self, browser) -> None:
-        settings.refresh_credentials()
         try:
             await browser.goto(settings.url('/admin/logout'), wait_until='domcontentloaded')
         except Exception:
@@ -685,7 +690,7 @@ class TestSecurityAlertEmails:
         
         for _ in range(3):
             await browser.fill('#username, input[name="username"]', 'admin')
-            await browser.fill('#password, input[name="password"]', 'WrongPassword123!')
+            await browser.fill('#password, input[name="password"]', new_password())  # never the real one
             await browser.click('button[type="submit"]')
             await browser.wait_for_load_state('domcontentloaded')
         
@@ -712,53 +717,42 @@ class TestSecurityAlertEmails:
 class TestPasswordChangedEmails:
     """Test password change notification emails."""
 
-    async def test_password_change_sends_notification(
-        self, admin_session, mailpit: MailpitClient
-    ):
-        """Password change sends security notification to account holder."""
-        from netcup_api_filter.utils import generate_token
-        
-        browser = admin_session
-        mailpit.clear()
-        
-        # Navigate to change password page
-        await browser.goto(settings.url('/admin/change-password'))
-        await browser.wait_for_load_state('domcontentloaded')
-        
-        # Fill in the password change form with RANDOM password
-        original_password = settings.admin_password
-        await browser.fill('#current_password', original_password)
-        
-        # Generate cryptographically secure random password (NEVER hardcode!)
-        base_token = generate_token()  # 63-65 char alphanumeric
-        new_password = base_token[:60] + "@#$%"  # Add special chars
-        
-        await browser.fill('#new_password', new_password)
-        await browser.fill('#confirm_password', new_password)
-        
-        await browser.click('button[type="submit"]')
-        await browser.wait_for_timeout(1000)
-        
-        # CRITICAL: Persist password change for subsequent tests
-        # Update both in-memory settings AND deployment_state.json
-        settings._active.admin_password = new_password
-        update_admin_password(new_password)
-        # Also refresh the source profiles so subsequent tests use new password
-        settings.refresh_credentials()
-        
-        # Wait for password changed notification
+    async def test_password_change_sends_notification(self, mailpit: MailpitClient):
+        """A password change sends a security notification to the account holder.
+
+        Runs on its own instance with a throwaway admin: the session's admin persona keeps
+        its password, and nothing is persisted.
+        """
+        with app_instance(prepare=provision_throwaway_admin) as (instance, admin):
+            with settings.use_profile(replace(settings.profile("primary"), base_url=instance.base_url)):
+                async with PlaywrightClient(headless=settings.playwright_headless) as client:
+                    browser = Browser(client.page)
+                    await browser.goto(settings.url('/admin/login'), wait_until='domcontentloaded')
+                    await browser.fill('#username', admin.username)
+                    await browser.fill('#password', admin.password)
+                    await browser.click("form[action*='/admin/login'] button[type='submit']")
+                    await browser._page.wait_for_url(lambda url: '/admin/login' not in url, timeout=10_000)
+                    mailpit.clear()
+
+                    await browser.goto(settings.url('/admin/change-password'), wait_until='domcontentloaded')
+                    chosen = new_password()
+                    await browser.fill('#current_password', admin.password)
+                    await browser.fill('#new_password', chosen)
+                    await browser.fill('#confirm_password', chosen)
+                    await browser.submit('#changePasswordForm')
+                    await browser.wait_for_text('h1', 'Dashboard', timeout=10.0)
+
         msg = mailpit.wait_for_message(
-            predicate=lambda m: 'password' in m.subject.lower() and 'changed' in m.subject.lower(),
-            timeout=10.0
+            predicate=lambda m: admin.email in [a.address for a in m.to]
+            and 'password' in m.subject.lower(),
+            timeout=10.0,
         )
-        
-        if msg:
-            full_msg = mailpit.get_message(msg.id)
-            # Should contain security information
-            assert 'password' in full_msg.text.lower()
-            assert 'changed' in full_msg.text.lower() or 'updated' in full_msg.text.lower()
-            # Should mention what to do if not authorized
-            assert 'if you did not' in full_msg.text.lower() or 'unauthorized' in full_msg.text.lower()
+        assert msg is not None, "no password-changed notification reached the account holder"
+        full_msg = mailpit.get_message(msg.id)
+        text = full_msg.text.lower()
+        assert 'password' in text
+        assert 'changed' in text or 'updated' in text
+        assert 'if you did not' in text or 'unauthorized' in text
 
 
 # =============================================================================
@@ -912,11 +906,11 @@ class TestEmailIsolation:
         
         await browser.fill('#username, input[name="username"]', 'user_a_isolation_test')
         await browser.fill('#email, input[name="email"]', user_a_email)
-        await browser.fill('#password, input[name="password"]', 'TestPassword123+Secure24')
+        await browser.fill('#password, input[name="password"]', _REGISTRATION_PASSWORD)
         
         confirm = await browser.query_selector('#password_confirm, #confirm_password')
         if confirm:
-            await browser.fill('#password_confirm, #confirm_password', 'TestPassword123+Secure24')
+            await browser.fill('#password_confirm, #confirm_password', _REGISTRATION_PASSWORD)
         
         await browser.click('button[type="submit"]')
         await browser.wait_for_timeout(1000)

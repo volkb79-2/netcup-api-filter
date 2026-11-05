@@ -40,6 +40,7 @@ from typing import Optional
 
 from ui_tests.browser import Browser
 from ui_tests.config import settings
+from ui_tests.personas import new_password
 from ui_tests.mailpit_client import MailpitClient
 from ui_tests.tests.journeys import journey_state
 from ui_tests.tests.journeys.state_matrix import (
@@ -112,7 +113,7 @@ class AccountCreator:
         base_name = spec.name.replace("-", "").replace("_", "")  # Remove all separators
         username = f"j{base_name}{suffix}"  # Ensure starts with letter, length OK
         email = f"{username}@test.example.com"
-        password = f"TestPass123+SecurePassword24{suffix}"  # Strong password for testing
+        password = new_password()  # random per run (ui_tests/personas.py)
         
         # Clear Mailpit to find our specific email
         initial_count = self.mailpit.list_messages().total
@@ -413,7 +414,7 @@ class RealmCreator:
         if spec.status == "pending":
             # For pending, we'd need user to request via account portal
             realm_data["status"] = "approved"  # Admin creates are always approved
-            print(f"  ℹ️  Note: Admin-created realms are auto-approved, spec wanted 'pending'")
+            print("  ℹ️  Note: Admin-created realms are auto-approved, spec wanted 'pending'")
         
         self.created_realms[spec.name] = realm_data
         if success:
@@ -725,11 +726,11 @@ class TokenCreator:
             print(f"          URL: {current_url}")
             # Check for error messages
             if "error" in page_text.lower() or "invalid" in page_text.lower():
-                print(f"          Found error on page!")
+                print("          Found error on page!")
             # Check for flash messages in the full page
             page_html = await self.browser.html("body")
             if "alert-danger" in page_html or "invalid-feedback" in page_html:
-                print(f"          Validation error detected in HTML")
+                print("          Validation error detected in HTML")
             # Take debug screenshot
             await capture(browser=self.browser, name=f"token-error-{token_name}")
         
@@ -931,9 +932,9 @@ class TestJourney3ComprehensiveStates:
         # Webhosting/live runs typically cannot complete per-account token creation
         # because J3 creates synthetic accounts with non-deliverable emails.
         # Keep this config-driven so it can be enabled explicitly when desired.
-        from ui_tests.deployment_state import get_deployment_target
+        from ui_tests.config import settings
 
-        if get_deployment_target() == "webhosting":
+        if settings.deployment_target == "webhosting":
             allow = os.getenv("UI_J3_CREATE_TOKENS_WEBHOSTING", "0").strip().lower() in {
                 "1",
                 "true",

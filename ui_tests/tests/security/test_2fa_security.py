@@ -10,7 +10,6 @@ Tests for:
 These tests verify the security improvements prevent brute-force attacks.
 """
 
-import asyncio
 import re
 import os
 import sqlite3
@@ -34,7 +33,6 @@ async def _force_fresh_admin_login(browser) -> None:
     These are auth-flow security tests, so they must not inherit a saved
     Playwright storage state from previous tests.
     """
-    settings.refresh_credentials()
     try:
         await browser.goto(settings.url("/admin/logout"), wait_until="domcontentloaded")
     except Exception:
@@ -77,10 +75,7 @@ def _clear_auth_lockouts_for_username(username: str) -> None:
 
     # The write below is the ONE sanctioned legacy write in this helper.
     # All other DB access must go through verification.ro_connection().
-    db_path = os.environ.get(
-        "DATABASE_PATH",
-        "/workspaces/netcup-api-filter/deploy-local/netcup_filter.db",
-    )
+    db_path = verification.require_db()
     # WRITE: legacy cleanup, see T07 — do not copy this pattern
     conn = sqlite3.connect(db_path, timeout=10.0)
     try:
@@ -100,7 +95,7 @@ class Test2FAFailureTracking:
 
     async def test_2fa_lockout_after_max_failures(self):
         """Test that account is locked after 5 failed 2FA attempts."""
-        _clear_auth_lockouts_for_username("admin")
+        _clear_auth_lockouts_for_username(settings.mail_admin_username)
         mailpit = MailpitClient()
         
         try:
@@ -116,8 +111,8 @@ class Test2FAFailureTracking:
                 await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
                 
                 # Step 3: Submit login form (triggers 2FA)
-                await browser.fill("#username", "admin")
-                await browser.fill("#password", settings.admin_password)
+                await browser.fill("#username", settings.mail_admin_username)
+                await browser.fill("#password", settings.mail_admin_password)
                 
                 # Submit and wait for navigation to complete
                 async with browser._page.expect_navigation(wait_until="networkidle"):
@@ -127,12 +122,7 @@ class Test2FAFailureTracking:
                 current_url = browser._page.url
                 print(f"After login submit, URL: {current_url}")
                 
-                if "/2fa" not in current_url:
-                    # Not on 2FA page - check body for clues
-                    body = await browser.text("body")
-                    print(f"Body content preview: {body[:200]}")
-                    pytest.skip(f"Not on 2FA page after login (URL: {current_url})")
-                    return
+                assert "/2fa" in current_url, f"email-2FA admin persona got no 2FA challenge (url={current_url})"
                 
                 print("✓ Successfully reached 2FA page")
                 
@@ -194,7 +184,7 @@ class Test2FAFailureTracking:
                         # backend truth. Assert it BEFORE the UI "attempts remaining"
                         # text so this backend-truth check is the load-bearing gate
                         # (the UI string is derived from this counter).
-                        failure_data = verification.get_2fa_failure_data("admin")
+                        failure_data = verification.get_2fa_failure_data(settings.mail_admin_username)
                         assert failure_data is not None, (
                             f"Attempt {attempt}: expected settings 2fa_failures entry, got None"
                         )
@@ -216,7 +206,7 @@ class Test2FAFailureTracking:
                         # Channel A FIRST: the persisted counter must have reached the
                         # lockout threshold. Assert the backend truth BEFORE the UI
                         # lockout text so this is the load-bearing assertion.
-                        failure_data = verification.get_2fa_failure_data("admin")
+                        failure_data = verification.get_2fa_failure_data(settings.mail_admin_username)
                         assert failure_data is not None, (
                             "Expected settings 2fa_failures entry at lockout, got None"
                         )
@@ -240,11 +230,11 @@ class Test2FAFailureTracking:
                 
         finally:
             mailpit.close()
-            _clear_auth_lockouts_for_username("admin")
+            _clear_auth_lockouts_for_username(settings.mail_admin_username)
 
     async def test_2fa_attempts_remaining_counter(self):
         """Test that user sees remaining attempts counter on failure."""
-        _clear_auth_lockouts_for_username("admin")
+        _clear_auth_lockouts_for_username(settings.mail_admin_username)
         mailpit = MailpitClient()
         
         try:
@@ -259,17 +249,15 @@ class Test2FAFailureTracking:
                 # Login to 2FA page
                 await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
                 
-                await browser.fill("#username", "admin")
-                await browser.fill("#password", settings.admin_password)
+                await browser.fill("#username", settings.mail_admin_username)
+                await browser.fill("#password", settings.mail_admin_password)
                 
                 async with browser._page.expect_navigation(wait_until="networkidle"):
                     await browser.click("button[type='submit']")
                 
                 current_url = browser._page.url
                 
-                if "/2fa" not in current_url:
-                    pytest.skip("2FA not enabled")
-                    return
+                assert "/2fa" in current_url, f"email-2FA admin persona got no 2FA challenge (url={current_url})"
                 
                 # Wait for email
                 msg = mailpit.wait_for_message(
@@ -277,9 +265,7 @@ class Test2FAFailureTracking:
                     timeout=10.0
                 )
                 
-                if not msg:
-                    pytest.skip("No 2FA email received")
-                    return
+                assert msg is not None, "no 2FA email received for the email-2FA admin persona"
 
                 # Pick a guaranteed-wrong code (avoid the astronomically rare case
                 # where the hardcoded wrong code matches the generated code).
@@ -328,7 +314,7 @@ class Test2FAFailureTracking:
                 
         finally:
             mailpit.close()
-            _clear_auth_lockouts_for_username("admin")
+            _clear_auth_lockouts_for_username(settings.mail_admin_username)
 
 
 class TestRecoveryCodeRateLimiting:
@@ -339,7 +325,7 @@ class TestRecoveryCodeRateLimiting:
         # This test requires an account with recovery codes set up
         # For now, we'll test the basic flow
 
-        _clear_auth_lockouts_for_username("admin")
+        _clear_auth_lockouts_for_username(settings.mail_admin_username)
         
         async with browser_session() as browser:
             from ui_tests import workflows
@@ -405,7 +391,7 @@ class TestSessionRegeneration:
 
     async def test_session_id_changes_after_login(self):
         """Test that session ID is regenerated after successful login."""
-        _clear_auth_lockouts_for_username("admin")
+        _clear_auth_lockouts_for_username(settings.mail_admin_username)
         async with browser_session() as browser:
             # This is an auth-flow security test: ensure we do NOT reuse any
             # persisted Playwright storage state from previous tests.
@@ -454,14 +440,11 @@ class TestConfigurationDefaults:
 
     async def test_security_settings_in_env_defaults(self):
         """Verify security settings are in .env.defaults."""
-        import os
         
         # Read .env.defaults
-        env_defaults_path = "/workspaces/netcup-api-filter/.env.defaults"
-        
-        if not os.path.exists(env_defaults_path):
-            pytest.skip(".env.defaults not found")
-            return
+        from pathlib import Path
+        env_defaults_path = Path(__file__).resolve().parents[3] / ".env.defaults"
+        assert env_defaults_path.is_file(), f"{env_defaults_path} missing"
         
         with open(env_defaults_path, 'r') as f:
             content = f.read()
@@ -502,7 +485,7 @@ class TestAdminAuthentication:
 
     async def test_admin_session_regeneration(self):
         """Verify admin login also regenerates session."""
-        _clear_auth_lockouts_for_username("admin")
+        _clear_auth_lockouts_for_username(settings.mail_admin_username)
         async with browser_session() as browser:
             from ui_tests import workflows
 
@@ -538,10 +521,6 @@ async def test_complete_2fa_flow_with_mailpit():
     mailpit = MailpitClient()
 
     try:
-        # Ensure we use the latest admin credentials (other tests may have
-        # changed the password and persisted it to deployment_state_local.json).
-        settings.refresh_credentials()
-
         # Clear any existing messages
         messages = mailpit.list_messages()
         for msg in messages.messages:
@@ -572,8 +551,8 @@ async def test_complete_2fa_flow_with_mailpit():
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_load_state('domcontentloaded')
 
-            await browser.fill("#username", "admin")
-            await browser.fill("#password", settings.admin_password)
+            await browser.fill("#username", settings.mail_admin_username)
+            await browser.fill("#password", settings.mail_admin_password)
 
             # Wait for login navigation to complete
             async with browser._page.expect_navigation(wait_until="networkidle", timeout=10000):
@@ -582,9 +561,7 @@ async def test_complete_2fa_flow_with_mailpit():
             # Check if redirected to 2FA page
             current_url = browser._page.url
 
-            if "/2fa" not in current_url:
-                print("ℹ️  No 2FA challenge (may be disabled or already set up)")
-                return
+            assert "/2fa" in current_url, f"email-2FA admin persona got no 2FA challenge (url={current_url})"
 
             # Wait for 2FA email
             msg = mailpit.wait_for_message(

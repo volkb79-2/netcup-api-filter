@@ -118,10 +118,12 @@ def login_2fa():
         tfa_methods.append('telegram')
     
     if request.method == 'GET':
-        # Default to email if available
+        # Default to email if available. send_2fa_code() records the chosen method in
+        # the session for EVERY method (for TOTP it only records it, nothing is sent):
+        # skipping it for TOTP left the session on 'email', so a valid TOTP code was
+        # checked as an email code and portal TOTP login could never succeed.
         method = request.args.get('method', 'email')
-        if method in tfa_methods and method != 'totp':
-            # Send code for non-TOTP methods
+        if method in tfa_methods:
             success, error = send_2fa_code(account_id, method, request.remote_addr)
             if not success:
                 flash(error, 'error')
@@ -139,10 +141,13 @@ def login_2fa():
     
     from ..account_auth import SESSION_KEY_2FA_EMAIL_REF
 
+    from ..account_auth import SESSION_KEY_2FA_METHOD
+
     return render_template(
         'account/login_2fa.html',
         account=account,
         tfa_methods=tfa_methods,
+        method=session.get(SESSION_KEY_2FA_METHOD, 'email'),
         masked_email=mask_email(account.email),
         email_ref_token=session.get(SESSION_KEY_2FA_EMAIL_REF),
     )

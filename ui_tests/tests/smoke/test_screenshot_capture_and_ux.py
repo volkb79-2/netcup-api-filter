@@ -20,7 +20,7 @@ import re
 import secrets
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 import os
 
 from ui_tests.browser import browser_session, Browser
@@ -286,12 +286,7 @@ async def simulate_api_activity(browser: Browser) -> None:
     
     base_url = settings.base_url
     
-    # Get demo token from environment or use default
-    demo_token = os.environ.get("DEPLOYED_CLIENT_SECRET_KEY", "")
-    
-    if not demo_token:
-        print("⚠️  No client token available for API activity simulation")
-        return
+    demo_token = settings.client_token  # the session's user persona token
     
     async with httpx.AsyncClient(verify=False, timeout=10) as client:
         headers = {"Authorization": f"Bearer {demo_token}"}

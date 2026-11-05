@@ -15,19 +15,18 @@ runs BEFORE the Netcup call, so the 403 is returned without contacting Netcup.
 Test setup uses a direct DB write to insert a throwaway token with IP restrictions
 (no browser/Mailpit needed -- the UI path would require the full invite/login/2FA
 flow which is covered by test_cross_role_account_lifecycle.py). The throwaway token
-is deleted in a finally block. The demo-user account row is never modified.
+is deleted in a finally block. The user persona account row is never modified.
 """
 from __future__ import annotations
 
 import json
 import sqlite3
-import time
 
 import httpx
 import pytest
 
 from ui_tests import verification
-from ui_tests.deployment_state import get_base_url, get_deployment_target
+from ui_tests.config import settings
 
 pytestmark = [pytest.mark.security]
 
@@ -43,7 +42,7 @@ EXCLUDED_CIDR = "203.0.113.0/24"
 # CIDR that includes 127.0.0.1.
 INCLUDED_CIDR = "127.0.0.0/8"
 
-# The demo-user realm (id=1, domain=example.com) is pre-seeded and approved.
+# The user persona realm (id=1, domain=example.com) is provisioned per session (ui_tests/personas.py).
 DEMO_REALM_ID = 1
 DOMAIN = "example.com"
 
@@ -57,7 +56,7 @@ TOKEN_NAME_ALLOWED = "e3-ip-allowed-test"
 # ---------------------------------------------------------------------------
 
 def _base_url() -> str:
-    return get_base_url(get_deployment_target()).rstrip("/")
+    return settings.base_url.rstrip("/")
 
 
 def _db_write_conn() -> sqlite3.Connection:
@@ -131,13 +130,13 @@ def _latest_ip_denied_log(token_id: int) -> dict | None:
 
 
 def _get_demo_user_alias() -> str:
-    """Return the user_alias of the demo-user account (needed to build a valid token)."""
+    """Return the user_alias of the user persona (needed to build a valid token)."""
     with verification.ro_connection() as conn:
         cur = conn.execute(
-            "SELECT user_alias FROM accounts WHERE username = 'demo-user'",
+            "SELECT user_alias FROM accounts WHERE username = ?", (settings.user_username,),
         )
         row = cur.fetchone()
-        assert row, "demo-user account not found in DB"
+        assert row, f"user persona {settings.user_username} not found in DB"
         return row["user_alias"]
 
 
