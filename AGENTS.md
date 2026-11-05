@@ -55,6 +55,9 @@ the supported verbs:
 
 Webhoster inventory, pinned host key and activation contract: `.ciu.hosts.toml`. Webhosting releases are
 greenfield (fresh seeded DB, default `admin`/`admin`, `must_change_password`); only `SECRET_KEY` carries over.
+The OCI image ships no account (first boot needs `NAF_BOOTSTRAP_ADMIN_*`, policy-compliant password) and runs as
+non-root. First-start init is serialized across processes by `<db>.init.lock`; a failed start is fatal (the process
+exits, nothing is rendered to clients). Shipped trees carry `app-defaults.env`, an allowlist of runtime keys.
 No credential is ever tracked in a file (never hardcode a password): e2e sessions provision random personas in
 memory, `app-local` reads ciu-generated secrets (the hook prints where they live). Browser tests use pwmcp via
 `PLAYWRIGHT_SERVER_WS`, never an engine installed here.
