@@ -46,6 +46,12 @@ services:
       - type: volume
         source: run-gate-state-{{ v.name }}
         target: {{ test_runner.run_gate.state_root }}
+    # The suite opens many SQLite files and sockets in one process; Docker's per-process default of 1024 is
+    # too low for it. A need, not a host limit.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     working_dir: {{ ciu.repo_root }}
     networks:
       - {{ deploy.network_name }}

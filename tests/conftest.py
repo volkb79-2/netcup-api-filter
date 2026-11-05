@@ -59,6 +59,9 @@ def app(monkeypatch, tmp_path):
         yield application
         _db.session.remove()
         _db.drop_all()
+        # Release the SQLite connections of THIS app's engine: ~1000 tests in one process otherwise
+        # exhaust the runner's open-file limit (OSError: Too many open files) late in the run.
+        _db.engine.dispose()
 
 
 @pytest.fixture
