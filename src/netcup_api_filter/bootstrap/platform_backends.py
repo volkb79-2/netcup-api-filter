@@ -401,7 +401,13 @@ def initialize_platform_backends():
                 
                 db.session.commit()
             except (json.JSONDecodeError, TypeError) as e:
+                db.session.rollback()  # all or nothing: no partially imported [[users]]
                 logger.error(f"Failed to parse users_config: {e}")
+            except Exception:
+                # e.g. an admin with password = "generate" (ValueError): accounts flushed
+                # before the bad entry must not be committed by the cleanup below (review #10).
+                db.session.rollback()
+                raise
             finally:
                 # The imported [[users]] entries may carry plaintext passwords: never
                 # keep them in the settings table once the accounts exist.

@@ -13,6 +13,9 @@
 
 ### Security
 
+- **Fixed (review #10):** a `[[users]]` admin entry with `password = "generate"` aborted the import,
+  but the cleanup commit still saved the accounts flushed before it; the import is now all or nothing.
+
 - **Fixed (review #11):** `users_config` rows persisted by older releases (plaintext `[[users]]`
   passwords) were never removed; `init_instance` now purges the row on every start.
 

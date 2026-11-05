@@ -484,6 +484,25 @@ def test_mock_email_config_is_create_only(bare_app):
     assert stored["smtp_server"] == "smtp.operator.example"
 
 
+# --- review #10: a bad [[users]] entry imports nothing ---------------------------
+
+def test_admin_with_generate_password_rolls_back_the_whole_users_import(bare_app):
+    from netcup_api_filter.bootstrap.platform_backends import initialize_platform_backends
+    from netcup_api_filter.database import set_setting
+
+    init_instance(admin=_spec())
+    set_setting("users_config", [
+        {"username": "earlier-user", "email": "earlier@example.com", "password": _password(),
+         "is_approved": True, "is_admin": False},
+        {"username": "bad-admin", "email": "bad@example.com", "password": "generate", "is_admin": True},
+    ])
+    with pytest.raises(ValueError, match="explicit password"):
+        initialize_platform_backends()
+    database.db.session.remove()
+    assert Account.query.filter_by(username="earlier-user").first() is None
+    assert Settings.query.filter_by(key="users_config").first() is None  # plaintext still purged
+
+
 # --- review #11: users_config rows from older releases are purged on init -------
 
 def test_init_purges_a_stale_persisted_users_import(bare_app):
