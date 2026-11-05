@@ -85,7 +85,9 @@ try:
         
         # Load app-config.toml if present (first-run customization)
         # This file is read once and then deleted
-        config_path = os.path.join(app_root, 'app-config.toml')
+        # Same location init_db reads the bootstrap admin from: NETCUP_FILTER_APP_ROOT (defaults
+        # to this file's directory above; the OCI image points it at the writable /config).
+        config_path = os.path.join(os.environ['NETCUP_FILTER_APP_ROOT'], 'app-config.toml')
         # NOTE: gunicorn may start multiple workers; protect this one-time import
         # from races by atomically "claiming" the file.
         claimed_config_path: str | None = None

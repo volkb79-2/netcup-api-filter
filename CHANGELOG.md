@@ -13,6 +13,10 @@
 
 ### Security
 
+- **Fixed (review #15):** the OCI image ran gunicorn as root and had no `.dockerignore` (`.env*`
+  and `.ciu/secrets` reached the builder context). It now runs as `naf` (uid/gid 10001) with only
+  `/data` and `/config` writable, and the build context is an allowlist.
+
 - **Fixed (review #14):** e2e session apps no longer accept the documented `admin`/`admin` (they
   listen on the shared pwmcp network; only the forced-change test keeps it), the session fixture
   stops gunicorn on any setup error, and a port taken between choosing and binding is retried.

@@ -55,13 +55,29 @@ COPY gunicorn.conf.py ./gunicorn.conf.py
 RUN --mount=type=bind,source=.env.defaults,target=/tmp/build-env.defaults \
     PYTHONPATH=/app/src python -c "from pathlib import Path; from netcup_api_filter.config_defaults import write_shipped_defaults; print(write_shipped_defaults(Path('/tmp/build-env.defaults'), Path('/app')))"
 
+# Non-root runtime user (review #15). The code under /app stays root-owned (read-only for the
+# app); the app writes only to /data (database, its init lock, log) and to /config (where an
+# optional one-shot app-config.toml is claimed and deleted). A named volume on /data inherits
+# this ownership; a bind mount must be writable by APP_UID:APP_GID.
+ARG APP_UID=10001
+ARG APP_GID=10001
+RUN groupadd --system --gid "${APP_GID}" naf \
+ && useradd --system --uid "${APP_UID}" --gid naf --no-create-home --home-dir /nonexistent \
+      --shell /usr/sbin/nologin naf \
+ && mkdir -p /data /config \
+ && chown naf:naf /data /config
+
 ENV PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    NETCUP_FILTER_DB_PATH=/data/netcup_filter.db
+    NETCUP_FILTER_DB_PATH=/data/netcup_filter.db \
+    NETCUP_FILTER_LOG_FILE=/data/netcup_filter.log \
+    NETCUP_FILTER_APP_ROOT=/config
 
 # The database (and the persisted SECRET_KEY row) live here, not in the image layer.
 VOLUME /data
+
+USER naf:naf
 
 # gunicorn.conf.py's GUNICORN_BIND default (0.0.0.0:5100) — keep in sync with
 # tooling/app-local/ciu.defaults.toml.j2's app_local.port.
