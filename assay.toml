@@ -27,7 +27,7 @@ env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "30m"
 allow_argv_append = false
 
-# measured 2026-11-05: 163/216 lines, 65/86 branches
+# ratcheted 2026-11-05 after new tests: 218/218 lines, 88/88 branches
 [lanes.token_auth]
 scope = "S1"
 rigor = ["R0", "R1"]
@@ -44,7 +44,7 @@ snapshot_selection = "repository"
 [lanes.token_auth.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 75.0
+fail_under = 100.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -71,7 +71,7 @@ snapshot_selection = "repository"
 [lanes.token_auth_r3.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 75.0
+fail_under = 100.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -111,7 +111,7 @@ max_mutants = 1000
 budget_per_candidate = "120s"
 operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
 
-# measured 2026-11-05: 210/500 lines, 34/160 branches
+# ratcheted 2026-11-05 after new tests: 500/500 lines, 160/160 branches
 [lanes.account_auth]
 scope = "S1"
 rigor = ["R0", "R1"]
@@ -128,7 +128,7 @@ snapshot_selection = "repository"
 [lanes.account_auth.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 21.0
+fail_under = 100.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -155,7 +155,7 @@ snapshot_selection = "repository"
 [lanes.account_auth_r3.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 21.0
+fail_under = 100.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -195,7 +195,7 @@ max_mutants = 1000
 budget_per_candidate = "120s"
 operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
 
-# measured 2026-11-05: 75/76 lines, 11/12 branches
+# ratcheted 2026-11-05 after new tests: 76/76 lines, 12/12 branches
 [lanes.recovery_codes]
 scope = "S1"
 rigor = ["R0", "R1"]
@@ -212,7 +212,7 @@ snapshot_selection = "repository"
 [lanes.recovery_codes.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 91.0
+fail_under = 100.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -239,7 +239,7 @@ snapshot_selection = "repository"
 [lanes.recovery_codes_r3.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 91.0
+fail_under = 100.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -279,7 +279,7 @@ max_mutants = 1000
 budget_per_candidate = "120s"
 operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
 
-# measured 2026-11-05: 100/178 lines, 41/58 branches (a `pragma: no cover` was removed so the except block counts)
+# ratcheted 2026-11-05 after new tests: 180/183 lines, 59/60 branches (2 dead-code spots: unreachable)
 [lanes.utils]
 scope = "S1"
 rigor = ["R0", "R1"]
@@ -296,7 +296,7 @@ snapshot_selection = "repository"
 [lanes.utils.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 54.0
+fail_under = 98.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -323,7 +323,7 @@ snapshot_selection = "repository"
 [lanes.utils_r3.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 54.0
+fail_under = 98.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
