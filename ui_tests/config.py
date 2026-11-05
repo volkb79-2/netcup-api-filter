@@ -12,10 +12,69 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, List
-from urllib.parse import urljoin
+from typing import Iterator, List, Mapping
+from urllib.parse import urljoin, urlsplit
 
 PRIMARY_PROFILE = "primary"
+
+# ---- target selection (local throwaway instance vs. remote read-only smoke) --------------
+ENV_TARGET = "NAF_E2E_TARGET"
+TARGET_LOCAL = "local"
+TARGET_REMOTE = "remote"
+
+ENV_REMOTE_BASE_URL = "NAF_REMOTE_BASE_URL"
+ENV_REMOTE_ADMIN_USERNAME = "NAF_REMOTE_ADMIN_USERNAME"
+ENV_REMOTE_ADMIN_PASSWORD = "NAF_REMOTE_ADMIN_PASSWORD"
+ENV_REMOTE_ADMIN_PASSWORD_FILE = "NAF_REMOTE_ADMIN_PASSWORD_FILE"
+ENV_REMOTE_ADMIN_TOTP_SECRET = "NAF_REMOTE_ADMIN_TOTP_SECRET"
+ENV_REMOTE_ADMIN_TOTP_SECRET_FILE = "NAF_REMOTE_ADMIN_TOTP_SECRET_FILE"
+
+# Profile fields a remote target cannot provide (no personas, no tokens, no private DB).
+REMOTE_UNAVAILABLE = frozenset(
+    {"mail_admin", "user", "client", "readonly_client", "db_path"}
+)
+
+
+class RemoteConfigError(RuntimeError):
+    """The remote smoke target is selected but its configuration is wrong or incomplete."""
+
+
+class TargetUnavailableError(RuntimeError):
+    """A test asked the bound target for something it cannot provide (e.g. a user persona remotely)."""
+
+
+def selected_target(env: Mapping[str, str] | None = None) -> str:
+    """``local`` (default: throwaway instance) or ``remote`` (``NAF_E2E_TARGET=remote``).
+
+    Any other value is an error: a typo must never silently select the local mode.
+    """
+    env = os.environ if env is None else env
+    value = env.get(ENV_TARGET, "").strip().lower()
+    if value in ("", TARGET_LOCAL):
+        return TARGET_LOCAL
+    if value == TARGET_REMOTE:
+        return TARGET_REMOTE
+    raise RemoteConfigError(f"{ENV_TARGET}={value!r} is not valid (use '{TARGET_LOCAL}' or '{TARGET_REMOTE}')")
+
+
+def _value_or_file(env: Mapping[str, str], value_name: str, file_name: str, *, required: bool) -> str | None:
+    """A secret from ``<value_name>`` XOR ``<file_name>`` (file preferred; both set is an error)."""
+    value = env.get(value_name, "")
+    file_path = env.get(file_name, "").strip()
+    if value and file_path:
+        raise RemoteConfigError(f"set only one of {value_name} and {file_name}")
+    if file_path:
+        path = Path(file_path)
+        if not path.is_file():
+            raise RemoteConfigError(f"{file_name} points to a missing file: {file_path}")
+        value = path.read_text(encoding="utf-8").rstrip("\r\n")
+        if not value:
+            raise RemoteConfigError(f"{file_name} points to an empty file: {file_path}")
+    if not value:
+        if required:
+            raise RemoteConfigError(f"set {file_name} (preferred) or {value_name}")
+        return None
+    return value
 
 
 @dataclass
@@ -39,6 +98,8 @@ class UiTargetProfile:
     deployment_target: str = "local"
     readonly_client_id: str = ""
     readonly_client_secret_key: str = ""
+    # Field groups the target cannot provide; reading one through ``settings`` raises.
+    unavailable: frozenset = frozenset()
 
     @property
     def client_token(self) -> str:
@@ -61,7 +122,7 @@ class UiTestConfig:
         self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "test")
         self._profiles: dict[str, UiTargetProfile] = {}
         self._active: UiTargetProfile | None = None
-        self.db_path: Path | None = None
+        self._db_path: Path | None = None
         self.workdir: Path | None = None
 
     # ---- binding ------------------------------------------------------------------
@@ -88,14 +149,77 @@ class UiTestConfig:
         )
         self._profiles = {PRIMARY_PROFILE: profile}
         self._active = profile
-        self.db_path = instance.db_path
+        self._db_path = instance.db_path
         self.workdir = instance.workdir
+
+    def bind_remote(self, env: Mapping[str, str] | None = None, *, workdir: Path | None = None) -> UiTargetProfile:
+        """Bind to a REMOTE (webhosting) deployment for the read-only smoke; nothing is started.
+
+        Everything comes from explicit environment variables (secrets preferably as ``*_FILE``).
+        The profile is ``deployment_target="webhosting"`` and ``allow_writes=False``. User
+        persona, tokens and the DB path do not exist remotely: reading them raises
+        ``TargetUnavailableError`` instead of returning a placeholder.
+        """
+        env = os.environ if env is None else env
+        base_url = env.get(ENV_REMOTE_BASE_URL, "").strip()
+        if not base_url:
+            raise RemoteConfigError(f"set {ENV_REMOTE_BASE_URL} (e.g. https://<your-host>)")
+        parts = urlsplit(base_url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise RemoteConfigError(f"{ENV_REMOTE_BASE_URL} must be an absolute http(s) URL")
+        username = env.get(ENV_REMOTE_ADMIN_USERNAME, "").strip()
+        if not username:
+            raise RemoteConfigError(f"set {ENV_REMOTE_ADMIN_USERNAME}")
+        password = _value_or_file(
+            env, ENV_REMOTE_ADMIN_PASSWORD, ENV_REMOTE_ADMIN_PASSWORD_FILE, required=True
+        )
+        totp = _value_or_file(
+            env, ENV_REMOTE_ADMIN_TOTP_SECRET, ENV_REMOTE_ADMIN_TOTP_SECRET_FILE, required=False
+        )
+        profile = UiTargetProfile(
+            name=PRIMARY_PROFILE,
+            base_url=base_url,
+            admin_username=username,
+            admin_password=password,
+            admin_totp_secret=totp,
+            mail_admin_username="",
+            mail_admin_password="",
+            user_username="",
+            user_password="",
+            user_totp_secret=None,
+            client_id="",
+            client_secret_key="",
+            client_domain="",
+            allow_writes=False,
+            deployment_target="webhosting",
+            unavailable=REMOTE_UNAVAILABLE,
+        )
+        self._profiles = {PRIMARY_PROFILE: profile}
+        self._active = profile
+        self._db_path = None
+        self.workdir = workdir
+        return profile
 
     def unbind(self) -> None:
         self._profiles = {}
         self._active = None
-        self.db_path = None
+        self._db_path = None
         self.workdir = None
+
+    def _need(self, group: str) -> UiTargetProfile:
+        profile = self.active
+        if group in profile.unavailable:
+            raise TargetUnavailableError(
+                f"{group!r} is not available on the {profile.deployment_target!r} target "
+                "(remote smoke is read-only and has only the operator admin)"
+            )
+        return profile
+
+    @property
+    def db_path(self) -> Path | None:
+        """The session instance's private DB; raises on a remote target (no direct DB access)."""
+        self._need("db_path")
+        return self._db_path
 
     @property
     def active(self) -> UiTargetProfile:
@@ -130,39 +254,39 @@ class UiTestConfig:
     @property
     def mail_admin_username(self) -> str:
         """Admin persona with EMAIL 2FA only (2FA failure/lockout tests may lock it)."""
-        return self.active.mail_admin_username
+        return self._need("mail_admin").mail_admin_username
 
     @property
     def mail_admin_password(self) -> str:
-        return self.active.mail_admin_password
+        return self._need("mail_admin").mail_admin_password
 
     @property
     def user_username(self) -> str:
-        return self.active.user_username
+        return self._need("user").user_username
 
     @property
     def user_password(self) -> str:
-        return self.active.user_password
+        return self._need("user").user_password
 
     @property
     def user_totp_secret(self) -> str | None:
-        return self.active.user_totp_secret
+        return self._need("user").user_totp_secret
 
     @property
     def client_id(self) -> str:
-        return self.active.client_id
+        return self._need("client").client_id
 
     @property
     def client_token(self) -> str:
-        return self.active.client_token
+        return self._need("client").client_token
 
     @property
     def readonly_client_token(self) -> str:
-        return self.active.readonly_client_token
+        return self._need("readonly_client").readonly_client_token
 
     @property
     def client_domain(self) -> str:
-        return self.active.client_domain
+        return self._need("client").client_domain
 
     @property
     def allow_writes(self) -> bool:

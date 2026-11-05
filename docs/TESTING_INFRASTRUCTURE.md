@@ -94,6 +94,12 @@ run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runne
 run-gate e2e --worktree "$PWD"           # full suite, per-session app, estate pwmcp
 ```
 
+**Remote read-only smoke.** `NAF_E2E_TARGET=remote` (default: local) starts no instance and binds
+`ui_tests.config.settings.bind_remote()` to a deployed host from `NAF_REMOTE_*` env vars (password via
+`*_FILE`); `allow_writes=False`, no user persona/tokens/DB path. Only tests marked `remote_smoke`
+run (`smoke/test_remote_smoke.py`); the rest are skipped by that explicit condition. Hermetic checks:
+`tests/test_e2e_remote_config.py`. How to run it: [`WEBHOSTING_TESTING_GUIDE.md`](WEBHOSTING_TESTING_GUIDE.md).
+
 **Directory layout** under `ui_tests/tests/` (E2 schema — applied 2026-06-14):
 
 ```
@@ -122,6 +128,7 @@ ui_tests/tests/
 | `accessibility` | Accessibility-specific (subset of nonfunctional) |
 | `performance` | Performance-specific (subset of nonfunctional) |
 | `live` | Requires real external dependencies |
+| `remote_smoke` | Read-only subset allowed against a deployed instance (`NAF_E2E_TARGET=remote`) |
 | `ci_smoke` | Runs in CI against live gunicorn + Mailpit |
 | `installation` | The forced first-login change of the shipped admin (own instance) |
 | `e2e_local` | Requires local deployment with mock services |

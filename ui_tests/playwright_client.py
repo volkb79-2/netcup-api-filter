@@ -359,7 +359,7 @@ async def example_usage():
     async with playwright_session(base_url="https://example.com") as page:
         # This works with direct Playwright but not with MCP!
         # For actual testing, uncomment the lines below:
-        # await page.goto("https://naf.vxxu.de/admin/login")
+        # await page.goto("https://<your-host>/admin/login")
         # await page.fill("#username", "admin")
         # await page.fill("#password", "admin123")
         # await page.click("button[type='submit']")
