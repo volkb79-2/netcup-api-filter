@@ -98,6 +98,14 @@ try:
             except FileNotFoundError:
                 # Another worker likely claimed it first.
                 claimed_config_path = None
+            except OSError as exc:
+                # A bind-mounted FILE (EBUSY) or a read-only directory cannot be claimed and
+                # deleted, so the one-shot import cannot run safely (review finding #9).
+                raise RuntimeError(
+                    f"cannot claim {config_path} for its one-time import ({exc.strerror}). "
+                    "Mount the DIRECTORY that contains app-config.toml (writable), not the file "
+                    "itself; see docs/DEPLOYMENT_WORKFLOW.md."
+                ) from exc
 
         if claimed_config_path:
             try:

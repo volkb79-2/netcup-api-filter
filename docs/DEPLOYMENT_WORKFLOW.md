@@ -63,6 +63,12 @@ build/test-only key, rendered by `netcup_api_filter.config_defaults.write_shippe
   (a mounted secret; or an `app-config.toml` admin). Also mount `SECRET_KEY_FILE` (otherwise the app
   persists a generated key in the database) and keep `/data` on a persistent volume so the database
   and that key survive container recreation.
+- **`app-config.toml` in a container**: it is a one-shot import that the app claims (renames) and
+  deletes, so bind-mount a **writable directory** containing it at the app root (`/app` in the
+  image), never the file itself — a bind-mounted file or a read-only directory cannot be renamed
+  and the start fails with a message saying so. `python -m netcup_api_filter.bootstrap init` (e.g.
+  via `docker exec`) resolves the app root the same way as `passenger_wsgi.py` (the deploy tree that
+  holds `src/netcup_api_filter`, or `NETCUP_FILTER_APP_ROOT`), so it reads the same file.
 
 ## Webhosting deployment
 

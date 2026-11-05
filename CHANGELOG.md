@@ -13,6 +13,11 @@
 
 ### Security
 
+- **Fixed (review #9):** a bind-mounted `app-config.toml` file could not be claimed (`EBUSY`) and
+  fell into the generic start-up error; the start now fails with "mount the directory" guidance.
+  The `docker exec`-ed bootstrap CLI now resolves the app root like `passenger_wsgi.py` (it ignored
+  `app-config.toml` before).
+
 - **Fixed (review #1/#2):** a fresh database could be initialized by several gunicorn workers
   at once (check-then-insert races on the bootstrap admin, ~1/N requests failing), and any start-up
   error was swallowed into a stand-in WSGI app that rendered the exception text to clients (an
