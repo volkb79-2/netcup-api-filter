@@ -73,9 +73,10 @@ commands = [
   { label = "naf: publish Passenger tarball variant", argv = ["bash", "-c", "NAF_VERSION=\"${CMRU_RELEASE_TAG#naf-v}\" cmru handler tarball-publish --prefix naf --cwd . --glob 'dist/naf-py311.tar.xz' --version-env NAF_VERSION --notes-env NAF_RELEASE_NOTES --variant 'py311=Passenger Python 3.11'"], cwd = "." },
 ]
 
-# --- third-party versions (age window: adopt only releases at least 14 days old) -------------
+# --- third-party versions (age window: adopt only releases at least 7 days old) -------------
 [versions]
-age_window_days = 14
+# Operator decision 2026-11-05: latest stable release that is at least 7 days old (vbpub uses 14).
+age_window_days = 7
 
 [versions.discovery]
 scope = "shipped"
