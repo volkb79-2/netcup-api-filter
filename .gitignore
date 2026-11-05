@@ -303,3 +303,6 @@ ciu.global.toml.j2
 # assay / run-gate lane evidence
 .assay/
 .run-gate/
+
+# ciu per-checkout generated identity (never commit)
+ciu.instance.generated.toml
