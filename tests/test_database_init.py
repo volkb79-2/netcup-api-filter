@@ -11,7 +11,6 @@ from netcup_api_filter.database import get_db_path
 def _base_monkeypatch(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "test_secret_key_for_testing_only")
     monkeypatch.delenv("NETCUP_FILTER_APP_ROOT", raising=False)
-    monkeypatch.delenv("SEED_DEMO_ACCOUNTS", raising=False)
 
 
 def test_in_memory_engine_options_empty(monkeypatch):

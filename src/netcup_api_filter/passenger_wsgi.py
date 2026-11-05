@@ -56,28 +56,8 @@ if 'NETCUP_FILTER_DB_PATH' not in os.environ:
     os.environ['NETCUP_FILTER_DB_PATH'] = db_path
     logger.info(f"Using database at: {db_path}")
 
-# Load SECRET_KEY from .env.webhosting if present (for webhosting deployments)
-# This file is created by deployment script and contains production secrets
-webhosting_env = os.path.join(app_root, '.env.webhosting')
-if os.path.exists(webhosting_env):
-    logger.info(f"Loading webhosting environment from: {webhosting_env}")
-    with open(webhosting_env) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                if key.strip() not in os.environ:
-                    os.environ[key.strip()] = value.strip()
-
-# Ensure SECRET_KEY is available (persists across deployments)
-# Priority: 1. Environment variable, 2. Database (loaded after app creation)
-# Note: Database approach is deferred until after create_app() ensures tables exist
-if 'SECRET_KEY' not in os.environ:
-    # Generate temporary key for initial app creation
-    # Will be replaced with database-persisted key after app is ready
-    import secrets
-    os.environ['SECRET_KEY'] = secrets.token_hex(32)
-    logger.info("Using temporary SECRET_KEY (will attempt to load/persist from database after app initialization)")
+# SECRET_KEY: the SECRET_KEY env var if set, else the database-persisted key that
+# create_app() creates race-free on first start (database.ensure_persisted_secret_key).
 
 try:
     from netcup_api_filter.app import create_app
@@ -97,9 +77,9 @@ try:
     # Register filter proxy blueprint (additional to blueprints from app)
     app.register_blueprint(filter_proxy_bp)
     
-    # Initialize Netcup API client and load/persist SECRET_KEY
+    # One-shot app-config.toml import and Netcup credential check
     with app.app_context():
-        from netcup_api_filter.database import db, get_setting, set_setting
+        from netcup_api_filter.database import db, set_setting
         from netcup_api_filter.models import Settings
         
         # Load app-config.toml if present (first-run customization)
@@ -631,27 +611,6 @@ try:
                         logger.warning("Restored app-config.toml after failed import")
                 except Exception:
                     logger.warning("Could not restore app-config.toml after failed import", exc_info=True)
-        
-        # Load/persist SECRET_KEY from database (survives deployment wipes)
-        if 'SECRET_KEY' in os.environ:
-            temp_key = os.environ['SECRET_KEY']
-            
-            # Try to load persisted key from database
-            try:
-                persisted_key = get_setting('secret_key')
-                
-                if persisted_key:
-                    # Use persisted key (stable across restarts)
-                    os.environ['SECRET_KEY'] = persisted_key
-                    app.config['SECRET_KEY'] = persisted_key
-                    logger.info("Loaded SECRET_KEY from database (persistent across deployments)")
-                else:
-                    # Persist the temporary key we generated
-                    set_setting('secret_key', temp_key)
-                    logger.info("Persisted SECRET_KEY to database for future deployments")
-            except Exception as e:
-                logger.warning(f"Could not load/persist SECRET_KEY from database: {e}")
-                logger.warning("Using temporary SECRET_KEY (sessions will be invalidated on restart)")
         
         # Get Netcup credentials from settings or environment
         netcup_customer_id = os.environ.get('NETCUP_CUSTOMER_ID') or Settings.get('netcup_customer_id')

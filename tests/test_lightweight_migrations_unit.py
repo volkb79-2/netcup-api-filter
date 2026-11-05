@@ -40,7 +40,6 @@ def migration_app(tmp_path):
     os.environ["SECRET_KEY"] = "test_secret_migration"
     os.environ["NETCUP_FILTER_DB_PATH"] = db_path
     os.environ.pop("NETCUP_FILTER_APP_ROOT", None)
-    os.environ.pop("SEED_DEMO_ACCOUNTS", None)
 
     application = create_app()
     application.config["TESTING"] = True

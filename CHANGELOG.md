@@ -4,6 +4,25 @@
 
 ### Security
 
+- **One database initializer, no published secrets** (credentials/test-setup plan, S2):
+  `bootstrap.instance.init_instance()` is the only seeder (tarball build, local golden DB, app
+  start, ciu `post_compose` hook via `python -m netcup_api_filter.bootstrap init`). The tarball
+  ships only the pre-set admin (`must_change_password`); the OCI image ships no account and refuses
+  a first start without `NAF_BOOTSTRAP_ADMIN_*` (password via `*_FILE`) or an `app-config.toml`
+  admin. The implicit runtime admin/demo seeders (`seed_admin_account`, `SEED_DEMO_ACCOUNTS`) and
+  the legacy demo-client seeding are removed.
+- `SECRET_KEY`: `SECRET_KEY_FILE`/`SECRET_KEY`, else one database row created with
+  `INSERT OR IGNORE` (all gunicorn workers share it; the per-worker temporary key and the
+  `.env.webhosting` loader in `passenger_wsgi.py` are gone). The dev `SECRET_KEY` default is removed
+  from `.env.defaults`; the start-up error no longer echoes part of a key.
+- `[[users]]` import: generated passwords are never logged; the imported list (plaintext
+  passwords) is deleted from `settings` after the accounts exist; an admin may not use `"generate"`.
+- **Fixed:** TOML `[[users]]` / `[[backends]]` / `[[domain_roots]]` were silently skipped
+  (`get_setting` already decodes JSON; a second `json.loads` raised `TypeError`).
+- `tooling/app-local` is a ciu-initialized instance: per-instance `GEN_LOCAL` secrets
+  (`secret_key`, `bootstrap_admin_password`) mounted as files, its own data hostdir, and a
+  `post_compose_init_instance.py` hook (readiness, then create-or-update init via `docker exec`).
+
 - `token_auth.check_permission` no longer skips the record-type check for an empty-string type, and
   `validate_dns_records_update` denies records without a type (fail closed). The REST routes already
   checked the real type, so no route was exposed; found by the new R1 tests.

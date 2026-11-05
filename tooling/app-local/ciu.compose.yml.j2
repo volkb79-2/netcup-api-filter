@@ -36,14 +36,23 @@ services:
       - {{ key }}={{ value }}
       {% endfor %}
       - GUNICORN_BIND=0.0.0.0:{{ app_local.port }}
-      # Dev/test instance reached over plain HTTP by hostname (the e2e browser): a Secure cookie would be
-      # dropped and every login would bounce. Stated, not inferred (FLASK_ENV=local_test also did this).
+      # Stated, never inferred: see app_local.cookie_secure.
       - FLASK_SESSION_COOKIE_SECURE={{ app_local.cookie_secure }}
+      # Instance data + first-boot inputs (bootstrap/admin.py, app.py). Secrets arrive as files.
+      - NETCUP_FILTER_DB_PATH=/data/netcup_filter.db
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+      - NAF_BOOTSTRAP_ADMIN_USERNAME={{ app_local.bootstrap_admin.username }}
+      - NAF_BOOTSTRAP_ADMIN_EMAIL={{ app_local.bootstrap_admin.email }}
+      - NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/bootstrap_admin_password
+    secrets:
+      - secret_key
+      - bootstrap_admin_password
     expose:
       - "{{ app_local.port }}"
     volumes:
       # HOST path (DooD) — the daemon resolves bind sources on the host, not in here.
       - ${PHYSICAL_REPO_ROOT}:{{ ciu.repo_root }}:rw
+      - {{ app_local.app.hostdir.data }}:/data:rw
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:{{ app_local.port }}/admin/login', timeout=3).status==200 else 1)\""]
       interval: {{ deploy.health.interval }}

@@ -71,12 +71,13 @@ def _vendor_dependencies(vendor_dir: Path, python_version: str) -> None:
                         archive.extract(member, vendor_dir)
 
 
-def seed_database(staging: Path, *, target: str = "webhosting") -> tuple:
-    """Seed a fresh database while the matching ABI is importable.
+def seed_database(staging: Path) -> None:
+    """Seed the release database while the matching ABI is importable.
 
-    This small public helper is also used by CI's source-tree bootstrap; unlike
-    the release build, CI passes ``target=local`` so its Mailpit settings are
-    seeded.  It never creates release state or an archive.
+    Exactly the shipped content (bootstrap.seeding.seed_shipped_database): the
+    pre-set admin with must_change_password, enums/providers, default settings.
+    No demo data, no secret_key row (created at first start). Never writes
+    release state or an archive.
     """
     original_cwd = Path.cwd()
     src_dir = staging / "src"
@@ -84,12 +85,11 @@ def seed_database(staging: Path, *, target: str = "webhosting") -> tuple:
     sys.path[:0] = [str(vendor_dir), str(src_dir), str(staging)]
     try:
         os.chdir(staging)
-        os.environ["DEPLOYMENT_TARGET"] = target
+        os.environ["DEPLOYMENT_TARGET"] = "webhosting"
         os.environ["NETCUP_FILTER_DB_PATH"] = str(staging / "netcup_filter.db")
         from flask import Flask
         from netcup_api_filter import database
-        from netcup_api_filter.bootstrap import seed_default_entities
-        from netcup_api_filter.bootstrap.seeding import seed_settings_from_env
+        from netcup_api_filter.bootstrap import seed_shipped_database
 
         app = Flask(__name__, template_folder=str(src_dir / "netcup_api_filter" / "templates"))
         app.config.update(
@@ -100,10 +100,7 @@ def seed_database(staging: Path, *, target: str = "webhosting") -> tuple:
         database.db.init_app(app)
         with app.app_context():
             database.db.create_all()
-            seed_settings_from_env()
-            return seed_default_entities(
-                seed_demo_clients_flag=True, seed_mock_email=(target == "local")
-            )
+            seed_shipped_database(mock_email=None)
     finally:
         os.chdir(original_cwd)
         del sys.path[:3]

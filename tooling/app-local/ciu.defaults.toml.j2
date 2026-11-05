@@ -30,12 +30,41 @@ image_tag = "py311"
 # 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.
 port = 5100
 
-# Session cookie `Secure` flag for THIS dev/test instance. false because the e2e browser reaches it over
-# plain HTTP by container name; production-like HTTPS runs set it true. Never relied on implicitly.
-cookie_secure = "false"
+# Session cookie `Secure` flag for THIS long-lived instance. Humans reach it over HTTPS through traefik,
+# so it is true. (The e2e gate no longer uses this stack: it starts its own throwaway instance inside the
+# test runner, which states FLASK_SESSION_COOKIE_SECURE=false for its plain-HTTP origin.) Never implicit.
+cookie_secure = "true"
+
+# Interpreter + import path for the one-shot `python -m netcup_api_filter.bootstrap init` that the
+# post_compose hook runs INSIDE this container (same order passenger_wsgi.py uses: vendor/ before src/).
+init_python = "/opt/tester-venv/bin/python"
+init_pythonpath = "vendor:src"
 
 # Directory (relative to the repo root) that the local test workflow unpacks the build into.
 deploy_dir = "deploy-local"
+
+# The administrator of THIS instance. Its password is a ciu-generated secret (see [app_local.secrets]):
+# no default password exists anywhere; `ciu up` prints the store-file path, never the value.
+[app_local.bootstrap_admin]
+username = "admin"
+email = "admin@example.com"
+
+# Outgoing mail of this LOCAL instance goes to the mailpit stack (no auth, no TLS).
+[app_local.mail]
+from_email = "naf@example.com"
+admin_email = "admin@example.com"
+
+# Per-instance secrets, generated once into the project store (.ciu/secrets/, gitignored) and mounted
+# at /run/secrets/<name> (S4.17 *_FILE convention). The SECRET_KEY arriving from outside the database
+# also removes any multi-worker first-start race at the source.
+[app_local.secrets]
+secret_key = "GEN_LOCAL:naf/app_local_secret_key"
+bootstrap_admin_password = "GEN_LOCAL:naf/app_local_bootstrap_admin_password"
+
+# The instance's own data directory (its SQLite DB lives here, not in the build tree): deploy-local/
+# netcup_filter.db stays the pristine golden DB that the e2e gate copies per session.
+[app_local.app.hostdir]
+data = ""
 
 [app_local.external]
 # Exposed through the host edge-traefik. The hostname is NEVER hardcoded: it is
@@ -52,4 +81,8 @@ pre_compose = []
 # tooling/backend-powerdns/post_compose_zone.py (which makes PowerDNS
 # authoritative for the same zone). No-op when the zone is empty. See
 # post_compose_seed_domain.py for the full contract.
-post_compose = ["post_compose_seed_domain.py"]
+# 1. post_compose_init_instance.py — readiness, then the idempotent create-or-UPDATE init of THIS
+#    instance (bootstrap admin from the ciu secret, Mailpit email config) via `docker exec` of
+#    `python -m netcup_api_filter.bootstrap init --enforce-admin`. Never writes into the container.
+# 2. post_compose_seed_domain.py — D-007 delegated zone (below).
+post_compose = ["post_compose_init_instance.py", "post_compose_seed_domain.py"]
