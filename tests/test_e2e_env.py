@@ -81,3 +81,10 @@ def test_advertise_host_is_required(monkeypatch):
     monkeypatch.delenv("NAF_E2E_ADVERTISE_HOST", raising=False)
     with pytest.raises(E2EEnvironmentError, match="NAF_E2E_ADVERTISE_HOST"):
         e2e_env.advertise_host()
+
+
+def test_e2e_app_does_not_throttle_admin_2fa_mail():
+    """Tests log in as the same email-2FA persona from one IP within seconds; the 30 s production
+    throttle would suppress the mail and the login would never reach /admin/2fa."""
+    assert e2e_env._setting("E2E_ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS") == "0"
+    assert int(require_default("ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS")) > 0  # production default untouched

@@ -2269,37 +2269,13 @@ Templates provide pre-configured realm settings for common use cases.
 
 ## 11. Mock Services Architecture
 
-### 11.1 Mock SMTP Server (aiosmtpd)
+### 11.1 Mock SMTP Server (Mailpit)
 
-**Location:** `ui_tests/mock_smtp_server.py`
+**Location:** `tooling/mailpit/` (container `naf-dev-mailpit`, SMTP 1025, API `/mailpit/api/v1`);
+test client `ui_tests/mailpit_client.py` and the `mailpit` fixture in `ui_tests/conftest.py`.
 
-Already implemented using `aiosmtpd` library. Provides:
-- Email capture and inspection
-- Filter by recipient, subject
-- HTML/text body parsing
-- Header inspection
-- Timestamp tracking
-
-**Usage in tests:**
-```python
-@pytest.fixture
-async def mock_smtp_server():
-    server = MockSMTPServer(host='127.0.0.1', port=1025)
-    await server.start()
-    yield server
-    await server.stop()
-```
-
-**Alternatives considered:**
-| Tool | Type | Pros | Cons |
-|------|------|------|------|
-| **aiosmtpd** (current) | Python library | In-process, fast, full control | No web UI |
-| MailHog | Docker container | Web UI, REST API | Requires external service |
-| MailDev | Docker container | Modern UI, good docs | Node.js dependency |
-| smtp4dev | .NET application | Native GUI | Heavy, .NET dependency |
-| Mailpit | Docker container | Modern MailHog fork | Still external |
-
-**Recommendation:** Keep aiosmtpd for tests (fast, integrated). Add optional Mailpit for development debugging via `docker-compose.yml`.
+The in-process `aiosmtpd` server and its self-tests were removed: Mailpit is the single SMTP mock, it
+exercises the real app-to-SMTP path across containers, and nothing else used the in-process double.
 
 ### 11.2 Mock Netcup API Server
 

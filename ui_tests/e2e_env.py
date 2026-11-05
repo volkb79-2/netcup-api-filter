@@ -206,6 +206,7 @@ def app_instance(prepare: Callable[[Path], T] | None = None) -> Iterator[tuple[A
             "SECRET_KEY": secrets.token_hex(32),
             "GUNICORN_BIND": f"0.0.0.0:{port}",
             "GUNICORN_WORKERS": _setting("E2E_APP_WORKERS"),
+            "ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS": _setting("E2E_ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS"),
         })
         env.pop("SECRET_KEY_FILE", None)
         with log_path.open("ab") as log:

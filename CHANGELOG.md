@@ -67,8 +67,22 @@
   `validate_dns_records_update` denies records without a type (fail closed). The REST routes already
   checked the real type, so no route was exposed; found by the new R1 tests.
 
+### Fixed
+
+- **Security alert mails are no longer delayed.** Password-changed, token-revoked, credential-rotation and
+  email-changed alerts were queued with `EmailNotifier`'s default 5 s delay in a daemon thread, so a
+  worker that stopped inside that window logged "Sent ..." but never delivered. They now send with
+  `delay=0`, like the failed-login and lockout alerts.
+- e2e: the per-session app sets `ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS` from
+  `E2E_ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS` (0). The 30 s production throttle suppressed the 2FA mail when
+  consecutive tests logged in as `e2e-mail-admin` from the same IP, so the login never reached `/admin/2fa`.
+  The production default is unchanged.
+
 ### Removed
 
+- The in-process `aiosmtpd` SMTP double (`ui_tests/mock_smtp_server.py`, its `mock_smtp_server` fixture,
+  `MOCK_SMTP_README.md`, `ui_tests/tests/mocks/test_mock_smtp.py` and the `aiosmtpd` requirement): it
+  only tested itself, nothing else used it, and Mailpit is the SMTP mock.
 - Manual mutmut tooling (`tooling/mutation/`, `requirements-mutation.txt`, `[mutmut]` in `setup.cfg`): assay R2 replaces it.
 
 ### Changed
