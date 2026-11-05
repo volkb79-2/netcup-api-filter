@@ -75,21 +75,33 @@ commands = [
 
 # --- third-party versions (age window: adopt only releases at least 7 days old) -------------
 [versions]
-# Operator decision 2026-11-05: latest stable release that is at least 7 days old (vbpub uses 14).
 age_window_days = 7
 
 [versions.discovery]
 scope = "shipped"
 
-# Test-mock services run from floating tags today (ciu defaults); these targets resolve the
-# newest eligible release so the pin is a reviewed, committed fact (versions/oci-images.json).
+[versions.targets]
+
 [versions.targets."oci.mailpit"]
 mode = "single"
 constraint = ">=1.20.0,<2.0.0"
 
 [versions.targets."oci.mailpit".oci]
-image = "docker.io/axllent/mailpit"
+image = "ghcr.io/axllent/mailpit"
 tag = "v{version}"
+
+[versions.targets."oci.mailpit".resolved]
+version = "1.32.0"
+resolved_at = "2026-11-05T06:07:07Z"
+age_cutoff = "2026-10-29T06:07:07Z"
+
+[versions.targets."oci.mailpit".resolved.sources]
+
+[versions.targets."oci.mailpit".resolved.sources.oci]
+version = "1.32.0"
+released_at = "2026-10-22T22:13:40Z"
+age_source = "oci-image-created-fallback"
+tag = "v1.32.0"
 
 [versions.targets."oci.powerdns-auth"]
 mode = "single"
@@ -98,22 +110,18 @@ constraint = ">=4.8.0,<4.9.0"
 [versions.targets."oci.powerdns-auth".oci]
 image = "docker.io/powerdns/pdns-auth-48"
 tag = "{version}"
+username_env = "DOCKERHUB_USERNAME"
+password_env = "DOCKERHUB_TOKEN"
 
-# Base images of the runners and release images: rolling tags, digest recorded.
-[versions.targets."oci.python311"]
-mode = "single"
-constraint = "*"
+[versions.targets."oci.powerdns-auth".resolved]
+version = "4.8.5"
+resolved_at = "2026-11-05T06:07:07Z"
+age_cutoff = "2026-10-29T06:07:07Z"
 
-[versions.targets."oci.python311".oci]
-image = "docker.io/library/python"
-tag = "3.11-slim-trixie"
-selection = "rolling"
+[versions.targets."oci.powerdns-auth".resolved.sources]
 
-[versions.targets."oci.python314"]
-mode = "single"
-constraint = "*"
-
-[versions.targets."oci.python314".oci]
-image = "docker.io/library/python"
-tag = "3.14-slim-trixie"
-selection = "rolling"
+[versions.targets."oci.powerdns-auth".resolved.sources.oci]
+version = "4.8.5"
+released_at = "2025-02-06T16:46:20Z"
+age_source = "oci-image-created-fallback"
+tag = "4.8.5"
