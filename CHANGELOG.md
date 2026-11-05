@@ -13,6 +13,9 @@
 
 ### Security
 
+- **Fixed (review #8):** the `e2e` run-gate lane requires `PLAYWRIGHT_SERVER_WS` again (without it
+  the runner tried an in-process browser and every test errored one by one).
+
 - **Fixed (review #7):** every `ciu up` of app-local re-wrote the Mailpit `email_config`,
   resetting SMTP settings changed in the admin UI. The mock email config is now create-only.
 

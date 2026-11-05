@@ -124,6 +124,12 @@ description = "build + seed deploy-local/ and its golden DB (runs app code, so i
 [lanes.e2e]
 kind = "command"
 environment = "test-runner-py311"
+# The runner has no browser engine: without the pwmcp endpoint PlaywrightClient would launch an
+# in-process browser that does not exist and every test would error one by one (review #8).
+# Nothing else is required from the cockpit: the session app, its URL and the personas are
+# created inside the runner (ui_tests/e2e_env.py). The mock URLs in forward_env reach both the
+# tests and the per-session app (which inherits the runner environment).
+required_env = ["PLAYWRIGHT_SERVER_WS"]
 argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider -o addopts="]
 clean_tree = false
 budget = "120m"
