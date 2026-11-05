@@ -299,3 +299,7 @@ ciu.global.toml.j2
 
 # operator-supplied infra facts (delegated DNS zone, ...) — never commit
 .env.operator
+
+# assay / run-gate lane evidence
+.assay/
+.run-gate/

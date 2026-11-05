@@ -1,0 +1,101 @@
+# Assay lane declarations for naf: the machine-readable test-rigor judge.
+# The assay pin (version, vendored zipapp, SHA-256 sidecar) is single-sourced in
+# run-gate.toml [assay]; this file never restates a version. run-gate.toml maps
+# each lane to a runner (one per shipped interpreter); the lanes here are
+# interpreter-agnostic (they use the runner's own python on PATH).
+#
+# R0 `unit` is the authoritative hermetic gate. The R1 whole-target lanes on the
+# auth boundary are `advisory` until a first measured run sets honest floors
+# (fail_under starts at 100 by assay convention; lower it WITH a written reason,
+# never silently). R2 mutation (assay's, replacing manual mutmut runs) and R3
+# canary are adopted per module after R1 is green: see nyxloom-trove/4-backlog.md.
+schema_version = 2
+
+# -o addopts="" drops pytest.ini's -x/--cov so the lane owns its own flags.
+[lanes.unit]
+scope = "S1"
+rigor = ["R0"]
+enforcement = "gate"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts="]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "30m"
+allow_argv_append = false
+
+[lanes.token_auth]
+scope = "S1"
+rigor = ["R0", "R1"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.token_auth", "--cov-branch", "--cov-report=json:.assay/coverage.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "30m"
+allow_argv_append = false
+
+[lanes.token_auth.isolation]
+snapshot_selection = "repository"
+
+[lanes.token_auth.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 100.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/token_auth.py"]
+
+[lanes.token_auth.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage.json"
+
+[lanes.account_auth]
+scope = "S1"
+rigor = ["R0", "R1"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.account_auth", "--cov-branch", "--cov-report=json:.assay/coverage.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "30m"
+allow_argv_append = false
+
+[lanes.account_auth.isolation]
+snapshot_selection = "repository"
+
+[lanes.account_auth.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 100.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/account_auth.py"]
+
+[lanes.account_auth.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage.json"
+
+[lanes.recovery_codes]
+scope = "S1"
+rigor = ["R0", "R1"]
+enforcement = "advisory"
+argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.recovery_codes", "--cov-branch", "--cov-report=json:.assay/coverage.json"]
+env = {}
+env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
+budget = "30m"
+allow_argv_append = false
+
+[lanes.recovery_codes.isolation]
+snapshot_selection = "repository"
+
+[lanes.recovery_codes.judge]
+language = "python"
+source_roots = ["src"]
+fail_under = 100.0
+allow_excluded = false
+require_branch = true
+mode = "whole_target"
+targets = ["src/netcup_api_filter/recovery_codes.py"]
+
+[lanes.recovery_codes.judge.coverage]
+format = "coverage-py-json"
+artifact = ".assay/coverage.json"

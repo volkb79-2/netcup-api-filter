@@ -1,14 +1,13 @@
 # Ruff configuration for netcup-api-filter.
 #
-# target-version = "py39" ensures UP (pyupgrade) and other rules flag syntax
-# that is only valid on Python 3.10+, catching dev↔prod version skew early.
-# The project supports Python 3.9 and 3.11 on webhosting (Phusion Passenger).
+# target-version = "py311": the oldest shipped runtime (Phusion Passenger webhosting).
+# Newer-only syntax (3.12+) is flagged, catching dev↔prod version skew early.
 
-target-version = "py39"
+target-version = "py311"
 
 [lint]
 # E/F: pycodestyle errors + pyflakes (basic correctness)
-# UP: pyupgrade — flags 3.10+-only syntax (X | Y unions, match/case, etc.)
+# UP: pyupgrade — modernise to the py311 floor
 select = ["E", "F", "UP"]
 
 # Ignore line-length (E501) — handled by formatter if needed; not enforced here.

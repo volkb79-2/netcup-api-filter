@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — Gate on run-gate + assay; Python 3.11/3.14 — 2026-11-05
+
+### Changed
+
+- **Python targets are 3.11 (Passenger) and 3.14 (OCI).** The `py39` variant, the 3.9 test
+  branch and the `tomli` marker are removed; ruff/mypy/CI target 3.11.
+- **Gate is `run-gate`** (`run-gate.toml` + assay-judged `assay.toml`, assay 12.0.0 vendored in
+  `tools/assay/`): one ciu-managed runner per Python version; `nyxloom.toml` gates are pointers.
+  `testing-exec.sh` and `runner.env` are removed.
+- **Manifests follow the estate naming:** `requirements-runtime.txt`, `requirements-test.txt`,
+  new `requirements-mutation.txt` (mutmut). Unused `pyyaml` dropped from the runtime set.
+
 ## [Unreleased] — Planned SCRAM API authentication — 2026-10-15
 
 ### Added

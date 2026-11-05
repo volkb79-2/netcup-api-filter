@@ -70,11 +70,11 @@ matches the retired deployment behaviour.
 The ship gate runs the unit suite under all shipped Python versions:
 
 ```bash
-./tooling/test-runner/testing-exec.sh unit  # Python 3.9, 3.11, and 3.14
+run-gate gate --worktree "$PWD"
 ```
 
-Use `./tooling/test-runner/testing-exec.sh e2e` for the external Playwright path and
-`./tooling/test-runner/testing-exec.sh trove` for nyxloom handoff linting.
+Use `run-gate e2e` for the external Playwright path and
+`run-gate trove` for nyxloom handoff linting.
 
 ## Related documentation
 

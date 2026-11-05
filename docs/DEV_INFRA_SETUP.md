@@ -109,7 +109,7 @@ curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" https://naf.gstammtisch.dchive.de/
 dig +short NS managed.vxxu.de @152.53.179.117
 dig +short A test.managed.vxxu.de @152.53.179.117    # once a record exists
 # gate still green
-./tooling/test-runner/testing-exec.sh unit           # 3.11 + 3.9
+run-gate gate --worktree "$PWD"
 ```
 
 ---

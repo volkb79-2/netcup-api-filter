@@ -702,7 +702,7 @@ except ImportError as e:
             <ol>
                 <li>Verify all files were uploaded (especially vendor/ directory)</li>
                 <li>Check that Passenger App Root points to this directory</li>
-                <li>Ensure Python version is 3.9 or higher</li>
+                <li>Ensure Python version is 3.11 or higher</li>
                 <li>Review error logs for more details</li>
             </ol>
             <h3>Python Path (first 5):</h3>

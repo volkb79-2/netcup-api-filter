@@ -23,7 +23,7 @@ Netcup issues a single credential set with full control over every DNS record, d
 
 ## Quick Start - Installation
 
-Initial setup flow for a freshly released Passenger tarball (select `py39` or `py311`):
+Initial setup flow for a freshly released Passenger tarball (`py311`):
 
 1. Activate the selected tarball → Access site
 2. Login: admin/admin → Forced password change
@@ -40,7 +40,7 @@ Local development/testing and webhosting release/deploy are intentionally separa
 
 ```
 run-local-tests.sh → build_deployment.py --local → deploy-local/ → ui_tests
-cmru release → py3.14 OCI image + Passenger py39/py311 tarball variants
+cmru release → py3.14 OCI image + Passenger py311 tarball variant
 ciu up --host webhoster --thin -- --variant py311 → Passenger activation
 ```
 

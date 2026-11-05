@@ -881,7 +881,7 @@ def main():
     logger.info(f"Python: {args.python_version}")
     logger.info("=" * 60)
     
-    requirements_path = "./requirements.webhosting.txt"
+    requirements_path = "./requirements-runtime.txt"
 
     # Check if running from repository root
     if not os.path.exists(requirements_path):

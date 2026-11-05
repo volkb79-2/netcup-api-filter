@@ -109,12 +109,12 @@ setup_python_environment() {
     fi
 
     # Install dev dependencies into the venv via uv pip
-    local requirements_file="$WS/requirements-dev.txt"
+    local requirements_file="$WS/requirements-test.txt"
     if [[ ! -f "$requirements_file" ]]; then
-        log "ERROR: requirements-dev.txt not found at $requirements_file"
+        log "ERROR: requirements-test.txt not found at $requirements_file"
         return 1
     fi
-    log "Installing dev dependencies from requirements-dev.txt..."
+    log "Installing dev dependencies from requirements-test.txt..."
     if ! uv pip install --python .venv/bin/python -r "$requirements_file"; then
         log "ERROR: uv pip install failed"
         return 1

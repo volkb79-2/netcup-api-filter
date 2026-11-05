@@ -49,43 +49,25 @@ testing       = "docs/TESTING_INFRASTRUCTURE.md"
 gate_doctrine = "tooling/test-runner/README.md"
 
 # --- gates: NEVER the devcontainer (cockpit doctrine) ------------------------
-# The devcontainer is python 3.14; the Passenger deploy targets are 3.11 (primary) and
-# 3.9. "Green in the cockpit" is not a ship signal — see tooling/test-runner/README.md.
-#
-# {worktree} SUBSTITUTION — read before editing an argv:
-#   {worktree} expands to a path as the DAEMON sees it, e.g.
-#   /workspaces/netcup-api-filter/.worktrees/<id>. The docker socket is the HOST's
-#   daemon (DooD), so `-v` SOURCES must be HOST paths. Never write
-#   `-v {worktree}:/somewhere` — docker would treat a container path as a host path and
-#   silently bind an empty dir. Instead: mount the HOST repo root at the same container
-#   path the daemon uses, then `cd {worktree}` INSIDE. Because worktree_root is inside
-#   the repo, the attempt checkout resolves within that single mount. This mirrors
-#   nyxloom's own tester-unified gate.
-
-# PRIMARY gate: hermetic unit/integration suite, no services, no browser.
-# Runs BOTH Passenger targets: 3.11 (primary) and 3.9 (secondary). A 3.10+ construct
-# passes on 3.11 and breaks the 3.9 build, so a single-interpreter gate would ship it.
+# Every gate is a one-lane pointer into run-gate.toml (the SSOT); no test logic,
+# paths or docker argv live here. Certified by tests/config/test_run_gate_pointers.py.
 [gates.unit]
-argv = ["bash", "-c", "set -e; for img in netcup-api-filter/test-runner:local netcup-api-filter/test-runner:py39; do echo \"--- gate: $img ---\"; docker run --rm -v /home/vb/volkb79-2/netcup-api-filter:/workspaces/netcup-api-filter:rw $img bash -c 'cd {worktree} && /opt/tester-venv/bin/python -m pytest tests/ -q -p no:cacheprovider --no-cov'; done"]
-phase = "implementation"
-timeout_seconds = 2400
-environment = "test-runner"
-
-# Trove hygiene: handoff frontmatter + L1 + gate-id resolution. Interpreter-agnostic.
-[gates.trove]
-argv = ["bash", "-c", "docker run --rm -v /home/vb/volkb79-2/netcup-api-filter:/workspaces/netcup-api-filter:rw netcup-api-filter/test-runner:local bash -c 'cd {worktree} && /opt/tester-venv/bin/python tooling/test-runner/lint_trove.py'"]
-phase = "implementation"
-timeout_seconds = 300
-environment = "test-runner"
-
-# E2E: Playwright against a deployed app + mocks. Browser is ALWAYS external (pwmcp);
-# no engine is installed in the gate image. Requires the naf network + a deploy-local.
-# 3.11 only: this exercises a DEPLOYED app, and the primary artifact is deploy-py311.zip.
-[gates.e2e]
-argv = ["bash", "-c", "docker run --rm --network naf-dev-network -e PLAYWRIGHT_SERVER_WS -v /home/vb/volkb79-2/netcup-api-filter:/workspaces/netcup-api-filter:rw netcup-api-filter/test-runner:local bash -c 'cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider --no-cov'"]
+argv = ["bash", "-c", "cd {worktree} && run-gate --worktree {worktree} gate"]
 phase = "implementation"
 timeout_seconds = 3600
-environment = "test-runner"
+environment = "test-runner-py311"
+
+[gates.trove]
+argv = ["bash", "-c", "cd {worktree} && run-gate --worktree {worktree} trove"]
+phase = "implementation"
+timeout_seconds = 300
+environment = "test-runner-py311"
+
+[gates.e2e]
+argv = ["bash", "-c", "cd {worktree} && run-gate --worktree {worktree} e2e"]
+phase = "implementation"
+timeout_seconds = 3600
+environment = "test-runner-py311"
 
 [policy]
 max_active_tasks = 3

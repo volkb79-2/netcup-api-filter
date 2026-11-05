@@ -30,7 +30,7 @@ Verify that the deployment process is:
 #### Build Phases
 - [ ] **Directory preparation**: Creates `deploy/` directory
 - [ ] **Source copying**: Copies `src/netcup_api_filter/` to `deploy/src/`
-- [ ] **Vendor bundling**: Copies packages from `requirements.webhosting.txt` to `deploy/vendor/`
+- [ ] **Vendor bundling**: Copies packages from `requirements-runtime.txt` to `deploy/vendor/`
 - [ ] **Passenger entry point**: Copies `passenger_wsgi.py` to deploy root
 - [ ] **Database preseeding**: Creates fresh SQLite database with default data
 - [ ] **Build info**: Writes `build_info.json` with timestamp, commit hash
@@ -45,7 +45,7 @@ Verify that the deployment process is:
 - [ ] **Path differences**: Absolute paths vs relative paths
 
 #### Vendor Bundling
-- [ ] **All dependencies**: All packages from `requirements.webhosting.txt` included
+- [ ] **All dependencies**: All packages from `requirements-runtime.txt` included
 - [ ] **Correct structure**: Packages in `deploy/vendor/` directory
 - [ ] **Import path**: `sys.path.insert(0, 'vendor/')` in `passenger_wsgi.py`
 - [ ] **No dev dependencies**: Only production packages bundled
@@ -62,7 +62,7 @@ tree deploy-local/ -L 2
 
 # Verify vendor packages
 ls deploy-local/vendor/ | wc -l
-# Should match number of packages in requirements.webhosting.txt
+# Should match number of packages in requirements-runtime.txt
 
 # Verify database created
 sqlite3 deploy-local/netcup_filter.db "SELECT name FROM sqlite_master WHERE type='table';"

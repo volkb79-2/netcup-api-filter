@@ -7,7 +7,7 @@
 #
 # Doctrine (see nyxloom-trove/INFRA-PLAN-2026-07-20.md): the devcontainer is a
 # COCKPIT, not a ship signal. Builds and the gating suite run in version-specific
-# containers matching the Passenger deploy targets (3.11 primary, 3.9 secondary).
+# containers matching the shipped runtimes (3.11 Passenger, 3.14 OCI image).
 # =============================================================================
 
 [ciu]
@@ -44,19 +44,16 @@ fail_fast = true
 auto_connect_network = true
 
 # =============================================================================
-# Build — the two Passenger deploy targets. SINGLE SOURCE for the gate images
-# and CMRU's Passenger-variant builder.
-#   3.11 = primary Passenger target (CMRU variant py311)
-#   3.9  = secondary Passenger target (CMRU variant py39)
-# 3.14 is NOT a Passenger target but IS gated (tooling/test-runner/testing-exec.sh unit) as the
-# py3.14 self-hosting container release target — see docker-bake.hcl / cmru.toml
-# and nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md Phase 1.
+# Build — the shipped runtimes. SINGLE SOURCE for the gate images and CMRU's
+# Passenger-variant builder.
+#   3.11 = Passenger target (CMRU variant py311)
+#   3.14 = OCI self-hosting image (docker-bake.hcl / cmru.toml), gated like 3.11.
 # =============================================================================
 [build]
 python_version_primary = "3.11"
-python_version_secondary = "3.9"
+python_version_secondary = "3.14"
 python_base_image = "python:3.11-slim-trixie"
-python_base_image_secondary = "python:3.9-slim-trixie"
+python_base_image_secondary = "python:3.14-slim-trixie"
 
 [deploy]
 # naf's container convention is <project>-<env>-<svc> => naf-dev-test-runner,

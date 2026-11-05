@@ -7,20 +7,26 @@
 # generator behind it. The workspace mount now derives from the ciu.env machine
 # fact instead of being hand-synced with .env.workspace.
 #
-# NOTE: adoption is ADDITIVE. The gating entrypoint
-# `./tooling/test-runner/testing-exec.sh unit` still uses the EPHEMERAL
-# `docker run --rm` path (no `ciu up` state to leak between attempts) and is
-# unaffected by this file. ciu governs the PERSISTENT PEER form.
 # =============================================================================
 
 [test_runner]
-name = "test-runner"
 image_name = "test-runner"
 image_tag = "local"
 
-# The FIDELITY knob and the reason this container exists: the image is built per
-# Passenger target (3.11 primary / 3.9 secondary), never the devcontainer's 3.14.
+# One persistent runner per shipped Python version (the fidelity knob: never the
+# devcontainer's interpreter). The service/container name is test-runner-<name>;
+# run-gate.toml declares one exec environment per name.
+[[test_runner.variants]]
+name = "py311"
 python_version = "{{ build.python_version_primary }}"
+
+[[test_runner.variants]]
+name = "py314"
+python_version = "{{ build.python_version_secondary }}"
+
+[test_runner.run_gate]
+# MUST equal run-gate.toml [environments.*].state_root (outside every checkout).
+state_root = "/run-gate-state"
 
 [test_runner.mounts]
 # HOST path (DooD: the docker socket is the host's, so -v sources are host paths).

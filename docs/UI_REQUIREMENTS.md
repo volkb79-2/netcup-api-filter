@@ -1884,7 +1884,7 @@ MAXMIND_ACCOUNT_ID=your_account_id
 ODF Python library for reading and writing OpenDocument files (ODS spreadsheets).
 Simple implementation for exporting tabular data to ODS format.
 
-**Add to requirements.webhosting.txt:**
+**Add to requirements-runtime.txt:**
 ```
 odfpy>=1.4.1
 ```
@@ -1940,7 +1940,7 @@ async def send_telegram_2fa(chat_id: str, code: str):
 
 **Library:** `pyotp`
 
-**Add to requirements.webhosting.txt:**
+**Add to requirements-runtime.txt:**
 ```
 pyotp>=2.9.0
 ```
@@ -3087,7 +3087,7 @@ cd tooling/mock-services && ./start.sh --wait
 **Status:** ✅ Complete
 
 **Implementation:**
-1. ✅ `geoip2>=4.8.0` in requirements.webhosting.txt
+1. ✅ `geoip2>=4.8.0` in requirements-runtime.txt
 2. ✅ `geoip_service.py` module with:
    - `GeoIPResult` dataclass with location fields
    - `GeoIPCache` with 24h TTL and thread-safety

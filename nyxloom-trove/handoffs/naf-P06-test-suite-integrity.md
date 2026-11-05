@@ -96,7 +96,7 @@ the `unit` gate mounts the repo and `cd`s into that worktree. Run the gate there
 devcontainer:
 
 ```
-./tooling/test-runner/testing-exec.sh unit
+run-gate gate --worktree "$PWD"
 ```
 
 Note: the ui_tests changes are mostly not exercised by the `unit` gate (they need a

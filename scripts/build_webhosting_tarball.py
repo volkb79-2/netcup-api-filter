@@ -19,10 +19,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-try:  # Passenger Python 3.9 has tomli vendored in the build image.
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - selected only on Python < 3.11
-    import tomli as tomllib
+import tomllib
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +59,7 @@ def _vendor_dependencies(vendor_dir: Path, python_version: str) -> None:
             sys.executable, "-m", "pip", "download", "--disable-pip-version-check",
             "--only-binary", ":all:", "--python-version", python_version,
             "--platform", "manylinux2014_x86_64", "--platform", "any",
-            "--dest", download_dir, "--requirement", "requirements.webhosting.txt",
+            "--dest", download_dir, "--requirement", "requirements-runtime.txt",
         ]
         subprocess.run(command, cwd=REPO_ROOT, check=True)
         wheels = sorted(Path(download_dir).glob("*.whl"))

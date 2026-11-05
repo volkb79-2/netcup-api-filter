@@ -24,11 +24,11 @@ project name explicitly instead of falling back to the directory basename.
 
 ```bash
 # run the e2e gate (defaults PLAYWRIGHT_SERVER_WS=ws://pwmcp:3000/)
-./tooling/test-runner/testing-exec.sh e2e
+run-gate e2e --worktree "$PWD"
 ```
 
 The gate image must carry the `playwright` client (pinned `==1.61.*` in
-`requirements-dev.txt` to match the image's Playwright version); no `playwright install`
+`requirements-test.txt` to match the image's Playwright version); no `playwright install`
 is needed — the server owns the engine.
 
 ## Scope

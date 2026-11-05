@@ -33,12 +33,12 @@ FROM python:${PYTHON_VERSION}-slim-trixie
 WORKDIR /app
 
 # Runtime closure only — the same requirements file the Passenger webhosting
-# deploy installs (requirements-dev.txt is test/gate-only and never ships).
-# gunicorn itself is NOT in requirements.webhosting.txt (Passenger hosts don't
+# deploy installs (requirements-test.txt is test/gate-only and never ships).
+# gunicorn itself is NOT in requirements-runtime.txt (Passenger hosts don't
 # need it — Passenger is its own process manager); this image is its own
-# webserver, so it is installed explicitly, pinned like requirements-dev.txt.
-COPY requirements.webhosting.txt ./
-RUN pip install --no-cache-dir -r requirements.webhosting.txt "gunicorn>=21.0.0"
+# webserver, so it is installed explicitly, pinned like requirements-test.txt.
+COPY requirements-runtime.txt ./
+RUN pip install --no-cache-dir -r requirements-runtime.txt "gunicorn>=21.0.0"
 
 # Canonical application code + the two deploy-root files passenger_wsgi.py
 # expects beside it, exactly as build_deployment.py's copy_application_files()

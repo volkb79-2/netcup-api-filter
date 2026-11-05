@@ -12,9 +12,9 @@ first; the July-2026 review that seeded the backlog is `docs/deprecated/FOLLOWUP
 A Flask app that fronts DNS-provider APIs (netcup today; PowerDNS/BYOD in progress) with
 **scoped, audited** token + account authorization, deployed to a Passenger shared webhoster and
 (newly) self-hostable as a container. Settings live in the `settings` DB table; the gate is
-`tooling/test-runner/testing-exec.sh` (the only ship signal).
+`run-gate gate` (the only ship signal).
 
-- **Gate: green — `unit` 441 × {py3.11, py3.9, py3.14}** (2026-07-21).
+- **Gate: converted to run-gate + assay (2026-11-05), not yet re-run** — last green: `unit` 441 × {py3.11, py3.9, py3.14} (2026-07-21). Targets are now py3.11 + py3.14.
 - **Version: `naf-v0.1.0`** (cmru `scm`, first tag pending).
 
 ## Release & infra model (current)

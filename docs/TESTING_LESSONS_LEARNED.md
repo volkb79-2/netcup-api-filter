@@ -473,7 +473,7 @@ pytest tests/ --hypothesis-seed=<seed>
 ```
 
 Profiles (`ci` and `dev`) are registered in `tests/conftest.py`. The `unit-tests` CI job
-uses the `ci` profile by default. `hypothesis>=6.100` is in `requirements-dev.txt`.
+uses the `ci` profile by default. `hypothesis>=6.100` is in `requirements-test.txt`.
 
 No app context, no DB, no browser — Hypothesis tests are pure unit tests.
 

@@ -39,7 +39,7 @@ requested `ui_tests` target. `--with-mocks` starts Mailpit, Mock GeoIP, and Mock
 The primary ship gate executes the unit suite under Python 3.9, 3.11, and 3.14:
 
 ```bash
-./tooling/test-runner/testing-exec.sh unit
+run-gate gate --worktree "$PWD"
 ```
 
 The 3.9 and 3.11 runs cover the Passenger variants; 3.14 covers the self-hosting OCI image.

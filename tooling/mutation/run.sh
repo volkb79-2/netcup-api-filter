@@ -39,7 +39,7 @@ fi
 # ---------------------------------------------------------------------------
 if ! command -v mutmut &>/dev/null; then
     echo "[mutation] ERROR: mutmut not found. Install dev deps:"
-    echo "           pip install -r requirements-dev.txt"
+    echo "           pip install -r requirements-mutation.txt"
     exit 1
 fi
 
@@ -136,7 +136,7 @@ source_paths =
 also_copy =
     src/
     pytest.ini
-    requirements-dev.txt
+    requirements-test.txt
 
 # Neutralise repo addopts (--cov / -x / --tb=short) per-mutant
 pytest_add_cli_args =

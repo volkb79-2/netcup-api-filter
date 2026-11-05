@@ -189,3 +189,13 @@ remains the status dashboard; completed B-AUTH work is intentionally not re-open
   ciu + cmru but has no nyxloom-internal coupling, so if the library cannot be
   adopted here standalone, it is a nyxloom sub-module wearing a library's name (the
   P90 handoff's oracle O1 states exactly this).
+
+## B-INFRA (added 2026-11-05, run-gate/assay conversion)
+
+- **Step 3 not done:** `scripts/build_webhosting_tarball.py` and `build_deployment.py` still call the retired `testing-exec.sh build`, so `cmru release` is broken on branch `feat-run-gate` until the per-version build moves to the ciu runners; docker-bake needs py311/py314 targets; retire `run-local-tests.sh`, `build_deployment.py --local`, `deploy-local/`, `tooling/run-*.sh`.
+- Assay R1 lanes (`token_auth`, `account_auth`, `recovery_codes`) are `advisory` with `fail_under = 100`: measure, then set honest floors and promote to `gate`; add lanes for the remaining modules, R2 (replaces mutmut) and R3 canary.
+- Dead code at the 3.11 floor: `tomli` fallbacks in `passenger_wsgi.py` and `database.py`; vestigial `create_app(config_path="config.yaml")`.
+- `ui_tests/requirements.txt` is a bare manifest name (estate: `requirements-<use>.txt`); `.devcontainer/finalize.post.d/10-netcup-setup.sh` installs test deps into the cockpit venv (cockpit must not run tests).
+- Cgroup placement: `ciu.compose` runners rely on the ciu governance overlay; verify `$CGROUP_PARENT_DEV_GATES` for exec runners after first `ciu up`.
+- Add a run-gate docs-example test and a freshness check of the assay pin against the latest release.
+- Ruff baseline is red (241 at py39, 256 at py311, mostly UP006/UP045/F401); CI step is advisory-by-intent but fails the job: autofix or scope it.
