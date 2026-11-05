@@ -64,3 +64,41 @@ def test_unoffered_method_is_not_recorded(client, make_account):
     client.get("/account/login/2fa?method=totp")
     with client.session_transaction() as sess:
         assert sess.get(SESSION_KEY_2FA_METHOD) != "totp"
+
+
+def test_resend_rejects_an_unoffered_method(client, make_account, monkeypatch):
+    """/account/2fa/resend must not send via (or switch the session to) a method that is not enabled."""
+    from netcup_api_filter.api import account as account_api
+
+    password = secrets.token_urlsafe(18) + "Aa1@"
+    account = make_account("resendnope1", password=password, email_2fa_enabled=1, totp_enabled=0)
+    _step1(client, account, password)
+    sent = []
+    monkeypatch.setattr(account_api, "send_2fa_code", lambda *a, **k: sent.append(a) or (True, None))
+    csrf = mint_csrf(client, "/account/login/2fa")  # the GET itself sends the default (email) code
+    sent.clear()
+    with client.session_transaction() as sess:
+        before = sess.get(SESSION_KEY_2FA_METHOD)
+
+    response = client.post("/account/2fa/resend", data={"method": "telegram", "csrf_token": csrf})
+
+    assert response.status_code == 302 and "/account/login/2fa" in response.headers["Location"]
+    assert "method=telegram" not in response.headers["Location"]
+    assert sent == []
+    with client.session_transaction() as sess:
+        assert sess.get(SESSION_KEY_2FA_METHOD) == before
+
+
+def test_resend_sends_for_an_offered_method(client, make_account, monkeypatch):
+    from netcup_api_filter.api import account as account_api
+
+    password = secrets.token_urlsafe(18) + "Aa1@"
+    account = make_account("resendok001", password=password, email_2fa_enabled=1, totp_enabled=0)
+    _step1(client, account, password)
+    sent = []
+    monkeypatch.setattr(account_api, "send_2fa_code", lambda *a, **k: sent.append(a[1]) or (True, None))
+    csrf = mint_csrf(client, "/account/login/2fa")
+    sent.clear()  # drop the code the login-page GET itself sent
+    response = client.post("/account/2fa/resend", data={"method": "email", "csrf_token": csrf})
+    assert response.status_code == 302
+    assert sent == ["email"]
