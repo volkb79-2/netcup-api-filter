@@ -3,8 +3,8 @@
 
 The webhoster invocation is ``python3 scripts/activate.py apply --variant py311``.
 It only mutates the deployment root after a tarball is selected.  Secret-key
-preservation uses Python's stdlib SQLite support as a best effort; extraction,
-Passenger reload, and the health request remain the essential path.
+preservation uses Python's stdlib SQLite support: an absent/empty preserved secret is a
+no-op, but a non-empty one that cannot be restored fails the activation loudly.
 """
 from __future__ import annotations
 
@@ -44,7 +44,9 @@ def _restore_secret(database_path: Path, secret: Optional[str]) -> None:
             )
             connection.commit()
     except sqlite3.Error as error:
-        print(f"[WARN] could not restore existing SECRET_KEY: {error}")
+        # A non-empty preserved secret that cannot be restored would silently rotate SECRET_KEY
+        # (invalidating every session/token): fail the activation instead of continuing.
+        raise RuntimeError(f"could not restore existing SECRET_KEY into {database_path}: {error}") from error
 
 
 def _health(url: str) -> None:
