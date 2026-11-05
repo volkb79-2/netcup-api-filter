@@ -28,7 +28,8 @@ services:
     command:
       - /opt/tester-venv/bin/gunicorn
       - -c
-      - gunicorn.conf.py
+      # The config is not part of the deploy tree (webhosting has no gunicorn); read it from the repo root.
+      - {{ ciu.repo_root }}/gunicorn.conf.py
       - passenger_wsgi:application
     environment:
       {% for key, value in deploy.env.defaults.items() %}
