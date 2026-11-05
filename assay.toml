@@ -279,11 +279,11 @@ max_mutants = 1000
 budget_per_candidate = "120s"
 operators = ["python:compare-swap", "python:boolop-swap", "python:bool-const-flip", "python:falsy-swap"]
 
-# NOT YET MEASURED: first run decides the floor
+# measured 2026-11-05: 100/178 lines, 41/58 branches (a `pragma: no cover` was removed so the except block counts)
 [lanes.utils]
 scope = "S1"
 rigor = ["R0", "R1"]
-enforcement = "advisory"
+enforcement = "gate"
 argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.utils", "--cov-branch", "--cov-report=json:.assay/coverage-utils.json"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
@@ -296,7 +296,7 @@ snapshot_selection = "repository"
 [lanes.utils.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 100.0
+fail_under = 54.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"
@@ -306,11 +306,11 @@ targets = ["src/netcup_api_filter/utils.py"]
 format = "coverage-py-json"
 artifact = ".assay/coverage-utils.json"
 
-# NOT YET MEASURED: first run decides the floor
+# measured 2026-11-05: 100/178 lines, 41/58 branches (a `pragma: no cover` was removed so the except block counts)
 [lanes.utils_r3]
 scope = "S1"
 rigor = ["R0", "R1", "R3"]
-enforcement = "advisory"
+enforcement = "gate"
 argv = ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "--cov=netcup_api_filter.utils", "--cov-branch", "--cov-report=json:.assay/coverage-utils.json"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
@@ -323,7 +323,7 @@ snapshot_selection = "repository"
 [lanes.utils_r3.judge]
 language = "python"
 source_roots = ["src"]
-fail_under = 100.0
+fail_under = 54.0
 allow_excluded = false
 require_branch = true
 mode = "whole_target"

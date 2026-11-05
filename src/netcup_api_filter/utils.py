@@ -181,7 +181,7 @@ def test_filesystem_access() -> list[dict[str, str]]:
             else:
                 record['message'] = "Unknown access"
                 
-        except Exception as exc:  # pragma: no cover - environment dependent
+        except Exception as exc:
             # Still might be readable even if not writable
             if record['readable']:
                 record['message'] = "Readable ✓ | Writable ✗"
