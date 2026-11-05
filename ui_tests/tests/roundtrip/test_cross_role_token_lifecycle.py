@@ -29,7 +29,7 @@ import secrets
 import httpx
 import pytest
 
-from ui_tests import verification, workflows
+from ui_tests import verification
 from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.cross_role_helpers import (
@@ -60,9 +60,7 @@ THROWAWAY_DOMAIN = "example.com"
 
 @pytest.fixture
 def _demo_username() -> str:
-    import os
-    from ui_tests.env_defaults import get_env_default
-    return os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_env_default("DEFAULT_TEST_CLIENT_ID")
+    return settings.user_username
 
 
 # --------------------------------------------------------------------------
@@ -403,13 +401,13 @@ async def test_user_token_revocation_blocks_api_and_logs(playwright_client, _dem
             await user.goto(settings.url("/account/tokens"))
             await user.wait_for_text("main h1", "My Tokens", timeout=10.0)
             await user.evaluate(
-                f"""
-                (tokenId) => {{
+                """
+                (tokenId) => {
                     const f = document.getElementById('revokeForm');
                     if (!f) throw new Error('revokeForm not found');
-                    f.action = `/account/tokens/${{tokenId}}/revoke`;
+                    f.action = `/account/tokens/${tokenId}/revoke`;
                     f.submit();
-                }}
+                }
                 """,
                 token_id,
             )

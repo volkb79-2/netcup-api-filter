@@ -23,6 +23,18 @@
   (`secret_key`, `bootstrap_admin_password`) mounted as files, its own data hostdir, and a
   `post_compose_init_instance.py` hook (readiness, then create-or-update init via `docker exec`).
 
+- **e2e without shared credentials** (S1/S3/S4): every session starts its own app inside the 3.11
+  runner on a copy of the golden DB (`ui_tests/e2e_env.py`) and provisions random in-memory personas
+  (`ui_tests/personas.py`; admin with TOTP). `ui_tests/deployment_state.py`, `ui_tests/env_defaults.py`,
+  `refresh_credentials()` and every state-file write are removed; the e2e lane no longer needs
+  `UI_BASE_URL`/`DEPLOYMENT_TARGET`. The forced first-login change is one test on its own instance; a
+  mutated golden DB or broken environment stops the session with one message.
+- `.env.defaults` is never shipped: builds write `app-defaults.env` (runtime keys only; no pre-set
+  admin password, no test fixtures). `DEFAULT_TEST_ACCOUNT_PASSWORD`, `DEFAULT_TEST_CLIENT_ID` and
+  `DEFAULT_READONLY_TEST_CLIENT_ID` are removed.
+- **Fixed:** account-portal login with TOTP never succeeded: choosing TOTP on `/account/login/2fa`
+  did not record the method, so the TOTP code was checked as an email code.
+
 - `token_auth.check_permission` no longer skips the record-type check for an empty-string type, and
   `validate_dns_records_update` denies records without a type (fail closed). The REST routes already
   checked the real type, so no route was exposed; found by the new R1 tests.

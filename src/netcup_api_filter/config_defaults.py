@@ -1,17 +1,58 @@
-"""Helpers for loading config defaults from .env/.env.defaults.
+"""Helpers for loading config defaults from the defaults catalog.
 
-These defaults are used as a last-resort fallback when environment variables
-are not set (e.g., during local build-time seeding).
+Sources (per directory: the app/repo root and the cwd), lowest precedence first:
+
+* ``app-defaults.env`` — the SHIPPED runtime catalog that the builds write into the
+  Passenger tarball, the local deploy tree and the OCI image: ``.env.defaults`` minus every
+  build/test-only key (``render_shipped_defaults``). ``.env.defaults`` itself is never shipped
+  (it holds the documented pre-set admin password and test fixtures).
+* ``.env.defaults`` — the version-controlled catalog (repository / build time only).
+* ``.env`` — a local developer override layer (gitignored).
+
+Environment variables always win over all of these at the call sites.
 """
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
 
+SHIPPED_DEFAULTS_FILENAME = "app-defaults.env"
+
+# Keys of .env.defaults that exist for builds and tests only and must never reach a shipped
+# tree: the pre-set admin's password, test personas/fixtures, local mock wiring, test-tool
+# tuning, and placeholders that are only valid in local tests.
+BUILD_AND_TEST_ONLY_PREFIXES = (
+    "DEFAULT_ADMIN_", "DEFAULT_TEST_", "DEFAULT_READONLY_TEST_", "LOCAL_", "E2E_", "UI_",
+    "PYTEST_", "SCREENSHOT_", "DNS_TEST_", "DNS_PROPAGATION_", "DNS_CHECK_", "IMAP_", "WEBHOSTING_",
+)
+BUILD_AND_TEST_ONLY_KEYS = frozenset({"ADMIN_2FA_SKIP", "TELEGRAM_LINK_CALLBACK_SECRET"})
+
+
+def is_build_or_test_only(key: str) -> bool:
+    return key in BUILD_AND_TEST_ONLY_KEYS or key.startswith(BUILD_AND_TEST_ONLY_PREFIXES)
+
+
+def render_shipped_defaults(source: Path) -> str:
+    """The shipped runtime catalog: ``source`` (.env.defaults) minus build/test-only keys."""
+    lines = [
+        "# GENERATED from .env.defaults by netcup_api_filter.config_defaults.render_shipped_defaults.",
+        "# Runtime defaults only; environment variables override every value. Do not edit.",
+    ]
+    for key, value in _parse_env_file(source).items():
+        if not is_build_or_test_only(key):
+            lines.append(f"{key}={value}")
+    return "\n".join(lines) + "\n"
+
+
+def write_shipped_defaults(source: Path, dest_dir: Path) -> Path:
+    destination = Path(dest_dir) / SHIPPED_DEFAULTS_FILENAME
+    destination.write_text(render_shipped_defaults(Path(source)), encoding="utf-8")
+    return destination
+
 
 @lru_cache(maxsize=1)
 def load_defaults() -> dict[str, str]:
-    """Load key/value defaults from `.env.defaults`, then overlay `.env`.
+    """Load key/value defaults: `app-defaults.env`, then `.env.defaults`, then overlay `.env`.
 
     This matches the project's configuration hierarchy:
     - `.env.defaults` is the catalog + default values (version-controlled)
@@ -36,11 +77,12 @@ def load_defaults() -> dict[str, str]:
 
     merged: dict[str, str] = {}
 
-    # Apply defaults first, then overlay overrides.
-    for directory in dirs:
-        defaults_path = directory / ".env.defaults"
-        if defaults_path.exists():
-            merged.update(_parse_env_file(defaults_path))
+    # Shipped catalog first, then the repository catalog, then the local overlay.
+    for name in (SHIPPED_DEFAULTS_FILENAME, ".env.defaults"):
+        for directory in dirs:
+            defaults_path = directory / name
+            if defaults_path.exists():
+                merged.update(_parse_env_file(defaults_path))
 
     for directory in dirs:
         env_path = directory / ".env"

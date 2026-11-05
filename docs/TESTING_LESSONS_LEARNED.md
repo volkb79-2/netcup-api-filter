@@ -173,13 +173,36 @@ await browser.fill("#username", "admin")
 ```
 
 ### Where Applied
-- [`ui_tests/tests/journeys/j2_account_lifecycle.py:488`](../ui_tests/tests/journeys/j2_account_lifecycle.py#L488) - `_login_as_admin()`
-- [`ui_tests/workflows.py:250`](../ui_tests/workflows.py#L250) - `ensure_admin_dashboard()`
+- `ui_tests/workflows.py` - `ensure_admin_dashboard()` (used by `j2_account_lifecycle._login_as_admin()`)
 
 ### Benefits
 - **Faster tests**: Skip login when session is valid
 - **More robust**: Handle session persistence gracefully
 - **Clearer output**: Explicit logging of session state
+
+---
+
+## 4. Credentials: Personas per Session, Never a Shared Mutable Login
+
+### Problem
+The 2026-11-05 e2e incident: one shared admin whose password tests rotated and wrote back to a
+`deployment_state_*.json` file. The DB and the file drifted (an interrupted run, a rebuild, a second
+writer); every later login failed, and the DB-persisted login lockout turned that into a session-wide
+outage.
+
+### Solution
+- Log in as a **session persona** from `ui_tests.config.settings` (`admin_*`, `mail_admin_*`,
+  `user_*`, `client_token`, `readonly_client_token`). They are created per session in a throwaway DB
+  (`ui_tests/personas.py`) and are random; never type a username or password literal.
+- The admin persona uses **TOTP** (`workflows.admin_login(..., totp_secret=settings.admin_totp_secret)`):
+  deterministic, no Mailpit polling. Tests of the email-2FA path or of 2FA lockout use
+  `settings.mail_admin_*`, so a lockout never affects the main admin.
+- A test that **changes a credential** starts its own instance:
+  `with app_instance(prepare=provision_throwaway_admin) as (instance, admin):` plus
+  `settings.use_profile(replace(settings.profile("primary"), base_url=instance.base_url))`.
+  The shipped admin's forced change has exactly one test (`smoke/test_installation_workflow.py`).
+- Never persist anything a later test depends on. If an assertion needs backend truth, read the
+  session DB read-only (`ui_tests/verification.py`).
 
 ---
 

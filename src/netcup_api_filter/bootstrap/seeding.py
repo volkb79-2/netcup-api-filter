@@ -418,13 +418,8 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
     
     created_accounts = {}
     for acc_data in demo_accounts:
-        # Get-or-create (B-BUILD). Another seed path may already own this username:
-        # seed_default_entities() creates a 'demo-readonly' account from
-        # DEFAULT_READONLY_TEST_CLIENT_ID, and build_deployment.initialize_database()
-        # runs it BEFORE this function under --seed-demo. A blind INSERT then trips
-        # `UNIQUE constraint failed: accounts.username` and aborts the entire build.
-        # Reuse the existing row instead; the realms/tokens created below use names
-        # distinct from the other path's, so nothing downstream collides.
+        # Get-or-create (B-BUILD): re-running the demo seed on the same DB must not trip
+        # `UNIQUE constraint failed: accounts.username`; reuse the existing row instead.
         existing = Account.query.filter_by(username=acc_data["username"]).first()
         if existing is not None:
             created_accounts[acc_data["username"]] = existing

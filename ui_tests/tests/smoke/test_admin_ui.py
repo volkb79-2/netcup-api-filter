@@ -6,16 +6,9 @@ from ui_tests.config import settings
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 
-async def test_admin_authentication_flow(active_profile):
-    """Test the complete admin authentication flow including password change."""
-    async with browser_session() as browser:
-        new_password = await workflows.perform_admin_authentication_flow(browser)
-        # Verify we're on the dashboard after successful authentication
-        heading = await browser.text("main h1")
-        assert "Dashboard" in heading
-        
-        screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-auth-flow")
-        assert screenshot_path.endswith((".png", ".webp"))
+# The forced first-login password change has exactly one test:
+# smoke/test_installation_workflow.py (own fresh instance). Admin tests here log in as the
+# session's admin persona and never change a password.
 
 async def test_admin_dashboard_and_footer(active_profile):
     async with browser_session() as browser:
@@ -58,10 +51,10 @@ async def test_admin_accounts_table_lists_preseeded_account(active_profile):
         await browser.verify_status(200)
 
         table_text = await browser.text("table tbody")
-        # Demo accounts should be seeded for local testing
-        assert "There are no items in the table" not in table_text, "Expected demo accounts to be seeded"
-        # Check for demo-user account or admin
-        assert "demo-user" in table_text or "admin" in table_text
+        # The session personas (ui_tests/personas.py) are listed.
+        assert "There are no items in the table" not in table_text
+        assert settings.user_username in table_text
+        assert settings.admin_username in table_text
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-accounts")
         assert screenshot_path.endswith((".png", ".webp")), f"Expected .png or .webp, got {screenshot_path}"

@@ -97,23 +97,42 @@ def discover_routes_from_app() -> RouteRegistry:
     registry = RouteRegistry()
     
     try:
-        # Set up minimal environment for import
-        os.environ.setdefault("FLASK_ENV", "testing")
-        os.environ.setdefault("SECRET_KEY", "route-discovery-key")
-
         # Route discovery must not depend on any existing on-disk database, which may
         # be an older schema. Use a dedicated scratch DB to guarantee schema matches
-        # current models (init_db() calls create_all()).
+        # current models (init_db() calls create_all()). The scratch app needs an
+        # explicit throwaway bootstrap admin (init_db refuses to start without an
+        # administrator). The environment is restored afterwards so nothing leaks into
+        # the e2e session (ui_tests/e2e_env.py starts the real instance separately).
+        import secrets
+
         scratch_dir = REPO_ROOT / "tmp"
         scratch_dir.mkdir(parents=True, exist_ok=True)
         scratch_db = scratch_dir / "route_discovery.db"
         if scratch_db.exists():
             scratch_db.unlink()
-        os.environ.setdefault("NETCUP_FILTER_DB_PATH", str(scratch_db))
-        
-        from netcup_api_filter.app import create_app
-        app = create_app()
-        
+        scratch_env = {
+            "FLASK_ENV": "testing",
+            "SECRET_KEY": secrets.token_hex(32),
+            "NETCUP_FILTER_DB_PATH": str(scratch_db),
+            "NAF_BOOTSTRAP_ADMIN_USERNAME": "route-discovery-admin",
+            "NAF_BOOTSTRAP_ADMIN_EMAIL": "route-discovery@example.com",
+            "NAF_BOOTSTRAP_ADMIN_PASSWORD": secrets.token_urlsafe(24) + "Aa1@",
+        }
+        saved_env = {key: os.environ.get(key) for key in (*scratch_env, "SECRET_KEY_FILE",
+                                                           "NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE")}
+        os.environ.pop("SECRET_KEY_FILE", None)
+        os.environ.pop("NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE", None)
+        os.environ.update(scratch_env)
+        try:
+            from netcup_api_filter.app import create_app
+            app = create_app()
+        finally:
+            for key, value in saved_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
         with app.app_context():
             for rule in app.url_map.iter_rules():
                 # Skip static files

@@ -29,7 +29,8 @@ if os.path.isdir(vendor_dir):
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
 
 try:
-    log_file_path = os.path.join(app_root, 'netcup_filter.log')
+    # NETCUP_FILTER_LOG_FILE: explicit log path (e.g. a per-session e2e instance); default app root.
+    log_file_path = os.environ.get('NETCUP_FILTER_LOG_FILE') or os.path.join(app_root, 'netcup_filter.log')
     file_handler = logging.FileHandler(log_file_path, mode='a')
     file_handler.setLevel(getattr(logging, LOG_LEVEL))
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))

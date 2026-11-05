@@ -55,11 +55,14 @@ the supported verbs:
 
 Webhoster inventory, pinned host key and activation contract: `.ciu.hosts.toml`. Webhosting releases are
 greenfield (fresh seeded DB, default `admin`/`admin`, `must_change_password`); only `SECRET_KEY` carries over.
-Credentials are tracked in `deployment_state_*.json` (never hardcode a password); browser tests use pwmcp via
+No credential is ever tracked in a file (never hardcode a password): e2e sessions provision random personas in
+memory, `app-local` reads ciu-generated secrets (the hook prints where they live). Browser tests use pwmcp via
 `PLAYWRIGHT_SERVER_WS`, never an engine installed here.
 
-Local flow (run-gate.toml header has the exact sequence): mocks and `app-local` via `ciu up --dir tooling/<name>`,
-`run-gate local-build` seeds `deploy-local/` inside the 3.11 runner, `run-gate e2e` drives pwmcp against the app.
+Local flow (run-gate.toml header has the exact sequence): mocks via `ciu up --dir tooling/<name>`,
+`run-gate local-build` builds `deploy-local/` and its golden DB inside the 3.11 runner, `run-gate e2e` starts a
+throwaway app per session inside the runner and drives pwmcp against it ([`docs/TESTING_INFRASTRUCTURE.md`](docs/TESTING_INFRASTRUCTURE.md)).
+`tooling/app-local` is the long-lived instance for humans.
 The old cockpit scripts (`run-local-tests.sh`, `tooling/flask-manager.sh`, `.vscode/run-*.sh`) are gone.
 
 **Testing:** `tests/` (pytest unit/integration; use the `make_account`/`make_realm`/`make_token` fixtures in

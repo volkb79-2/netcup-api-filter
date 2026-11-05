@@ -227,24 +227,19 @@ class ParallelSessionManager:
             handle: Session handle
             credentials: Optional (username, password) tuple
         """
+        from ui_tests.browser import Browser
         from ui_tests.config import settings
-        
-        username, password = credentials or (settings.admin_username, settings.admin_password)
-        
-        page = handle.page
-        await page.goto(settings.url('/admin/login'))
-        await page.fill('#username', username)
-        await page.fill('#password', password)
-        await page.click('button[type="submit"]')
-        
-        # Wait for navigation away from login
-        await page.wait_for_url('**/admin/**')
-        
-        # Handle forced password change if required
-        if '/admin/change-password' in page.url:
-            logger.info(f"Admin {username} requires password change")
-            # Caller must handle password change
-        
+        from ui_tests.workflows import admin_login
+
+        if credentials is None:
+            username, password, totp = settings.admin_username, settings.admin_password, settings.admin_totp_secret
+        else:
+            username, password = credentials
+            totp = None
+        await admin_login(Browser(handle.page), username, password, totp_secret=totp)
+        if '/admin/change-password' in handle.page.url:
+            raise AssertionError(f"admin {username} was sent to change-password; use a persona")
+
         logger.debug(f"Admin login complete: {username}")
     
     async def _login_account(

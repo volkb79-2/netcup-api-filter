@@ -1,10 +1,9 @@
-"""Shared configuration for UI regression tests.
+"""Shared configuration for the e2e (Playwright) suite.
 
-Configuration is loaded from deployment_state.json based on DEPLOYMENT_TARGET:
-- local: deploy-local/deployment_state.json
-- webhosting: deploy-local/screenshots/.deployment_state_webhosting.json
-
-Set DEPLOYMENT_TARGET=local or DEPLOYMENT_TARGET=webhosting to select.
+Nothing here is read from a state file. ``ui_tests/conftest.py`` starts a throwaway app
+instance per session (ui_tests/e2e_env.py), provisions personas into its private DB
+(ui_tests/personas.py) and then *binds* this module's ``settings`` to them. Reading any
+target value before that binding is a programming error and raises immediately.
 """
 from __future__ import annotations
 
@@ -12,28 +11,27 @@ import os
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Iterator, List, Optional
+from pathlib import Path
+from typing import Iterator, List
 from urllib.parse import urljoin
 
-from ui_tests.deployment_state import (
-    DeploymentTarget,
-    get_deployment_target,
-    get_state_file_path,
-    load_state,
-    state_exists,
-    get_base_url as get_default_base_url,
-)
+PRIMARY_PROFILE = "primary"
 
 
 @dataclass
 class UiTargetProfile:
-    """Concrete set of credentials + host for a UI test target."""
+    """Concrete host + credentials of one UI test target."""
 
     name: str
     base_url: str
     admin_username: str
     admin_password: str
-    admin_new_password: str | None
+    admin_totp_secret: str | None
+    mail_admin_username: str
+    mail_admin_password: str
+    user_username: str
+    user_password: str
+    user_totp_secret: str | None
     client_id: str
     client_secret_key: str
     client_domain: str
@@ -41,277 +39,176 @@ class UiTargetProfile:
     deployment_target: str = "local"
     readonly_client_id: str = ""
     readonly_client_secret_key: str = ""
-    
+
     @property
     def client_token(self) -> str:
-        """Full authentication token (Bearer token value).
-        
-        Token format is: naf_<user_alias>_<random64>
-        where user_alias is a 16-char random identifier (not the username).
-        The secret_key field contains the full token.
-        """
+        """Full Bearer token value (``naf_<user_alias>_<random>``)."""
         return self.client_secret_key
 
     @property
     def readonly_client_token(self) -> str:
         return self.readonly_client_secret_key
 
+    def __repr__(self) -> str:  # never print credentials
+        return f"UiTargetProfile({self.name!r}, {self.base_url!r})"
+
+
 class UiTestConfig:
-    """Configuration loaded from deployment_state.json.
-    
-    Uses DEPLOYMENT_TARGET env var to select which deployment to test:
-    - "local" (default): Tests against deploy-local/
-    - "webhosting": Tests against production webhosting
-    
-    All credentials come from the JSON state file, with optional
-    environment variable overrides for specific values.
-    """
+    """Session-bound UI target configuration."""
 
     def __init__(self) -> None:
-        # Determine deployment target
-        self._deployment_target = get_deployment_target()
-        
-        # Configuration options with defaults
-        headless_str = os.getenv("PLAYWRIGHT_HEADLESS", "true")
-        self.playwright_headless: bool = headless_str.lower() in {"true", "1"}
-        
+        self.playwright_headless: bool = os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() in {"true", "1"}
         self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "test")
+        self._profiles: dict[str, UiTargetProfile] = {}
+        self._active: UiTargetProfile | None = None
+        self.db_path: Path | None = None
+        self.workdir: Path | None = None
 
-        allow_writes_str = os.getenv("UI_ALLOW_WRITES", "1")
-        primary_allow_writes = allow_writes_str not in {"0", "false", "False"}
-        
-        # Base URL: env override > default for target
-        base_url = os.getenv("UI_BASE_URL") or get_default_base_url(self._deployment_target)
-        
-        # Load state from JSON (REQUIRED - no fallback)
-        state_file = get_state_file_path(self._deployment_target)
-        if not state_exists(self._deployment_target):
-            raise RuntimeError(
-                f"Deployment state file not found: {state_file}\n"
-                f"DEPLOYMENT_TARGET={self._deployment_target}\n"
-                f"\n"
-                f"For local: Run run-gate local-build (see run-gate.toml)\n"
-                f"For webhosting: Run cmru release, then ciu up --host webhoster --thin -- --variant py311 and ensure state is synced"
-            )
-        
-        state = load_state(self._deployment_target)
-        admin = state.admin
-        primary_client = state.get_primary_client()
-
-        # Optional read-only client for authorization tests.
-        readonly_client = None
-        readonly_client_id_override = (os.getenv("DEPLOYED_READONLY_CLIENT_ID") or os.getenv("UI_READONLY_CLIENT_ID") or "").strip()
-        if readonly_client_id_override:
-            readonly_client = next(
-                (c for c in state.clients if (c.client_id or "").strip() == readonly_client_id_override),
-                None,
-            )
-        if readonly_client is None:
-            readonly_client = next((c for c in state.clients if not c.is_primary), None)
-        
-        # Allow environment variable overrides for specific credentials
-        admin_username = os.getenv("DEPLOYED_ADMIN_USERNAME") or admin.username
-        admin_password = os.getenv("DEPLOYED_ADMIN_PASSWORD") or admin.password
-        client_id = os.getenv("DEPLOYED_CLIENT_ID") or (primary_client.client_id if primary_client else "")
-        client_secret_key = os.getenv("DEPLOYED_CLIENT_SECRET_KEY") or (primary_client.secret_key if primary_client else "")
-        readonly_client_id = os.getenv("DEPLOYED_READONLY_CLIENT_ID") or (readonly_client.client_id if readonly_client else "")
-        readonly_client_secret_key = os.getenv("DEPLOYED_READONLY_CLIENT_SECRET_KEY") or (
-            readonly_client.secret_key if readonly_client else ""
+    # ---- binding ------------------------------------------------------------------
+    def bind_local(self, instance, personas) -> None:
+        """Bind to a per-session e2e instance (e2e_env.AppInstance) and its personas."""
+        profile = UiTargetProfile(
+            name=PRIMARY_PROFILE,
+            base_url=instance.base_url,
+            admin_username=personas.admin.username,
+            admin_password=personas.admin.password,
+            admin_totp_secret=personas.admin.totp_secret,
+            mail_admin_username=personas.mail_admin.username,
+            mail_admin_password=personas.mail_admin.password,
+            user_username=personas.user.username,
+            user_password=personas.user.password,
+            user_totp_secret=personas.user.totp_secret,
+            client_id=personas.user.username,
+            client_secret_key=personas.user_token,
+            client_domain=personas.client_domain,
+            allow_writes=True,
+            deployment_target="local",
+            readonly_client_id=personas.readonly.username,
+            readonly_client_secret_key=personas.readonly_token,
         )
-        
-        print(f"[CONFIG] Loaded from {state_file.name} (target={self._deployment_target}, updated={state.last_updated_at or 'unknown'})")
-        
-        if not all([admin_username, admin_password]):
-            raise RuntimeError(
-                f"Admin credentials not found in {state_file}\n"
-                f"The state file may be corrupted or incomplete."
-            )
-        
-        primary = UiTargetProfile(
-            name="primary",
-            base_url=base_url,
-            admin_username=admin_username,
-            admin_password=admin_password,
-            admin_new_password=os.getenv("UI_ADMIN_NEW_PASSWORD") or None,
-            client_id=client_id,
-            client_secret_key=client_secret_key,
-            readonly_client_id=readonly_client_id,
-            readonly_client_secret_key=readonly_client_secret_key,
-            client_domain=os.getenv("UI_CLIENT_DOMAIN", "example.com"),  # Match preseeded clients
-            allow_writes=primary_allow_writes,
-            deployment_target=self._deployment_target,
-        )
+        self._profiles = {PRIMARY_PROFILE: profile}
+        self._active = profile
+        self.db_path = instance.db_path
+        self.workdir = instance.workdir
 
-        # Optional smoke profile for production testing
-        smoke_base = os.getenv("UI_SMOKE_BASE_URL")
-        smoke_profile: UiTargetProfile | None = None
-        if smoke_base:
-            smoke_allow_writes = os.getenv("UI_SMOKE_ALLOW_WRITES", "0") in {"1", "true", "True"}
-            smoke_profile = UiTargetProfile(
-                name="smoke",
-                base_url=smoke_base,
-                admin_username=os.getenv("UI_SMOKE_ADMIN_USERNAME", primary.admin_username),
-                admin_password=os.getenv("UI_SMOKE_ADMIN_PASSWORD", primary.admin_password),
-                admin_new_password=os.getenv("UI_SMOKE_ADMIN_NEW_PASSWORD")
-                or primary.admin_new_password,
-                client_id=os.getenv("UI_SMOKE_CLIENT_ID", primary.client_id),
-                client_secret_key=os.getenv("UI_SMOKE_CLIENT_SECRET_KEY", primary.client_secret_key),
-                readonly_client_id=os.getenv("UI_SMOKE_READONLY_CLIENT_ID", primary.readonly_client_id),
-                readonly_client_secret_key=os.getenv(
-                    "UI_SMOKE_READONLY_CLIENT_SECRET_KEY",
-                    primary.readonly_client_secret_key,
-                ),
-                client_domain=os.getenv("UI_SMOKE_CLIENT_DOMAIN", primary.client_domain),
-                allow_writes=smoke_allow_writes,
-                deployment_target=self._deployment_target,
-            )
+    def unbind(self) -> None:
+        self._profiles = {}
+        self._active = None
+        self.db_path = None
+        self.workdir = None
 
-        self._profiles: Dict[str, UiTargetProfile] = {primary.name: primary}
-        if smoke_profile:
-            self._profiles[smoke_profile.name] = smoke_profile
-
-        self._active: UiTargetProfile = primary
-
-    # ---- deployment target info -------------------------------------------------
     @property
-    def deployment_target(self) -> DeploymentTarget:
-        """Current deployment target (local or webhosting)."""
-        return self._deployment_target
+    def active(self) -> UiTargetProfile:
+        if self._active is None:
+            raise RuntimeError(
+                "ui_tests.config.settings is not bound: the e2e session fixture "
+                "(ui_tests/conftest.py e2e_environment) binds it before any test runs"
+            )
+        return self._active
 
-    # ---- active profile helpers -------------------------------------------------
+    # ---- active profile helpers ------------------------------------------------------
+    @property
+    def deployment_target(self) -> str:
+        return self.active.deployment_target
+
     @property
     def base_url(self) -> str:
-        return self._active.base_url
+        return self.active.base_url
 
     @property
     def admin_username(self) -> str:
-        return self._active.admin_username
+        return self.active.admin_username
 
     @property
     def admin_password(self) -> str:
-        return self._active.admin_password
-
-    @admin_password.setter
-    def admin_password(self, value: str) -> None:
-        self._active.admin_password = value
+        return self.active.admin_password
 
     @property
-    def admin_new_password(self) -> str | None:
-        return self._active.admin_new_password
+    def admin_totp_secret(self) -> str | None:
+        return self.active.admin_totp_secret
+
+    @property
+    def mail_admin_username(self) -> str:
+        """Admin persona with EMAIL 2FA only (2FA failure/lockout tests may lock it)."""
+        return self.active.mail_admin_username
+
+    @property
+    def mail_admin_password(self) -> str:
+        return self.active.mail_admin_password
+
+    @property
+    def user_username(self) -> str:
+        return self.active.user_username
+
+    @property
+    def user_password(self) -> str:
+        return self.active.user_password
+
+    @property
+    def user_totp_secret(self) -> str | None:
+        return self.active.user_totp_secret
 
     @property
     def client_id(self) -> str:
-        return self._active.client_id
+        return self.active.client_id
 
     @property
     def client_token(self) -> str:
-        return self._active.client_token
+        return self.active.client_token
 
     @property
     def readonly_client_token(self) -> str:
-        return self._active.readonly_client_token
+        return self.active.readonly_client_token
 
     @property
     def client_domain(self) -> str:
-        return self._active.client_domain
+        return self.active.client_domain
 
     @property
     def allow_writes(self) -> bool:
-        return self._active.allow_writes
+        return self.active.allow_writes
 
-    # ---- profile orchestration --------------------------------------------------
+    # ---- profile orchestration ----------------------------------------------------------
+    @staticmethod
+    def profile_names() -> List[str]:
+        """Static at collection time (the binding happens later, in the session fixture)."""
+        return [PRIMARY_PROFILE]
+
+    def profile(self, name: str) -> UiTargetProfile:
+        self.active  # raise if unbound
+        return self._profiles[name]
+
     def profiles(self) -> List[UiTargetProfile]:
+        self.active
         return list(self._profiles.values())
 
     @contextmanager
     def use_profile(self, profile: UiTargetProfile) -> Iterator[UiTargetProfile]:
-        """Context manager to temporarily switch active profile.
-        
-        IMPORTANT: Creates a COPY of the profile to prevent state mutations
-        from persisting across test runs in the same Python process.
-        """
-        previous = self._active
-        # Use a deep copy to prevent mutations from affecting the original
+        """Temporarily switch the active profile (a COPY, so mutations never leak)."""
+        previous = self.active
         self._active = deepcopy(profile)
         try:
             yield self._active
         finally:
             self._active = previous
 
-    # ---- utility helpers --------------------------------------------------------
+    # ---- utility helpers ---------------------------------------------------------------
     def url(self, path: str) -> str:
-        """Return an absolute URL for the provided path."""
         return urljoin(self.base_url.rstrip("/") + "/", path.lstrip("/"))
 
-    def note_password_change(self) -> None:
-        """Update in-memory password after a successful rotation."""
-        if self.admin_new_password:
-            self.admin_password = self.admin_new_password
-
-    def refresh_credentials(self) -> None:
-        """Reload credentials from deployment_state.json.
-        
-        Call this at the start of a test to ensure you have the latest
-        credentials, especially after another test might have changed passwords.
-        
-        This reads fresh from the JSON file, bypassing any cached values.
-        Updates BOTH the active profile AND the original source profile.
-        """
-        try:
-            state = load_state(self._deployment_target)
-        except FileNotFoundError:
-            print(f"[CONFIG] Warning: State file not found during refresh, keeping current values")
-            return
-        
-        admin = state.admin
-        primary_client = state.get_primary_client()
-        
-        # Update the active profile with fresh credentials
-        if admin.password != self._active.admin_password:
-            print(f"[CONFIG] Refreshed admin password (changed: {admin.password_changed_at or 'unknown'})")
-            self._active.admin_password = admin.password
-        
-        if admin.username != self._active.admin_username:
-            self._active.admin_username = admin.username
-        
-        # Also update the original profile so subsequent tests start with fresh password
-        for profile_name, profile in self._profiles.items():
-            if profile.admin_username == admin.username:
-                if profile.admin_password != admin.password:
-                    print(f"[CONFIG] Updated source profile '{profile_name}' with new password")
-                    profile.admin_password = admin.password
-        
-        # Update client credentials if changed
-        if primary_client:
-            if primary_client.client_id != self._active.client_id:
-                self._active.client_id = primary_client.client_id
-            if primary_client.secret_key != self._active.client_secret_key:
-                self._active.client_secret_key = primary_client.secret_key
+    def storage_state_path(self, name: str = "admin") -> Path:
+        """Per-session Playwright cookie cache (inside the instance work dir; dies with it)."""
+        if self.workdir is None:
+            raise RuntimeError("settings is not bound to an e2e instance")
+        return self.workdir / f"{name}_auth_state.json"
 
 
-# Singleton instance - initialized on first import
 settings = UiTestConfig()
 
 
 def require_readonly_token() -> str:
-    """Return the read-only client token, or pytest.skip if it is unavailable.
-
-    The read-only client is OPTIONAL in deployment state: older states (or a
-    --skip-build run against a state that predates the read-only client) have no
-    non-primary client, so ``settings.readonly_client_token`` resolves to ''.
-    Sending ``Bearer `` (empty) makes the API return 401, which would hard-fail
-    authorization tests that assert ``status in [403, 500]``. That 401 is a
-    MISSING FIXTURE, not a product failure, so callers skip instead.
-
-    Tests that DO have a token keep their real assertions unchanged.
-    """
-    import pytest  # local import: only test code calls this
-
+    """The read-only persona's token (always provisioned for a local session)."""
     token = (settings.readonly_client_token or "").strip()
     if not token:
-        pytest.skip(
-            "Read-only client token not available in deployment state "
-            "(no non-primary client; e.g. stale state or --skip-build). "
-            "Set DEPLOYED_READONLY_CLIENT_SECRET_KEY or rebuild with a read-only client."
-        )
+        raise AssertionError("read-only persona token missing from the bound e2e configuration")
     return token

@@ -50,7 +50,6 @@ import pytest
 from ui_tests import verification, workflows
 from ui_tests.browser import Browser
 from ui_tests.config import settings
-from ui_tests.deployment_state import get_base_url, get_deployment_target
 from ui_tests.mailpit_client import MailpitClient
 from ui_tests.parallel_session_manager import ParallelSessionManager
 
@@ -72,7 +71,7 @@ THROWAWAY_DOMAIN = "example.com"
 
 
 def _base_url() -> str:
-    return get_base_url(get_deployment_target()).rstrip("/")
+    return settings.base_url.rstrip("/")
 
 
 # --------------------------------------------------------------------------
@@ -351,10 +350,7 @@ async def _dns_get(token: str, domain: str) -> int:
 
 @pytest.fixture
 def _demo_username() -> str:
-    import os
-    from ui_tests.env_defaults import get_env_default
-
-    return os.environ.get("DEFAULT_TEST_CLIENT_ID") or get_env_default("DEFAULT_TEST_CLIENT_ID")
+    return settings.user_username
 
 
 # --------------------------------------------------------------------------

@@ -61,6 +61,9 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   `must_change_password`. The OCI image ships none; a fresh container needs an operator-supplied
   bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start.
   The database is the only credential store: no password is copied into state files.
+- **`.env.defaults` never ships** (it documents the pre-set admin password and holds test
+  fixtures). Shipped trees carry `app-defaults.env`, the runtime-only subset
+  (`config_defaults.render_shipped_defaults`), checked by `tests/test_shipped_defaults.py`.
 - **Known window:** a freshly deployed tarball on a public host accepts the documented default
   admin password until someone completes the forced change. Deploy and log in immediately.
 - `[[users]]` imports never log or retain passwords (the imported list is deleted from the

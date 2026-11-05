@@ -12,7 +12,6 @@ import anyio
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 from ui_tests.config import settings
-from ui_tests.deployment_state import get_playwright_storage_state_path
 from ui_tests.playwright_client import PlaywrightClient
 
 
@@ -335,7 +334,6 @@ class Browser:
                 await self._page.screenshot(path=path, type='jpeg', quality=quality, full_page=True)
                 # Playwright doesn't support webp directly, use jpeg then convert
                 # Actually, let's use png and convert via pillow if available
-                import shutil
                 try:
                     from PIL import Image
                     temp_path = path + '.temp.png'
@@ -491,9 +489,7 @@ async def browser_session() -> AsyncIterator[Browser]:
       - UI_TRACE_DIR=<path>: required if UI_TRACE_ON_SLOW_SECONDS is set; traces
         are written here.
     """
-    storage_state_path = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
-    if not storage_state_path:
-        storage_state_path = str(get_playwright_storage_state_path())
+    storage_state_path = str(settings.storage_state_path())
     client = PlaywrightClient(
         headless=settings.playwright_headless,
         storage_state_path=storage_state_path or None,

@@ -64,22 +64,34 @@ pwmcp instance: the runners and `app-local` join its network (`PWMCP_NETWORK`).
 
 ### `ui_tests/` — Playwright E2E (browser required)
 
-Requires a running deployment.  Browser runs in-process by default (requires
-`playwright install --with-deps chromium`), or remotely via `PLAYWRIGHT_SERVER_WS`.
+**Every e2e session owns its app and database** (credentials/test-setup plan, S1/S3/S4). The suite
+needs no running app, no target URL and no credentials from the cockpit:
+
+1. `run-gate local-build` builds `deploy-local/` and its **golden DB** (`netcup_filter.db`: exactly
+   the shipped admin with `must_change_password`, nothing else). Nothing may serve that file.
+2. The session fixture (`ui_tests/conftest.py` → `ui_tests/e2e_env.py`) copies the golden DB (SQLite
+   backup API) into a temp work dir, checks it is pristine, and **provisions personas** into the copy
+   (`ui_tests/personas.py`): `e2e-admin` (TOTP, deterministic logins), `e2e-mail-admin` (email 2FA;
+   the 2FA failure/lockout tests may lock it), `e2e-user01` (email 2FA, full-CRUD realm + token),
+   `e2e-readonly` (read-only realm + token), the demo domain root and some activity history. All
+   passwords, TOTP seeds and tokens are random per session and live in memory only.
+3. It starts `gunicorn passenger_wsgi:application` from the deploy tree (same package, same entry
+   point as production) on a free port inside the 3.11 runner, with `FLASK_ENV=local_test` and
+   `FLASK_SESSION_COOKIE_SECURE=false` stated explicitly (plain HTTP). The pwmcp browser reaches it
+   at `http://$NAF_E2E_ADVERTISE_HOST:<port>` (the runner's container name, set by
+   `tooling/test-runner`).
+4. A broken environment (no deploy tree, mutated golden DB, app not ready) stops the whole session
+   with one message (`pytest.exit`, exit code 3) instead of hundreds of failing logins.
+
+Tests that change credentials start their **own** instance (`e2e_env.app_instance(prepare=...)`):
+the shipped admin's forced first-login change is tested exactly once
+(`smoke/test_installation_workflow.py`); voluntary password changes use a throwaway admin
+(`personas.provision_throwaway_admin`). Nothing is ever written back to a state file. Keep the work
+dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env.defaults`.
 
 ```bash
-# In-process (default)
-pytest ui_tests/tests -v
-
-# Remote Playwright-as-a-Service
-PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/ pytest ui_tests/tests -v
-```
-
-Or via the standard runner (builds a fresh deployment first):
-
-```bash
-the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)    # Mailpit + GeoIP + Netcup-API mocks
-run-gate local-build (see run-gate.toml)    # reuse existing deploy-local
+run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runner)
+run-gate e2e --worktree "$PWD"           # full suite, per-session app, estate pwmcp
 ```
 
 **Directory layout** under `ui_tests/tests/` (E2 schema — applied 2026-06-14):
@@ -111,7 +123,7 @@ ui_tests/tests/
 | `performance` | Performance-specific (subset of nonfunctional) |
 | `live` | Requires real external dependencies |
 | `ci_smoke` | Runs in CI against live gunicorn + Mailpit |
-| `installation` | Requires default credentials |
+| `installation` | The forced first-login change of the shipped admin (own instance) |
 | `e2e_local` | Requires local deployment with mock services |
 
 Use `-m <marker>` to select by bucket regardless of path.
@@ -120,19 +132,11 @@ Use `-m <marker>` to select by bucket regardless of path.
 
 ## Standard local runner
 
-**`run-gate local-build`** — the single entry point for local testing:
-
-```bash
-run-gate local-build (see run-gate.toml)                          # build + run full ui_tests suite
-the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)             # also start mock services
-run-gate local-build (see run-gate.toml)             # reuse existing deploy-local
-the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e) <file>      # run a single test file
-```
-
-The script invokes `build_deployment.py --local` to build a production-parity deployment
-under `deploy-local/`, starts the app, and runs the `ui_tests` suite. Pass a test path to
-`run-gate local-build` to select a subset; keep its documented CLI and the suite layout in sync
-when adding or removing tests.
+There is no cockpit runner script: the e2e flow is the two run-gate lanes above (header of
+`run-gate.toml` has the full sequence including the mock stacks). To run a subset, use the
+lane's command inside the runner, e.g.
+`docker exec -w "$PWD" naf-dev-test-runner-py311 /opt/tester-venv/bin/python -m pytest ui_tests/tests/smoke -q -p no:cacheprovider -o addopts=`.
+`tooling/app-local` is the long-lived instance for humans; the e2e lane never uses it.
 
 ---
 

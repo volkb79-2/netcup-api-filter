@@ -456,7 +456,7 @@ def create_initial_env_webhosting(deploy_dir):
     with open(env_webhosting_path, 'w') as f:
         f.write("# DEPRECATED: Use deployment_state.json instead\n")
         f.write("# Deployment state - updated by tests when passwords change\n\n")
-        f.write(f"# Flask Secret Key (generated at build time)\n")
+        f.write("# Flask Secret Key (generated at build time)\n")
         f.write(f"SECRET_KEY={secret_key}\n\n")
         f.write(f"DEPLOYED_ADMIN_USERNAME={defaults.get('DEFAULT_ADMIN_USERNAME', '')}\n")
         f.write(f"DEPLOYED_ADMIN_PASSWORD={defaults.get('DEFAULT_ADMIN_PASSWORD', '')}\n")
@@ -926,8 +926,11 @@ def main():
         # Create deployment README
         create_deploy_readme(deploy_dir)
         
-        # Remove env files from deployment package (database already seeded)
-        # IMPORTANT: .env may contain secrets and must NEVER ship in deploy.zip.
+        # Ship the runtime defaults catalog (.env.defaults minus build/test-only keys), then
+        # remove the env files (database already seeded). .env may contain secrets and
+        # .env.defaults holds the pre-set admin password: neither may ship.
+        from netcup_api_filter.config_defaults import write_shipped_defaults
+        write_shipped_defaults(Path(".env.defaults"), Path(deploy_dir))
         for env_name in (".env", ".env.defaults"):
             env_path = Path(deploy_dir) / env_name
             if env_path.exists():

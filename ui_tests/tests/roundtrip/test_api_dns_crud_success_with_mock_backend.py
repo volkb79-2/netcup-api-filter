@@ -146,7 +146,7 @@ async def _run_crud_assertions(active_profile):
         # Use the preseeded client token from deployment state.
         # This keeps the test config-driven and avoids relying on deprecated "client create" UI flows.
         token = (active_profile.client_token or "").strip()
-        assert token, "Expected active_profile.client_token to be populated from deployment_state_*.json"
+        assert token, "active_profile.client_token (user persona token) is empty"
 
         domain = (active_profile.client_domain or "").strip()
         assert domain, "Expected active_profile.client_domain to be configured"
@@ -259,7 +259,7 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
             )
 
             token = (active_profile.client_token or "").strip()
-            assert token, "Expected active_profile.client_token from deployment_state_*.json"
+            assert token, "active_profile.client_token (user persona token) is empty"
 
             domain = (active_profile.client_domain or "").strip()
             assert domain, "Expected active_profile.client_domain to be configured"
@@ -311,7 +311,7 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
                 # are shown), so we verify the page renders without error rather
                 # than checking for the specific hostname text.
                 await workflows.ensure_user_dashboard(browser)
-                # Realm id 1 is the only realm for demo-user (seeded from deployment state).
+                # Realm id 1 is the user persona realm (the first realm provisioned per session).
                 await browser.goto(
                     settings.url("/account/realms/1/dns"),
                     wait_until="domcontentloaded",
@@ -497,7 +497,7 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
             )
 
             token = (active_profile.client_token or "").strip()
-            assert token, "Expected active_profile.client_token from deployment_state_*.json"
+            assert token, "active_profile.client_token (user persona token) is empty"
 
             domain = (active_profile.client_domain or "").strip()
             assert domain, "Expected active_profile.client_domain to be configured"
@@ -530,7 +530,6 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
             # OR stay on the form with a flash error (depending on deployed code).
             # We do not assert on the URL here — the C2 check below is the
             # authoritative assertion.
-            import re as _re
             try:
                 await browser._page.wait_for_load_state("networkidle", timeout=10_000)
             except Exception:

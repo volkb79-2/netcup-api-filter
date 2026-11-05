@@ -29,8 +29,8 @@ Usage:
     from ui_tests.playwright_client import playwright_session
 
     async with playwright_session() as page:
-        await page.goto("https://naf.vxxu.de")
-        await page.fill("#username", "admin")
+        await page.goto(settings.url("/admin/login"))
+        await page.fill("#username", settings.admin_username)
         await page.click("button[type='submit']")
 
 Author: netcup-api-filter project
@@ -365,7 +365,7 @@ async def example_usage():
         # await page.click("button[type='submit']")
         # await page.wait_for_url("**/admin/**")
         
-        print(f"   ✅ Form submission capability available!")
+        print("   ✅ Form submission capability available!")
         print(f"   Current URL: {page.url}")
     
     # Example 3: Screenshot

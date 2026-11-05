@@ -15,58 +15,52 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ui_tests.browser import Browser
-from ui_tests.config import UiTargetProfile, settings
-from ui_tests.deployment_state import (
-    clear_playwright_storage_state,
-    get_playwright_storage_state_path,
-)
+from ui_tests.config import settings
+from ui_tests.e2e_env import E2EEnvironmentError, app_instance
+from ui_tests.personas import provision
 from ui_tests.playwright_client import PlaywrightClient
 
 
-@pytest.fixture(autouse=True)
-def refresh_credentials_before_test():
-    """Auto-refresh credentials from deployment_state.json before each test.
-    
-    This ensures tests always have the latest credentials, even if a previous
-    test changed the admin password or client tokens.
+@pytest.fixture(scope="session", autouse=True)
+def e2e_environment():
+    """One throwaway app instance + personas for the whole session (ui_tests/e2e_env.py).
+
+    S1 "detect, don't flood": if the environment cannot be created (no golden DB, golden DB
+    not pristine, app does not start, runner misconfigured) the WHOLE session stops with one
+    clear message instead of every test timing out against a broken target.
     """
-    settings.refresh_credentials()
-    yield
+    try:
+        context = app_instance(prepare=provision)
+        instance, personas = context.__enter__()
+    except E2EEnvironmentError as exc:
+        pytest.exit(f"e2e environment unavailable: {exc}", returncode=3)
+    if not os.environ.get("SCREENSHOT_DIR"):
+        from ui_tests.e2e_env import REPO_ROOT, _setting
+
+        os.environ["SCREENSHOT_DIR"] = str(REPO_ROOT / _setting("E2E_SCREENSHOT_DIR"))
+    os.makedirs(os.environ["SCREENSHOT_DIR"], exist_ok=True)
+    previous_verify_db = os.environ.get("NAF_VERIFY_DB_PATH")
+    os.environ["NAF_VERIFY_DB_PATH"] = str(instance.db_path)
+    settings.bind_local(instance, personas)
+    try:
+        yield instance
+    finally:
+        settings.unbind()
+        if previous_verify_db is None:
+            os.environ.pop("NAF_VERIFY_DB_PATH", None)
+        else:
+            os.environ["NAF_VERIFY_DB_PATH"] = previous_verify_db
+        context.__exit__(None, None, None)
 
 
 @pytest_asyncio.fixture()
 async def playwright_client():
     """Create a Playwright client instance."""
-    storage_state_path = os.environ.get("UI_PLAYWRIGHT_STORAGE_STATE_PATH")
-    if not storage_state_path:
-        storage_state_path = str(get_playwright_storage_state_path())
-
     async with PlaywrightClient(
         headless=settings.playwright_headless,
-        storage_state_path=storage_state_path,
+        storage_state_path=str(settings.storage_state_path()),
     ) as client:
         yield client
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _clear_playwright_storage_state_on_exit():
-    """Optionally clear persisted Playwright auth state after the test run.
-
-    This is useful when you explicitly want the next run to re-test the full
-    2FA/login flow.
-
-    Controlled via env:
-      - UI_CLEAR_AUTH_STATE_ON_EXIT=1
-    """
-    yield
-    if os.environ.get("UI_CLEAR_AUTH_STATE_ON_EXIT") != "1":
-        return
-    deleted = clear_playwright_storage_state()
-    path = get_playwright_storage_state_path()
-    if deleted:
-        print(f"[CONFIG] Cleared Playwright auth state on exit: {path}")
-    else:
-        print(f"[CONFIG] No Playwright auth state to clear on exit: {path}")
 
 
 @pytest_asyncio.fixture()
@@ -148,15 +142,10 @@ async def admin_session(session_manager):
     return await session_manager.admin_session()
 
 
-def _profile_id(profile: UiTargetProfile) -> str:
-    return profile.name
-
-
-@pytest.fixture(params=settings.profiles(), ids=_profile_id)
+@pytest.fixture(params=settings.profile_names())
 def active_profile(request):
     """Activate each configured UI target profile for the test run."""
-    profile: UiTargetProfile = request.param
-    with settings.use_profile(profile):
+    with settings.use_profile(settings.profile(request.param)) as profile:
         yield profile
 
 

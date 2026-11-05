@@ -12,10 +12,13 @@ Key features:
 - Error page capture
 - Theme variant screenshots for BS5 demo
 
+Runs like the e2e suite: inside the 3.11 runner, it starts its own throwaway app on a copy of
+deploy-local's golden DB and provisions the session personas (ui_tests/e2e_env.py,
+ui_tests/personas.py). No credentials or target URL come from the environment.
+
 Environment Variables Required:
-- DEPLOYED_ADMIN_PASSWORD: Admin password
 - SCREENSHOT_DIR: Output directory for screenshots
-- UI_BASE_URL: Base URL for the application
+- NAF_E2E_ADVERTISE_HOST: this runner's container name (set by the test-runner stack)
 """
 import asyncio
 import sys
@@ -233,79 +236,13 @@ async def capture_admin_pages_comprehensive(browser) -> Dict:
     screenshots = []
     ux_issues = []
     
-    # Get admin credentials from environment
-    admin_password = os.environ.get('DEPLOYED_ADMIN_PASSWORD')
-    if not admin_password:
-        raise RuntimeError(
-            "DEPLOYED_ADMIN_PASSWORD not set. "
-            "Playwright container needs credentials passed as environment variables."
-        )
-    
-    # Login to admin
+    # Log in as the session's admin persona (TOTP; no Mailpit polling).
     print("📸 Logging into admin...")
-    await browser.goto(settings.url("/admin/login"))
-    await browser.wait_for_load_state('networkidle')
+    from ui_tests.workflows import admin_login
 
-    # If Mailpit is available, clear old messages so we reliably grab the
-    # *current* 2FA email (registration tests may have produced similar subjects).
-    try:
-        from ui_tests.mailpit_client import MailpitClient
+    await admin_login(browser, settings.admin_username, settings.admin_password,
+                      totp_secret=settings.admin_totp_secret)
 
-        mailpit = MailpitClient()
-        mailpit.clear()
-        mailpit.close()
-        print("ℹ️  Cleared Mailpit inbox before admin login")
-    except Exception as e:
-        print(f"ℹ️  Mailpit not available to pre-clear inbox: {e}")
-
-    await browser.fill("#username", settings.admin_username)
-    await browser.fill("#password", admin_password)
-    await browser.click("button[type='submit']")
-    await browser.wait_for_load_state('networkidle')  # Wait for navigation after form submit
-    
-    # Check if we're on 2FA page (use page.url for live URL)
-    current_url = browser._page.url
-    if "/2fa" in current_url or "/login/2fa" in current_url:
-        print("ℹ️  Redirected to 2FA - attempting to handle via Mailpit")
-        try:
-            from ui_tests.mailpit_client import MailpitClient
-            mailpit = MailpitClient()
-            
-            # Wait for 2FA email
-            msg = mailpit.wait_for_message(
-                predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
-                timeout=10.0
-            )
-            
-            if msg:
-                full_msg = mailpit.get_message(msg.id)
-                code_match = re.search(r'\b(\d{6})\b', full_msg.text)
-                
-                if code_match:
-                    code = code_match.group(1)
-                    print(f"✓ Extracted 2FA code from email: {code}")
-
-                    # Fill the code field and submit. Use requestSubmit/expect_navigation
-                    # patterns to avoid Playwright race conditions.
-                    await browser.fill("#code", code)
-                    await browser.submit("#twoFaForm")
-
-                    # Explicitly wait for leaving the login area.
-                    await browser._page.wait_for_url(
-                        re.compile(r".*/admin/(?!login).*"),
-                        timeout=10_000,
-                    )
-                    print(f"✓ 2FA navigation complete: {browser._page.url}")
-                    
-                    mailpit.delete_message(msg.id)
-                    mailpit.close()
-                else:
-                    print("⚠️  Could not extract code from email")
-            else:
-                print("⚠️  No 2FA email found in Mailpit")
-        except Exception as e:
-            print(f"⚠️  2FA via Mailpit failed: {e}")
-    
     # Verify login was successful (use live URL)
     current_url = browser._page.url
     if "/admin/login/2fa" in current_url:
@@ -608,5 +545,17 @@ async def main():
     print("   4. Compare against /component-demo-bs5 reference")
 
 
+def _run_on_throwaway_instance() -> None:
+    from ui_tests.e2e_env import app_instance
+    from ui_tests.personas import provision
+
+    with app_instance(prepare=provision) as (instance, personas):
+        settings.bind_local(instance, personas)
+        try:
+            asyncio.run(main())
+        finally:
+            settings.unbind()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    _run_on_throwaway_instance()
