@@ -23,6 +23,15 @@
   (`secret_key`, `bootstrap_admin_password`) mounted as files, its own data hostdir, and a
   `post_compose_init_instance.py` hook (readiness, then create-or-update init via `docker exec`).
 
+- **Clean release artifacts** (S5): the OCI image ships `app-defaults.env` instead of nothing,
+  `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db` and `VOLUME /data` (still no account, no
+  `.env.defaults`). `build_deployment.py` no longer writes `deployment_state_*.json` or
+  `.env.webhosting` (the latter carried `DEPLOYED_ADMIN_PASSWORD`), no longer mutates `os.environ`
+  from `.env.services` (`SERVICE_MAILPIT` from the environment, else evaluated read-only), and is
+  ruff-clean. CI `e2e-smoke` uses the per-session fixture on the `--local` deploy tree;
+  `scripts/ci_bootstrap_e2e.py` is deleted. New `tests/test_release_artifacts.py` pins the tarball
+  contents (one admin with `must_change_password`, no `secret_key` row, no `.env*`/state files).
+
 - **e2e without shared credentials** (S1/S3/S4): every session starts its own app inside the 3.11
   runner on a copy of the golden DB (`ui_tests/e2e_env.py`) and provisions random in-memory personas
   (`ui_tests/personas.py`; admin with TOTP). `ui_tests/deployment_state.py`, `ui_tests/env_defaults.py`,

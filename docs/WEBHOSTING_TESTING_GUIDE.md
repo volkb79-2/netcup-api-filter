@@ -68,7 +68,7 @@ async def test_2fa_with_totp():
 ```python
 async def test_with_recovery_code():
     """Use pre-generated recovery codes for testing."""
-    # Store recovery codes in deployment_state_webhosting.json
+    # Recovery codes come from the operator's environment (the state file is gone; stage S7 of the credentials plan)
     recovery_code = settings.admin_recovery_codes[0]  # Use first code
     
     # During 2FA prompt
@@ -315,7 +315,8 @@ class TestWebhostingSecurity:
 
 ## Configuration for Webhosting Tests
 
-Add to `deployment_state_webhosting.json`:
+> Historical: `deployment_state_webhosting.json` no longer exists (S5); webhosting runs get operator credentials from the environment (plan stage S7). Shape of the facts the old file held:
+
 
 ```json
 {

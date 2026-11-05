@@ -26,7 +26,7 @@ Netcup issues a single credential set with full control over every DNS record, d
 Initial setup flow for a freshly released Passenger tarball (`py311`):
 
 1. Activate the selected tarball → Access site
-2. Login: admin/admin → Forced password change
+2. Login with the pre-set admin of the tarball (the documented default, `must_change_password`) → Forced password change
 3. Dashboard → See 2FA warning banner
 4. Click "Set Up Authenticator App (TOTP)" → Scan QR code
 5. Configure Netcup API credentials
@@ -216,7 +216,7 @@ See `docs/TESTING_INFRASTRUCTURE.md` for full suite details and CI job configura
 
 - Everything is config-driven; add new settings only through `.env.defaults` + overrides.
 - Scripts error out when required variables are missing (fail-fast). Fix the error, export the variable, rerun.
-- Default admin credentials and the test client are defined in `.env.defaults` and reset on every deployment. Change them immediately on live systems.
+- The Passenger tarball ships exactly one account: the pre-set admin (documented default in `.env.defaults`, forced to change its password at first login) — no demo data, no test client. The OCI image ships no account at all; its first start needs `NAF_BOOTSTRAP_ADMIN_*` (see `docs/DEPLOYMENT_WORKFLOW.md`). `.env.defaults` itself is never shipped; builds write the runtime-only `app-defaults.env`. Credentials of e2e runs are generated per session in memory; no state file holds a password.
 - Always run behind HTTPS in production; use the bundled TLS proxy workflow for local parity.
 
 ## License & Support

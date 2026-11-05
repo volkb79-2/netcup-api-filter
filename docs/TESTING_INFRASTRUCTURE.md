@@ -24,7 +24,7 @@ the local runners, the CI jobs, and the tooling that supports them.
 | **Total (ui_tests)** | | | **~355** | |
 
 The unit suite runs in CI on every push (<60 s). A tagged `@pytest.mark.ci_smoke` subset
-of 93 Playwright tests also runs in CI against a live gunicorn + Mailpit stack on every PR.
+of 93 Playwright tests also runs in CI against a per-session app + Mailpit on every PR.
 See **CI jobs** below.
 
 ---
@@ -122,7 +122,7 @@ ui_tests/tests/
 | `accessibility` | Accessibility-specific (subset of nonfunctional) |
 | `performance` | Performance-specific (subset of nonfunctional) |
 | `live` | Requires real external dependencies |
-| `ci_smoke` | Runs in CI against live gunicorn + Mailpit |
+| `ci_smoke` | Runs in CI against a per-session app + Mailpit |
 | `installation` | The forced first-login change of the shipped admin (own instance) |
 | `e2e_local` | Requires local deployment with mock services |
 
@@ -163,22 +163,27 @@ Uploads `coverage.xml` as an artifact on every run.
 
 ### `e2e-smoke`
 
-Boots the full app in the CI runner (gunicorn, plain HTTP :5100) and runs all tests
-tagged `@pytest.mark.ci_smoke` (93 tests). Services: Mailpit on ports 1025/8025.
+Builds the deploy tree with `python build_deployment.py --local --python-version 3.11 --build-dir deploy-local`
+(the same builder as `run-gate local-build`; the golden DB holds only the shipped admin with
+`must_change_password=1` plus the Mailpit email config), then runs all tests tagged
+`@pytest.mark.ci_smoke` (93 tests) with in-process Playwright. There is no external app server and no
+bootstrap script: the `e2e_environment` session fixture (`ui_tests/e2e_env.py`) starts a per-session app
+on a copy of the golden DB and provisions the personas, exactly as in the local lane. Services: Mailpit
+on ports 1025/8025 (no authentication).
 
-**Bootstrap**: `scripts/ci_bootstrap_e2e.py` initialises the DB and writes
-`deployment_state_local.json` so the test helpers find the admin credentials.
-
-Key env vars that make plain-HTTP CI work:
+Env vars set by the job:
 
 | Var | Value | Purpose |
 |-----|-------|---------|
-| `FLASK_ENV` | `local_test` | Clears `SESSION_COOKIE_SECURE`, disables rate limiting |
-| `DEPLOYMENT_TARGET` | `local` | Selects local state-file path |
-| `NAF_VERIFY_DB_PATH` | `ci-deploy/netcup_filter.db` | Directs `verification.py` channel A to the CI DB |
-| `UI_BASE_URL` | `http://127.0.0.1:5100` | Playwright base URL |
+| `SERVICE_MAILPIT` | `localhost` | Mailpit host written into the golden DB's email config (`build_deployment.py --local`; locally it comes from `.env.services`) |
+| `NAF_E2E_ADVERTISE_HOST` | `127.0.0.1` | Host under which the browser reaches the per-session app (same host as the runner) |
+| `MAILPIT_URL` | `http://localhost:8025` | Mailpit REST client |
+| `NAF_E2E_KEEP_WORKDIR` | `1` | Keeps the per-session work dir so the app logs can be uploaded on failure |
 
-**Failure artifacts**: on failure the job uploads `gunicorn.log`, `mailpit-messages.json`,
+The app instance itself states `FLASK_ENV=local_test` and `FLASK_SESSION_COOKIE_SECURE=false` (plain
+HTTP origin); the job does not set them.
+
+**Failure artifacts**: on failure the job uploads the per-session app logs (`/tmp/naf-e2e-*/*.log`), `mailpit-messages.json`,
 and `tmp/ui-screenshots` for debugging.
 
 To tag a test for the `e2e-smoke` job:

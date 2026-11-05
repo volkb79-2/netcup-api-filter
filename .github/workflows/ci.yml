@@ -1,9 +1,8 @@
 # Continuous Integration for netcup-api-filter
 #
 # Runs the non-browser unit/integration suite (tests/) with coverage on every
-# push and pull request. The Playwright E2E suite (ui_tests/) is intentionally
-# NOT run here: it needs a live deployment + a browser and is unsuitable for
-# plain CI.
+# push and pull request. The e2e-smoke job also runs the ci_smoke subset of the
+# Playwright suite (ui_tests/) against a per-session app (ui_tests/e2e_env.py).
 name: CI
 
 on:
@@ -105,20 +104,17 @@ jobs:
           MP_SMTP_AUTH_ALLOW_INSECURE: "true"
 
     env:
-      # --- Bootstrap + app runtime ---
-      SECRET_KEY: ci-e2e-smoke-secret-not-a-real-secret
-      DEPLOYMENT_TARGET: local
-      NETCUP_FILTER_DB_PATH: ${{ github.workspace }}/ci-deploy/netcup_filter.db
-      # FLASK_ENV=local_test is load-bearing over plain HTTP: it clears
-      # SESSION_COOKIE_SECURE (so Playwright sends cookies on http://) and
-      # disables rate limiting (avoids flaky 429s in the smoke run).
-      FLASK_ENV: local_test
-      # Where the app delivers mail (Mailpit SMTP on the runner). Consumed by
-      # seed_mock_email_config at bootstrap AND by the running app.
-      MOCK_SMTP_HOST: localhost
-      MOCK_SMTP_PORT: "1025"
+      # Mailpit host for the golden DB's mock email config: build_deployment.py --local reads
+      # SERVICE_MAILPIT (in the ciu stack it comes from .env.services). The app and Playwright run
+      # on this same runner, so the service is reachable as localhost.
+      SERVICE_MAILPIT: localhost
+      # ui_tests/e2e_env.py starts its own per-session app from the deploy tree and tells the
+      # browser to reach it here (in-process Playwright on the same host).
+      NAF_E2E_ADVERTISE_HOST: 127.0.0.1
       # --- Mailpit REST client (ui_tests/mailpit_client.py) ---
       MAILPIT_URL: http://localhost:8025
+      # Keep the per-session work dir (app logs) so a failed run can upload them.
+      NAF_E2E_KEEP_WORKDIR: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +131,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # App + unit-test deps, plus the ui_tests stack (playwright, httpx, …).
+          # App + unit-test deps, plus the ui_tests stack (playwright, httpx, ...).
           pip install -r requirements-test.txt -r ui_tests/requirements.txt playwright pytest-timeout
 
       - name: Install Playwright Chromium
@@ -144,36 +140,15 @@ jobs:
         # PLAYWRIGHT_SERVER_WS=ws://<service>:3000/ and skip this step.
         run: python -m playwright install --with-deps chromium
 
-      - name: Bootstrap deployment (DB + state file)
-        run: |
-          python scripts/ci_bootstrap_e2e.py \
-            --state-file "$RUNNER_TEMP/deployment_state_local.json"
+      # The same builder as `run-gate local-build`: deploy-local/ with the golden DB (only the
+      # shipped admin, must_change_password=1, plus the Mailpit email config).
+      - name: Build deploy tree (golden DB)
+        run: python build_deployment.py --local --python-version 3.11 --build-dir deploy-local --output "$RUNNER_TEMP/deploy.zip"
 
-      - name: Start app (gunicorn, plain HTTP :5100)
-        run: |
-          mkdir -p "$RUNNER_TEMP"
-          PYTHONPATH=src nohup python -m gunicorn \
-            -w 2 -b 127.0.0.1:5100 \
-            'netcup_api_filter.app:create_app()' \
-            > "$RUNNER_TEMP/gunicorn.log" 2>&1 &
-          echo "Waiting for app health on http://127.0.0.1:5100/health ..."
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:5100/health >/dev/null 2>&1; then
-              echo "App is up after ${i}s"; exit 0
-            fi
-            sleep 1
-          done
-          echo "App did not become healthy within 60s; last log lines:"
-          tail -n 50 "$RUNNER_TEMP/gunicorn.log" || true
-          exit 1
-
+      # No external app server: the e2e_environment session fixture starts the app on a copy of
+      # the golden DB, provisions the personas and stops it again (ui_tests/e2e_env.py).
       - name: Run ci_smoke subset (serial)
         run: |
-          DEPLOYMENT_TARGET=local \
-          DEPLOYMENT_STATE_FILE="$RUNNER_TEMP/deployment_state_local.json" \
-          UI_BASE_URL=http://127.0.0.1:5100 \
-          UI_PLAYWRIGHT_STORAGE_STATE_PATH="$RUNNER_TEMP/admin_auth.json" \
-          NAF_VERIFY_DB_PATH="${{ github.workspace }}/ci-deploy/netcup_filter.db" \
           PLAYWRIGHT_HEADLESS=true \
           python -m pytest -o addopts="" --timeout=120 -m ci_smoke ui_tests/tests -v
 
@@ -190,7 +165,7 @@ jobs:
         with:
           name: e2e-smoke-debug
           path: |
-            ${{ runner.temp }}/gunicorn.log
+            /tmp/naf-e2e-*/*.log
             ${{ runner.temp }}/mailpit-messages.json
             tmp/ui-screenshots
           if-no-files-found: ignore
