@@ -251,13 +251,9 @@ def validate_ip_range(ip_range: str) -> bool:
             # Validate numeric octets are in range
             parts = ip_range.split('.')
             for part in parts:
-                if part != '*':
-                    try:
-                        num = int(part)
-                        if num < 0 or num > 255:
-                            return False
-                    except ValueError:
-                        return False
+                # the pattern admits only 1-3 digits or '*', so int() cannot fail here
+                if part != '*' and int(part) > 255:
+                    return False
             return True
         
         # IPv6 wildcard pattern
@@ -397,67 +393,6 @@ def get_current_directory_info() -> dict:
         'script_dir': os.path.dirname(os.path.abspath(__file__)),
         'home': os.path.expanduser('~'),
     }
-
-
-def get_mock_netcup_client():
-    """
-    Return a mock Netcup client for demo/testing purposes.
-    
-    This client provides fake DNS data so the client portal can display
-    properly even without real Netcup API configuration.
-    """
-    class MockNetcupClient:
-        """Mock Netcup API client with demo data"""
-        
-        def info_dns_zone(self, domain: str):
-            """Return mock DNS zone info"""
-            return {
-                'name': domain,
-                'ttl': '86400',
-                'serial': '2024112401',
-                'refresh': '28800',
-                'retry': '7200',
-                'expire': '1209600',
-                'dnssecstatus': False
-            }
-        
-        def info_dns_records(self, domain: str):
-            """Return mock DNS records"""
-            return [
-                {
-                    'id': '1',
-                    'hostname': '@',
-                    'type': 'A',
-                    'priority': '',
-                    'destination': '192.0.2.1',
-                    'deleterecord': False,
-                    'state': 'yes'
-                },
-                {
-                    'id': '2',
-                    'hostname': 'www',
-                    'type': 'A',
-                    'priority': '',
-                    'destination': '192.0.2.1',
-                    'deleterecord': False,
-                    'state': 'yes'
-                },
-                {
-                    'id': '3',
-                    'hostname': '@',
-                    'type': 'MX',
-                    'priority': '10',
-                    'destination': 'mail.' + domain,
-                    'deleterecord': False,
-                    'state': 'yes'
-                }
-            ]
-        
-        def update_dns_records(self, domain: str, records: list):
-            """Mock update DNS records"""
-            return {'status': 'success', 'updated': len(records)}
-    
-    return MockNetcupClient()
 
 
 @lru_cache(maxsize=1)

@@ -459,11 +459,8 @@ def log_activity(
     Includes error_code and severity for security analytics.
     """
     # Determine severity
-    if severity is None:
-        if error_code:
-            severity = ERROR_SEVERITY.get(error_code, 'medium')
-        elif status == 'success':
-            severity = None  # No severity for successful operations
+    if severity is None and error_code:
+        severity = ERROR_SEVERITY.get(error_code, 'medium')  # no severity without an error code
     
     # Determine source IP (required field)
     actual_source_ip = source_ip or request.remote_addr or 'unknown'

@@ -196,6 +196,11 @@ def test_fs_access_home_included_or_skipped(tmp_path, monkeypatch):
 
 
 # ------------------------------------------------------------- validate_ip_range
+@pytest.mark.parametrize("value,expected", [("255.*.0.1", True), ("*.*.*.256", False), ("300.*.1.1", False)])
+def test_validate_ip_range_wildcard_octet_bounds(value, expected):
+    assert utils.validate_ip_range(value) is expected
+
+
 @pytest.mark.parametrize("value,expected", [
     ("192.168.1.*", True), ("*.*.*.*", True), ("10.*.0.1", True),
     ("300.1.1.*", False),        # octet out of range
@@ -270,17 +275,6 @@ def test_get_current_directory_info(tmp_path, monkeypatch):
     assert info["cwd"] == str(tmp_path)
     assert os.path.isfile(os.path.join(info["script_dir"], "utils.py"))
     assert info["home"] == os.path.expanduser("~")
-
-
-# ------------------------------------------------------------- mock netcup client
-def test_mock_netcup_client_shapes():
-    client = utils.get_mock_netcup_client()
-    zone = client.info_dns_zone("example.org")
-    assert zone["name"] == "example.org"
-    recs = client.info_dns_records("example.org")
-    assert [r["id"] for r in recs] == ["1", "2", "3"]
-    assert next(r for r in recs if r["type"] == "MX")["destination"] == "mail.example.org"
-    assert client.update_dns_records("example.org", recs[:2]) == {"status": "success", "updated": 2}
 
 
 # ------------------------------------------------------------------ build info
