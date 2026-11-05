@@ -59,7 +59,12 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   race-free, in the database (`docs/CONFIGURATION_GUIDE.md`).
 - **Only the Passenger tarball ships an account**: the pre-set admin (`DEFAULT_ADMIN_*`) with
   `must_change_password`. The OCI image ships none; a fresh container needs an operator-supplied
-  bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start.
+  bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start
+  (the process exits non-zero; first-start initialization is serialized by a lock file, so
+  concurrent workers cannot race on it).
+- **Start-up errors are never shown to clients**: `passenger_wsgi` logs the traceback and
+  re-raises; there is no stand-in WSGI app rendering the exception text (which could contain row
+  values such as an email or a password hash).
   The database is the only credential store: no password is copied into state files.
 - **`.env.defaults` never ships** (it documents the pre-set admin password and holds test
   fixtures). Shipped trees carry `app-defaults.env`, the runtime-only subset

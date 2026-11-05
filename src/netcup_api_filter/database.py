@@ -85,7 +85,11 @@ def init_db(app):
     
     db.init_app(app)
 
-    with app.app_context():
+    # Exactly one process initializes a fresh database (gunicorn workers, Passenger
+    # processes and the ciu hook's CLI run init_db concurrently): bootstrap/init_lock.py.
+    from .bootstrap.init_lock import init_lock
+
+    with init_lock(db_path), app.app_context():
         # create_all() only creates missing *tables*; run_lightweight_migrations()
         # reconciles additive column/index changes so a deployment that keeps its
         # database across an upgrade doesn't crash with 'no such column'.

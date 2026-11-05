@@ -628,60 +628,16 @@ try:
     # WSGI application
     application = app
 
-except ImportError as e:
-    error_msg = str(e)
-    logger.error(f"Failed to import required module: {error_msg}", exc_info=True)
-    logger.error(f"Python path: {sys.path[:5]}")
-    
-    def application(environ, start_response):
-        status = '500 Internal Server Error'
-        response_headers = [('Content-type', 'text/html; charset=utf-8')]
-        start_response(status, response_headers)
-        
-        error_html = f"""
-        <html>
-        <head><title>Application Error</title></head>
-        <body>
-            <h1>Application Failed to Start</h1>
-            <h2>Import Error</h2>
-            <p><strong>Error:</strong> {error_msg}</p>
-            <h3>Troubleshooting Steps:</h3>
-            <ol>
-                <li>Verify all files were uploaded (especially vendor/ directory)</li>
-                <li>Check that Passenger App Root points to this directory</li>
-                <li>Ensure Python version is 3.11 or higher</li>
-                <li>Review error logs for more details</li>
-            </ol>
-            <h3>Python Path (first 5):</h3>
-            <pre>{sys.path[:5]}</pre>
-            <h3>Application Directory:</h3>
-            <pre>{app_root}</pre>
-        </body>
-        </html>
-        """
-        return [error_html.encode('utf-8')]
-
-except Exception as e:
-    error_msg = str(e)
-    logger.error(f"Failed to start application: {error_msg}", exc_info=True)
-    
-    def application(environ, start_response):
-        status = '500 Internal Server Error'
-        response_headers = [('Content-type', 'text/html; charset=utf-8')]
-        start_response(status, response_headers)
-        
-        error_html = f"""
-        <html>
-        <head><title>Application Error</title></head>
-        <body>
-            <h1>Application Failed to Start</h1>
-            <p><strong>Error:</strong> {error_msg}</p>
-            <h3>Application Directory:</h3>
-            <pre>{app_root}</pre>
-        </body>
-        </html>
-        """
-        return [error_html.encode('utf-8')]
+except Exception:
+    # Fail fast (review findings #1/#2): a start-up failure (bad/missing bootstrap
+    # config, unreadable DB, missing dependency) must stop this process instead of
+    # serving a stand-in WSGI app. gunicorn then reports "Worker failed to boot" and
+    # exits non-zero (a container restart policy or the operator sees it); Passenger
+    # shows its own generic error page. The details go to the log only — never into an
+    # HTTP response (an IntegrityError's text can contain row values).
+    logger.critical("Netcup API Filter failed to start; see the traceback above/below", exc_info=True)
+    logger.critical(f"Python path (first 5): {sys.path[:5]}; application directory: {app_root}")
+    raise
 
 if __name__ == "__main__":
     debug_mode = os.environ.get('FLASK_DEBUG', '').lower() == 'true'

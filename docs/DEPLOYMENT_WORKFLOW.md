@@ -57,7 +57,8 @@ build/test-only key, rendered by `netcup_api_filter.config_defaults.write_shippe
   staging steps.
 - **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
   and `VOLUME /data`; no database and no account. The first start creates the database through the
-  normal `init_db` path and **fails fast** unless the first admin is supplied:
+  normal `init_db` path (serialized across workers by `<db>.init.lock`) and **fails fast** — gunicorn
+  exits non-zero with "Worker failed to boot", the error is in the log only — unless the first admin is supplied:
   `NAF_BOOTSTRAP_ADMIN_USERNAME`, `NAF_BOOTSTRAP_ADMIN_EMAIL` and `NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE`
   (a mounted secret; or an `app-config.toml` admin). Also mount `SECRET_KEY_FILE` (otherwise the app
   persists a generated key in the database) and keep `/data` on a persistent volume so the database

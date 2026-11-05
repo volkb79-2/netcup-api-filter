@@ -21,7 +21,7 @@
 # The image ships NO accounts, NO .env.defaults and NO secrets. It ships app-defaults.env
 # (the runtime-only defaults catalog, generated below). State lives in the /data volume:
 # NETCUP_FILTER_DB_PATH=/data/netcup_filter.db. The first boot creates that database through
-# the app's normal init_db path, which FAILS FAST unless the operator supplies the first admin
+# the app's normal init_db path, which FAILS FAST (gunicorn exits non-zero: "Worker failed to boot") unless the operator supplies the first admin
 # (NAF_BOOTSTRAP_ADMIN_USERNAME, NAF_BOOTSTRAP_ADMIN_EMAIL and NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE,
 # or an app-config.toml admin). SECRET_KEY comes from SECRET_KEY_FILE / SECRET_KEY, else the
 # app persists a generated one in the database. Netcup credentials (NETCUP_CUSTOMER_ID/

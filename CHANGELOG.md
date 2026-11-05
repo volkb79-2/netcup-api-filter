@@ -13,6 +13,13 @@
 
 ### Security
 
+- **Fixed (review #1/#2):** a fresh database could be initialized by several gunicorn workers
+  at once (check-then-insert races on the bootstrap admin, ~1/N requests failing), and any start-up
+  error was swallowed into a stand-in WSGI app that rendered the exception text to clients (an
+  `IntegrityError` can include row values). Initialization now runs under an exclusive lock file
+  (`<db>.init.lock`, `NAF_INIT_LOCK_TIMEOUT_SECONDS`) in every process, and a failed start re-raises:
+  gunicorn exits non-zero ("Worker failed to boot"); details are logged only.
+
 - **One database initializer, no published secrets** (credentials/test-setup plan, S2):
   `bootstrap.instance.init_instance()` is the only seeder (tarball build, local golden DB, app
   start, ciu `post_compose` hook via `python -m netcup_api_filter.bootstrap init`). The tarball

@@ -61,12 +61,14 @@ def main(argv: list[str] | None = None) -> int:
         print("error: NETCUP_FILTER_DB_PATH is not set (the app's database path)", file=sys.stderr)
         return 2
 
+    from .init_lock import InitLockTimeout, init_lock
+
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     database.db.init_app(app)
     try:
-        with app.app_context():
+        with init_lock(db_path), app.app_context():
             spec = configured_admin_spec(os.environ.get("NETCUP_FILTER_APP_ROOT"))
             if args.enforce_admin and spec is None:
                 raise BootstrapAdminError("--enforce-admin needs a configured bootstrap admin")
@@ -78,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
                 if Account.query.filter_by(is_admin=1).first() is not None:
                     spec = None
             report = init_instance(admin=spec, enforce_admin=args.enforce_admin, mock_email=_mock_email(args))
-    except (BootstrapAdminError, ValueError) as exc:
+    except (BootstrapAdminError, InitLockTimeout, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

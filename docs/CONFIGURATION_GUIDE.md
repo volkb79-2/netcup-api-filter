@@ -62,6 +62,16 @@ command `python -m netcup_api_filter.bootstrap init --enforce-admin` (not used b
 self-registration rules (the shipped default is the short `admin`). A new bootstrap admin has no 2FA
 method yet: email 2FA is enabled once the admin confirms an email (forced change) or configures SMTP.
 
+**First start is serialized and fatal on error.** Every process that opens the database
+(gunicorn workers — `preload_app` is off —, Passenger processes, the hook's CLI) runs the
+initializer under an exclusive `flock` on `<db>.init.lock` (`bootstrap/init_lock.py`): exactly one
+initializes a fresh database, the others wait (at most `NAF_INIT_LOCK_TIMEOUT_SECONDS`) and then
+find it initialized. If initialization fails (no bootstrap admin configured, unreadable database,
+lock timeout, an `app-config.toml` that cannot be claimed), `passenger_wsgi` re-raises after
+logging the traceback: under gunicorn the worker fails to boot and the master exits non-zero
+("Worker failed to boot"), so a container stops (or restarts) visibly; Passenger shows its own
+generic error page. No error text is ever rendered into an HTTP response.
+
 **SECRET_KEY** (sessions, CSRF): `SECRET_KEY_FILE` (mounted secret) or `SECRET_KEY` (not both,
 at least 16 characters). Unset, the app creates a random key **once** in `settings.secret_key`
 (`INSERT OR IGNORE`, so all gunicorn workers agree) and reuses it; `scripts/activate.py` carries
