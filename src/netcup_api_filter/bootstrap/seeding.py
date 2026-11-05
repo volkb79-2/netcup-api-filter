@@ -324,9 +324,16 @@ def seed_mock_email_config(*, smtp_host: str, smtp_port: int, from_email: str, a
     configuration, see bootstrap.instance.MockEmail). Fields are stored with both
     internal names (smtp_server, sender_email) and HTML form names (smtp_host,
     from_email) for template compatibility.
+
+    Create-only (review #7): an existing ``email_config`` row is never touched, so a re-run
+    (every ``ciu up`` runs the init hook) keeps SMTP settings changed in the admin UI.
     """
     from ..models import Settings
     import json
+
+    if Settings.query.filter_by(key="email_config").first() is not None:
+        logger.info("Email config already present; left unchanged (create-only)")
+        return
 
     email_config = {
         # Internal field names (used by email_notifier)
@@ -350,11 +357,7 @@ def seed_mock_email_config(*, smtp_host: str, smtp_port: int, from_email: str, a
         "notify_security": True,
     }
 
-    setting = Settings.query.filter_by(key="email_config").first()
-    if not setting:
-        setting = Settings(key="email_config")
-        db.session.add(setting)
-    setting.value = json.dumps(email_config)
+    db.session.add(Settings(key="email_config", value=json.dumps(email_config)))
     db.session.commit()
     logger.info(f"Seeded email config for mock mode: {smtp_host}:{smtp_port} from {from_email}")
 

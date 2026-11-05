@@ -460,3 +460,25 @@ def test_existing_database_with_only_deactivated_admins_fails(bare_app):
     database.db.session.commit()
     with pytest.raises(BootstrapAdminError, match="No active administrator"):
         init_instance(admin=None)
+
+
+# --- review #7: the mock email config is created once, never overwritten ------
+
+def test_mock_email_config_is_create_only(bare_app):
+    import json
+
+    from netcup_api_filter.bootstrap import MockEmail
+    from netcup_api_filter.models import Settings
+
+    mock = MockEmail(smtp_host="mailpit", smtp_port=1025, from_email="naf@example.com",
+                     admin_email="admin@example.com")
+    init_instance(admin=_spec(), mock_email=mock)
+    row = Settings.query.filter_by(key="email_config").one()
+    changed = dict(json.loads(row.value), smtp_host="smtp.operator.example", smtp_server="smtp.operator.example")
+    row.value = json.dumps(changed)  # what the admin UI does
+    database.db.session.commit()
+
+    init_instance(admin=None, mock_email=mock)  # the hook on the next `ciu up`
+    stored = json.loads(Settings.query.filter_by(key="email_config").one().value)
+    assert stored["smtp_host"] == "smtp.operator.example"
+    assert stored["smtp_server"] == "smtp.operator.example"

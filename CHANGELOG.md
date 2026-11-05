@@ -13,6 +13,9 @@
 
 ### Security
 
+- **Fixed (review #7):** every `ciu up` of app-local re-wrote the Mailpit `email_config`,
+  resetting SMTP settings changed in the admin UI. The mock email config is now create-only.
+
 - **Fixed (review #5):** `app-defaults.env` shipped `SECRET_KEY=local-dev-secret-change-me` (and
   every other non-test key, e.g. `TELEGRAM_BOT_USERNAME`, `POWERDNS_SOA`). The dev `SECRET_KEY` line
   is deleted and the shipped catalog is now an allowlist (`config_defaults.RUNTIME_DEFAULT_KEYS`) that
