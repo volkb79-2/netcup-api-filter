@@ -92,9 +92,44 @@ def advertise_host() -> str:
 
 
 def _free_port() -> int:
+    """A currently free port. It is released before gunicorn binds it, so another process can
+    take it in between: app_instance retries on a bind failure (_PORT_ATTEMPTS)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("0.0.0.0", 0))
         return int(sock.getsockname()[1])
+
+
+_PORT_ATTEMPTS = 3
+_BIND_FAILURE_MARKERS = ("Address already in use", "Connection in use")
+
+
+class _PortTaken(E2EEnvironmentError):
+    """gunicorn could not bind the chosen port (it was taken after _free_port released it)."""
+
+
+def retire_shipped_admin(db_path: Path) -> None:
+    """Give the shipped admin of a session DB an unknown random password (review #14).
+
+    The session app listens on the shared pwmcp network; the documented admin/admin must not
+    work there. Only the dedicated forced-change test keeps it (keep_shipped_admin=True).
+    """
+    import bcrypt
+
+    from netcup_api_filter.config_defaults import require_default
+
+    unknown = secrets.token_urlsafe(32).encode()
+    password_hash = bcrypt.hashpw(unknown, bcrypt.gensalt()).decode()
+    conn = sqlite3.connect(db_path)
+    try:
+        changed = conn.execute(
+            "UPDATE accounts SET password_hash = ? WHERE username = ?",
+            (password_hash, require_default("DEFAULT_ADMIN_USERNAME")),
+        ).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    if changed != 1:
+        raise E2EEnvironmentError(f"shipped admin not found in {db_path} (golden DB not as built?)")
 
 
 def copy_golden_db(destination: Path) -> None:
@@ -148,6 +183,9 @@ def _wait_ready(proc: subprocess.Popen, port: int, log_path: Path) -> None:
     last_error = "no attempt"
     while time.monotonic() < deadline:
         if proc.poll() is not None:
+            tail = _tail(log_path)
+            if any(marker in tail for marker in _BIND_FAILURE_MARKERS):
+                raise _PortTaken(f"port {port} was taken before gunicorn bound it")
             raise E2EEnvironmentError(
                 f"e2e app exited with status {proc.returncode} before becoming ready; log tail:\n"
                 + _tail(log_path)
@@ -184,8 +222,14 @@ def _stop(proc: subprocess.Popen) -> None:
 
 
 @contextmanager
-def app_instance(prepare: Callable[[Path], T] | None = None) -> Iterator[tuple[AppInstance, T | None]]:
-    """Start a throwaway instance on a copy of the golden DB; yield ``(instance, prepare(db))``."""
+def app_instance(
+    prepare: Callable[[Path], T] | None = None, *, keep_shipped_admin: bool = False,
+) -> Iterator[tuple[AppInstance, T | None]]:
+    """Start a throwaway instance on a copy of the golden DB; yield ``(instance, prepare(db))``.
+
+    The shipped admin's documented password is replaced by an unknown one unless
+    ``keep_shipped_admin`` (only the forced first-login change test needs it).
+    """
     tree = deploy_dir()
     host = advertise_host()
     workdir = Path(tempfile.mkdtemp(prefix="naf-e2e-"))
@@ -194,9 +238,10 @@ def app_instance(prepare: Callable[[Path], T] | None = None) -> Iterator[tuple[A
     proc: subprocess.Popen | None = None
     try:
         copy_golden_db(db_path)
+        if not keep_shipped_admin:
+            retire_shipped_admin(db_path)
         prepared = prepare(db_path) if prepare is not None else None
 
-        port = _free_port()
         env = {key: value for key, value in os.environ.items() if not key.startswith("NAF_BOOTSTRAP_ADMIN_")}
         env.update({
             "NETCUP_FILTER_DB_PATH": str(db_path),
@@ -204,17 +249,27 @@ def app_instance(prepare: Callable[[Path], T] | None = None) -> Iterator[tuple[A
             "FLASK_ENV": "local_test",
             "FLASK_SESSION_COOKIE_SECURE": "false",
             "SECRET_KEY": secrets.token_hex(32),
-            "GUNICORN_BIND": f"0.0.0.0:{port}",
             "GUNICORN_WORKERS": _setting("E2E_APP_WORKERS"),
         })
         env.pop("SECRET_KEY_FILE", None)
-        with log_path.open("ab") as log:
-            proc = subprocess.Popen(
-                [sys.executable, "-m", "gunicorn", "-c", str(REPO_ROOT / "gunicorn.conf.py"),
-                 "passenger_wsgi:application"],
-                cwd=tree, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-            )
-        _wait_ready(proc, port, log_path)
+        for attempt in range(1, _PORT_ATTEMPTS + 1):
+            port = _free_port()
+            env["GUNICORN_BIND"] = f"0.0.0.0:{port}"
+            with log_path.open("ab") as log:
+                proc = subprocess.Popen(
+                    [sys.executable, "-m", "gunicorn", "-c", str(REPO_ROOT / "gunicorn.conf.py"),
+                     "passenger_wsgi:application"],
+                    cwd=tree, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                )
+            try:
+                _wait_ready(proc, port, log_path)
+                break
+            except _PortTaken:
+                _stop(proc)
+                proc = None
+                if attempt == _PORT_ATTEMPTS:
+                    raise E2EEnvironmentError(f"no free port after {_PORT_ATTEMPTS} attempts") from None
+                logger.warning("e2e app port %s was taken; retrying (%s/%s)", port, attempt, _PORT_ATTEMPTS)
         instance = AppInstance(f"http://{host}:{port}", db_path, workdir, log_path)
         logger.info("e2e app ready at %s (db %s)", instance.base_url, db_path)
         yield instance, prepared

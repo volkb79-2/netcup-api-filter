@@ -48,7 +48,7 @@ async def test_first_login_forces_password_change_on_a_fresh_install():
     shipped_password = require_default("DEFAULT_ADMIN_PASSWORD")
     chosen = new_password()
 
-    with app_instance() as (instance, _):
+    with app_instance(keep_shipped_admin=True) as (instance, _):
         assert _admin_row(instance.db_path, username)[0] == 1, "a fresh install must force the change"
         fresh = replace(settings.profile("primary"), base_url=instance.base_url)
         with settings.use_profile(fresh):

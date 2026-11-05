@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -46,28 +47,32 @@ def e2e_environment():
         except RemoteConfigError as exc:
             pytest.exit(f"remote e2e target misconfigured: {exc}", returncode=3)
         return
-    try:
-        context = app_instance(prepare=provision)
-        instance, personas = context.__enter__()
-    except E2EEnvironmentError as exc:
-        pytest.exit(f"e2e environment unavailable: {exc}", returncode=3)
-    if not os.environ.get("SCREENSHOT_DIR"):
-        from ui_tests.e2e_env import REPO_ROOT, _setting
-
-        os.environ["SCREENSHOT_DIR"] = str(REPO_ROOT / _setting("E2E_SCREENSHOT_DIR"))
-    os.makedirs(os.environ["SCREENSHOT_DIR"], exist_ok=True)
+    # ExitStack (review #14): whatever fails after the app started — binding, makedirs, a
+    # test-session error — the gunicorn process group is stopped and the work dir removed.
     previous_verify_db = os.environ.get("NAF_VERIFY_DB_PATH")
-    os.environ["NAF_VERIFY_DB_PATH"] = str(instance.db_path)
-    settings.bind_local(instance, personas)
-    try:
+    with contextlib.ExitStack() as stack:
+        try:
+            instance, personas = stack.enter_context(app_instance(prepare=provision))
+        except E2EEnvironmentError as exc:
+            stack.close()
+            pytest.exit(f"e2e environment unavailable: {exc}", returncode=3)
+        stack.callback(settings.unbind)
+        stack.callback(_restore_env, "NAF_VERIFY_DB_PATH", previous_verify_db)
+        if not os.environ.get("SCREENSHOT_DIR"):
+            from ui_tests.e2e_env import REPO_ROOT, _setting
+
+            os.environ["SCREENSHOT_DIR"] = str(REPO_ROOT / _setting("E2E_SCREENSHOT_DIR"))
+        os.makedirs(os.environ["SCREENSHOT_DIR"], exist_ok=True)
+        os.environ["NAF_VERIFY_DB_PATH"] = str(instance.db_path)
+        settings.bind_local(instance, personas)
         yield instance
-    finally:
-        settings.unbind()
-        if previous_verify_db is None:
-            os.environ.pop("NAF_VERIFY_DB_PATH", None)
-        else:
-            os.environ["NAF_VERIFY_DB_PATH"] = previous_verify_db
-        context.__exit__(None, None, None)
+
+
+def _restore_env(key: str, previous: str | None) -> None:
+    if previous is None:
+        os.environ.pop(key, None)
+    else:
+        os.environ[key] = previous
 
 
 def pytest_collection_modifyitems(config, items):
@@ -369,12 +374,6 @@ async def client_page_fullcontrol(browser_session, admin_page):
     # 2. Log in with the new client's token
     await test_client_login_with_token(browser_session, token, should_succeed=True, expected_client_id=client_data.client_id)
     return browser_session._page
-
-
-@pytest.fixture(scope="session")
-def base_url():
-    """Provide base URL for tests."""
-    return os.getenv("UI_BASE_URL", settings.base_url)
 
 
 # =========================================================================
