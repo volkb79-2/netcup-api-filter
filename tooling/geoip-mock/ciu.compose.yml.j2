@@ -26,8 +26,9 @@ services:
     command: >
       sh -c "pip install --no-cache-dir flask &&
              python -m flask run --host=0.0.0.0 --port={{ geoip_mock.port }}"
-    ports:
-      - "${GEOIP_MOCK_PORT:?GEOIP_MOCK_PORT must be set}:{{ geoip_mock.port }}"
+    # No host ports: peers reach this service by container name on the project network.
+    expose:
+      - "{{ geoip_mock.port }}"
     volumes:
       # HOST path (DooD) — see [geoip_mock.mounts].workspace. Mounts ui_tests/
       # (contains mock_geoip_server.py), read-only.

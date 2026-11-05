@@ -21,9 +21,10 @@ services:
     pull_policy: always
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ mailpit.name }}
     restart: unless-stopped
-    ports:
-      - "${MAILPIT_WEB_PORT:?MAILPIT_WEB_PORT must be set}:{{ mailpit.web_port }}"
-      - "${MAILPIT_SMTP_PORT:?MAILPIT_SMTP_PORT must be set}:{{ mailpit.smtp_port }}"
+    # No host ports: peers reach this service by container name on the project network.
+    expose:
+      - "{{ mailpit.web_port }}"
+      - "{{ mailpit.smtp_port }}"
     environment:
       # Basic auth for web UI and API
       MP_UI_AUTH: "${MAILPIT_USERNAME:?MAILPIT_USERNAME must be set}:${MAILPIT_PASSWORD:?MAILPIT_PASSWORD must be set}"

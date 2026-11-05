@@ -24,8 +24,9 @@ services:
     command: >
       sh -c "pip install --no-cache-dir flask &&
              python -m flask run --host=0.0.0.0 --port={{ netcup_api_mock.port }}"
-    ports:
-      - "${NETCUP_MOCK_PORT:?NETCUP_MOCK_PORT must be set}:{{ netcup_api_mock.port }}"
+    # No host ports: peers reach this service by container name on the project network.
+    expose:
+      - "{{ netcup_api_mock.port }}"
     volumes:
       # Mount ui_tests directory (contains mock_netcup_api.py).
       # HOST path (DooD): the docker socket is the host's, so -v sources are host paths.

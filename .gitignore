@@ -173,16 +173,6 @@ deploy-py*.zip
 deploy-py*.zip.sha256
 dist/
 
-# Local proxy runtime assets (legacy - replaced by reverse-proxy)
-tooling/local_proxy/proxy.env
-tooling/local_proxy/nginx.conf
-tooling/local_proxy/conf.d/
-tooling/local_proxy/certs/
-
-# Reverse proxy runtime assets (dynamically generated from template)
-tooling/reverse-proxy/conf.d/
-tooling/reverse-proxy/nginx.conf
-
 # Local workspace temp files
 tmp/*
 !tmp/restart.txt
