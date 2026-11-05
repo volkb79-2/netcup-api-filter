@@ -5,7 +5,7 @@ Implements DNSBackend interface for Netcup's Customer Control Panel API.
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from .base import BackendError, DNSBackend
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class NetcupBackend(DNSBackend):
     """Netcup CCP API backend implementation."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize Netcup backend.
         
         Required config keys:
@@ -50,7 +50,7 @@ class NetcupBackend(DNSBackend):
             logger.error(f"Netcup connection test failed: {e}")
             return False, str(e)
     
-    def list_zones(self) -> List[str]:
+    def list_zones(self) -> list[str]:
         """List zones - Netcup doesn't support zone enumeration.
         
         Netcup API requires knowing the domain name beforehand,
@@ -71,7 +71,7 @@ class NetcupBackend(DNSBackend):
         except Exception as e:
             return False, f"Cannot access zone {zone}: {e}"
     
-    def list_records(self, zone: str) -> List[Dict[str, Any]]:
+    def list_records(self, zone: str) -> list[dict[str, Any]]:
         """List all DNS records for a zone."""
         try:
             self.client.login()
@@ -84,7 +84,7 @@ class NetcupBackend(DNSBackend):
             logger.error(f"Failed to list records for {zone}: {e}")
             raise BackendError(f"Failed to list records: {e}")
     
-    def create_record(self, zone: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    def create_record(self, zone: str, record: dict[str, Any]) -> dict[str, Any]:
         """Create a DNS record.
         
         Netcup API works by submitting the full record set,
@@ -117,7 +117,7 @@ class NetcupBackend(DNSBackend):
             logger.error(f"Failed to create record in {zone}: {e}")
             raise BackendError(f"Failed to create record: {e}")
     
-    def update_record(self, zone: str, record_id: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    def update_record(self, zone: str, record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         """Update a DNS record.
         
         Netcup uses record IDs in response but also matches by hostname+type.
@@ -181,7 +181,7 @@ class NetcupBackend(DNSBackend):
             logger.error(f"Failed to delete record in {zone}: {e}")
             raise BackendError(f"Failed to delete record: {e}")
     
-    def get_zone_info(self, zone: str) -> Dict[str, Any]:
+    def get_zone_info(self, zone: str) -> dict[str, Any]:
         """Get zone information."""
         try:
             self.client.login()
@@ -193,7 +193,7 @@ class NetcupBackend(DNSBackend):
             logger.error(f"Failed to get zone info for {zone}: {e}")
             raise BackendError(f"Failed to get zone info: {e}")
     
-    def normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Normalize Netcup record format."""
         return {
             'id': str(record.get('id', '')),

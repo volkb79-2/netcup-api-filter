@@ -390,7 +390,7 @@ docker exec \
   pytest ui_tests/tests/test_2fa_security.py -v --timeout=60
 
 # Or use the test script with webhosting flag (to be created)
-./run-2fa-security-tests.sh --webhosting
+DEPLOYMENT_TARGET=webhosting run-gate e2e --worktree "$PWD"   # 2FA tests: add pytest -k 2fa via the lane
 ```
 
 ---

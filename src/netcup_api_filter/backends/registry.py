@@ -7,24 +7,27 @@ and resolve backends for realms.
 
 import json
 import logging
-from typing import Any, Dict, Type
-
-logger = logging.getLogger(__name__)
+from typing import TYPE_CHECKING, Any
 
 # Import backend implementations
 from .base import BackendError, DNSBackend
 from .netcup import NetcupBackend
 from .powerdns import PowerDNSBackend
 
+if TYPE_CHECKING:
+    from ..models import AccountRealm, BackendService
+
+logger = logging.getLogger(__name__)
+
 
 # Registry of available backend implementations
-BACKEND_REGISTRY: Dict[str, Type[DNSBackend]] = {
+BACKEND_REGISTRY: dict[str, type[DNSBackend]] = {
     'netcup': NetcupBackend,
     'powerdns': PowerDNSBackend,
 }
 
 
-def get_backend(provider_code: str, config: Dict[str, Any]) -> DNSBackend:
+def get_backend(provider_code: str, config: dict[str, Any]) -> DNSBackend:
     """Get backend instance by provider code and configuration.
     
     Args:
@@ -60,7 +63,7 @@ def get_backend_for_realm(realm: 'AccountRealm') -> DNSBackend:
         BackendError: If backend resolution fails or ownership mismatch
     """
     # Lazy import to avoid circular dependencies
-    from ..models import BackendProvider, BackendService, ManagedDomainRoot
+    from ..models import BackendService, ManagedDomainRoot
     
     # Case B: User-provided backend (BYOD)
     if realm.user_backend_id:
@@ -136,7 +139,7 @@ def instantiate_backend(service: 'BackendService') -> DNSBackend:
     return backend_class(config)
 
 
-def get_available_providers() -> Dict[str, Type[DNSBackend]]:
+def get_available_providers() -> dict[str, type[DNSBackend]]:
     """Get dict of available backend providers.
     
     Returns:
@@ -145,7 +148,7 @@ def get_available_providers() -> Dict[str, Type[DNSBackend]]:
     return BACKEND_REGISTRY.copy()
 
 
-def register_backend(provider_code: str, backend_class: Type[DNSBackend]) -> None:
+def register_backend(provider_code: str, backend_class: type[DNSBackend]) -> None:
     """Register a new backend implementation.
     
     Used for dynamically adding custom backends.

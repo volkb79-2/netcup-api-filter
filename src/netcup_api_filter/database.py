@@ -23,30 +23,19 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
-from .config_defaults import get_default, require_default
+from .config_defaults import get_default
 
 # Import all models to ensure they're registered with SQLAlchemy
 from .models import (
     Account,
     AccountRealm,
-    ActivityLog,
     APIToken,
     db,
     generate_token,
     generate_user_alias,
     hash_token,
-    RegistrationRequest,
     Settings,
     validate_username,
-    # Multi-backend models
-    BackendProvider,
-    BackendService,
-    ManagedDomainRoot,
-    DomainRootGrant,
-    OwnerTypeEnum,
-    VisibilityEnum,
-    TestStatusEnum,
-    GrantTypeEnum,
 )
 
 logger = logging.getLogger(__name__)

@@ -18,16 +18,14 @@ from __future__ import annotations
 
 import hmac
 import logging
-import os
 import secrets
 import string
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Any, NamedTuple, Optional
+from typing import NamedTuple
 
 from flask import g, redirect, request, session, url_for
 
-from .config_defaults import get_default
 from .models import (
     Account,
     AccountSession,
@@ -72,25 +70,25 @@ VERIFICATION_EXPIRY_MINUTES = 30
 class RegistrationResult(NamedTuple):
     """Result of registration attempt."""
     success: bool
-    request_id: Optional[int] = None
-    error: Optional[str] = None
-    field: Optional[str] = None  # Which field had error (for form validation)
+    request_id: int | None = None
+    error: str | None = None
+    field: str | None = None  # Which field had error (for form validation)
 
 
 class LoginResult(NamedTuple):
     """Result of login attempt."""
     success: bool
-    account: Optional[Account] = None
+    account: Account | None = None
     requires_2fa: bool = False
-    tfa_methods: Optional[list[str]] = None  # Available 2FA methods
-    error: Optional[str] = None
+    tfa_methods: list[str] | None = None  # Available 2FA methods
+    error: str | None = None
 
 
 class TwoFactorResult(NamedTuple):
     """Result of 2FA verification."""
     success: bool
-    account: Optional[Account] = None
-    error: Optional[str] = None
+    account: Account | None = None
+    error: str | None = None
 
 
 def generate_code(length: int = 6) -> str:
@@ -539,7 +537,7 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
                 username=account.username,
                 source_ip=source_ip,
                 success=False,
-                reason=f"Recovery code locked (rate limit)"
+                reason="Recovery code locked (rate limit)"
             )
             return TwoFactorResult(
                 success=False, 
@@ -738,7 +736,7 @@ def logout():
         logger.info(f"Logged out: {username}")
 
 
-def get_current_account() -> Optional[Account]:
+def get_current_account() -> Account | None:
     """Get currently logged-in account from session."""
     account_id = session.get(SESSION_KEY_USER_ID)
     if not account_id:

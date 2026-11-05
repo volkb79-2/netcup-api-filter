@@ -23,7 +23,7 @@ Netcup issues a single credential set with full control over every DNS record, d
 
 ## Quick Start - Installation
 
-Initial setup flow for a freshly released Passenger tarball (select `py39` or `py311`):
+Initial setup flow for a freshly released Passenger tarball (`py311`):
 
 1. Activate the selected tarball → Access site
 2. Login: admin/admin → Forced password change
@@ -39,8 +39,8 @@ Initial setup flow for a freshly released Passenger tarball (select `py39` or `p
 Local development/testing and webhosting release/deploy are intentionally separate:
 
 ```
-run-local-tests.sh → build_deployment.py --local → deploy-local/ → ui_tests
-cmru release → py3.14 OCI image + Passenger py39/py311 tarball variants
+run-gate local-build → build_deployment.py --local → deploy-local/ → ui_tests
+cmru release → py3.14 OCI image + Passenger py311 tarball variant
 ciu up --host webhoster --thin -- --variant py311 → Passenger activation
 ```
 
@@ -52,10 +52,10 @@ git clone git@github.com:user/netcup-api-filter.git
 cd netcup-api-filter
 
 # 2. Build deploy-local/ and run the local UI suite
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 
 # Or start the local mock services as part of the run
-./run-local-tests.sh --with-mocks
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)
 
 # 3. Access the deployment
 echo "Admin UI:    https://${PUBLIC_FQDN}/admin/login"
@@ -204,7 +204,7 @@ pytest ui_tests/tests -m roundtrip             # backend-truth round-trip tests
 pytest ui_tests/tests -m security              # auth, 2FA, recovery, allowlist
 pytest ui_tests/tests -m ci_smoke              # 93-test CI subset
 pytest ui_tests/tests -m upstream_resilience   # bad upstream-response paths
-./run-local-tests.sh --with-mocks              # full local run: build + deploy + all tests
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)              # full local run: build + deploy + all tests
 ```
 
 The `ui_tests/tests/` directory uses a **bucket schema**: `smoke/ roundtrip/ security/ features/

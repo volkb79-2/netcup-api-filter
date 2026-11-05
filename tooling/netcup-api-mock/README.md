@@ -23,7 +23,7 @@ docker stop naf-dev-mock-netcup-api
 ```
 
 Normally this is not brought up standalone: it is a peer of the gating test-runner and
-the other mock stacks. Use the ciu workflow above or `run-local-tests.sh --with-mocks`.
+the other mock stacks. Use the ciu workflow above or `run-gate local-build --with-mocks`.
 
 ## Access
 

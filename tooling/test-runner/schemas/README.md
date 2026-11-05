@@ -19,7 +19,7 @@ Deliberate, not automatic — a schema bump can invalidate existing handoffs:
 
     cp /workspaces/vbpub/nyxloom/schemas/handoff-frontmatter.schema.json \
        tooling/test-runner/schemas/
-    ./tooling/test-runner/testing-exec.sh trove   # re-validate every handoff
+    run-gate trove --worktree "$PWD"
 
 Once nyxloomd mounts this repo, `nyxloom lint` becomes authoritative and this copy is
 only a pre-flight convenience.

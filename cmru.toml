@@ -1,7 +1,7 @@
 # cmru.toml — CMRU project config for netcup-api-filter (naf)
 # =============================================================================
 # Phase 2 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
-# one tagged release publishes the py3.14 OCI image plus cp39/cp311 Passenger
+# one tagged release publishes the py3.14 OCI image plus cp311 Passenger
 # tarball variants.  The tarball builder is deliberately project-local: it is the
 # only naf-specific part of the release flow.
 #
@@ -30,17 +30,12 @@ strategy = "scm"
 
 [project.naf.oci]
 bake_file = "docker-bake.hcl"
-target    = "py314"
+target    = "release"  # bake group: py311 + py314
 
-# CMRU-FEAT: one tagged release, two ABI-specific assets.  The build script
+# CMRU-FEAT: one tagged release, ABI-specific assets.  The build script
 # reads these build args from this config and invokes the matching INFRA-3
 # build image for each one; cmru's landed variant publisher gives them their
 # canonical <tag>-<variant>.tar.xz release names.
-[[project.naf.variants]]
-name      = "py39"
-build_arg = "PYTHON_VERSION=3.9"
-label     = "Passenger Python 3.9"
-
 [[project.naf.variants]]
 name      = "py311"
 build_arg = "PYTHON_VERSION=3.11"

@@ -12,9 +12,9 @@ first; the July-2026 review that seeded the backlog is `docs/deprecated/FOLLOWUP
 A Flask app that fronts DNS-provider APIs (netcup today; PowerDNS/BYOD in progress) with
 **scoped, audited** token + account authorization, deployed to a Passenger shared webhoster and
 (newly) self-hostable as a container. Settings live in the `settings` DB table; the gate is
-`tooling/test-runner/testing-exec.sh` (the only ship signal).
+`run-gate gate` (the only ship signal).
 
-- **Gate: green — `unit` 441 × {py3.11, py3.9, py3.14}** (2026-07-21).
+- **Gate: converted to run-gate + assay (2026-11-05), not yet re-run** — last green: `unit` 441 × {py3.11, py3.9, py3.14}; now py3.11 + py3.14 (2026-07-21). Targets are now py3.11 + py3.14.
 - **Version: `naf-v0.1.0`** (cmru `scm`, first tag pending).
 
 ## Release & infra model (current)
@@ -24,7 +24,7 @@ Three tools, clean split (see `AGENTS.md` → "Build, deploy, run"):
 | Concern | Tool | Detail |
 |---|---|---|
 | Local dev/test | `run-local-tests.sh` → `build_deployment.py --local` | builds `deploy-local/`, drives `ui_tests/` |
-| Release (publish) | **cmru** (`cmru.toml`) | py3.14 OCI image + cp39/cp311 Passenger tarball variants + variant installer, `scm` versioned |
+| Release (publish) | **cmru** (`cmru.toml`) | py3.11+py3.14 OCI images + cp311 Passenger tarball variant + variant installer, `scm` versioned |
 | Deploy (webhoster) | **ciu** `up --host --thin` | pushes a tarball, runs `scripts/activate.py` (extract → `SECRET_KEY` preserve → touch `tmp/restart.txt` → health-probe) |
 | Dev infra | **ciu** stacks | containerized app (`app-local`), pwmcp browser (e2e), mailpit/geoip/netcup mocks, PowerDNS, host-traefik edge, cgroups+KSM governance |
 
@@ -52,7 +52,7 @@ Done handoffs are in [`archive/`](archive/); only P06 remains open in [`handoffs
 - **Auth hardening (B-AUTH — whole section):** TOTP lockout, XFF spoofing, reset/invite policy,
   dead-auth removal (P07/P08/P09).
 - **Config (M3):** settings type round-trip + SMTP key (P04); FQDN guard (P05 O1).
-- **Infra + release:** ciu adoption, containerized build (py3.9/3.11/3.14 gate), host-traefik
+- **Infra + release:** ciu adoption, containerized build (py3.11/3.14 gate), host-traefik
   edge, pwmcp e2e container, KSM, and the full cmru release model (P2/P3/P4 — `deploy.sh`
   retired). B-BUILD demo-seed fix.
 
@@ -80,7 +80,7 @@ Live docs are current. **B-INFRA-DOCS** (reverse-proxy → host-traefik) and **B
 `ui_tests/`, and `.vscode/` markdown; `docs/CERTIFICATE_MOUNTING.md` is now a "removed in naf-I04"
 stub. Only historical `docs/deprecated/` and `docs/plans/testing-{hardening,overhaul}/` keep the
 old terms **by design** (read for reasoning, never as current status). **Remaining (non-doc):**
-`tooling/run-ui-validation.sh` still drives the old nginx flow — delete or rewrite against
+(`tooling/run-ui-validation.sh` was deleted 2026-11-05; the e2e lane replaces it.) Historically it drove the old nginx flow — superseded by
 traefik/ciu (tracked in backlog B-INFRA-DOCS).
 
 ## Decisions still open

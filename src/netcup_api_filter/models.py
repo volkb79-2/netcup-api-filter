@@ -23,7 +23,7 @@ import os
 import re
 import secrets
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import bcrypt
 from flask_sqlalchemy import SQLAlchemy
@@ -874,7 +874,7 @@ class Settings(db.Model):
         return default
     
     @classmethod
-    def set(cls, key: str, value: Any) -> 'Settings':
+    def set(cls, key: str, value: Any) -> Settings:
         """Set a settings value by key (creates or updates)."""
         setting = cls.query.filter_by(key=key).first()
         if setting:

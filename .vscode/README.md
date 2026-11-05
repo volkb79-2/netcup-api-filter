@@ -15,5 +15,4 @@ See `tooling/PLAYWRIGHT-TESTING.md` for the full guide.
 
 ## Deploy-test loop
 
-`.vscode/deploy-test-fix-loop.sh` — automated deploy → test → fail-fast cycle for
-agent-driven iteration.  Requires `LIVE_URL` and `KEEP_PLAYWRIGHT_RUNNING` env vars.
+Retired (cockpit-run script removed 2026-11-05): use the run-gate lanes in `run-gate.toml`.

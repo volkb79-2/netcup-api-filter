@@ -5,19 +5,19 @@ test deployment, and do not build or copy Passenger artifacts by hand.
 
 ## Local development and UI testing
 
-`run-local-tests.sh` is the local entry point. It runs `build_deployment.py --local`, extracts
+`run-gate local-build` is the local entry point. It runs `build_deployment.py --local`, extracts
 the resulting package into `deploy-local/`, starts the local Flask manager, and drives
 `ui_tests/` against that deployment.
 
 ```bash
 # Build deploy-local/ and run the UI suite.
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 
 # Also start Mailpit, GeoIP, and Netcup API mocks.
-./run-local-tests.sh --with-mocks
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)
 
 # Reuse an existing deploy-local/ build.
-./run-local-tests.sh --skip-build
+run-gate local-build (see run-gate.toml)
 ```
 
 `build_deployment.py --local` is the only builder of `deploy-local/`. Live test and coverage
@@ -32,7 +32,7 @@ and the individual tooling READMEs for TLS and service-stack operation.
 `cmru release` creates a source-control-versioned release and publishes all release artifacts:
 
 - the Python 3.14 OCI image for self-hosting;
-- ABI-matched Passenger tarballs for Python 3.9 (`py39`) and Python 3.11 (`py311`); and
+- an ABI-matched Passenger tarball for Python 3.11 (`py311`); and
 - the variant-selecting installer.
 
 ```bash
@@ -40,7 +40,7 @@ cmru release
 ```
 
 CMRU invokes `scripts/build_webhosting_tarball.py` for the Passenger assets. That builder uses
-`tooling/test-runner/testing-exec.sh build <version>` so dependency vendoring and database
+`docker exec` into the matching ciu runner (`naf-dev-test-runner-py311`) so dependency vendoring and database
 seeding run under the target interpreter. It is separate from the local
 `build_deployment.py --local` build.
 
@@ -70,11 +70,11 @@ matches the retired deployment behaviour.
 The ship gate runs the unit suite under all shipped Python versions:
 
 ```bash
-./tooling/test-runner/testing-exec.sh unit  # Python 3.9, 3.11, and 3.14
+run-gate gate --worktree "$PWD"
 ```
 
-Use `./tooling/test-runner/testing-exec.sh e2e` for the external Playwright path and
-`./tooling/test-runner/testing-exec.sh trove` for nyxloom handoff linting.
+Use `run-gate e2e` for the external Playwright path and
+`run-gate trove` for nyxloom handoff linting.
 
 ## Related documentation
 

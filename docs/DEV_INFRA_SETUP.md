@@ -109,7 +109,7 @@ curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" https://naf.gstammtisch.dchive.de/
 dig +short NS managed.vxxu.de @152.53.179.117
 dig +short A test.managed.vxxu.de @152.53.179.117    # once a record exists
 # gate still green
-./tooling/test-runner/testing-exec.sh unit           # 3.11 + 3.9
+run-gate gate --worktree "$PWD"
 ```
 
 ---
@@ -121,7 +121,7 @@ dig +short A test.managed.vxxu.de @152.53.179.117    # once a record exists
   turns a mismatch into a loud `[S1.2]` error instead of silently operating on the wrong
   repo (ciu ≥ the CIU-11 fix).
 - **The gate image doesn't rebuild on dependency drift** (`ensure_image` builds only if
-  missing) — `docker rmi netcup-api-filter/test-runner:{local,py39}` after changing
+  missing) — `docker rmi netcup-api-filter/test-runner:{py311,py314}` after changing
   requirements, or the gate proves a stale closure (backlog B-INFRA).
 - Committed ciu sources are `.j2` templates only; `ciu.toml` / `ciu.compose.yml` / `ciu.env`
   / `.ciu/` are rendered and gitignored — never edit the rendered files.

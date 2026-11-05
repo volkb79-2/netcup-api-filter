@@ -12,7 +12,6 @@ import re
 import json
 from datetime import datetime
 from functools import lru_cache
-from typing import List, Dict
 import string
 
 logger = logging.getLogger(__name__)
@@ -138,7 +137,7 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def test_filesystem_access() -> List[Dict[str, str]]:
+def test_filesystem_access() -> list[dict[str, str]]:
     """
     Test filesystem access for various paths
     
@@ -176,16 +175,16 @@ def test_filesystem_access() -> List[Dict[str, str]]:
             
             # Build status message
             if record['readable'] and record['writable']:
-                record['message'] = f"Readable ✓ | Writable ✓"
+                record['message'] = "Readable ✓ | Writable ✓"
             elif record['writable']:
-                record['message'] = f"Writable ✓"
+                record['message'] = "Writable ✓"
             else:
-                record['message'] = f"Unknown access"
+                record['message'] = "Unknown access"
                 
         except Exception as exc:  # pragma: no cover - environment dependent
             # Still might be readable even if not writable
             if record['readable']:
-                record['message'] = f"Readable ✓ | Writable ✗"
+                record['message'] = "Readable ✓ | Writable ✗"
                 record['error'] = f"Write test failed: {exc}"
             else:
                 record['error'] = f"Not accessible: {exc}"
@@ -462,7 +461,7 @@ def get_mock_netcup_client():
 
 
 @lru_cache(maxsize=1)
-def get_build_info() -> Dict[str, str]:
+def get_build_info() -> dict[str, str]:
     """Return build metadata loaded from build_info.json if present."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     fallback = {
@@ -483,7 +482,7 @@ def get_build_info() -> Dict[str, str]:
             continue
         if os.path.exists(candidate):
             try:
-                with open(candidate, 'r', encoding='utf-8') as handle:
+                with open(candidate, encoding='utf-8') as handle:
                     data = json.load(handle)
                     if isinstance(data, dict):
                         return data

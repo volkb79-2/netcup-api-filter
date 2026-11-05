@@ -6,7 +6,7 @@ All DNS providers must implement this interface.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class DNSBackend(ABC):
     this interface to be usable as a backend service.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize backend with configuration.
         
         Args:
@@ -43,7 +43,7 @@ class DNSBackend(ABC):
         pass
     
     @abstractmethod
-    def list_zones(self) -> List[str]:
+    def list_zones(self) -> list[str]:
         """List all zones manageable by this backend.
         
         Used for admin UI to select available zones when
@@ -69,7 +69,7 @@ class DNSBackend(ABC):
         pass
     
     @abstractmethod
-    def list_records(self, zone: str) -> List[Dict[str, Any]]:
+    def list_records(self, zone: str) -> list[dict[str, Any]]:
         """List all DNS records for a zone.
         
         Args:
@@ -87,7 +87,7 @@ class DNSBackend(ABC):
         pass
     
     @abstractmethod
-    def create_record(self, zone: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    def create_record(self, zone: str, record: dict[str, Any]) -> dict[str, Any]:
         """Create a DNS record.
         
         Args:
@@ -103,7 +103,7 @@ class DNSBackend(ABC):
         pass
     
     @abstractmethod
-    def update_record(self, zone: str, record_id: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    def update_record(self, zone: str, record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         """Update a DNS record.
         
         Args:
@@ -136,7 +136,7 @@ class DNSBackend(ABC):
         pass
     
     @abstractmethod
-    def get_zone_info(self, zone: str) -> Dict[str, Any]:
+    def get_zone_info(self, zone: str) -> dict[str, Any]:
         """Get zone metadata and SOA information.
         
         Args:
@@ -147,7 +147,7 @@ class DNSBackend(ABC):
         """
         pass
     
-    def normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Normalize record format to common schema.
         
         Subclasses can override to handle provider-specific formats.
@@ -169,10 +169,10 @@ class DNSBackend(ABC):
     
     def filter_records_by_hostname(
         self, 
-        records: List[Dict[str, Any]], 
+        records: list[dict[str, Any]], 
         hostname: str,
-        record_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        record_type: str | None = None
+    ) -> list[dict[str, Any]]:
         """Filter records by hostname and optionally type.
         
         Args:

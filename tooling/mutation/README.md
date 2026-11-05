@@ -38,10 +38,10 @@ Hard rule: **this runner is never referenced from `.github/` workflows or from `
 
 ## Setup
 
-Ensure development dependencies are installed (already done if you used `requirements-dev.txt`):
+Ensure development dependencies are installed (already done if you used `requirements-test.txt`):
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements-mutation.txt
 ```
 
 This installs `mutmut==3.6.0`.  No further setup is required — the tool reads its config from

@@ -5,7 +5,7 @@ These tests validate the happy-path behavior of the REST DNS API when:
 - Netcup API is configured to point at the mock Netcup CCP API service
 
 Important: The mock backend must be reachable by the app under test.
-- In production-parity runs, use: ./run-local-tests.sh --with-mocks
+- In production-parity runs, use: the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ async def _mock_is_reachable(base_url: str) -> bool:
     netcup_config toward a mock that is actually down.
 
     The gate "MOCK_NETCUP_API_URL is set" is NOT sufficient on its own:
-    run-local-tests.sh sources .env.services unconditionally, so the var is
+    run-gate local-build sources .env.services unconditionally, so the var is
     always populated even when ``--with-mocks`` was not used. Without a real
     reachability check this test would silently poison the global config and
     break every subsequent DNS test.
@@ -88,14 +88,14 @@ async def test_dns_api_crud_success_path_with_mock_backend(active_profile):
     mock_base = _mock_base_url()
     mock_api_url = _mock_endpoint_url()
     if not mock_api_url or not mock_base:
-        pytest.skip("MOCK_NETCUP_API_URL not set; run ./run-local-tests.sh --with-mocks")
+        pytest.skip("MOCK_NETCUP_API_URL not set; run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)")
 
     # Do not mutate the deployment's global config unless the mock is actually
     # reachable; otherwise we'd poison netcup_config while mocks are down.
     if not await _mock_is_reachable(mock_base):
         pytest.skip(
             f"Mock Netcup API not reachable at {mock_base}/health; "
-            "run ./run-local-tests.sh --with-mocks"
+            "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
     async with browser_session() as browser:
@@ -237,12 +237,12 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
     mock_base = _mock_base_url()
     mock_api_url = _mock_endpoint_url()
     if not mock_api_url or not mock_base:
-        pytest.skip("MOCK_NETCUP_API_URL not set; run ./run-local-tests.sh --with-mocks")
+        pytest.skip("MOCK_NETCUP_API_URL not set; run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)")
 
     if not await _mock_is_reachable(mock_base):
         pytest.skip(
             f"Mock Netcup API not reachable at {mock_base}/health; "
-            "run ./run-local-tests.sh --with-mocks"
+            "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
     async with browser_session() as browser:
@@ -475,12 +475,12 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
     mock_base = _mock_base_url()
     mock_api_url = _mock_endpoint_url()
     if not mock_api_url or not mock_base:
-        pytest.skip("MOCK_NETCUP_API_URL not set; run ./run-local-tests.sh --with-mocks")
+        pytest.skip("MOCK_NETCUP_API_URL not set; run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)")
 
     if not await _mock_is_reachable(mock_base):
         pytest.skip(
             f"Mock Netcup API not reachable at {mock_base}/health; "
-            "run ./run-local-tests.sh --with-mocks"
+            "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
     async with browser_session() as browser:

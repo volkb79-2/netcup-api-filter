@@ -87,7 +87,7 @@ def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
     manylinux2014_x86_64``, which is safe under ANY host interpreter because it never
     executes the downloaded code. ``initialize_database`` is different: it puts
     ``vendor/`` on ``sys.path`` and IMPORTS the app (and therefore the vendored
-    cp39/cp311 ``.so`` extensions) to seed the SQLite DB. If that import happens under
+    cp311/cp314 ``.so`` extensions) to seed the SQLite DB. If that import happens under
     a different interpreter than the one those wheels were resolved for,
     version-tagged C extensions are silently NOT import candidates at all (packages
     with a pure-Python fallback silently use it; C-only ones ImportError), and an
@@ -119,9 +119,8 @@ def _assert_interpreter_matches_target(python_version: Optional[str]) -> None:
             "version-tagged C extensions silently not import candidates and validates "
             "nothing about the target closure. Run build_deployment.py UNDER a "
             f"Python {python_version} interpreter — e.g. inside the matching "
-            f"netcup-api-filter/test-runner image via "
-            f"'./tooling/test-runner/testing-exec.sh build {python_version} -- "
-            "build_deployment.py ...' (used by the local build and CMRU variant builder)."
+            f"netcup-api-filter/test-runner:py{python_version.replace('.', '')} runner "
+            "(`run-gate local-build` does this for the local build)."
         )
 
 
@@ -303,7 +302,7 @@ def write_build_metadata(deploy_dir, client_id: str, secret_key: str, all_demo_c
         "builder": os.environ.get("USER") or os.environ.get("USERNAME") or "unknown",
         # naf-I03: the local image ID (`docker image inspect --format='{{.Id}}'`) of
         # the test-runner container build_deployment.py ran inside, stamped by
-        # testing-exec.sh's `build` subcommand via NAF_BUILDER_IMAGE_DIGEST.
+        # the ciu runner (docker exec) via NAF_BUILDER_IMAGE_DIGEST.
         # These images are never pushed to a registry, so there is no RepoDigest —
         # the content-addressed local image ID is the strongest provenance available.
         # "unknown" for non-containerized runs (e.g. local target, or a bare CLI
@@ -854,7 +853,7 @@ def main():
     parser.add_argument("--python-version", default="3.11",
                         help="Target Python version for vendored wheel download (default: 3.11). "
                              "Cross-resolves binary wheels for the given version via pip download. "
-                             "Example: --python-version 3.9 produces a 3.9-compatible vendor/ dir.")
+                             "Example: --python-version 3.11 produces a 3.11-compatible vendor/ dir.")
     parser.add_argument("--seed-demo", action="store_true",
                         help="Seed comprehensive demo data for UI screenshots")
     parser.add_argument("--bundle-app-config", action="store_true",
@@ -881,7 +880,7 @@ def main():
     logger.info(f"Python: {args.python_version}")
     logger.info("=" * 60)
     
-    requirements_path = "./requirements.webhosting.txt"
+    requirements_path = "./requirements-runtime.txt"
 
     # Check if running from repository root
     if not os.path.exists(requirements_path):

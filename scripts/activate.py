@@ -66,7 +66,7 @@ def _archive(root: Path, variant: str) -> Path:
 def _extract(archive: tarfile.TarFile, root: Path) -> None:
     """Extract only regular archive members beneath the deployment root.
 
-    ``tarfile``'s ``filter=`` API is too new for Passenger Python 3.9.  Keep
+    ``tarfile``'s ``filter=`` API is too new for older Passenger Pythons.  Keep
     the same traversal protection explicitly so an archive can never escape
     the configured Passenger app root.
     """
@@ -86,7 +86,7 @@ def main() -> None:
     parser.add_argument("--release-root", type=Path, default=Path.cwd())
     parser.add_argument("--config")       # cmru adapter contract; naf needs no host TOML.
     parser.add_argument("--manifest")     # cmru adapter contract; tarball has no manifest.
-    parser.add_argument("--variant", choices=("py39", "py311"))
+    parser.add_argument("--variant", choices=("py311",))
     parser.add_argument("--health-url", default=os.environ.get("NAF_HEALTH_URL", "http://127.0.0.1/admin/login"))
     args = parser.parse_args()
     root = args.release_root.resolve()
@@ -101,7 +101,7 @@ def main() -> None:
     if args.verb == "rollback":
         raise RuntimeError("rollback is unavailable: Passenger tarballs are greenfield releases")
     if not args.variant:
-        raise RuntimeError("apply requires an explicit --variant (py39 or py311)")
+        raise RuntimeError("apply requires an explicit --variant (py311)")
 
     old_secret = _preserved_secret(root / "netcup_filter.db")
     with tarfile.open(_archive(root, args.variant), "r:xz") as archive:

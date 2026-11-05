@@ -1,9 +1,9 @@
-# Dockerfile.release — netcup-api-filter py3.14 self-hosting container image.
+# Dockerfile.release — netcup-api-filter self-hosting container image (py311 and py314 bake targets).
 # =============================================================================
 # Phase 1 of naf's cmru adoption (nyxloom-trove/CMRU-RELEASE-PLAN-2026-07-21.md):
-# the container release target. Built via docker-bake.hcl's "py314" target —
-#   ciu (local dev/inspect): docker buildx bake -f docker-bake.hcl py314 --load
-#   cmru (publish to ghcr):  docker buildx bake -f docker-bake.hcl py314 --push
+# the container release target. Built via docker-bake.hcl's "release" group (py311, py314) —
+#   ciu (local dev/inspect): docker buildx bake -f docker-bake.hcl release --load
+#   cmru (publish to ghcr):  docker buildx bake -f docker-bake.hcl release --push
 #
 # Runs the REAL app, mirroring tooling/app-local/ciu.compose.yml.j2's entrypoint
 # exactly: gunicorn -c gunicorn.conf.py passenger_wsgi:application, port 5100,
@@ -27,18 +27,18 @@
 # the persisted SECRET_KEY survive container recreation.
 # =============================================================================
 
-ARG PYTHON_VERSION=3.14
+ARG PYTHON_VERSION
 FROM python:${PYTHON_VERSION}-slim-trixie
 
 WORKDIR /app
 
 # Runtime closure only — the same requirements file the Passenger webhosting
-# deploy installs (requirements-dev.txt is test/gate-only and never ships).
-# gunicorn itself is NOT in requirements.webhosting.txt (Passenger hosts don't
+# deploy installs (requirements-test.txt is test/gate-only and never ships).
+# gunicorn itself is NOT in requirements-runtime.txt (Passenger hosts don't
 # need it — Passenger is its own process manager); this image is its own
-# webserver, so it is installed explicitly, pinned like requirements-dev.txt.
-COPY requirements.webhosting.txt ./
-RUN pip install --no-cache-dir -r requirements.webhosting.txt "gunicorn>=21.0.0"
+# webserver, so it is installed explicitly, pinned like requirements-test.txt.
+COPY requirements-runtime.txt ./
+RUN pip install --no-cache-dir -r requirements-runtime.txt "gunicorn>=21.0.0"
 
 # Canonical application code + the two deploy-root files passenger_wsgi.py
 # expects beside it, exactly as build_deployment.py's copy_application_files()

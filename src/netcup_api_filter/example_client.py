@@ -81,7 +81,7 @@ def test_update_dns_record(base_url: str, token: str, domain: str,
 
 def test_unauthorized_access(base_url: str, token: str, domain: str):
     """Test access to a record that token doesn't have permission for"""
-    print(f"\n=== Testing unauthorized access ===")
+    print("\n=== Testing unauthorized access ===")
     result = make_request(base_url, token, "updateDnsRecords", {
         "domainname": domain,
         "dnsrecordset": {

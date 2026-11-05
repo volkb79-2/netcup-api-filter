@@ -10,7 +10,6 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Optional
 
 from netcup_api_filter.database import db, get_setting
 from netcup_api_filter.models import (
@@ -18,8 +17,6 @@ from netcup_api_filter.models import (
     BackendService,
     BackendProvider,
     ManagedDomainRoot,
-    OwnerTypeEnum,
-    VisibilityEnum,
 )
 from netcup_api_filter.bootstrap.seeding import (
     seed_backend_providers,
@@ -30,7 +27,7 @@ from netcup_api_filter.bootstrap.seeding import (
 logger = logging.getLogger(__name__)
 
 
-def get_public_fqdn() -> Optional[str]:
+def get_public_fqdn() -> str | None:
     """Get PUBLIC_FQDN from environment (.env.workspace)."""
     return os.environ.get('PUBLIC_FQDN')
 
@@ -98,7 +95,7 @@ def get_powerdns_api_url() -> str:
     )
 
 
-def setup_platform_powerdns() -> Optional[BackendService]:
+def setup_platform_powerdns() -> BackendService | None:
     """
     Create platform PowerDNS BackendService if enabled.
     
@@ -169,7 +166,7 @@ def setup_platform_powerdns() -> Optional[BackendService]:
     return service
 
 
-def setup_platform_netcup() -> Optional[BackendService]:
+def setup_platform_netcup() -> BackendService | None:
     """
     Create platform Netcup BackendService if enabled.
     

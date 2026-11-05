@@ -32,8 +32,7 @@ from ..account_auth import (
 )
 from ..geoip_service import geoip_location, get_geoip_status
 from ..models import (
-    Account, AccountRealm, ActivityLog, APIToken, db, Settings,
-    validate_password,
+    Account, AccountRealm, ActivityLog, APIToken, db, validate_password,
     # Multi-backend models
     BackendProvider, BackendService, ManagedDomainRoot, DomainRootGrant,
     OwnerTypeEnum, VisibilityEnum, TestStatusEnum, GrantTypeEnum,
@@ -496,6 +495,17 @@ def login_2fa():
     has_email = admin.email and admin.email != 'admin@localhost'
     current_method = session.get(SESSION_KEY_ADMIN_2FA_METHOD, 'email')
     
+    # Mask email for display
+    def mask_email(email: str) -> str:
+        if not email or '@' not in email:
+            return '***@***'
+        local, domain = email.rsplit('@', 1)
+        if len(local) <= 2:
+            masked_local = '*' * len(local)
+        else:
+            masked_local = local[0] + '*' * (len(local) - 2) + local[-1]
+        return f"{masked_local}@{domain}"
+    
     # Handle method selection
     selected_method = request.args.get('method') or request.form.get('method')
     if selected_method in ('email', 'totp'):
@@ -547,17 +557,6 @@ def login_2fa():
                 flash('Verification code sent to your email', 'info')
             else:
                 flash('Failed to send verification code', 'error')
-    
-    # Mask email for display
-    def mask_email(email: str) -> str:
-        if not email or '@' not in email:
-            return '***@***'
-        local, domain = email.rsplit('@', 1)
-        if len(local) <= 2:
-            masked_local = '*' * len(local)
-        else:
-            masked_local = local[0] + '*' * (len(local) - 2) + local[-1]
-        return f"{masked_local}@{domain}"
     
     if request.method == 'POST':
         code = request.form.get('code', '').strip()
@@ -1064,7 +1063,7 @@ def account_create():
                 # Email failed, show temp password
                 flash(error_or_warning, 'warning')
             elif send_invite:
-                realm_msg = f" with pre-approved realm" if realm_created else " (no realm configured)"
+                realm_msg = " with pre-approved realm" if realm_created else " (no realm configured)"
                 flash(f'Account "{username}" created{realm_msg}. Invite email sent to {email}.', 'success')
             else:
                 # Direct password mode - show the password
@@ -1161,7 +1160,7 @@ def account_reset_password(account_id):
         return redirect(url_for('admin.account_detail', account_id=account_id))
     
     # Get expiry hours from form or use system default
-    from ..password_reset import send_password_reset_email, get_token_expiry_hours
+    from ..password_reset import send_password_reset_email
     
     expiry_hours = request.form.get('expiry_hours')
     if expiry_hours:
@@ -1781,7 +1780,6 @@ def audit_trim():
 @require_admin
 def audit_export():
     """Export audit logs to ODS format."""
-    from io import BytesIO
     from flask import send_file
     
     # Get filter parameters
@@ -2128,7 +2126,7 @@ def system_info():
     import os
     import platform
     import socket
-    from datetime import datetime, timedelta
+    from datetime import datetime
     import flask
     
     # Build info
@@ -2296,7 +2294,7 @@ def system_info():
                         # Strategy 1: Check __init__.py for version attributes
                         init_file = os.path.join(item_path, '__init__.py')
                         if os.path.exists(init_file):
-                            with open(init_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            with open(init_file, encoding='utf-8', errors='ignore') as f:
                                 content = f.read(5000)  # Read first 5KB
                                 import re
                                 # Try multiple patterns
@@ -2316,7 +2314,7 @@ def system_info():
                             for version_file in ['_version.py', 'version.py', '__version__.py']:
                                 version_file_path = os.path.join(item_path, version_file)
                                 if os.path.exists(version_file_path):
-                                    with open(version_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    with open(version_file_path, encoding='utf-8', errors='ignore') as f:
                                         content = f.read(2000)
                                         import re
                                         match = re.search(r'["\']([0-9]+\.[0-9]+[^"\']*)["\']', content)
@@ -2334,7 +2332,7 @@ def system_info():
                                         metadata_file = os.path.join(vendor_path, dist_item, 'PKG-INFO')
                                     
                                     if os.path.exists(metadata_file):
-                                        with open(metadata_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        with open(metadata_file, encoding='utf-8', errors='ignore') as f:
                                             for line in f:
                                                 if line.startswith('Version:'):
                                                     version = line.split(':', 1)[1].strip()
@@ -2467,7 +2465,7 @@ def get_system_logs():
             })
         
         # Read log file (from the end for recent logs first)
-        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+        with open(log_file, encoding='utf-8', errors='replace') as f:
             all_lines = f.readlines()
         
         # Reverse to show most recent first
@@ -3163,7 +3161,6 @@ def backend_create():
                 return redirect(url_for('admin.backend_create'))
             
             # Build config from form fields
-            provider = BackendProvider.query.get(provider_id)
             config = {}
             for key in request.form:
                 if key.startswith('config_'):

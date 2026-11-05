@@ -53,7 +53,7 @@ def _require_mock_backend() -> str:
     """
     base = _mock_base_url()
     if not base:
-        pytest.skip("MOCK_NETCUP_API_URL not set; run ./run-local-tests.sh --with-mocks")
+        pytest.skip("MOCK_NETCUP_API_URL not set; run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)")
     if not verification.mock_netcup_available(base):
         pytest.skip(f"Mock Netcup API not reachable at {base}/health; run with --with-mocks")
     return base
@@ -866,7 +866,7 @@ class TestProtocolDifferences:
 # The class-based tests above assert HTTP codes / response bodies only. These
 # tests add Channel C: confirm the DNS record ACTUALLY changed at the mock
 # Netcup backend (not just that the protocol replied "good"). Requires the mock
-# Netcup service (run with ./run-local-tests.sh --with-mocks).
+# Netcup service (run with the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)).
 # =============================================================================
 
 def _find_a_record(records, hostname):

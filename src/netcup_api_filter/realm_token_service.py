@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, NamedTuple, Optional
+from typing import NamedTuple
 
 from .models import (
     Account,
@@ -46,18 +46,18 @@ VALID_REALM_TYPES = frozenset({'host', 'subdomain', 'subdomain_only'})
 class RealmResult(NamedTuple):
     """Result of realm operation."""
     success: bool
-    realm: Optional[AccountRealm] = None
-    error: Optional[str] = None
-    field: Optional[str] = None
+    realm: AccountRealm | None = None
+    error: str | None = None
+    field: str | None = None
 
 
 class TokenResult(NamedTuple):
     """Result of token operation."""
     success: bool
-    token_obj: Optional[APIToken] = None
-    token_plain: Optional[str] = None  # Full token (only on create)
-    error: Optional[str] = None
-    field: Optional[str] = None
+    token_obj: APIToken | None = None
+    token_plain: str | None = None  # Full token (only on create)
+    error: str | None = None
+    field: str | None = None
 
 
 # ============================================================================

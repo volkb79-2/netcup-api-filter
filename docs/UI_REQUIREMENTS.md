@@ -1884,7 +1884,7 @@ MAXMIND_ACCOUNT_ID=your_account_id
 ODF Python library for reading and writing OpenDocument files (ODS spreadsheets).
 Simple implementation for exporting tabular data to ODS format.
 
-**Add to requirements.webhosting.txt:**
+**Add to requirements-runtime.txt:**
 ```
 odfpy>=1.4.1
 ```
@@ -1940,7 +1940,7 @@ async def send_telegram_2fa(chat_id: str, code: str):
 
 **Library:** `pyotp`
 
-**Add to requirements.webhosting.txt:**
+**Add to requirements-runtime.txt:**
 ```
 pyotp>=2.9.0
 ```
@@ -2453,7 +2453,7 @@ We do NOT use visual regression testing (screenshot comparison). Instead:
 > **Note**: `test_ui_comprehensive.py`, `test_ui_interactive.py`, `test_user_journeys.py`,
 > `test_mobile_responsive.py` and several others were consolidated into `test_route_smoke.py`,
 > `test_config_pages.py`, `test_audit_logs.py`, and `test_admin_ui.py` during the T12 smoke
-> consolidation. The test counts above are a snapshot; see `run-local-tests.sh` and
+> consolidation. The test counts above are a snapshot; see `run-gate local-build` and
 > [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md) for the current suite layout.
 
 ### 12.1.1 Comprehensive UI Test Coverage (NEW)
@@ -3067,7 +3067,7 @@ class TestAPICredentialProtection:
 | **P9.4.5** Mock GeoIP server | ✅ | `http://mock-geoip:5556` |
 | **P9.4.6** Mock Netcup API | ✅ | `http://mock-netcup-api:5555` |
 | **P9.4.7** Start/stop scripts | ✅ | `tooling/mock-services/start.sh`, `stop.sh` |
-| **P9.4.8** run-local-tests.sh integration | ✅ | `--with-mocks` flag |
+| **P9.4.8** run-gate local-build integration | ✅ | `--with-mocks` flag |
 
 **Usage:**
 ```bash
@@ -3075,7 +3075,7 @@ class TestAPICredentialProtection:
 cd tooling/mock-services && ./start.sh --wait
 
 # Run tests with mocks
-./run-local-tests.sh --with-mocks
+the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)
 ```
 
 ---
@@ -3087,7 +3087,7 @@ cd tooling/mock-services && ./start.sh --wait
 **Status:** ✅ Complete
 
 **Implementation:**
-1. ✅ `geoip2>=4.8.0` in requirements.webhosting.txt
+1. ✅ `geoip2>=4.8.0` in requirements-runtime.txt
 2. ✅ `geoip_service.py` module with:
    - `GeoIPResult` dataclass with location fields
    - `GeoIPCache` with 24h TTL and thread-safety

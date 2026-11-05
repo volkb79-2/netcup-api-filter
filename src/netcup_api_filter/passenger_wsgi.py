@@ -7,7 +7,6 @@ from __future__ import annotations
 import sys
 import os
 import logging
-from datetime import datetime
 from pathlib import Path
 
 # Determine important paths
@@ -212,7 +211,6 @@ try:
                 
                 # Apply SMTP config using TOML field names directly
                 if 'smtp' in config:
-                    import json
                     smtp_config = config['smtp']
                     logger.info(f"Processing smtp section with {len(smtp_config)} entries")
                     logger.info(f"  SMTP config keys: {list(smtp_config.keys())}")
@@ -244,7 +242,7 @@ try:
                     }
                     
                     set_setting('smtp_config', smtp_data)
-                    logger.info(f"  ✓ Set smtp_config (TOML field names)")
+                    logger.info("  ✓ Set smtp_config (TOML field names)")
                     logger.info(f"    - smtp_host: {smtp_data['smtp_host']}")
                     logger.info(f"    - smtp_port: {smtp_data['smtp_port']}")
                     logger.info(f"    - smtp_security: {smtp_data['smtp_security']}")
@@ -254,7 +252,6 @@ try:
                 
                 # Apply session configuration (NEW)
                 if 'session' in config:
-                    import json
                     session_config = config['session']
                     logger.info(f"Processing session section with {len(session_config)} entries")
                     
@@ -272,7 +269,7 @@ try:
                     }
                     
                     set_setting('session_config', session_data)
-                    logger.info(f"  ✓ Set session_config")
+                    logger.info("  ✓ Set session_config")
                     logger.info(f"    - cookie_secure: {session_data['cookie_secure']}")
                     logger.info(f"    - cookie_httponly: {session_data['cookie_httponly']}")
                     logger.info(f"    - cookie_samesite: {session_data['cookie_samesite']}")
@@ -282,7 +279,6 @@ try:
                 
                 # Apply admin security configuration (NEW)
                 if 'admin' in config:
-                    import json
                     admin_config = config['admin']
                     logger.info(f"Processing admin section with {len(admin_config)} entries")
                     
@@ -299,7 +295,7 @@ try:
                     }
                     
                     set_setting('admin_security_config', admin_data)
-                    logger.info(f"  ✓ Set admin_security_config")
+                    logger.info("  ✓ Set admin_security_config")
                     logger.info(f"    - ip_whitelist: {admin_data['ip_whitelist']}")
                     logger.info(f"    - bind_session_to_ip: {admin_data['bind_session_to_ip']}")
                     logger.info(f"    - require_2fa: {admin_data['require_2fa']}")
@@ -308,7 +304,6 @@ try:
                 
                 # Apply logging configuration (NEW)
                 if 'logging' in config:
-                    import json
                     logging_config = config['logging']
                     logger.info(f"Processing logging section with {len(logging_config)} entries")
                     
@@ -325,7 +320,7 @@ try:
                     }
                     
                     set_setting('logging_config', logging_data)
-                    logger.info(f"  ✓ Set logging_config")
+                    logger.info("  ✓ Set logging_config")
                     logger.info(f"    - level: {logging_data['level']}")
                     logger.info(f"    - max_size_mb: {logging_data['max_size_mb']}")
                     logger.info(f"    - backup_count: {logging_data['backup_count']}")
@@ -334,7 +329,6 @@ try:
                 
                 # Apply notification settings (NEW)
                 if 'notifications' in config:
-                    import json
                     notif_config = config['notifications']
                     logger.info(f"Processing notifications section with {len(notif_config)} entries")
                     
@@ -354,7 +348,7 @@ try:
                     }
                     
                     set_setting('notifications_config', notif_data)
-                    logger.info(f"  ✓ Set notifications_config")
+                    logger.info("  ✓ Set notifications_config")
                     logger.info(f"    - admin_email: {notif_data['admin_email']}")
                     logger.info(f"    - notify_new_account: {notif_data['notify_new_account']}")
                     logger.info(f"    - notify_realm_request: {notif_data['notify_realm_request']}")
@@ -366,7 +360,6 @@ try:
                 # Apply Netcup API config (DEPRECATED - use [[backends]] arrays)
                 # Legacy [netcup] section support - store as single JSON object
                 if 'netcup' in config:
-                    import json
                     netcup = config['netcup']
                     logger.warning("[netcup] section is deprecated - use [[backends]] arrays instead")
                     logger.info(f"Processing legacy [netcup] section with {len(netcup)} entries")
@@ -381,7 +374,7 @@ try:
                     }
                     
                     set_setting('netcup_config', netcup_config)
-                    logger.info(f"  ✓ Set netcup_config as JSON object")
+                    logger.info("  ✓ Set netcup_config as JSON object")
                     logger.info(f"    - customer_id: {netcup_config['customer_id']}")
                     logger.info(f"    - api_key: {netcup_config['api_key'][:8]}... (truncated)")
                     logger.info(f"    - api_password: {'***' if netcup_config['api_password'] else '(empty)'}")
@@ -392,7 +385,6 @@ try:
                 
                 # Process [[backends]] arrays (NEW PREFERRED STRUCTURE)
                 if 'backends' in config:
-                    import json
                     backends = config['backends']
                     logger.info(f"Processing [[backends]] arrays: {len(backends)} backend(s) defined")
                     
@@ -434,7 +426,6 @@ try:
                 
                 # Process [[domain_roots]] arrays (NEW PREFERRED STRUCTURE)
                 if 'domain_roots' in config:
-                    import json
                     domain_roots = config['domain_roots']
                     logger.info(f"Processing [[domain_roots]] arrays: {len(domain_roots)} domain(s) defined")
                     
@@ -496,7 +487,6 @@ try:
                 # Process [[users]] arrays (OPTIONAL USER PRESEEDING)
                 users = config.get('users', [])
                 if users:
-                    import json
                     logger.info(f"Processing [[users]] arrays: {len(users)} user(s) to preseed")
 
                     # Store users config as JSON array for bootstrap processing
@@ -554,7 +544,6 @@ try:
                 
                 # Apply GeoIP config using TOML field names directly (stored as JSON)
                 if 'geoip' in config:
-                    import json
                     geoip = config['geoip']
                     logger.info(f"Processing geoip section with {len(geoip)} entries")
                     
@@ -566,9 +555,9 @@ try:
                     }
                     
                     set_setting('geoip_config', geoip_data)
-                    logger.info(f"  ✓ Set geoip_config (TOML field names)")
+                    logger.info("  ✓ Set geoip_config (TOML field names)")
                     logger.info(f"    - account_id: {geoip_data['account_id']}")
-                    logger.info(f"    - license_key: ***")
+                    logger.info("    - license_key: ***")
                     logger.info(f"    - api_url: {geoip_data['api_url']}")
                     logger.info(f"    - edition_ids: {geoip_data['edition_ids']}")
                 else:
@@ -576,7 +565,6 @@ try:
                 
                 # Apply Free Domains config
                 if 'free_domains' in config:
-                    import json
                     free_domains = config['free_domains']
                     logger.info(f"Processing free_domains section with {len(free_domains)} entries")
                     
@@ -588,7 +576,7 @@ try:
                     }
                     
                     set_setting('free_domains_config', free_domains_data)
-                    logger.info(f"  ✓ Set free_domains_config")
+                    logger.info("  ✓ Set free_domains_config")
                     logger.info(f"    - enabled: {free_domains_data['enabled']}")
                     logger.info(f"    - domains: {free_domains_data['domains']}")
                     logger.info(f"    - max_hosts_per_user: {free_domains_data['max_hosts_per_user']}")
@@ -597,7 +585,6 @@ try:
                 
                 # Apply Platform Backends config
                 if 'platform_backends' in config:
-                    import json
                     platform_backends = config['platform_backends']
                     logger.info(f"Processing platform_backends section with {len(platform_backends)} entries")
                     
@@ -608,7 +595,7 @@ try:
                     }
                     
                     set_setting('platform_backends_config', platform_backends_data)
-                    logger.info(f"  ✓ Set platform_backends_config")
+                    logger.info("  ✓ Set platform_backends_config")
                     logger.info(f"    - powerdns_enabled: {platform_backends_data['powerdns_enabled']}")
                     logger.info(f"    - powerdns_api_url: {platform_backends_data['powerdns_api_url'] or 'auto-detect'}")
                     logger.info(f"    - netcup_platform_backend: {platform_backends_data['netcup_platform_backend']}")
@@ -702,7 +689,7 @@ except ImportError as e:
             <ol>
                 <li>Verify all files were uploaded (especially vendor/ directory)</li>
                 <li>Check that Passenger App Root points to this directory</li>
-                <li>Ensure Python version is 3.9 or higher</li>
+                <li>Ensure Python version is 3.11 or higher</li>
                 <li>Review error logs for more details</li>
             </ol>
             <h3>Python Path (first 5):</h3>

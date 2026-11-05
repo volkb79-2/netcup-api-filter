@@ -6,7 +6,7 @@ Implements DNSBackend interface for PowerDNS HTTP API.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 import httpx
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class PowerDNSBackend(DNSBackend):
     """PowerDNS Authoritative Server backend implementation."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize PowerDNS backend.
         
         Required config keys:
@@ -69,7 +69,7 @@ class PowerDNSBackend(DNSBackend):
             logger.error(f"PowerDNS connection test failed: {e}")
             return False, str(e)
     
-    def list_zones(self) -> List[str]:
+    def list_zones(self) -> list[str]:
         """List all zones manageable by this backend."""
         try:
             response = self.client.get(f'/api/v1/servers/{self.server_id}/zones')
@@ -94,7 +94,7 @@ class PowerDNSBackend(DNSBackend):
         except Exception as e:
             return False, f"Cannot access zone {zone}: {e}"
     
-    def list_records(self, zone: str) -> List[Dict[str, Any]]:
+    def list_records(self, zone: str) -> list[dict[str, Any]]:
         """List all DNS records for a zone."""
         try:
             zone_name = self._ensure_trailing_dot(zone)
@@ -124,7 +124,7 @@ class PowerDNSBackend(DNSBackend):
             logger.error(f"Failed to list records for {zone}: {e}")
             raise BackendError(f"Failed to list records: {e}")
     
-    def create_record(self, zone: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    def create_record(self, zone: str, record: dict[str, Any]) -> dict[str, Any]:
         """Create a DNS record."""
         try:
             zone_name = self._ensure_trailing_dot(zone)
@@ -165,7 +165,7 @@ class PowerDNSBackend(DNSBackend):
             logger.error(f"Failed to create record in {zone}: {e}")
             raise BackendError(f"Failed to create record: {e}")
     
-    def update_record(self, zone: str, record_id: str, record: Dict[str, Any]) -> Dict[str, Any]:
+    def update_record(self, zone: str, record_id: str, record: dict[str, Any]) -> dict[str, Any]:
         """Update a DNS record.
         
         PowerDNS uses REPLACE changetype, so update is same as create.
@@ -204,7 +204,7 @@ class PowerDNSBackend(DNSBackend):
             logger.error(f"Failed to delete record in {zone}: {e}")
             raise BackendError(f"Failed to delete record: {e}")
     
-    def get_zone_info(self, zone: str) -> Dict[str, Any]:
+    def get_zone_info(self, zone: str) -> dict[str, Any]:
         """Get zone information."""
         try:
             zone_name = self._ensure_trailing_dot(zone)
@@ -215,7 +215,7 @@ class PowerDNSBackend(DNSBackend):
             logger.error(f"Failed to get zone info for {zone}: {e}")
             raise BackendError(f"Failed to get zone info: {e}")
     
-    def normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Normalize PowerDNS record format."""
         hostname = record.get('hostname', record.get('name', '@'))
         hostname = self._strip_trailing_dot(hostname)

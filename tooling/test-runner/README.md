@@ -8,13 +8,11 @@ ship signal. This container is where "green" is allowed to mean something.
 Two independent reasons, both load-bearing:
 
 1. **Interpreter fidelity.** The app deploys to shared webhosting under Passenger.
-   `cmru release` builds the py3.14 OCI image and cp39/cp311 Passenger tarball variants;
-   `build_deployment.py` vendors wheels with `--python-version 3.11 --only-binary`. The
-   devcontainer runs **3.14**. A 3.10+ syntax construct, or a dependency that has a
-   cp314 wheel but no cp311 wheel, is green in the cockpit and a **post-deploy 500** in
-   production. Here it fails at import/collect, which is the whole point.
+   the shipped runtimes are Python **3.11** (Passenger tarball) and **3.14** (OCI image).
+   A dependency that has a wheel for one but not the other fails at install/collect here,
+   not as a post-deploy 500. There is one runner per version.
 2. **Closure fidelity.** The image installs the repo's own
-   `requirements.webhosting.txt` (runtime) + `requirements-dev.txt` (test toolchain).
+   `requirements-runtime.txt` (runtime) + `requirements-test.txt` (test toolchain).
    A dependency present in the cockpit but missing from the deployed closure fails here.
 
 Sibling implementations of the same doctrine: dstdns `tools/test-runner` (FROM the app
@@ -25,7 +23,7 @@ runtime bind-mount + network-peer form.
 ## Single source of truth
 
 The dependency closure is **derived**, never duplicated here. Change a dependency in
-`requirements.webhosting.txt` / `requirements-dev.txt` and it flows to the gate on the
+`requirements-runtime.txt` / `requirements-test.txt` and it flows to the gate on the
 next image rebuild. (This repo has no `pyproject.toml`, unlike the vbpub family, so the
 requirements files are the SSOT.)
 
@@ -41,59 +39,32 @@ The `e2e` gate refuses to run without `PLAYWRIGHT_SERVER_WS` set, by design.
 
 ## Usage
 
+Lanes are declared in `run-gate.toml`; judgment (what a run proves) in `assay.toml`.
+Run from the repo (or a worktree) with the installed `run-gate`:
+
 ```bash
-./tooling/test-runner/testing-exec.sh unit            # PRIMARY gate: pytest tests/ (hermetic)
-./tooling/test-runner/testing-exec.sh unit -k realm   # extra pytest args pass through
-./tooling/test-runner/testing-exec.sh trove           # nyxloom handoff frontmatter lint
-./tooling/test-runner/testing-exec.sh e2e ui_tests/tests/security/
-./tooling/test-runner/testing-exec.sh shell           # interactive shell inside the gate
+run-gate --list                      # authoritative lane list
+run-gate gate --worktree "$PWD"      # unit on py311 + py314, then trove
+run-gate unit-py314 --worktree "$PWD"
+run-gate e2e --worktree "$PWD"       # needs app-local + mocks + pwmcp stacks up
 ```
 
-The image is built automatically on first use. To exercise the **secondary** Passenger
-target (3.9) and its compat guards:
+Runners are ciu-managed persistent containers, one per Python version
+(`naf-dev-test-runner-py311`, `naf-dev-test-runner-py314`); run-gate `docker exec`s into
+them. `ciu.compose.yml` is a RENDERED, gitignored artifact: edit `ciu.compose.yml.j2`.
 
 ```bash
-PYTHON_VERSION=3.9 TEST_RUNNER_IMAGE=netcup-api-filter/test-runner:py39 \
-  ./tooling/test-runner/testing-exec.sh unit
-```
-
-Persistent peer (warm container on `naf-dev-network`, alongside the mock services):
-
-The peer form is now **ciu-managed** (naf-I01). `ciu.compose.yml` is a RENDERED,
-gitignored artifact — edit `ciu.compose.yml.j2`, never the output. Note the
-`--define-root`: this devcontainer's shell exports dstdns's `REPO_ROOT`, so a bare
-`ciu` call resolves to the wrong repo (backlog B-INFRA).
-
-```bash
-ciu render --define-root /workspaces/netcup-api-filter
 ciu up --dir tooling/test-runner --define-root /workspaces/netcup-api-filter
 ```
 
-`ciu up` also applies the cgroup/memory/IOPS governance overlay from `[governance]`
-in `ciu.global.defaults.toml.j2` (`.ciu/ciu.compose.overlay.yml`).
+`--define-root` is needed because this devcontainer's shell exports dstdns's `REPO_ROOT`.
+`ciu up` applies the cgroup/memory/IOPS governance overlay from `[governance]` in
+`ciu.global.defaults.toml.j2`.
 
 ## Config
 
-| Where | What | Why |
-|---|---|---|
-| `runner.env` | image/container name, `PYTHON_VERSION` | identity; version-controlled |
-| `.env.workspace` | `PHYSICAL_REPO_ROOT`, `DOCKER_NETWORK_INTERNAL`, `USER_UID`, `DOCKER_GID` | per-environment; auto-generated |
-
-`testing-exec.sh` deliberately does **not** source `.env.services`: that file expands
-`${PUBLIC_FQDN}` unconditionally and aborts every `set -u` consumer when post-create has
-not written it (see `docs/deprecated/FOLLOWUP_REVIEW_2026-07-16.md` §P0-8). The gate must not
-inherit that breakage.
-
-`PHYSICAL_REPO_ROOT` is a **host** path: the docker socket is the host's daemon (DooD),
-so `-v` sources resolve on the host, not in this container.
-
-## Gates
-
-| Gate id | Command | Scope |
-|---|---|---|
-| `unit` | `testing-exec.sh unit` | `tests/` — hermetic, no services, no browser. The default gate for nyxloom handoffs. |
-| `trove` | `testing-exec.sh trove` | handoff frontmatter + L1 + gate-id resolution |
-| `e2e` | `testing-exec.sh e2e` | `ui_tests/` against a deployed app + mocks + pwmcp |
-
-These ids are the ones declared in `nyxloom-trove/nyxloom.toml [gates.*]` and referenced
-by handoff `oracles[].gate`.
+| Where | What |
+|---|---|
+| `ciu.defaults.toml.j2` | runner variants (name → Python version), pwmcp, state root |
+| `run-gate.toml` | lanes and exec environments (SSOT) |
+| `.env.workspace` | `PHYSICAL_REPO_ROOT`, `DOCKER_NETWORK_INTERNAL`, `USER_UID`, `DOCKER_GID` (auto-generated) |

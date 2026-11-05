@@ -41,7 +41,7 @@ import ipaddress
 import logging
 from datetime import datetime
 from functools import wraps
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from flask import g, request
 
@@ -94,23 +94,23 @@ NOTIFY_USER_ERRORS = {
 class AuthResult(NamedTuple):
     """Result of authentication attempt."""
     success: bool
-    token: Optional[APIToken] = None
-    realm: Optional[AccountRealm] = None
-    account: Optional[Account] = None
-    error: Optional[str] = None  # Generic message for API response
-    error_code: Optional[str] = None  # Structured code for logging
-    severity: Optional[str] = None  # 'low', 'medium', 'high', 'critical'
+    token: APIToken | None = None
+    realm: AccountRealm | None = None
+    account: Account | None = None
+    error: str | None = None  # Generic message for API response
+    error_code: str | None = None  # Structured code for logging
+    severity: str | None = None  # 'low', 'medium', 'high', 'critical'
     should_notify_user: bool = False  # Send security alert to user?
     # Additional context for logging (NOT returned to API caller)
-    user_alias_attempted: Optional[str] = None  # Even on failure, for attribution
-    token_prefix_attempted: Optional[str] = None  # For identifying which token was attacked
+    user_alias_attempted: str | None = None  # Even on failure, for attribution
+    token_prefix_attempted: str | None = None  # For identifying which token was attacked
 
 
 class PermissionResult(NamedTuple):
     """Result of permission check."""
     granted: bool
-    reason: Optional[str] = None  # Human-readable
-    error_code: Optional[str] = None  # Structured code
+    reason: str | None = None  # Human-readable
+    error_code: str | None = None  # Structured code
 
 
 def extract_bearer_token(authorization_header: str | None) -> str | None:

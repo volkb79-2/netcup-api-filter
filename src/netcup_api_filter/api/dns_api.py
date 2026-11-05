@@ -13,7 +13,6 @@ Routes:
 import logging
 from flask import Blueprint, g, jsonify, request
 
-from ..models import db
 from ..netcup_client import extract_dns_records, mutation_failed, mutation_message
 from ..token_auth import (
     check_permission,

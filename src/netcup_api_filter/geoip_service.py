@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Optional, Dict, Any
+from typing import Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import lru_cache
 import threading
 
 logger = logging.getLogger(__name__)
@@ -34,16 +33,16 @@ class GeoIPResult:
     """Result from GeoIP lookup."""
     
     ip: str
-    country_code: Optional[str] = None
-    country_name: Optional[str] = None
-    city: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    timezone: Optional[str] = None
-    continent: Optional[str] = None
-    subdivision: Optional[str] = None
-    postal_code: Optional[str] = None
-    error: Optional[str] = None
+    country_code: str | None = None
+    country_name: str | None = None
+    city: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    timezone: str | None = None
+    continent: str | None = None
+    subdivision: str | None = None
+    postal_code: str | None = None
+    error: str | None = None
     
     @property
     def is_valid(self) -> bool:
@@ -80,7 +79,7 @@ class GeoIPResult:
         except Exception:
             return "🌍"
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "ip": self.ip,
@@ -105,10 +104,10 @@ class GeoIPCache:
     def __init__(self, max_size: int = CACHE_MAX_SIZE, ttl_hours: int = CACHE_TTL_HOURS):
         self.max_size = max_size
         self.ttl = timedelta(hours=ttl_hours)
-        self._cache: Dict[str, tuple[GeoIPResult, datetime]] = {}
+        self._cache: dict[str, tuple[GeoIPResult, datetime]] = {}
         self._lock = threading.Lock()
     
-    def get(self, ip: str) -> Optional[GeoIPResult]:
+    def get(self, ip: str) -> GeoIPResult | None:
         """Get cached result if not expired."""
         with self._lock:
             if ip not in self._cache:
@@ -344,7 +343,7 @@ def _lookup_http(
     return _parse_response(ip, data, use_cache)
 
 
-def _parse_response(ip: str, data: Dict[str, Any], use_cache: bool) -> GeoIPResult:
+def _parse_response(ip: str, data: dict[str, Any], use_cache: bool) -> GeoIPResult:
     """Parse MaxMind API response into GeoIPResult."""
     result = GeoIPResult(
         ip=ip,
@@ -375,7 +374,7 @@ def clear_cache():
     logger.info("GeoIP cache cleared")
 
 
-def get_cache_stats() -> Dict[str, Any]:
+def get_cache_stats() -> dict[str, Any]:
     """Get cache statistics."""
     return {
         "size": len(_cache._cache),
@@ -384,7 +383,7 @@ def get_cache_stats() -> Dict[str, Any]:
     }
 
 
-def get_geoip_status() -> Dict[str, Any]:
+def get_geoip_status() -> dict[str, Any]:
     """Get GeoIP service status for system info display.
     
     Returns dict with:

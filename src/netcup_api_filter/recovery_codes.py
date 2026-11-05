@@ -19,7 +19,6 @@ import logging
 import os
 import secrets
 from datetime import datetime
-from typing import Optional
 
 from .models import Account, db
 
@@ -170,7 +169,7 @@ def get_remaining_code_count(account: Account) -> int:
         return 0
 
 
-def regenerate_recovery_codes(account: Account) -> Optional[list[str]]:
+def regenerate_recovery_codes(account: Account) -> list[str] | None:
     """
     Regenerate recovery codes (invalidates old codes).
     

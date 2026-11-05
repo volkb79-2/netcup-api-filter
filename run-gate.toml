@@ -1,0 +1,107 @@
+# =============================================================================
+# naf gate orchestration: the SSOT for every lane, parsed by run-gate only.
+# nyxloom-trove/nyxloom.toml [gates.*] are one-lane pointers into this file.
+# Judgment (what a run proves) lives in assay.toml; the assay pin lives here.
+# Runners: ciu-managed persistent test-runner-py311 / test-runner-py314
+# (tooling/test-runner/); run-gate dispatches with `docker exec`, ciu owns
+# build and lifecycle. Lane catalog: docs/TESTING_INFRASTRUCTURE.md.
+# =============================================================================
+schema_version = 1
+
+[assay]
+environment = "test-runner-py311"
+command = ["python3", "tools/assay/assay-12.0.0.pyz"]
+
+[assay.pins.assay]
+version = "12.0.0"
+sha256 = "tools/assay/assay-12.0.0.pyz.sha256"
+
+# One exec environment per shipped interpreter. 3.11 = Passenger webhosting,
+# 3.14 = OCI image. state_root equals tooling/test-runner [test_runner.run_gate].
+[environments.test-runner-py311]
+image = "netcup-api-filter/test-runner:py311"
+mode = "exec"
+state_root = "/run-gate-state"
+forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET",
+    "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
+
+[environments.test-runner-py314]
+image = "netcup-api-filter/test-runner:py314"
+mode = "exec"
+state_root = "/run-gate-state"
+forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET",
+    "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
+
+# --- hermetic suite (assay R0, one verdict per interpreter) -------------------
+[lanes.unit-py311]
+kind = "assay"
+environment = "test-runner-py311"
+assay_lane = "unit"
+clean_tree = false
+description = "tests/ on python 3.11 (Passenger runtime), judged by assay lane 'unit'"
+
+[lanes.unit-py314]
+kind = "assay"
+environment = "test-runner-py314"
+assay_lane = "unit"
+clean_tree = false
+description = "tests/ on python 3.14 (OCI image runtime), judged by assay lane 'unit'"
+
+# --- whole-target R1 on the security boundary (advisory until measured) -------
+[lanes.token_auth]
+kind = "assay"
+environment = "test-runner-py311"
+assay_lane = "token_auth"
+clean_tree = false
+
+[lanes.account_auth]
+kind = "assay"
+environment = "test-runner-py311"
+assay_lane = "account_auth"
+clean_tree = false
+
+[lanes.recovery_codes]
+kind = "assay"
+environment = "test-runner-py311"
+assay_lane = "recovery_codes"
+clean_tree = false
+
+# --- trove hygiene (interpreter-agnostic) ------------------------------------
+[lanes.trove]
+kind = "command"
+environment = "test-runner-py311"
+argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python tooling/test-runner/lint_trove.py"]
+clean_tree = false
+budget = "5m"
+
+# --- local app build + e2e ---------------------------------------------------
+# Local flow (all in containers; the cockpit only drives):
+#   set -a; . ./.env.services; set +a            # service URLs for the lanes
+#   ciu up --dir tooling/mailpit; ciu up --dir tooling/geoip-mock; ciu up --dir tooling/netcup-api-mock
+#   run-gate local-build --worktree "$PWD"      # seeds deploy-local/ + deployment_state_local.json
+#   ciu up --dir tooling/app-local; ciu up --dir infra/pwmcp
+#   export UI_BASE_URL=http://<app-local container>:5100 DEPLOYMENT_TARGET=local PLAYWRIGHT_SERVER_WS=ws://...
+#   run-gate e2e --worktree "$PWD"
+[lanes.local-build]
+kind = "command"
+environment = "test-runner-py311"
+argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python build_deployment.py --local --python-version 3.11 --build-dir deploy-local"]
+clean_tree = false
+budget = "15m"
+description = "build + seed deploy-local/ (runs app code, so inside the 3.11 runner, never the cockpit)"
+
+# 3.11 only: it exercises a deployed app. Not part of the `gate` sequence.
+[lanes.e2e]
+kind = "command"
+environment = "test-runner-py311"
+argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider --no-cov"]
+required_env = ["PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET"]
+clean_tree = false
+budget = "60m"
+
+# --- composite: the ship signal ----------------------------------------------
+[lanes.gate]
+kind = "sequence"
+description = "Implementation gate: hermetic suite on both interpreters, then trove hygiene"
+lanes = ["unit-py311", "unit-py314", "trove"]
+stop_on = "FAIL"

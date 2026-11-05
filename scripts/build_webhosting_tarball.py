@@ -19,10 +19,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-try:  # Passenger Python 3.9 has tomli vendored in the build image.
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - selected only on Python < 3.11
-    import tomli as tomllib
+import tomllib
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,7 +49,7 @@ def _assert_target_interpreter(python_version: str) -> None:
     if actual != python_version:
         raise RuntimeError(
             f"refusing to build {python_version} wheels under Python {actual}; run "
-            f"testing-exec.sh build {python_version} -- python scripts/build_webhosting_tarball.py build-one ..."
+            "run build-one inside the matching ciu test-runner (see build_all)"
         )
 
 
@@ -62,7 +59,7 @@ def _vendor_dependencies(vendor_dir: Path, python_version: str) -> None:
             sys.executable, "-m", "pip", "download", "--disable-pip-version-check",
             "--only-binary", ":all:", "--python-version", python_version,
             "--platform", "manylinux2014_x86_64", "--platform", "any",
-            "--dest", download_dir, "--requirement", "requirements.webhosting.txt",
+            "--dest", download_dir, "--requirement", "requirements-runtime.txt",
         ]
         subprocess.run(command, cwd=REPO_ROOT, check=True)
         wheels = sorted(Path(download_dir).glob("*.whl"))
@@ -145,12 +142,48 @@ def build_one(python_version: str, output: Path) -> None:
     print(f"[INFO] built {output.relative_to(REPO_ROOT)} for Python {python_version}")
 
 
+def _runner_container(variant: str) -> str:
+    """Name of the ciu-managed runner for a variant: <project>-<tag>-test-runner-<variant>.
+
+    Derived from the rendered ciu.global.toml (the same rule run-gate uses); absence
+    fails loudly instead of guessing a name.
+    """
+    toml_path = REPO_ROOT / "ciu.global.toml"
+    if not toml_path.is_file():
+        raise RuntimeError(f"{toml_path} missing: render it and start the runners (ciu up --dir tooling/test-runner)")
+    with toml_path.open("rb") as handle:
+        deploy = tomllib.load(handle).get("deploy", {})
+    project, tag = deploy.get("project_name"), deploy.get("environment_tag")
+    if not project or not tag:
+        raise RuntimeError(f"{toml_path}: [deploy] project_name and environment_tag are required")
+    return f"{project}-{tag}-test-runner-{variant}"
+
+
+def _docker_out(*args: str) -> str:
+    return subprocess.check_output(["docker", *args], text=True).strip()
+
+
 def build_all() -> None:
+    host_head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
     for variant, python_version in _target_versions():
         output = DIST_DIR / f"naf-{variant}.tar.xz"
+        container = _runner_container(variant)
+        # The runner bind-mounts ONE checkout. Refuse to build a release from a
+        # tree other than the one cmru is releasing.
+        runner_head = _docker_out(
+            "exec", "-w", str(REPO_ROOT), container,
+            "git", "-c", "safe.directory=*", "rev-parse", "HEAD",
+        )
+        if runner_head != host_head:
+            raise RuntimeError(
+                f"{container} sees {runner_head[:12]} at {REPO_ROOT}, release tree is {host_head[:12]}: "
+                "the runner mounts a different checkout; start it from this tree"
+            )
+        image_id = _docker_out("inspect", "-f", "{{.Image}}", container)
         command = [
-            "./tooling/test-runner/testing-exec.sh", "build", python_version, "--",
-            "scripts/build_webhosting_tarball.py", "build-one",
+            "docker", "exec", "-e", f"NAF_BUILDER_IMAGE_DIGEST={image_id}",
+            "-w", str(REPO_ROOT), container,
+            "/opt/tester-venv/bin/python", "scripts/build_webhosting_tarball.py", "build-one",
             "--python-version", python_version, "--output", str(output.relative_to(REPO_ROOT)),
         ]
         print("[INFO] " + " ".join(command))

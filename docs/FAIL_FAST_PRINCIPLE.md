@@ -28,7 +28,7 @@ Variables must be intentionally set, preventing "it worked by accident" scenario
 ### 2. **Clear Error Messages**
 When something is missing, you get an immediate, actionable error:
 ```bash
-$ ./run-local-tests.sh
+$ run-gate local-build (see run-gate.toml)
 bash: LOCAL_FLASK_PORT: LOCAL_FLASK_PORT not set - check .env.defaults
 ```
 
@@ -247,7 +247,7 @@ source .env.workspace
 source .env.services
 
 # Script should work
-./run-local-tests.sh --skip-build
+run-gate local-build (see run-gate.toml)
 ```
 
 ### Negative Test (Should Fail with Clear Error)
@@ -257,7 +257,7 @@ source .env.services
 unset LOCAL_FLASK_PORT
 
 # Script should fail immediately with helpful error
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 # Expected: bash: LOCAL_FLASK_PORT: LOCAL_FLASK_PORT not set - check .env.defaults
 ```
 

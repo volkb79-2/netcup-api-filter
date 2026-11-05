@@ -67,16 +67,16 @@ export PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/
 
 ```bash
 # Build the production-parity local deployment and run tests
-./run-local-tests.sh
+run-gate local-build (see run-gate.toml)
 
 # Reuse an existing deployment
-./run-local-tests.sh --skip-build
+run-gate local-build (see run-gate.toml)
 ```
 
 With remote Playwright:
 
 ```bash
-PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ ./run-local-tests.sh
+PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ run-gate local-build (see run-gate.toml)
 ```
 
 ---

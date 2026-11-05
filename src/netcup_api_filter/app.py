@@ -13,7 +13,7 @@ from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config_defaults import get_default, require_default
-from .database import init_db, db
+from .database import init_db
 from .api import account_bp, admin_bp, dns_api_bp, ddns_protocols_bp, telegram_bp
 from .utils import parse_bool
 

@@ -39,7 +39,7 @@ Module map: read `src/netcup_api_filter/` (blueprints in `api/`). Reference docs
 3. **Logging, not `print`.** `logging.getLogger(__name__)`, f-strings with context. Never log full tokens, passwords, secrets or chat IDs; prefixes/IDs only.
 4. **Security boundary.** `hmac.compare_digest` for secrets; audit sensitive actions to `ActivityLog`; enforce scope per record, not just per zone; new POST routes need CSRF (cookie auth) or Bearer/shared-secret (API) and the auth decorators their siblings use.
 5. **Database.** SQLite, no Alembic. `init_db()` → `create_all()` + `run_lightweight_migrations()` adds missing nullable/scalar-default columns and simple indexes. Drops, renames, type changes, NOT NULL without default, backfills, new constraints need a hand-written migration.
-6. **Python floor.** Webhosting variants run **3.9 and 3.11**; the OCI image is 3.14. No 3.10+ syntax or cp314-only deps in shipped code.
+6. **Python floor.** Webhosting runs **3.11**; the OCI image is 3.14. Shipped code and deps must work on both (one gate runner each).
 
 ## Run, test, release — never in the cockpit
 
@@ -49,8 +49,8 @@ the supported verbs:
 | Concern | Verb |
 |---|---|
 | Gate (unit per Python version, trove, e2e) | `run-gate <lane>` |
-| Local app, mocks, pwmcp | `ciu` stacks (`tooling/*/`) |
-| Release (OCI image + Passenger tarballs, `scm` version) | `cmru release` |
+| Local app, mocks, pwmcp | `ciu up --dir tooling/<stack>` |
+| Release (OCI py311+py314, Passenger py311 tarball, `scm`) | `cmru release` |
 | Deploy to webhoster | `ciu up --host webhoster --thin -- --variant py311` |
 
 Webhoster inventory, pinned host key and activation contract: `.ciu.hosts.toml`. Webhosting releases are
@@ -58,10 +58,9 @@ greenfield (fresh seeded DB, default `admin`/`admin`, `must_change_password`); o
 Credentials are tracked in `deployment_state_*.json` (never hardcode a password); browser tests use pwmcp via
 `PLAYWRIGHT_SERVER_WS`, never an engine installed here.
 
-> **Migration pending** (trove backlog): the gate is still `tooling/test-runner/testing-exec.sh` and
-> `nyxloom-trove/nyxloom.toml` `[gates.*]`; `run-local-tests.sh` / `build_deployment.py --local` still build
-> and drive `deploy-local/` from the cockpit. They are being replaced by `run-gate.toml` lanes and ciu stacks;
-> until then they are the only available gate, not the target.
+Local flow (run-gate.toml header has the exact sequence): mocks and `app-local` via `ciu up --dir tooling/<name>`,
+`run-gate local-build` seeds `deploy-local/` inside the 3.11 runner, `run-gate e2e` drives pwmcp against the app.
+The old cockpit scripts (`run-local-tests.sh`, `tooling/flask-manager.sh`, `.vscode/run-*.sh`) are gone.
 
 **Testing:** `tests/` (pytest unit/integration; use the `make_account`/`make_realm`/`make_token` fixtures in
 `tests/conftest.py`) and `ui_tests/` (Playwright; read [`docs/TESTING_LESSONS_LEARNED.md`](docs/TESTING_LESSONS_LEARNED.md)
@@ -75,8 +74,7 @@ Public hostname is auto-detected into `.env.workspace` (`PUBLIC_FQDN`); never ha
 ([`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md)). Config layers: `.env.defaults` → `.env.workspace` →
 `.env.services` → `tooling/<service>/.env`. HTTPS comes from the host `edge-traefik`; naf holds no TLS material
 ([`docs/DEV_INFRA_SETUP.md`](docs/DEV_INFRA_SETUP.md)). Mock services (`naf-` prefix: mailpit, geoip, netcup-api, app-local) each have a ciu stack under `tooling/<name>/`.
-`deploy*/` trees are generated and gitignored. Python deps: `requirements.webhosting.txt` (runtime),
-`requirements-dev.txt`; see [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
+`deploy*/` trees are generated and gitignored. Python deps: `requirements-runtime.txt`, `requirements-test.txt`, `requirements-mutation.txt`; see [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
 
 ## Docs are part of the change
 

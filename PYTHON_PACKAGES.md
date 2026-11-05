@@ -4,20 +4,20 @@
 
 Python dependencies are managed through a **two-tier requirements system**:
 
-1. **`requirements.webhosting.txt`** - Production runtime dependencies (Flask app only)
-2. **`requirements-dev.txt`** - Development dependencies (includes production + testing + tooling)
+1. **`requirements-runtime.txt`** - Production runtime dependencies (Flask app only)
+2. **`requirements-test.txt`** - Development dependencies (includes production + testing + tooling)
 
 ## Structure
 
 ```
-requirements.webhosting.txt (production)
+requirements-runtime.txt (production)
 ├── Flask app core (flask, flask-limiter, flask-admin, etc.)
 ├── Database (sqlalchemy, flask-sqlalchemy)
 ├── Authentication (bcrypt, flask-login)
 └── Configuration (pyyaml, python-dotenv)
 
-requirements-dev.txt (development)
-├── -r requirements.webhosting.txt (includes all production deps)
+requirements-test.txt (development)
+├── -r requirements-runtime.txt (includes all production deps)
 ├── Testing (pytest, pytest-asyncio)
 └── WSGI server (gunicorn - for local testing)
 
@@ -37,10 +37,9 @@ ui_tests/requirements.txt (UI test dependencies)
 cmru release
 ```
 
-CMRU calls `scripts/build_webhosting_tarball.py` for each Passenger target (Python 3.9 and
-3.11). The builder runs through `tooling/test-runner/testing-exec.sh build <version>` so wheels
-from `requirements.webhosting.txt` are downloaded, vendored, and database seeding is performed
-under the matching ABI. It publishes separate `py39` and `py311` tarballs.
+CMRU calls `scripts/build_webhosting_tarball.py` for each Passenger target (Python 3.11). The builder runs through `docker exec` into the matching ciu runner (`naf-dev-test-runner-py311`) so wheels
+from `requirements-runtime.txt` are downloaded, vendored, and database seeding is performed
+under the matching ABI. It publishes the `py311` tarball.
 
 Each Passenger tarball contains:
 - Vendored dependencies (no pip install needed on server)
@@ -55,23 +54,23 @@ The Python 3.14 self-hosting OCI image is released by the same `cmru release` in
 **Automated via `.devcontainer/post-create.sh`:**
 ```bash
 # Runs automatically when devcontainer is created
-pip install --user -r requirements-dev.txt
+pip install --user -r requirements-test.txt
 ```
 
 ### Local Deployment Build
 
-`build_deployment.py --local` remains the local builder. `run-local-tests.sh` invokes it,
+`build_deployment.py --local` remains the local builder. `run-gate local-build` invokes it,
 extracts the package into `deploy-local/`, and runs the local UI suite. It is not the webhosting
 release path.
 
 **Manual installation (if needed):**
 ```bash
-pip install --user -r requirements-dev.txt
+pip install --user -r requirements-test.txt
 ```
 
 ### Testing and Tooling
 
-**Test dependencies in `requirements-dev.txt` (devcontainer):**
+**Test dependencies in `requirements-test.txt` (devcontainer):**
 - `pytest` - Test framework
 - `pytest-asyncio` - Async test support
 - `gunicorn` - WSGI server for local testing
@@ -95,23 +94,22 @@ pytest ui_tests/tests -v
 export PLAYWRIGHT_SERVER_WS=ws://<service-name>:3000/
 pytest ui_tests/tests -v
 
-# Or use automated validation script
-./tooling/run-ui-validation.sh
+# Or run the lanes (see run-gate.toml): run-gate local-build, then run-gate e2e
 ```
 
 See `tooling/PLAYWRIGHT-TESTING.md` for the full guide.
 
 ## Why Two Files?
 
-**`requirements.webhosting.txt` (production):**
+**`requirements-runtime.txt` (production):**
 - Minimal dependencies
 - Only runtime requirements
 - No testing/development tools
 - Smaller deployment package
 - Faster installation on server
 
-**`requirements-dev.txt` (development):**
-- Includes all production dependencies (`-r requirements.webhosting.txt`)
+**`requirements-test.txt` (development):**
+- Includes all production dependencies (`-r requirements-runtime.txt`)
 - Plus testing frameworks (pytest, pytest-asyncio)
 - Plus development tools (gunicorn)
 - Used only in devcontainer and CI/CD
@@ -126,27 +124,27 @@ See `tooling/PLAYWRIGHT-TESTING.md` for the full guide.
 
 ### Production Dependency (needed by Flask app)
 
-Add to `requirements.webhosting.txt`:
+Add to `requirements-runtime.txt`:
 ```bash
-echo "new-package>=1.0.0" >> requirements.webhosting.txt
+echo "new-package>=1.0.0" >> requirements-runtime.txt
 ```
 
 Then reinstall in devcontainer:
 ```bash
-pip install --user -r requirements-dev.txt
+pip install --user -r requirements-test.txt
 ```
 
 ### Development/Testing Dependency
 
-Add to `requirements-dev.txt` (below the `-r requirements.webhosting.txt` line):
+Add to `requirements-test.txt` (below the `-r requirements-runtime.txt` line):
 ```bash
-# Edit requirements-dev.txt and add:
+# Edit requirements-test.txt and add:
 new-dev-tool>=2.0.0
 ```
 
 Then reinstall:
 ```bash
-pip install --user -r requirements-dev.txt
+pip install --user -r requirements-test.txt
 ```
 
 ## Version Pinning
@@ -179,12 +177,12 @@ python -c "import flask, pytest, gunicorn; print('✓ All critical packages inst
 **Before (scattered, conflicting):**
 - `.devcontainer/requirements.txt` - Devcontainer packages (DELETED)
 - Hardcoded packages in `post-create.sh` (REMOVED)
-- `requirements.webhosting.txt` - Production packages (KEPT)
+- `requirements-runtime.txt` - Production packages (KEPT)
 - Multiple pip install commands scattered across scripts
 
 **After (clean, centralized):**
-- `requirements.webhosting.txt` - Production runtime only
-- `requirements-dev.txt` - Development/testing (includes production)
+- `requirements-runtime.txt` - Production runtime only
+- `requirements-test.txt` - Development/testing (includes production)
 - Single source of truth for each environment
 - All scripts reference the same files
 
@@ -208,7 +206,7 @@ pip install --user --force-reinstall <package-name>
 pip uninstall -y <package-name>
 
 # Reinstall from requirements
-pip install --user -r requirements-dev.txt
+pip install --user -r requirements-test.txt
 ```
 
 **Devcontainer pip issues:**
@@ -217,5 +215,5 @@ pip install --user -r requirements-dev.txt
 pip install --user --upgrade pip setuptools wheel
 
 # Then retry
-pip install --user -r requirements-dev.txt
+pip install --user -r requirements-test.txt
 ```
