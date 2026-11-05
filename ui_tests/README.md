@@ -69,8 +69,7 @@ Automated UI coverage using a multi-layer testing strategy:
 **`test_audit_export.py`** - ODS export workflow
 - Export audit logs to spreadsheet format
 
-**`test_bulk_operations.py`** - Bulk actions on accounts/clients
-- Multi-select and bulk approve/delete
+**Bulk actions, API security, registration negatives, DDNS protocols/quick update** - moved to the hermetic `tests/test_*_http.py` modules (S8).
 
 ### API and Security
 
@@ -78,11 +77,6 @@ Automated UI coverage using a multi-layer testing strategy:
 - Token authentication
 - Rate limiting enforcement
 - Request validation
-
-**`test_api_security.py`** - Security hardening
-- CSRF protection
-- SQL injection prevention
-- XSS protection
 
 **`test_security.py`** - Authentication and authorization
 - Login workflows (admin + client)
@@ -98,11 +92,6 @@ Automated UI coverage using a multi-layer testing strategy:
 - Form submission with email verification
 - 2FA setup on first login
 
-**`test_registration_negative.py`** - Registration error cases
-- Invalid email formats
-- Password validation failures
-- Duplicate username detection
-
 **`test_email_notifications.py`** - Email sending verification
 - 2FA codes delivered
 - Registration confirmation emails
@@ -116,15 +105,6 @@ Automated UI coverage using a multi-layer testing strategy:
 **`test_mock_smtp.py`** - Mailpit SMTP mock
 - Email delivery to test inbox
 - 2FA code extraction
-
-**`test_mock_geoip.py`** - GeoIP API mock
-- IP geolocation lookups
-
-### Quick Update Tests
-
-**`test_ddns_quick_update.py`** - Rapid DNS update workflow
-- Single-hostname IP updates (DDNS use case)
-- Minimal latency validation
 
 ### Performance and Accessibility
 
@@ -253,22 +233,17 @@ ui_tests/
 │   ├── test_config_pages.py          # Configuration management
 │   ├── test_audit_logs.py            # Audit functionality
 │   ├── test_audit_export.py          # ODS export
-│   ├── test_bulk_operations.py       # Bulk actions
 │   ├── test_api_proxy.py             # DNS update API
-│   ├── test_api_security.py          # API security
 │   ├── test_security.py              # Auth/session management
 │   ├── test_recovery_codes.py        # 2FA recovery
 │   ├── test_registration_e2e.py      # Registration workflow
-│   ├── test_registration_negative.py # Registration errors
 │   ├── test_email_notifications.py   # Email delivery
-│   ├── test_ddns_quick_update.py     # Rapid DNS updates
 │   ├── test_performance.py           # Load times
 │   ├── test_accessibility.py         # WCAG compliance
 │   ├── test_mobile_responsive.py     # Mobile layouts
 │   ├── test_console_errors.py        # JavaScript errors
 │   ├── test_mock_api_standalone.py   # Mock API verification
 │   ├── test_mock_smtp.py             # Mock SMTP verification
-│   ├── test_mock_geoip.py            # Mock GeoIP verification
 │   ├── test_live_dns_verification.py # Real DNS (requires creds)
 │   ├── test_live_email_verification.py # Real email (requires creds)
 │   └── test_holistic_coverage.py     # Integration smoke test

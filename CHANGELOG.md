@@ -10,6 +10,14 @@
 
 ### Changed
 
+- **Browser lane shrunk (S8):** the HTTP-only e2e suites moved to the hermetic `tests/` suite
+  (Flask test client, tmp SQLite DB, in-memory Netcup fake, real CSRF): DDNS protocols, REST API
+  security, registration/approval negatives, admin bulk actions, DDNS quick update, and the GeoIP
+  mock self-test (`tests/test_*_http.py`, `tests/fake_netcup.py`, `tests/http_helpers.py`). The
+  originals under `ui_tests/tests/` are deleted. Assertions are exact (no `in [200, 403, 502]`)
+  and check ActivityLog/token-usage/account rows and the upstream zone. Tautological checks
+  (self-computed capability table, badge-colour dict, "list contains its own element") were
+  replaced by tests against the real rendered pages / endpoints.
 - **Rigor ladder:** assay R1 floors at the measured baseline, R3 import-break canaries and R2 mutation
   lanes for `token_auth`, `account_auth`, `recovery_codes`, `utils`; `release-gate` sequence.
 - **pwmcp is consumed, not hosted:** `infra/pwmcp` removed; runners and `app-local` join the estate

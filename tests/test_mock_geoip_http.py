@@ -1,14 +1,10 @@
 """Tests for mock GeoIP server.
 
-Run with: pytest ui_tests/tests/test_mock_geoip.py -v
+Moved from ui_tests/tests/mocks/ (S8): pure Flask test client, no sockets.
+Run with: pytest tests/test_mock_geoip_http.py -v
 """
 import pytest
 import base64
-import sys
-from pathlib import Path
-
-# Add ui_tests directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 pytestmark = [pytest.mark.mock_selftest]
 
@@ -19,7 +15,7 @@ pytestmark = [pytest.mark.mock_selftest]
 @pytest.fixture
 def geoip_client():
     """Create test client for mock GeoIP app."""
-    from mock_geoip_server import create_mock_geoip_app
+    from ui_tests.mock_geoip_server import create_mock_geoip_app
     
     app = create_mock_geoip_app()
     with app.test_client() as client:
@@ -201,7 +197,7 @@ class TestMockDataManagement:
     
     def test_add_custom_ip(self, geoip_client):
         """Test adding custom IP response."""
-        from mock_geoip_server import add_test_ip, reset_mock_data
+        from ui_tests.mock_geoip_server import add_test_ip, reset_mock_data
         
         # Add custom IP
         add_test_ip("10.0.0.1", {
@@ -224,7 +220,7 @@ class TestMockDataManagement:
     
     def test_reset_clears_custom_ips(self, geoip_client):
         """Test reset removes custom IPs."""
-        from mock_geoip_server import add_test_ip, reset_mock_data, MOCK_GEOIP_RESPONSES
+        from ui_tests.mock_geoip_server import add_test_ip, reset_mock_data, MOCK_GEOIP_RESPONSES
         
         # Add and reset
         add_test_ip("custom.ip", {"test": True})
