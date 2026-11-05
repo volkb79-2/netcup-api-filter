@@ -2,6 +2,12 @@
 
 ## [Unreleased] — Gate on run-gate + assay; Python 3.11/3.14 — 2026-11-05
 
+### Security
+
+- `token_auth.check_permission` no longer skips the record-type check for an empty-string type, and
+  `validate_dns_records_update` denies records without a type (fail closed). The REST routes already
+  checked the real type, so no route was exposed; found by the new R1 tests.
+
 ### Changed
 
 - **Rigor ladder:** assay R1 floors at the measured baseline, R3 import-break canaries and R2 mutation

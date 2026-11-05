@@ -557,12 +557,32 @@ def test_permission_check_order(make_account, make_realm, make_token):
                             client_ip="198.51.100.1").error_code == "record_type_denied"
 
 
-def test_permission_empty_record_type_string_skips_type_check(
+def test_permission_empty_record_type_string_is_denied(
         make_account, make_realm, make_token):
-    """record_type='' (falsy) is treated as 'not specified'. Documents current behaviour."""
+    """An empty record type is malformed input and must fail closed (it used to skip the check)."""
+    _, _, _, plain = _setup(make_account, make_realm, make_token)
+    result = check_permission(_auth(plain), "read", "example.com",
+                              record_type="", record_name="vpn")
+    assert result.granted is False
+    assert result.error_code == "record_type_denied"
+
+
+def test_permission_record_type_none_is_a_zone_level_check(
+        make_account, make_realm, make_token):
     _, _, _, plain = _setup(make_account, make_realm, make_token)
     assert check_permission(_auth(plain), "read", "example.com",
-                            record_type="", record_name="vpn").granted is True
+                            record_type=None, record_name="vpn").granted is True
+
+
+@pytest.mark.parametrize("record", [{"hostname": "vpn"}, {"hostname": "vpn", "type": ""},
+                                    {"hostname": "vpn", "type": None}])
+def test_validate_update_record_without_type_is_denied(
+        make_account, make_realm, make_token, record):
+    _, _, _, plain = _setup(make_account, make_realm, make_token)
+    ok, message, code = _v(plain, [record])
+    assert ok is False
+    assert code == "record_type_denied"
+    assert "record type is required" in message
 
 
 def test_permission_token_level_scope_replaces_realm_scope(

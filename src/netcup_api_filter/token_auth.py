@@ -420,8 +420,9 @@ def check_permission(
             error_code="operation_denied"
         )
     
-    # Check record type allowed (if specified)
-    if record_type:
+    # Check record type allowed. None means "no specific record" (zone-level check); an
+    # EMPTY string is a malformed request, not "unspecified", and must not skip the check.
+    if record_type is not None:
         allowed_types = token.get_effective_record_types()
         if record_type not in allowed_types:
             logger.warning(f"Record type {record_type} not allowed (allowed: {allowed_types})")
@@ -637,7 +638,10 @@ def validate_dns_records_update(
     
     for record in records:
         record_name = record.get('hostname', '')
-        record_type = record.get('type', '')
+        record_type = record.get('type')
+        if not record_type:
+            # Fail closed: a record without a type must never skip the record-type check.
+            return False, f"No permission to modify record {record_name}: record type is required", "record_type_denied"
         delete_record = record.get('deleterecord', False)
         record_id = record.get('id')
         
