@@ -13,6 +13,11 @@
 
 ### Security
 
+- **Fixed (review #6):** init could report success with no admin: a configured username owned by a
+  non-admin or deactivated account was returned "unchanged", and a colliding email raised a raw
+  `IntegrityError`. Both are now `BootstrapAdminError`s naming the collision, and an existing
+  database needs an *active* admin.
+
 - **Fixed (review #3):** a configured bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, TOML) accepted any
   non-empty password; it must now satisfy the password policy. Docs no longer claim email 2FA turns
   on by itself for a configured admin.

@@ -111,7 +111,7 @@ def test_enforce_without_spec_is_an_error(bare_app):
 
 
 def test_initialized_db_without_any_admin_fails_fast(bare_app):
-    with pytest.raises(BootstrapAdminError, match="No administrator account exists"):
+    with pytest.raises(BootstrapAdminError, match="No active administrator account exists"):
         init_instance(admin=None)
 
 
@@ -214,7 +214,7 @@ def test_toml_without_admin_users_is_no_spec(no_bootstrap_env, tmp_path):
 def test_first_boot_without_bootstrap_config_refuses_to_start(no_bootstrap_env, monkeypatch, tmp_path):
     monkeypatch.setenv("NETCUP_FILTER_DB_PATH", str(tmp_path / "fresh.db"))
     monkeypatch.setenv("SECRET_KEY", secrets.token_hex(32))
-    with pytest.raises(BootstrapAdminError, match="No administrator account exists"):
+    with pytest.raises(BootstrapAdminError, match="No active administrator account exists"):
         create_app()
 
 
@@ -418,3 +418,45 @@ def test_shipped_tarball_admin_is_exempt_from_the_policy(bare_app):
     assert spec.apply_password_policy is False
     spec.validate()  # the documented admin/admin; forced to change on first login
 
+
+# --- review #6: never report success without an active admin -------------------
+
+def test_username_taken_by_a_non_admin_is_an_error(bare_app, ):
+    init_instance(admin=_spec(username="first-admin", email="first@example.com"))
+    portal = Account(username="ops-admin", user_alias="u" * 16, email="portal@example.com",
+                     is_admin=0, is_active=1, email_verified=1)
+    portal.set_password(_password())
+    database.db.session.add(portal)
+    database.db.session.commit()
+    with pytest.raises(BootstrapAdminError, match="taken by an existing non-admin account"):
+        init_instance(admin=_spec())
+
+
+def test_username_of_a_deactivated_admin_is_an_error(bare_app):
+    init_instance(admin=_spec(username="first-admin", email="first@example.com"))
+    init_instance(admin=_spec())
+    Account.query.filter_by(username="ops-admin").one().is_active = 0
+    database.db.session.commit()
+    with pytest.raises(BootstrapAdminError, match="deactivated"):
+        init_instance(admin=_spec())
+
+
+def test_configured_email_collision_is_a_clear_error_not_integrity_error(bare_app):
+    init_instance(admin=_spec(username="first-admin", email="ops@example.com"))
+    with pytest.raises(BootstrapAdminError, match="already belongs to account 'first-admin'"):
+        init_instance(admin=_spec(username="second-admin"))
+
+
+def test_enforce_with_an_email_owned_by_another_account_is_an_error(bare_app):
+    init_instance(admin=_spec(username="first-admin", email="first@example.com"))
+    init_instance(admin=_spec())
+    with pytest.raises(BootstrapAdminError, match="already belongs to account 'ops-admin'"):
+        init_instance(admin=_spec(username="first-admin", email="ops@example.com"), enforce_admin=True)
+
+
+def test_existing_database_with_only_deactivated_admins_fails(bare_app):
+    init_instance(admin=_spec())
+    Account.query.filter_by(username="ops-admin").one().is_active = 0
+    database.db.session.commit()
+    with pytest.raises(BootstrapAdminError, match="No active administrator"):
+        init_instance(admin=None)

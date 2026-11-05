@@ -107,6 +107,12 @@ def seed_bootstrap_admin(spec: BootstrapAdmin, *, enforce: bool = False) -> tupl
     account = Account.query.filter_by(username=spec.username).first()
 
     if account is None:
+        email_owner = Account.query.filter_by(email=spec.email).first()
+        if email_owner is not None:
+            raise BootstrapAdminError(
+                f"bootstrap admin email {spec.email} already belongs to account "
+                f"{email_owner.username!r}; configure a different email (source: {spec.source})"
+            )
         account = Account(
             username=spec.username,
             user_alias=generate_user_alias(),
@@ -130,8 +136,21 @@ def seed_bootstrap_admin(spec: BootstrapAdmin, *, enforce: bool = False) -> tupl
         return account, "created"
 
     if not enforce:
+        if not account.is_admin or not account.is_active:
+            raise BootstrapAdminError(
+                f"bootstrap admin username {spec.username!r} is taken by an existing "
+                f"{'non-admin' if not account.is_admin else 'deactivated'} account; configure a "
+                f"different username (source: {spec.source})"
+            )
         logger.info("Bootstrap admin %s already exists; left unchanged", spec.username)
         return account, "unchanged"
+
+    email_owner = Account.query.filter(Account.email == spec.email, Account.id != account.id).first()
+    if email_owner is not None:
+        raise BootstrapAdminError(
+            f"bootstrap admin email {spec.email} already belongs to account "
+            f"{email_owner.username!r} (source: {spec.source})"
+        )
 
     account.set_password(spec.password)
     account.email = spec.email

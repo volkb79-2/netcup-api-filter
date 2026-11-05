@@ -82,10 +82,10 @@ def init_instance(
         account, action = seed_bootstrap_admin(admin, enforce=enforce_admin)
         report = InitReport(account.username, action, admin.source)
     else:
-        existing = Account.query.filter_by(is_admin=1).order_by(Account.id).first()
+        existing = Account.query.filter_by(is_admin=1, is_active=1).order_by(Account.id).first()
         if existing is None:
             raise BootstrapAdminError(
-                "No administrator account exists and no bootstrap admin is configured. " + CONFIG_HINT
+                "No active administrator account exists and no bootstrap admin is configured. " + CONFIG_HINT
             )
         report = InitReport(existing.username, "existing", "database")
 
