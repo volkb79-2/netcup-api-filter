@@ -36,6 +36,9 @@ services:
       - {{ key }}={{ value }}
       {% endfor %}
       - GUNICORN_BIND=0.0.0.0:{{ app_local.port }}
+      # Dev/test instance reached over plain HTTP by hostname (the e2e browser): a Secure cookie would be
+      # dropped and every login would bounce. Stated, not inferred (FLASK_ENV=local_test also did this).
+      - FLASK_SESSION_COOKIE_SECURE={{ app_local.cookie_secure }}
     expose:
       - "{{ app_local.port }}"
     volumes:

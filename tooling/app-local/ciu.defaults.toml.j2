@@ -30,6 +30,10 @@ image_tag = "py311"
 # 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.
 port = 5100
 
+# Session cookie `Secure` flag for THIS dev/test instance. false because the e2e browser reaches it over
+# plain HTTP by container name; production-like HTTPS runs set it true. Never relied on implicitly.
+cookie_secure = "false"
+
 # Directory (relative to the repo root) that the local test workflow unpacks the build into.
 deploy_dir = "deploy-local"
 
