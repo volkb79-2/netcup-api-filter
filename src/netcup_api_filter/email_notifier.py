@@ -9,7 +9,7 @@ import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class EmailNotifier:
         self.use_ssl = use_ssl
     
     def _send_email_sync(self, to_email: str, subject: str, body: str,
-                         html_body: Optional[str] = None):
+                         html_body: str | None = None):
         """
         Send email synchronously (called by async thread)
         
@@ -78,7 +78,7 @@ class EmailNotifier:
         logger.info(f"Email sent successfully to {to_email}")
     
     def send_email_async(self, to_email: str, subject: str, body: str,
-                        html_body: Optional[str] = None, delay: int = 5):
+                        html_body: str | None = None, delay: int = 5):
         """
         Send email asynchronously with delay
         
@@ -103,8 +103,8 @@ class EmailNotifier:
     def send_client_notification(self, client_id: str, to_email: str,
                                  timestamp: datetime, operation: str,
                                  ip_address: str, success: bool,
-                                 domain: str, record_details: Optional[Dict[str, Any]] = None,
-                                 error_message: Optional[str] = None):
+                                 domain: str, record_details: dict[str, Any] | None = None,
+                                 error_message: str | None = None):
         """
         Send client notification for API access
         
@@ -219,8 +219,8 @@ If you did not perform this action, please contact your administrator immediatel
         self.send_email_async(to_email, subject, body, html_body)
     
     def send_admin_notification(self, admin_email: str, event_type: str,
-                               details: str, ip_address: Optional[str] = None,
-                               timestamp: Optional[datetime] = None):
+                               details: str, ip_address: str | None = None,
+                               timestamp: datetime | None = None):
         """
         Send admin notification for security events
         
@@ -336,7 +336,7 @@ Timestamp: {}
             return False
 
 
-def get_email_notifier_from_config(config: Dict[str, Any]) -> Optional[EmailNotifier]:
+def get_email_notifier_from_config(config: dict[str, Any]) -> EmailNotifier | None:
     """
     Create EmailNotifier from configuration dictionary
     

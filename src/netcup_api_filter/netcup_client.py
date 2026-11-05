@@ -4,7 +4,7 @@ Handles communication with the Netcup CCP API
 """
 import requests
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # treats both forms identically instead of re-deriving it inline.
 # ---------------------------------------------------------------------------
 
-def extract_dns_records(result: Any) -> List[dict]:
+def extract_dns_records(result: Any) -> list[dict]:
     """Return the list of record dicts from an info_dns_records() result.
 
     Accepts either a plain list or a Netcup-style envelope. Raises TypeError on
@@ -69,9 +69,9 @@ class NetcupClient:
         self.api_password = api_password
         self.api_url = api_url
         self.timeout = timeout
-        self.session_id: Optional[str] = None
+        self.session_id: str | None = None
         
-    def _make_request(self, action: str, param: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_request(self, action: str, param: dict[str, Any]) -> dict[str, Any]:
         """Make a request to the Netcup API"""
         payload = {
             "action": action,
@@ -128,7 +128,7 @@ class NetcupClient:
         finally:
             self.session_id = None
     
-    def info_dns_zone(self, domain: str) -> Dict[str, Any]:
+    def info_dns_zone(self, domain: str) -> dict[str, Any]:
         """Get DNS zone information for a domain"""
         if not self.session_id:
             self.login()
@@ -146,7 +146,7 @@ class NetcupClient:
         except KeyError as e:
             raise NetcupAPIError(f"Missing key in infoDnsZone response: {e}")
     
-    def info_dns_records(self, domain: str) -> List[Dict[str, Any]]:
+    def info_dns_records(self, domain: str) -> list[dict[str, Any]]:
         """Get all DNS records for a domain"""
         if not self.session_id:
             self.login()
@@ -164,7 +164,7 @@ class NetcupClient:
         except KeyError as e:
             raise NetcupAPIError(f"Missing key in infoDnsRecords response: {e}")
     
-    def update_dns_records(self, domain: str, dns_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def update_dns_records(self, domain: str, dns_records: list[dict[str, Any]]) -> dict[str, Any]:
         """Update DNS records for a domain"""
         if not self.session_id:
             self.login()

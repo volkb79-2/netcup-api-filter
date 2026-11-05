@@ -7,11 +7,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict
 
 
 @lru_cache(maxsize=1)
-def load_defaults() -> Dict[str, str]:
+def load_defaults() -> dict[str, str]:
     """Load key/value defaults from `.env.defaults`, then overlay `.env`.
 
     This matches the project's configuration hierarchy:
@@ -35,7 +34,7 @@ def load_defaults() -> Dict[str, str]:
     except (OSError, FileNotFoundError):
         pass
 
-    merged: Dict[str, str] = {}
+    merged: dict[str, str] = {}
 
     # Apply defaults first, then overlay overrides.
     for directory in dirs:
@@ -64,8 +63,8 @@ def require_default(key: str) -> str:
     return value
 
 
-def _parse_env_file(env_path: Path) -> Dict[str, str]:
-    defaults: Dict[str, str] = {}
+def _parse_env_file(env_path: Path) -> dict[str, str]:
+    defaults: dict[str, str] = {}
     with env_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()

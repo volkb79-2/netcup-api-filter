@@ -3,7 +3,7 @@ Mock Netcup API Client for Local Testing
 Simulates Netcup CCP API responses with realistic demo data
 """
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Any
 from datetime import datetime
 import os
 
@@ -19,7 +19,7 @@ class MockNetcupClient:
     """Mock client for simulating Netcup CCP API responses in local testing"""
     
     # Mock DNS records database (in-memory)
-    _mock_records: Dict[str, List[Dict[str, Any]]] = {}
+    _mock_records: dict[str, list[dict[str, Any]]] = {}
     _next_record_id: int = 1000
     
     def __init__(self, customer_id: str, api_key: str, api_password: str, 
@@ -28,7 +28,7 @@ class MockNetcupClient:
         self.api_key = api_key
         self.api_password = api_password
         self.api_url = api_url
-        self.session_id: Optional[str] = None
+        self.session_id: str | None = None
         
         # Initialize mock data if empty
         if not self._mock_records:
@@ -196,7 +196,7 @@ class MockNetcupClient:
         
         logger.info(f"Initialized mock DNS records for {len(self._mock_records)} domains")
         
-    def _make_request(self, action: str, param: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_request(self, action: str, param: dict[str, Any]) -> dict[str, Any]:
         """Simulate API request/response"""
         logger.debug(f"Mock API call: {action} with params: {param}")
         
@@ -225,7 +225,7 @@ class MockNetcupClient:
         logger.info(f"Mock logout: {self.session_id}")
         self.session_id = None
     
-    def info_dns_zone(self, domain: str) -> Dict[str, Any]:
+    def info_dns_zone(self, domain: str) -> dict[str, Any]:
         """Simulate DNS zone information"""
         if not self.session_id:
             self.login()
@@ -243,7 +243,7 @@ class MockNetcupClient:
             "dnssecstatus": False
         }
     
-    def info_dns_records(self, domain: str) -> List[Dict[str, Any]]:
+    def info_dns_records(self, domain: str) -> list[dict[str, Any]]:
         """Simulate getting DNS records"""
         if not self.session_id:
             self.login()
@@ -257,7 +257,7 @@ class MockNetcupClient:
             logger.info(f"🎭 First record: {records[0]['hostname']} -> {records[0]['destination']}")
         return records
     
-    def update_dns_records(self, domain: str, dns_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def update_dns_records(self, domain: str, dns_records: list[dict[str, Any]]) -> dict[str, Any]:
         """Simulate updating DNS records"""
         if not self.session_id:
             self.login()
@@ -321,7 +321,7 @@ class MockNetcupClient:
         self.logout()
 
 
-def get_netcup_client(customer_id: str, api_key: str, api_password: str, api_url: Optional[str] = None) -> Any:
+def get_netcup_client(customer_id: str, api_key: str, api_password: str, api_url: str | None = None) -> Any:
     """
     Factory function to get appropriate Netcup client based on environment.
     

@@ -22,9 +22,8 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Callable, Optional
+from collections.abc import Callable
 
-from .database import db
 from .email_reference import email_ref_token, generate_email_ref
 from .models import Account, AccountRealm, APIToken
 from .utils import parse_bool
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 _executor_lock = threading.Lock()
-_executor: Optional[ThreadPoolExecutor] = None
+_executor: ThreadPoolExecutor | None = None
 
 
 def _get_executor() -> ThreadPoolExecutor:
@@ -121,7 +120,7 @@ def _send_telegram_if_enabled(account: Account, text: str) -> bool:
         return False
 
 
-def _get_smtp_config() -> Optional[dict]:
+def _get_smtp_config() -> dict | None:
     """Get SMTP/email configuration from the settings store.
 
     Canonical key is `smtp_config` (set via admin UI and seed tooling).
@@ -159,7 +158,7 @@ def _get_notifier():
     return get_email_notifier_from_config(smtp_config)
 
 
-def _get_admin_email() -> Optional[str]:
+def _get_admin_email() -> str | None:
     """Get admin notification email from config."""
 
     smtp_config = _get_smtp_config()
@@ -1169,7 +1168,7 @@ def notify_failed_login(account: Account, ip_address: str, attempts: int) -> boo
     # Generate email reference ID for traceability
     email_ref = generate_email_ref('alert', account.username)
     
-    subject = f"[Netcup API Filter] Security Alert: Failed Login Attempts"
+    subject = "[Netcup API Filter] Security Alert: Failed Login Attempts"
     
     body = f"""Hello {account.username},
 
@@ -1232,8 +1231,8 @@ Ref: {email_ref}
 def notify_2fa_lockout(
     account: Account,
     *,
-    ip_address: Optional[str] = None,
-    locked_minutes: Optional[int] = None,
+    ip_address: str | None = None,
+    locked_minutes: int | None = None,
 ) -> bool:
     """Alert that an account hit the 2FA lockout (too many failed 2FA attempts).
 
@@ -1307,7 +1306,7 @@ def notify_2fa_lockout(
     return sent_any
 
 
-def notify_new_ip_login(account: Account, ip_address: str, location: Optional[str] = None) -> bool:
+def notify_new_ip_login(account: Account, ip_address: str, location: str | None = None) -> bool:
     """
     Notify account owner of login from new IP address.
     
@@ -1507,7 +1506,7 @@ Ref: {email_ref}
 # Password Changed Notification
 # =============================================================================
 
-def notify_password_changed(account: Account, source_ip: Optional[str] = None) -> bool:
+def notify_password_changed(account: Account, source_ip: str | None = None) -> bool:
     """
     Send notification when password is changed.
     
@@ -1540,9 +1539,8 @@ def notify_password_changed(account: Account, source_ip: Optional[str] = None) -
     email_ref = generate_email_ref('notify', account.username)
     
     base_url = _get_base_url()
-    login_url = f"{base_url}/account/login"
     reset_url = f"{base_url}/account/forgot-password"
-    
+
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     ip_info = f"from IP address {source_ip}" if source_ip else ""
     
@@ -1647,7 +1645,7 @@ def notify_token_revoked(
     account: Account,
     token: APIToken,
     revoked_by: str,
-    reason: Optional[str] = None
+    reason: str | None = None
 ) -> bool:
     """
     Send notification when a token is revoked.
@@ -1665,7 +1663,7 @@ def notify_token_revoked(
     """
     notifier = _get_notifier()
     if not notifier:
-        logger.warning(f"Email notifier not configured - cannot send token revoked notification")
+        logger.warning("Email notifier not configured - cannot send token revoked notification")
         return False
     
     # Generate email reference ID for traceability
@@ -1793,7 +1791,7 @@ def notify_credential_rotation(
     account: Account,
     tokens_invalidated: int,
     reason: str,
-    admin_username: Optional[str] = None
+    admin_username: str | None = None
 ) -> bool:
     """
     Send notification when user_alias is regenerated, invalidating all tokens.
@@ -1811,7 +1809,7 @@ def notify_credential_rotation(
     """
     notifier = _get_notifier()
     if not notifier:
-        logger.warning(f"Email notifier not configured - cannot send credential rotation notification")
+        logger.warning("Email notifier not configured - cannot send credential rotation notification")
         return False
     
     # Generate email reference ID for traceability
@@ -1939,7 +1937,7 @@ def notify_email_changed_old(
     account: Account,
     old_email: str,
     new_email: str,
-    admin_username: Optional[str] = None
+    admin_username: str | None = None
 ) -> bool:
     """
     Send security alert to OLD email when address is changed.
@@ -1955,13 +1953,11 @@ def notify_email_changed_old(
     """
     notifier = _get_notifier()
     if not notifier:
-        logger.warning(f"Email notifier not configured - cannot send email changed notification")
+        logger.warning("Email notifier not configured - cannot send email changed notification")
         return False
     
     # Generate email reference ID for traceability
     email_ref = generate_email_ref('alert', account.username)
-    
-    base_url = _get_base_url()
     
     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     initiator = f"administrator ({admin_username})" if admin_username else "you"
@@ -2055,7 +2051,7 @@ def notify_email_changed_new(
     account: Account,
     old_email: str,
     new_email: str,
-    admin_username: Optional[str] = None
+    admin_username: str | None = None
 ) -> bool:
     """
     Send confirmation to NEW email when address is changed.
@@ -2071,7 +2067,7 @@ def notify_email_changed_new(
     """
     notifier = _get_notifier()
     if not notifier:
-        logger.warning(f"Email notifier not configured - cannot send email changed notification")
+        logger.warning("Email notifier not configured - cannot send email changed notification")
         return False
     
     # Generate email reference ID for traceability
@@ -2181,7 +2177,7 @@ def send_notification(
     subject: str,
     template: str,
     context: dict,
-    override_email: Optional[str] = None
+    override_email: str | None = None
 ) -> bool:
     """
     Generic notification sender that dispatches to specific functions.

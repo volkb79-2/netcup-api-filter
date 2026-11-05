@@ -358,7 +358,6 @@ def process_ddns_update(protocol='dyndns2'):
     
     # Get response helper for protocol
     response_func = dyndns2_response if protocol == 'dyndns2' else noip_response
-    auth_error = 'badauth' if protocol == 'dyndns2' else 'nohost'
     permission_error = '!yours' if protocol == 'dyndns2' else 'abuse'
     hostname_error = 'notfqdn' if protocol == 'dyndns2' else 'nohost'
     

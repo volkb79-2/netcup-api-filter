@@ -22,7 +22,6 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
 
 from .models import Account, ResetToken, RegistrationRequest, db, validate_password
 
@@ -202,7 +201,7 @@ def verify_reset_token(
     raw_token: str,
     current_ip: str | None = None,
     expected_type: str | None = None
-) -> tuple[Optional[Account], str | None]:
+) -> tuple[Account | None, str | None]:
     """Verify a password reset token and return the associated account.
     
     Args:
@@ -266,7 +265,7 @@ def verify_reset_token(
     return target, None
 
 
-def complete_password_reset(account: Account, new_password: str, raw_token: str) -> Tuple[bool, str]:
+def complete_password_reset(account: Account, new_password: str, raw_token: str) -> tuple[bool, str]:
     """Complete a password reset by setting new password.
     
     Returns (success, error_message).
@@ -327,7 +326,7 @@ def send_password_reset_email(
     
     Returns True if email sent successfully.
     """
-    from flask import url_for, current_app
+    from flask import url_for
     from .email_notifier import get_email_notifier_from_config
 
     # Check if account has an email

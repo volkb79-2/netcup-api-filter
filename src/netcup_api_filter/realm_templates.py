@@ -43,10 +43,10 @@ Public exports:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 # Ordered to match CLIENT_TEMPLATES.md ("Template Reference" sections 1-6).
-REALM_TEMPLATES: List[Dict[str, Any]] = [
+REALM_TEMPLATES: list[dict[str, Any]] = [
     {
         "id": "ddns_single_host",
         "name": "DDNS Single Host",
@@ -104,7 +104,7 @@ REALM_TEMPLATES: List[Dict[str, Any]] = [
 ]
 
 # Convenience lookup by id.
-REALM_TEMPLATES_BY_ID: Dict[str, Dict[str, Any]] = {
+REALM_TEMPLATES_BY_ID: dict[str, dict[str, Any]] = {
     tpl["id"]: tpl for tpl in REALM_TEMPLATES
 }
 

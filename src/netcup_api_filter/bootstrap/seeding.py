@@ -11,7 +11,7 @@ import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List, Sequence, Tuple
+from collections.abc import Sequence
 
 from ..models import (
     Account,
@@ -27,7 +27,6 @@ from ..models import (
     # Multi-backend models
     BackendProvider,
     BackendService,
-    DomainRootGrant,
     GrantTypeEnum,
     ManagedDomainRoot,
     OwnerTypeEnum,
@@ -289,7 +288,7 @@ def ensure_realm(account: Account, options: RealmSeedOptions, approved_by: Accou
     return realm
 
 
-def ensure_token(realm: AccountRealm, options: TokenSeedOptions) -> Tuple[APIToken, str]:
+def ensure_token(realm: AccountRealm, options: TokenSeedOptions) -> tuple[APIToken, str]:
     """Create a token for a realm.
     
     Returns:
@@ -344,7 +343,7 @@ def ensure_client(options):
     return None
 
 
-def generate_test_client_credentials() -> Tuple[str, str]:
+def generate_test_client_credentials() -> tuple[str, str]:
     """Generate secure random credentials for test account.
     
     Returns:
@@ -461,7 +460,7 @@ def seed_default_entities(
     client_options = None,  # Ignored for backwards compat
     seed_demo_clients_flag: bool = False,
     seed_mock_email: bool = False,
-) -> Tuple[str | None, str | None, list]:
+) -> tuple[str | None, str | None, list]:
     """Seed default admin and optionally demo accounts.
     
     Args:
@@ -484,7 +483,7 @@ def seed_default_entities(
     if seed_mock_email:
         seed_mock_email_config()
     
-    all_demo_clients: list[Tuple[str, str, str]] = []
+    all_demo_clients: list[tuple[str, str, str]] = []
     primary_client_id = None
     primary_secret = None
     

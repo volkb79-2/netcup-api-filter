@@ -23,9 +23,7 @@ from flask import (
 
 from ..account_auth import (
     change_password,
-    create_session,
     finalize_registration_with_realms,
-    get_current_account,
     is_authenticated,
     login_step1,
     logout,
@@ -51,12 +49,10 @@ from ..realm_token_service import (
     get_tokens_for_realm,
     request_realm as request_realm_service,
     revoke_token,
-    update_token,
 )
 
 from ..telegram_service import (
     build_start_link,
-    get_link_callback_secret,
     get_telegram_config,
     is_telegram_configured_for_linking,
     send_telegram_message,
@@ -1849,7 +1845,6 @@ def change_password_page():
 @require_account_auth  
 def export_activity():
     """Export account activity to ODS format."""
-    from io import BytesIO
     from flask import send_file
     
     account = g.account
@@ -2161,7 +2156,6 @@ def unlink_telegram():
         flash('No Telegram account linked.', 'warning')
         return redirect(url_for('account.link_telegram'))
     
-    old_telegram_id = account.telegram_chat_id
     account.telegram_chat_id = None
     account.telegram_enabled = 0
     # Explicitly disable channel preference on unlink.
