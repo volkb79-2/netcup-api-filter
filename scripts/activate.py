@@ -15,6 +15,7 @@ import tarfile
 import time
 import urllib.request
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -34,8 +35,12 @@ def _restore_secret(database_path: Path, secret: Optional[str]) -> None:
         return
     try:
         with sqlite3.connect(database_path) as connection:
+            # UPSERT: a freshly seeded release DB has no secret_key row yet (the app creates it on
+            # first start), so a bare UPDATE would silently rotate the key on every release.
             connection.execute(
-                "UPDATE settings SET value = ? WHERE key = 'secret_key'", (secret,)
+                "INSERT INTO settings (key, value, updated_at) VALUES ('secret_key', ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (secret, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")),
             )
             connection.commit()
     except sqlite3.Error as error:

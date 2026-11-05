@@ -423,7 +423,7 @@ def seed_demo_accounts():
     db.session.commit()
     
     logger.info(f"Demo account created: {demo_username} (alias: {demo_alias[:4]}...)")
-    logger.info(f"Demo token: {full_token}")  # Log for testing purposes
+    logger.info(f"Demo token created (prefix {full_token[:8]}...)")  # never log the full token
 
 
 def get_setting(key: str) -> Any | None:
