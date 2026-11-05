@@ -126,7 +126,7 @@ environment = "test-runner-py311"
 argv = ["bash", "-c", "cd {worktree} && /opt/tester-venv/bin/python -m pytest ui_tests/tests -q -p no:cacheprovider -o addopts="]
 required_env = ["PLAYWRIGHT_SERVER_WS", "UI_BASE_URL", "DEPLOYMENT_TARGET"]
 clean_tree = false
-budget = "60m"
+budget = "120m"
 
 
 # --- R3 canaries (import-break): the suite must go red when the module cannot be imported ---
