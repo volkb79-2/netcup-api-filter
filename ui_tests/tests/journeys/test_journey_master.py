@@ -59,8 +59,7 @@ class TestJourneyMaster:
         # Execute journey steps in order using function-scope browser
         async with browser_session() as browser:
             await journey.test_J1_01_login_page_accessible(browser)
-            await journey.test_J1_02_default_credentials_work(browser)
-            await journey.test_J1_03_forced_password_change(browser)
+            await journey.test_J1_02_admin_persona_authenticates(browser)
             await journey.test_J1_04_dashboard_state(browser)
             await journey.test_J1_05_admin_pages_accessible(browser)
             await journey.test_J1_06_summary(browser)

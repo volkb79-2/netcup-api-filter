@@ -51,10 +51,11 @@ async def test_admin_accounts_table_lists_preseeded_account(active_profile):
         await browser.verify_status(200)
 
         table_text = await browser.text("table tbody")
-        # The session personas (ui_tests/personas.py) are listed.
+        # The session's portal personas (ui_tests/personas.py) are listed; the accounts
+        # table lists non-admin accounts only (api/admin.py filters is_admin=0).
         assert "There are no items in the table" not in table_text
         assert settings.user_username in table_text
-        assert settings.admin_username in table_text
+        assert settings.admin_username not in table_text
 
         screenshot_path = await browser.screenshot(f"{settings.screenshot_prefix}-admin-accounts")
         assert screenshot_path.endswith((".png", ".webp")), f"Expected .png or .webp, got {screenshot_path}"
