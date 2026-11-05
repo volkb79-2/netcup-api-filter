@@ -108,6 +108,9 @@ jobs:
       # SERVICE_MAILPIT (in the ciu stack it comes from .env.services). The app and Playwright run
       # on this same runner, so the service is reachable as localhost.
       SERVICE_MAILPIT: localhost
+      # Netcup CCP mock for the golden DB's netcup_config (build_deployment.py --local fails
+      # without it; started by the "Start mock Netcup API" step, same runner).
+      MOCK_NETCUP_API_URL: http://localhost:5555
       # ui_tests/e2e_env.py starts its own per-session app from the deploy tree and tells the
       # browser to reach it here (in-process Playwright on the same host).
       NAF_E2E_ADVERTISE_HOST: 127.0.0.1
@@ -140,8 +143,19 @@ jobs:
         # PLAYWRIGHT_SERVER_WS=ws://<service>:3000/ and skip this step.
         run: python -m playwright install --with-deps chromium
 
+      - name: Start mock Netcup API
+        run: |
+          nohup python -m flask --app ui_tests.mock_netcup_api run --host 127.0.0.1 --port 5555 \
+            > "$RUNNER_TEMP/mock-netcup-api.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS "$MOCK_NETCUP_API_URL/health" >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/mock-netcup-api.log"
+          exit 1
+
       # The same builder as `run-gate local-build`: deploy-local/ with the golden DB (only the
-      # shipped admin, must_change_password=1, plus the Mailpit email config).
+      # shipped admin, must_change_password=1, plus the Mailpit email config and the mock Netcup backend).
       - name: Build deploy tree (golden DB)
         run: python build_deployment.py --local --python-version 3.11 --build-dir deploy-local --output "$RUNNER_TEMP/deploy.zip"
 

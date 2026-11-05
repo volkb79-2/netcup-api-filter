@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Mock Netcup backend in the local/e2e golden DB**: `build_deployment.py --local` now seeds the
+  global `netcup_config` through `init_instance(mock_netcup=MockNetcup(...))`, pointing at the Netcup
+  CCP mock (`MOCK_NETCUP_API_URL` from the environment or `.env.services`; the build fails when it is
+  missing; the mock's public test credentials are the `LOCAL_MOCK_NETCUP_*` keys of `.env.defaults`,
+  guarded against drift by `tests/test_mock_netcup_seed.py`). Without it every DNS read of the
+  per-session e2e app was an HTTP 500. The tarball and the OCI first boot never get it. CI
+  `e2e-smoke` starts the mock (`flask --app ui_tests.mock_netcup_api`, port 5555) before the build.
+- e2e: `test_readonly_token_scope_enforced` creates its probe record at the apex, the only name inside
+  its `host` realm (any other name is denied by the hostname check before the operation check).
+
 - **Remote read-only webhosting smoke** (credentials/test-setup plan, S7): `NAF_E2E_TARGET=remote`
   binds the e2e settings to a deployed host from `NAF_REMOTE_BASE_URL` / `NAF_REMOTE_ADMIN_*`
   (password and TOTP seed via `*_FILE`, value/file mutually exclusive), `allow_writes=False`; only

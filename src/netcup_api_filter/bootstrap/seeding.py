@@ -359,19 +359,39 @@ def seed_mock_email_config(*, smtp_host: str, smtp_port: int, from_email: str, a
     logger.info(f"Seeded email config for mock mode: {smtp_host}:{smtp_port} from {from_email}")
 
 
-def seed_shipped_database(*, mock_email=None) -> Account:
+def seed_mock_netcup_config(mock) -> None:
+    """Point the global ``netcup_config`` at the Netcup CCP mock (bootstrap.instance.MockNetcup).
+
+    Local/e2e stacks only. Same JSON shape the admin UI saves (``api/admin.py``), so the admin
+    form, ``dns_api.get_netcup_client`` and tests that rewrite and restore it through the UI
+    keep working unchanged.
+    """
+    from ..database import set_setting
+
+    set_setting("netcup_config", {
+        "customer_id": mock.customer_id,
+        "api_key": mock.api_key,
+        "api_password": mock.api_password,
+        "api_url": mock.api_url,
+        "timeout": int(mock.timeout),
+    })
+    logger.info("Seeded netcup_config for the mock backend: %s", mock.api_url)
+
+
+def seed_shipped_database(*, mock_email=None, mock_netcup=None) -> Account:
     """Seed everything a shipped/golden database contains — and nothing else.
 
     Thin wrapper over bootstrap.instance.init_instance with the pre-set admin
     (``DEFAULT_ADMIN_*``, ``must_change_password``) and, for local builds only, a
-    Mailpit email config (*mock_email*: bootstrap.instance.MockEmail). No demo
+    Mailpit email config and mock Netcup backend (*mock_email* / *mock_netcup*:
+    bootstrap.instance.MockEmail / MockNetcup). No demo
     accounts, tokens, domain roots or audit logs: e2e personas are provisioned per
     session (ui_tests/personas.py), screenshot data only via ``--seed-demo``.
     """
     from .admin import shipped_admin_spec
     from .instance import init_instance
 
-    init_instance(admin=shipped_admin_spec(), mock_email=mock_email)
+    init_instance(admin=shipped_admin_spec(), mock_email=mock_email, mock_netcup=mock_netcup)
     return Account.query.filter_by(username=shipped_admin_spec().username).one()
 
 

@@ -70,6 +70,11 @@ that row across greenfield webhosting releases. There is no published default ke
 **Local Mailpit config** (local builds and the app stack only): host from `SERVICE_MAILPIT`
 (`.env.services`), `LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, `LOCAL_MAIL_ADMIN_EMAIL`.
 
+**Local mock Netcup backend** (local/e2e builds only, never the tarball or OCI image): URL from
+`MOCK_NETCUP_API_URL` (environment or `.env.services`; the local build fails without it), credentials
+and timeout from `LOCAL_MOCK_NETCUP_CUSTOMER_ID` / `_API_KEY` / `_API_PASSWORD` / `_TIMEOUT`
+(the mock's public test values; `LOCAL_` keys are never shipped). Stored as `netcup_config`.
+
 Test personas (admin, portal user, read-only client) are **not** seeded into any artifact: the e2e
 gate provisions them per session (see `docs/TESTING_INFRASTRUCTURE.md`).
 
