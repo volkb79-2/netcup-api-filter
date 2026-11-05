@@ -131,8 +131,8 @@ def build_one(python_version: str, output: Path) -> None:
         staging.mkdir(parents=True)
         shutil.copy2(REPO_ROOT / ".env.defaults", staging / ".env.defaults")
         shutil.copy2(REPO_ROOT / "src/netcup_api_filter/passenger_wsgi.py", staging / "passenger_wsgi.py")
-        shutil.copytree(REPO_ROOT / "src", staging / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        shutil.copytree(REPO_ROOT / "scripts", staging / "scripts", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(REPO_ROOT / "src", staging / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover"))
+        shutil.copytree(REPO_ROOT / "scripts", staging / "scripts", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover"))
         vendor_dir = staging / "vendor"
         vendor_dir.mkdir()
         _vendor_dependencies(vendor_dir, python_version)
