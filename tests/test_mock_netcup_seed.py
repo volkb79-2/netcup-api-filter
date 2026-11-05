@@ -19,7 +19,7 @@ from flask import Flask
 from netcup_api_filter import database
 from netcup_api_filter.api.dns_api import get_netcup_client
 from netcup_api_filter.bootstrap import MockNetcup, init_instance, seed_shipped_database, shipped_admin_spec
-from netcup_api_filter.config_defaults import is_build_or_test_only, require_default
+from netcup_api_filter.config_defaults import is_shipped_key, require_default
 from netcup_api_filter.database import get_setting
 
 REPO = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ def test_default_credentials_match_the_mock_and_never_ship():
     assert require_default("LOCAL_MOCK_NETCUP_API_KEY") == mock.MOCK_API_KEY
     assert require_default("LOCAL_MOCK_NETCUP_API_PASSWORD") == mock.MOCK_API_PASSWORD
     for key in ("CUSTOMER_ID", "API_KEY", "API_PASSWORD", "TIMEOUT"):
-        assert is_build_or_test_only(f"LOCAL_MOCK_NETCUP_{key}")
+        assert not is_shipped_key(f"LOCAL_MOCK_NETCUP_{key}")
 
 
 # --- build_deployment.py: local vs. release ------------------------------------
