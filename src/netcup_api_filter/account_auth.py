@@ -678,7 +678,6 @@ def create_session(account: Account):
     previous_token = old_session_data.get(SESSION_KEY_SESSION_TOKEN)
     session.clear()
     session.update(old_session_data)
-    session.modified = True
     
     session[SESSION_KEY_USER_ID] = account.id
     session[SESSION_KEY_USERNAME] = account.username
