@@ -43,42 +43,41 @@ async def test_netcup_config_test_connection(active_profile, mock_netcup_api_ser
 
 
 async def _test_connection(browser, mock_netcup_api_server, mock_netcup_credentials):
-    if True:
-        await workflows.open_admin_netcup_config(browser)
+    await workflows.open_admin_netcup_config(browser)
 
-        await browser.fill('input[name="customer_id"]', str(mock_netcup_credentials["customer_id"]))
-        await browser.fill('input[name="api_key"]', mock_netcup_credentials["api_key"])
-        await browser.fill('input[name="api_password"]', mock_netcup_credentials["api_password"])
-        await browser.fill('input[name="api_url"]', mock_netcup_api_server.url)
+    await browser.fill('input[name="customer_id"]', str(mock_netcup_credentials["customer_id"]))
+    await browser.fill('input[name="api_key"]', mock_netcup_credentials["api_key"])
+    await browser.fill('input[name="api_password"]', mock_netcup_credentials["api_password"])
+    await browser.fill('input[name="api_url"]', mock_netcup_api_server.url)
 
-        # The test/verify button is a non-submit button
-        test_buttons = await browser.query_selector_all('button[type="button"]')
-        test_button = None
-        for btn in test_buttons:
-            btn_text = (await btn.inner_text()).lower()
-            if "test" in btn_text or "verify" in btn_text:
-                test_button = btn
-                break
+    # The test/verify button is a non-submit button
+    test_buttons = await browser.query_selector_all('button[type="button"]')
+    test_button = None
+    for btn in test_buttons:
+        btn_text = (await btn.inner_text()).lower()
+        if "test" in btn_text or "verify" in btn_text:
+            test_button = btn
+            break
 
-        assert test_button is not None, (
-            "Expected a Test/Verify button on the Netcup config page"
+    assert test_button is not None, (
+        "Expected a Test/Verify button on the Netcup config page"
+    )
+
+    await test_button.click()
+    try:
+        await browser._page.wait_for_selector(
+            '.alert, .message, [role="alert"]', timeout=3000
         )
+    except Exception:
+        pass
+    await browser._page.wait_for_load_state("networkidle", timeout=5000)
 
-        await test_button.click()
-        try:
-            await browser._page.wait_for_selector(
-                '.alert, .message, [role="alert"]', timeout=3000
-            )
-        except Exception:
-            pass
-        await browser._page.wait_for_load_state("networkidle", timeout=5000)
-
-        page_text = await browser.text("body")
-        assert (
-            "success" in page_text.lower()
-            or "connection" in page_text.lower()
-            or "ok" in page_text.lower()
-        ), f"Expected success response after test connection, got: {page_text[:300]!r}"
+    page_text = await browser.text("body")
+    assert (
+        "success" in page_text.lower()
+        or "connection" in page_text.lower()
+        or "ok" in page_text.lower()
+    ), f"Expected success response after test connection, got: {page_text[:300]!r}"
 
 
 async def test_email_config_page(active_profile):
