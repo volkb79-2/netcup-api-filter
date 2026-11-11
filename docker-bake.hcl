@@ -53,17 +53,20 @@ function "release_tags" {
 
 // The self-hosting release images — see Dockerfile.release. One per shipped
 // interpreter: py311 mirrors the Passenger runtime, py314 is the default.
+# Exact age-windowed patch tags from versions/oci-images.json (cmru targets
+# oci.python311 / oci.python314); keep them equal to the corresponding
+# `build.python_base_image*` facts.
 target "py311" {
   dockerfile = "Dockerfile.release"
   context    = "."
-  args       = { PYTHON_VERSION = "3.11" }
+  args       = { PYTHON_VERSION = "3.11", PYTHON_BASE_IMAGE = "python:3.11.17-slim-trixie" }
   tags       = release_tags("app", "py311", false)
 }
 
 target "py314" {
   dockerfile = "Dockerfile.release"
   context    = "."
-  args       = { PYTHON_VERSION = "3.14" }
+  args       = { PYTHON_VERSION = "3.14", PYTHON_BASE_IMAGE = "python:3.14.9-slim-trixie" }
   tags       = release_tags("app", "py314", true)
 }
 

@@ -52,8 +52,11 @@ auto_connect_network = true
 [build]
 python_version_primary = "3.11"
 python_version_secondary = "3.14"
-python_base_image = "python:3.11-slim-trixie"
-python_base_image_secondary = "python:3.14-slim-trixie"
+# Exact age-windowed patch tags from versions/oci-images.json (cmru targets
+# oci.python311 / oci.python314). The mocks use the primary image so they follow
+# the Passenger/runner policy.
+python_base_image = "python:3.11.17-slim-trixie"
+python_base_image_secondary = "python:3.14.9-slim-trixie"
 
 [deploy]
 # naf's container convention is <project>-<env>-<svc> => naf-dev-test-runner,

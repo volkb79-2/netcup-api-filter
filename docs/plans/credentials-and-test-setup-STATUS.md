@@ -154,7 +154,7 @@ finding. Unit tests only (pwmcp slots were in use): the browser paths are for th
 | 12 | stale docs/comments | `72226f3`, `f3fd090` | hook/enforce wording, no hard test counts, README e2e text, `.env.defaults` comment, unused `base_url` fixture removed, historical banners on `.vscode/REVIEW_PROMPT_*.md` | — |
 | 14 | conftest not exception-safe; port race; admin/admin on pwmcp net | `f3fd090` | `ExitStack` session fixture; bounded retry on "Address already in use"; `retire_shipped_admin()` in every session DB except `app_instance(keep_shipped_admin=True)` (installation test) | `test_e2e_env.py` |
 | 15 | image ran as root; no `.dockerignore` | `d72d170` | user `naf` (10001), `/data` + `/config` writable, log to `/data`; `.dockerignore` allowlist | `tests/test_image_hardening.py` (static) |
-| 16 | CI mailpit floating tag | `11da3ca` | `ghcr.io/axllent/mailpit:v1.32.0` | — |
+| 16 | CI mailpit floating tag | `11da3ca` | `ghcr.io/axllent/mailpit:v1.33.0` (current exact pin; WP8 advanced it) | — |
 | 17 | PowerDNS key on `docker exec` argv | `2d72216` | `-e NAME`, value in the hook's env | `tests/test_seed_domain_hook_secret.py` |
 | 18 | `_restore_secret` swallowed errors | `e3de4f7` | raises for a non-empty preserved secret (`timezone.utc` kept) | `tests/test_activate_secret.py` |
 | 19 | `/account/2fa/resend` unchecked method | `2a3bb6b` | rejected unless offered (`_offered_2fa_methods`) | `test_portal_totp_login.py` |

@@ -57,7 +57,7 @@ HTTPS-dependent** (secure-cookie assertions etc.) may carry the marker.
 2. `pip install -r requirements-dev.txt` plus whatever `ui_tests` imports that isn't in it —
    check `ui_tests/requirements.txt` if present (playwright, httpx, pytest-timeout…); then
    `playwright install --with-deps chromium`.
-3. Mailpit as a **service container** (`axllent/mailpit`, ports 8025/1025,
+3. Mailpit as a **service container** (`ghcr.io/axllent/mailpit:v1.33.0`, ports 8025/1025,
    `MP_SMTP_AUTH_ACCEPT_ANY=true`); job env `MAILPIT_URL=http://localhost:8025`,
    `MAILPIT_USERNAME=ci`, `MAILPIT_PASSWORD=ci`.
 4. Run the bootstrap script (step 1 env).

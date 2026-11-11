@@ -2379,7 +2379,7 @@ services:
       - "5556:5556"
     
   mailpit:  # Modern MailHog alternative
-    image: axllent/mailpit
+    image: ghcr.io/axllent/mailpit:v1.33.0
     ports:
       - "8025:8025"  # Web UI
       - "1025:1025"  # SMTP

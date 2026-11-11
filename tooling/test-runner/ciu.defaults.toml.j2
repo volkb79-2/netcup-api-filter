@@ -19,10 +19,12 @@ image_tag = "local"
 [[test_runner.variants]]
 name = "py311"
 python_version = "{{ build.python_version_primary }}"
+python_base_image = "{{ build.python_base_image }}"
 
 [[test_runner.variants]]
 name = "py314"
 python_version = "{{ build.python_version_secondary }}"
+python_base_image = "{{ build.python_base_image_secondary }}"
 
 [test_runner.run_gate]
 # MUST equal run-gate.toml [environments.*].state_root (outside every checkout).

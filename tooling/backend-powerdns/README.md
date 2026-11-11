@@ -8,8 +8,10 @@ development, live DNS verification, and the product's PowerDNS backend integrati
 
 The stack has two services:
 
-- a one-shot init container that prepares the SQLite data directory and loads
-  `schema.sqlite3.sql` when the database does not exist;
+- a one-shot init container using the same pinned PowerDNS image that prepares the
+  SQLite data directory and loads `schema.sqlite3.sql` when the database does not
+  exist (the upstream image already carries `sqlite3`, so no floating Alpine image
+  is needed);
 - `powerdns/pdns-auth-48`, running after initialization with the gsqlite3 backend.
 
 Publish and exposure are deliberately different:
@@ -150,7 +152,7 @@ URL; keep the shell fact and `backend_powerdns.ports.api` aligned.
 
 The retired helpers `ensure_zone.py`, `setup-zones.sh`, and `init-db.sh` were removed.
 Zone creation belongs to the ciu `post_compose` hook, and schema initialization belongs
-to the init container command in `ciu.compose.yml.j2`.
+to the PowerDNS-image init service command in `ciu.compose.yml.j2`.
 
 ## Data and lifecycle
 

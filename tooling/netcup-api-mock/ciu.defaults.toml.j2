@@ -14,5 +14,7 @@
 [netcup_api_mock]
 name = "mock-netcup-api"
 image = "python"
-tag = "3.11-slim"
+# Exact age-windowed patch tag from versions/oci-images.json (cmru target
+# oci.python311). Follow the runner/Passenger primary interpreter policy.
+tag = "3.11.17-slim-trixie"
 port = 80

@@ -77,8 +77,8 @@ network_mode: host
 ```
 
 **Use Case**: High-performance network I/O, monitoring tools
-- Example: `docker run --network host nginx`
-- Nginx listens on host's port 80 directly
+- Example: `docker run --network host ghcr.io/axllent/mailpit:v1.33.0`
+- Mailpit listens directly on the host network
 
 ### 3. None
 

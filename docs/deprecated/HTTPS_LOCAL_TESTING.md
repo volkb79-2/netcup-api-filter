@@ -195,15 +195,15 @@ Expected output:
 
 ```bash
 # Check certificate directory exists
-docker run --rm -v /etc/letsencrypt:/certs:ro alpine:latest \
+docker run --rm -v /etc/letsencrypt:/certs:ro python:3.11.17-slim-trixie \
   ls -la /certs/live/
 
 # Verify symlinks for your domain
-docker run --rm -v /etc/letsencrypt:/certs:ro alpine:latest \
+docker run --rm -v /etc/letsencrypt:/certs:ro python:3.11.17-slim-trixie \
   ls -la /certs/live/gstammtisch.dchive.de/
 
 # Test certificate content
-docker run --rm -v /etc/letsencrypt:/certs:ro alpine:latest \
+docker run --rm -v /etc/letsencrypt:/certs:ro python:3.11.17-slim-trixie \
   cat /certs/live/gstammtisch.dchive.de/fullchain.pem | head -5
 ```
 
@@ -300,7 +300,7 @@ pytest ui_tests/tests/test_admin_ui.py::test_admin_authentication_flow -v
 **Solution**:
 1. Verify certificates exist on **host** (not devcontainer):
    ```bash
-   docker run --rm -v /etc/letsencrypt:/certs:ro alpine:latest ls /certs/live/
+   docker run --rm -v /etc/letsencrypt:/certs:ro python:3.11.17-slim-trixie ls /certs/live/
    ```
 2. If no certificates found, install certbot on host and obtain certificates:
    ```bash

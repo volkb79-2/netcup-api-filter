@@ -23,6 +23,7 @@ services:
       dockerfile: tooling/test-runner/Dockerfile
       args:
         PYTHON_VERSION: "{{ v.python_version }}"
+        PYTHON_BASE_IMAGE: "{{ v.python_base_image }}"
         RUN_UID: "${CONTAINER_UID:?required — source ciu.env}"
         RUN_GID: "${DOCKER_GID:?required — source ciu.env}"
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-test-runner-{{ v.name }}

@@ -5,10 +5,12 @@
 #   [governance] in ciu.global.toml — cgroup_parent / mem_limit / blkio IOPS)
 #
 # Two services, carried over unchanged from the pre-ciu docker-compose.yml:
-#   * {{ backend_powerdns.name }}-init — alpine one-shot: prepares the sqlite
-#     data dir (UID 953:DOCKER_GID), loads schema.sqlite3.sql if the DB is
-#     missing. Runs once, `depends_on: condition: service_completed_successfully`
-#     gates the auth server on it finishing cleanly.
+#   * {{ backend_powerdns.name }}-init — one-shot using the SAME pinned PowerDNS
+#     image: prepares the sqlite data dir (UID 953:DOCKER_GID), loads
+#     schema.sqlite3.sql if the DB is missing. The upstream runtime image already
+#     carries sqlite3, so there is no separate floating Alpine image to maintain.
+#     Runs once, `depends_on: condition: service_completed_successfully` gates the
+#     auth server on it finishing cleanly.
 #   * {{ backend_powerdns.name }} — the PowerDNS Authoritative Server itself
 #     (gsqlite3 backend), reading the volume the init container prepared.
 #
@@ -35,9 +37,14 @@
 
 services:
   {{ backend_powerdns.name }}-init:
-    image: alpine:latest
+    image: {{ backend_powerdns.image }}:{{ backend_powerdns.image_tag }}
     # Always re-pull so a moving tag (:latest / :3.11-slim) never gets stuck stale.
     pull_policy: missing
+    # The official image runs as pdns by default and has a startup.py entrypoint.
+    # This one-shot needs root only to prepare/chown the bind mount, and it needs a
+    # plain shell rather than the PowerDNS daemon entrypoint.
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}-init
 
     volumes:
@@ -45,8 +52,6 @@ services:
       - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/schema.sqlite3.sql:/schema.sqlite3.sql:ro
 
     command:
-      - sh
-      - -c
       - |
         echo '[init] Preparing data directory for PowerDNS (UID {{ backend_powerdns.uid }}), group docker (GID from host: ${DOCKER_GID})'
 
@@ -58,7 +63,6 @@ services:
         # Initialize database if missing
         if [ ! -f /data/pdns.sqlite3 ]; then
           echo '[init] Creating database from schema'
-          apk add --no-cache sqlite >/dev/null 2>&1
           sqlite3 /data/pdns.sqlite3 < /schema.sqlite3.sql
           echo '[init] Database created'
         else

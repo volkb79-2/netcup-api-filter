@@ -16,11 +16,14 @@
 # service (pwmcp) over PLAYWRIGHT_SERVER_WS.
 #
 # The repo is BIND-MOUNTED at runtime; this image supplies only the closure + toolchain.
-# Build (ciu does this; PYTHON_VERSION has no default on purpose — an unset value
-# makes the FROM below fail instead of silently choosing an interpreter):
-#   docker build -f tooling/test-runner/Dockerfile --build-arg PYTHON_VERSION=3.11 .
+# Build (ciu does this; neither value has a default on purpose — an unset value
+# makes the FROM below fail instead of silently choosing a base):
+#   docker build -f tooling/test-runner/Dockerfile \
+#     --build-arg PYTHON_VERSION=3.11 \
+#     --build-arg PYTHON_BASE_IMAGE=python:3.11.17-slim-trixie .
 ARG PYTHON_VERSION
-FROM python:${PYTHON_VERSION}-slim-trixie
+ARG PYTHON_BASE_IMAGE
+FROM ${PYTHON_BASE_IMAGE}
 
 ARG PYTHON_VERSION
 # No defaults: ciu passes the host-owned uid/gid (CONTAINER_UID / DOCKER_GID); an unset

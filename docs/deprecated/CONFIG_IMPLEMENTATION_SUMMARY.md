@@ -230,7 +230,7 @@ UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
 ### Certificate Verification
 
 ```bash
-docker run --rm -v /etc/letsencrypt:/certs:ro alpine:latest \
+docker run --rm -v /etc/letsencrypt:/certs:ro python:3.11.17-slim-trixie \
   ls -la /certs/live/gstammtisch.dchive.de/
 ```
 

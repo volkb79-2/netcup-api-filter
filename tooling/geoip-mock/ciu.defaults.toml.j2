@@ -15,7 +15,9 @@
 [geoip_mock]
 name = "mock-geoip"
 image = "python"
-image_tag = "3.11-slim"
+# Exact age-windowed patch tag from versions/oci-images.json (cmru target
+# oci.python311). Follow the runner/Passenger primary interpreter policy.
+image_tag = "3.11.17-slim-trixie"
 port = 80
 
 [geoip_mock.mounts]

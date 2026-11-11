@@ -65,6 +65,6 @@ Prerequisites: `PWMCP_NETWORK` (see AGENTS.md) and the per-stack env: `set -a; .
 
 | Where | What |
 |---|---|
-| `ciu.defaults.toml.j2` | runner variants (name → Python version), pwmcp, state root |
+| `ciu.defaults.toml.j2` | runner variants (name → Python version + cmru-pinned base image), pwmcp, state root |
 | `run-gate.toml` | lanes and exec environments (SSOT) |
 | `.env.workspace` | `PHYSICAL_REPO_ROOT`, `DOCKER_NETWORK_INTERNAL`, `USER_UID`, `DOCKER_GID` (auto-generated) |
