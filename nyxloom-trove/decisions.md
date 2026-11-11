@@ -226,7 +226,7 @@ cascades are wrong just preserves the wrong data faithfully.
 
 - **D-008 deployment types:** `internal` (instance network, mocks, nothing published, reached by
   container name) and `public` (behind the host edge, PowerDNS on port 53, real SMTP/IMAP/netcup),
-  chosen with `ciu up --profile`; ciu 7.24 profiles + `topology_overrides`, v8-shaped.
+  chosen with `ciu up --profile`; ciu 7.24 profiles; stack flags derive from `ciu.selected_profiles` (spike B045), v8-shaped.
 - **D-009 identity:** worktrees get per-instance names through `deploy.environment_tag = "$INSTANCE_ID"`;
   the primary keeps `dev`.
 - **D-010 DNS singleton:** one PowerDNS owns host port 53; session stacks create `e2e-<id>.<zone>`

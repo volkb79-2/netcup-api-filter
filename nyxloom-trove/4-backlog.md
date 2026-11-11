@@ -243,8 +243,10 @@ Plan: [`docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`](../docs/plans/deploy
   `TRUSTED_PROXY_HOPS` (fail-fast), use `request.remote_addr` everywhere, test through the middleware.
 - **B044 — Webhoster probe.** `scripts/test-webspace-forwarded-headers.php` in vbpub next to the
   other `test-webspace-*` scripts; the operator runs it once; the tarball default stays 0 until then.
-- **B045 — ciu spike.** Verify `topology_overrides` flag switching, shared-infra join for a
-  worktree, one `GEN_LOCAL` key across stacks, `ASK_EXTERNAL` non-interactive behaviour, `ciu check`.
+- **B045 — ciu spike. DONE 2026-11-11** (findings: plan section 6). Flags derive from
+  `ciu.selected_profiles`; shared-infra join via `--shared-infra-ref-services`; `GEN_LOCAL` is per
+  checkout (a joined worktree needs `ASK_EXTERNAL`/`ASK_FILE` for the primary's PowerDNS key);
+  `ASK_EXTERNAL` aborts non-interactively without a value; `ciu check` passes (gitignore WARN for B046).
 - **B046 — Modern ciu configuration.** `environment_tag = "$INSTANCE_ID"` for worktrees (ciu
   CONSUMERS section 26), profiles `internal`/`public`, flags under `[topology.*]`, no hand-formed names.
 - **B047 — Public stack.** PowerDNS singleton on port 53 (data dir outside the checkout),

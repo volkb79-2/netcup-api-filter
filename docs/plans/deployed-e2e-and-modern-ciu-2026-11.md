@@ -19,8 +19,8 @@ zone, real SMTP/IMAP and netcup accounts) exists only as unconnected pieces.
 
 - **D-008 deployment types.** Two ciu deployment types selected at `ciu up --profile`: `internal` (everything on the instance
   network, mailpit + mocks, nothing published, frontend reached by container name) and `public` (frontend behind `tls-edge`,
-  PowerDNS public on port 53, real SMTP/IMAP/netcup). Realised on ciu 7.24 with `[deploy.profiles]` + `topology_overrides`
-  (flags live under `[topology.*]`, templates branch on them); shaped so ciu v8 layouts/realness (SPEC-V8 S7.6, S9) replace them
+  PowerDNS public on port 53, real SMTP/IMAP/netcup). Realised on ciu 7.24 with `[deploy.profiles]` and the `ciu.selected_profiles` template/hook facts
+  (templates branch on `ciu.selected_profiles`); shaped so ciu v8 layouts/realness (SPEC-V8 S7.6, S9) replace them
   without template changes.
 - **D-009 identity.** Worktrees get per-instance container names by `deploy.environment_tag = "$INSTANCE_ID"` in the worktree
   overlay (ciu CONSUMERS section 26); the primary keeps `dev`. No code forms a container name except from config
@@ -47,7 +47,7 @@ Routes: author on one route, independent review on the other; every merge needs 
 | WP1 | B042 | Config hygiene: one source for the PowerDNS URLs (internal URL derived from stack config, public URL from topology); delete `POWERDNS_PROXY_*`, the `/backend-powerdns` path and `POWERDNS_SOA` from `.env.defaults`; `POWERDNS_API_KEY` becomes a `GEN_LOCAL` ciu secret (compose + seed hook read it through ciu, not the shell); `.env.operator` keeps only operator facts; drift tests | A=ds | - |
 | WP2 | B043 | Trusted-proxy hops: `TRUSTED_PROXY_HOPS` setting (fail-fast, default 0 in `.env.defaults`, 1 in app-local/public via stack config); `ProxyFix` built from it; every raw `request.headers.get('X-Forwarded-For')` read in `api/account.py` replaced by `request.remote_addr`; unit tests through the real middleware (forged header, 0/1/2 hops); docs/SECURITY.md | A=luna | - |
 | WP3 | B044 | Webhoster probe: `scripts/test-webspace-forwarded-headers.php` in vbpub (sibling of the existing `test-webspace-*` scripts) that reports the headers/remote address a PHP request sees behind the hoster's front end, and a short runbook; the tarball default (`app-defaults.env`) stays 0 until the operator has run it | A=ds (vbpub worktree) | - |
-| WP4a | B045 | ciu spike (read-only, no code): confirm on 7.24 (a) `topology_overrides` can switch publish/labels flags per profile, (b) shared-infra join of a worktree to the primary's PowerDNS, (c) one `GEN_LOCAL` key shared by two stacks, (d) `ASK_EXTERNAL` non-interactive behaviour, (e) `ciu check` clean on the current config; write findings to the plan, file backlog entries for every gap | controller | - |
+| WP4a | B045 | DONE (section 6). ciu spike (read-only, no code): confirm on 7.24 (a) profile-derived switches for publish/labels flags, (b) shared-infra join of a worktree to the primary's PowerDNS, (c) one `GEN_LOCAL` key shared by two stacks, (d) `ASK_EXTERNAL` non-interactive behaviour, (e) `ciu check` clean on the current config; write findings to the plan, file backlog entries for every gap | controller | - |
 | WP4b | B046 | Modern ciu config: `environment_tag` from instance id for worktrees, profiles `internal`/`public` with flags under `[topology.*]`, templates branch on them (port 53 publish, traefik labels, guard, cookie secure), hooks and compose without hand-formed names, `ciu check` clean, dead rendered artifacts removed | A=ds | WP4a, WP1 |
 | WP5 | B047 | `public` stack: PowerDNS singleton (data dir not inside the repo checkout, pinned image, port 53, API behind traefik+guard), sub-zone create/delete helper, app container with `TRUSTED_PROXY_HOPS=1`, `naf-<instance>.<PUBLIC_FQDN>` Host rule, seeding of the delegated-zone backend via the hook (end-to-end tested, not only unit) | A=luna | WP4b, WP2 |
 | WP6 | B048 | Credentials: `ASK_EXTERNAL` secrets for SMTP/IMAP and netcup CCP, `.env.live.example`, delivery as files into the app container (mail/netcup configuration from the secret files at first boot, not from the DB seed on every `up`), docs in `DEV_INFRA_SETUP.md` | A=ds | WP4b |
@@ -70,7 +70,18 @@ Each gap names evidence from this repo and a "close when". Until a gap is closed
   frontend names under `PUBLIC_FQDN` (verify what already exists; WP5 documents the exact records).
 - Run the webhoster probe (WP3) and report the result; until then the tarball trusts no proxy.
 
-## 6. Risks / to verify during WP4a
+## 6. WP4a spike result (2026-11-11, reading ciu 7.24 docs + `ciu check` on main)
 
-Shared-infra join mechanics for a second checkout, `GEN_LOCAL` sharing across stacks, whether `topology_overrides` is enough to
-switch stack-level flags, host firewall for 53, rate limits of the certificate authority when many frontends are created.
+| Question | Finding |
+|---|---|
+| (a) per-deployment-type switches | Templates and hooks can read the selection: `ciu.selected_profiles` / `ciu.deployed_stacks` (CONSUMERS section 10, S3.12), e.g. `external.enabled = {{ 'public' in ciu.selected_profiles }}`. This replaces the `topology_overrides` idea of D-008: profiles pick the stacks and the flags derive from the selection; nothing global is overridden. |
+| (b) worktree joins the primary's PowerDNS | `ciu up --shared-infra` joins the reference instance's network; `--shared-infra-ref-services <alias>` writes a CIU-derived, re-authenticated `[topology.services.<alias>] internal_host/internal_port` (CONFIG S16.1a, CONSUMERS section 17). Use it for `powerdns`; never hand-type the primary's container name. |
+| (c) one generated key across stacks | `GEN_LOCAL:<name>` lives in the PROJECT store `<repo-root>/.ciu/secrets/<name>` (S4.9): shared by all stacks of ONE checkout. A joined worktree has its own store, so it cannot read the primary's PowerDNS key from there; supply it with `ASK_EXTERNAL`/`ASK_FILE` in the worktree (WP5 decides; a backlog entry is filed once tested, since stacks cannot be brought up from managed worktrees yet, CIU-176). |
+| (d) `ASK_EXTERNAL` non-interactive | Aborts when no value is supplied (S4.13), which is the hard-fail the live tier wants; the answer is cached in the store. |
+| (e) `ciu check` | PASS on main. One WARN: `.gitignore` lacks the ciu worktree artifacts (`ciu.worktree-instance.json`, `*.tmp` instance files). Fixed in WP4b. |
+| names | `container_name` stays explicit; worktrees isolate via `deploy.environment_tag = "$INSTANCE_ID"` (CONSUMERS section 26); ciu 7.24 refuses to start on a name owned by another checkout (CIU-104). v8 derives names (`SPEC-V8` S4.2) and forbids `container_name` in templates; moving there later means deleting the line. |
+
+## 7. Risks
+
+Rate limits of the certificate authority when many frontends are created, host firewall for 53, behaviour of the webhoster front end
+(WP3 probe), whether `ciu status --json` exposes enough endpoint facts for a lane preflight (filed as run-gate RG-261).
