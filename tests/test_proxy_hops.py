@@ -5,11 +5,13 @@ import html
 import importlib
 from pathlib import Path
 import re
+import shutil
 
 import pytest
 from flask import jsonify, render_template_string, request, url_for
 from werkzeug.datastructures import Headers
 
+from netcup_api_filter import config_defaults
 from netcup_api_filter.app import create_app
 from netcup_api_filter.config_defaults import _parse_env_file
 from netcup_api_filter.database import db
@@ -88,6 +90,20 @@ XFF_EDGE_CASES = [
         "198.51.100.16",
     ),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _repository_defaults_only():
+    """Keep proxy-hop defaults independent of untracked checkout overlays."""
+    cached_load_defaults = config_defaults.load_defaults
+    cached_load_defaults.cache_clear()
+    catalog = _parse_env_file(REPO / ".env.defaults")
+    config_defaults.load_defaults = lambda: catalog
+    try:
+        yield cached_load_defaults
+    finally:
+        config_defaults.load_defaults = cached_load_defaults
+        cached_load_defaults.cache_clear()
 
 
 @pytest.fixture
@@ -403,6 +419,76 @@ def test_default_session_cookie_domain_is_host_only_even_with_public_fqdn(app, c
     set_cookie = response.headers["Set-Cookie"]
     assert "Domain=" not in set_cookie
     assert "; Secure" in set_cookie
+
+
+def test_default_config_ignores_local_env_overlay(
+    tmp_path, monkeypatch, _repository_defaults_only
+):
+    """Contrast poisoned real-loader behaviour with the isolated proxy path."""
+    real_load_defaults = _repository_defaults_only
+    isolated_load_defaults = config_defaults.load_defaults
+    original_module_file = config_defaults.__file__
+    poisoned_cwd = tmp_path / "cwd"
+    poisoned_repo = tmp_path / "repo"
+    loader_source = poisoned_repo / "src" / "netcup_api_filter" / "config_defaults.py"
+    poisoned_env = (
+        "FLASK_SESSION_COOKIE_DOMAIN=auto\n"
+        "TRUSTED_PROXY_HOPS=7\n"
+        "PUBLIC_BASE_URL=http://evil.example\n"
+    )
+
+    for root in (poisoned_cwd, poisoned_repo):
+        root.mkdir(parents=True)
+        shutil.copyfile(REPO / ".env.defaults", root / ".env.defaults")
+        (root / ".env").write_text(poisoned_env, encoding="utf-8")
+    loader_source.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(
+        REPO / "src" / "netcup_api_filter" / "config_defaults.py",
+        loader_source,
+    )
+
+    monkeypatch.chdir(poisoned_cwd)
+    monkeypatch.delenv("FLASK_SESSION_COOKIE_DOMAIN", raising=False)
+    monkeypatch.delenv("TRUSTED_PROXY_HOPS", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.delenv("PUBLIC_FQDN", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "test_secret_key_for_testing_only")
+    monkeypatch.setenv("NETCUP_FILTER_DB_PATH", str(tmp_path / "overlay-defaults.db"))
+    monkeypatch.delenv("NETCUP_FILTER_APP_ROOT", raising=False)
+
+    # CONTROL: the real loader reads the poisoned cwd/repo overlays. Explicit
+    # assignment avoids overlapping monkeypatch undo order with the isolation
+    # fixture and makes the pair leak-free even when an assertion fails.
+    real_load_defaults.cache_clear()
+    config_defaults.load_defaults = real_load_defaults
+    config_defaults.__file__ = str(loader_source)
+    try:
+        assert config_defaults.get_default("FLASK_SESSION_COOKIE_DOMAIN") == "auto"
+        with pytest.raises(
+            RuntimeError,
+            match="FLASK_SESSION_COOKIE_DOMAIN must be empty for host-only cookies",
+        ):
+            create_app()
+    finally:
+        config_defaults.__file__ = original_module_file
+        config_defaults.load_defaults = isolated_load_defaults
+        real_load_defaults.cache_clear()
+
+    # ISOLATED: the same poisoned cwd remains, but this path reads only the catalog.
+    real_load_defaults.cache_clear()
+    application = None
+    try:
+        application = create_app()
+        assert application.config["TRUSTED_PROXY_HOPS"] == 0
+        assert application.config["PUBLIC_BASE_URL"] == ""
+        assert application.config.get("SESSION_COOKIE_DOMAIN") is None
+    finally:
+        real_load_defaults.cache_clear()
+        if application is not None:
+            with application.app_context():
+                db.session.remove()
+                db.drop_all()
+                db.engine.dispose()
 
 
 @pytest.mark.parametrize("app", [{"cookie_domain": ".example.invalid"}], indirect=True)

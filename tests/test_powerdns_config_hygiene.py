@@ -106,10 +106,10 @@ def _read_text_files(paths):
     return files
 
 
-def _git_text_files(repo: Path = REPO) -> list[tuple[Path, str]] | None:
+def _git_paths(repo: Path, *ls_files_args: str) -> set[Path] | None:
     try:
         proc = subprocess.run(
-            ["git", "ls-files", "-z"],
+            ["git", "ls-files", "-z", *ls_files_args],
             cwd=repo,
             capture_output=True,
             text=True,
@@ -124,8 +124,26 @@ def _git_text_files(repo: Path = REPO) -> list[tuple[Path, str]] | None:
         if _GIT_METADATA_UNAVAILABLE_MARKER in stderr:
             return None
         raise AssertionError(f"git ls-files failed: {stderr or '<no stderr>'}")
-    paths = [repo / relative for relative in proc.stdout.split("\0") if relative]
-    return _read_text_files(paths)
+    return {
+        Path(relative)
+        for relative in proc.stdout.split("\0")
+        if relative
+    }
+
+
+def _git_text_files(repo: Path = REPO) -> list[tuple[Path, str]] | None:
+    relative_paths = _git_paths(repo)
+    if relative_paths is None:
+        return None
+    return _read_text_files(repo / relative for relative in relative_paths)
+
+
+def _git_ignored_or_untracked_paths(repo: Path = REPO) -> set[Path] | None:
+    ignored = _git_paths(repo, "--others", "--ignored", "--exclude-standard")
+    untracked = _git_paths(repo, "--others", "--exclude-standard")
+    if ignored is None or untracked is None:
+        return None
+    return ignored | untracked
 
 
 def _fallback_in_scope(relative: Path) -> bool:
@@ -229,9 +247,29 @@ def _assert_git_allowlist_coverage(git_paths: set[Path]):
     )
 
 
+def _assert_fallback_matches_git(
+    fallback_paths: set[Path],
+    git_paths: set[Path],
+    git_ignored_or_untracked: set[Path],
+):
+    """The fallback includes every tracked text file; extras are untracked or ignored."""
+    _assert_git_allowlist_coverage(git_paths)
+    missing = git_paths - fallback_paths
+    assert not missing, (
+        "filesystem fallback omitted tracked text files: "
+        f"{sorted(missing)}"
+    )
+    unexplained = (fallback_paths - git_paths) - git_ignored_or_untracked
+    assert not unexplained, (
+        "filesystem fallback included files that Git does not report as ignored "
+        f"or untracked: {sorted(unexplained)}"
+    )
+
+
 def test_tracked_text_files_falls_back_when_git_executable_is_missing(monkeypatch):
     """A genuinely absent Git executable may use the source-tree fallback."""
     git_files = _git_text_files()
+    git_ignored_or_untracked = _git_ignored_or_untracked_paths()
 
     def missing_git(*_args, **_kwargs):
         raise FileNotFoundError(2, "No such file or directory", "git")
@@ -246,16 +284,15 @@ def test_tracked_text_files_falls_back_when_git_executable_is_missing(monkeypatc
 
     if git_files is None:
         pytest.skip(
-            "known Git metadata-unavailable condition; no comparison baseline exists"
+            "Git executable or repository metadata unavailable; fallback assertions "
+            "ran, comparison baseline skipped"
         )
+    assert git_ignored_or_untracked is not None
     git_paths = {path.relative_to(REPO) for path, _text in git_files}
-    _assert_git_allowlist_coverage(git_paths)
-    scoped_git_paths = {path for path in git_paths if _fallback_in_scope(path)}
-    assert fallback_paths == scoped_git_paths, (
-        "filesystem fallback file set drifted from git ls-files within the "
-        "fallback allowlist: "
-        f"extra={sorted(fallback_paths - scoped_git_paths)}, "
-        f"missing={sorted(scoped_git_paths - fallback_paths)}"
+    _assert_fallback_matches_git(
+        fallback_paths,
+        git_paths,
+        git_ignored_or_untracked,
     )
 
 
@@ -314,6 +351,46 @@ def test_fallback_allowlist_reports_new_top_level_paths():
         _assert_git_allowlist_coverage({Path("new-source-root/module.py")})
     with pytest.raises(AssertionError, match="extend _FALLBACK_ROOT_FILES"):
         _assert_git_allowlist_coverage({Path("new-root-script.py")})
+
+
+def test_fallback_comparison_allows_ignored_and_untracked_but_not_missing_tracked(tmp_path):
+    if shutil.which("git") is None:
+        pytest.skip("git executable unavailable; comparison control cannot run")
+
+    repo = tmp_path / "repo"
+
+    def write(relative: str, text: str = "source\n"):
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    write(".gitignore", "*.log\n")
+    write("README.md")
+    write("src/tracked.py")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    write("src/runtime.log", "ignored runtime output\n")
+    write("src/untracked.txt", "untracked local output\n")
+
+    fallback_paths = {
+        path.relative_to(repo)
+        for path, _text in _walk_text_files(repo)
+    }
+    git_files = _git_text_files(repo)
+    git_ignored_or_untracked = _git_ignored_or_untracked_paths(repo)
+    assert git_files is not None
+    assert git_ignored_or_untracked is not None
+    git_paths = {path.relative_to(repo) for path, _text in git_files}
+
+    assert {Path("src/runtime.log"), Path("src/untracked.txt")} <= fallback_paths - git_paths
+    _assert_fallback_matches_git(fallback_paths, git_paths, git_ignored_or_untracked)
+
+    with pytest.raises(AssertionError, match=r"omitted tracked text files.*src/tracked.py"):
+        _assert_fallback_matches_git(
+            fallback_paths - {Path("src/tracked.py")},
+            git_paths,
+            git_ignored_or_untracked,
+        )
 
 
 def test_fallback_ignores_generated_dirs_inside_and_outside_allowlist(tmp_path):
