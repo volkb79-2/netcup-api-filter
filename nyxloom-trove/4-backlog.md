@@ -57,6 +57,7 @@ items:
   - {id: B053, title: "Deployment type as a per-checkout fact with a change guard", type: feature, component: infra, context_estimate: medium, folds_into: F028}
   - {id: B054, title: "Passenger WSGI forwarded-headers probe", type: feature, component: tooling, context_estimate: small, folds_into: F029}
   - {id: B055, title: "On-demand e2e-remote lane against the webhoster", type: feature, component: tests, context_estimate: medium, folds_into: F028}
+  - {id: B056, title: "Legacy filter_proxy duplicate blueprint: remove or repair", type: bug, component: api, context_estimate: small, folds_into: F029}
 ---
 
 # Backlog
@@ -264,3 +265,4 @@ Opus review); decisions D-008..D-013.
   refuses a change until `ciu clean`, v8-named realness/publish keys; ciu request: selection context under `--dir`.
 - **B054 — Passenger probe.** Standalone WSGI app dir in vbpub scripts dumping what Passenger gives the app for a forged header.
 - **B055 — `e2e-remote`.** On-demand remote smoke against the Passenger tarball on the webhoster.
+- **B056 — Legacy `filter_proxy` duplicate blueprint.** Registered a second time in `passenger_wsgi.py` although `dns_api` shadows it; its route body has verified defects (reads `g.token`/`g.realm` while `require_auth` sets `g.auth`; calls `check_permission(token, realm, op)` against the current `(auth, operation, domain, ...)` signature; reads `realm.record_types_list`, which the model does not expose; `log_activity(details=...)`). WP2's test stubs these mismatches. Remove the duplicate registration and the dead module (preferred, see B-DEAD) or repair it; either way delete the stubs in `tests/test_proxy_hops.py`.

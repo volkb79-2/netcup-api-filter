@@ -1,6 +1,6 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-07-21.** Start here. This dashboard reflects the *current* state of
+**Last synced: 2026-11-11 (deployed-e2e / modern-ciu migration section below; the rest of this file is older and kept as written).** Start here. This dashboard reflects the *current* state of
 netcup-api-filter; the direction spine lives in [1-north-star.md](1-north-star.md),
 [2-product-definition.md](2-product-definition.md), [3-roadmap.md](3-roadmap.md), and
 [4-backlog.md](4-backlog.md); decisions live in [decisions.md](decisions.md) (D-###), and
@@ -16,6 +16,23 @@ A Flask app that fronts DNS-provider APIs (netcup today; PowerDNS/BYOD in progre
 
 - **Gate: green (2026-11-05)** — `run-gate gate`: `unit-py311` 443 passed, `unit-py314` (assay R0), `trove`; whole-target R1 floors are the measured baseline and only ratchet up. R3 canaries and R2 mutation (token_auth, account_auth, recovery_codes, utils) are declared in `assay.toml`; results are recorded below as they land. Targets: py3.11 (Passenger) and py3.14 (OCI). e2e uses the estate pwmcp instance (`PWMCP_NETWORK`).
 - **Version: `naf-v0.1.0`** (cmru `scm`, first tag pending).
+
+## Deployed e2e and modern-ciu migration (M9, plan `docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`, F028/F029)
+
+Controller-driven by the migration session of 2026-11-11 (handoff `handoffs/naf-controller-2026-11-11.md`); every change below was authored on one Codex route and
+reviewed independently on the other, with gates through `run-gate`.
+
+| Package | State | Evidence |
+|---|---|---|
+| WP1 (B042) PowerDNS config hygiene | merged (`ed42b97`) | unit-py311 1050 passed; stale keys gone, drift tests |
+| WP2 (B043) proxy trust | merged (`51083e3`) | `TRUSTED_PROXY_HOPS`, `PUBLIC_BASE_URL`, host-only cookies, ten raw XFF reads removed, default-deny static guard; unit-py311 1175, unit-py314 PASS on the branch head |
+| WP3/WP3b (B044/B054) webhoster probes | merged in vbpub (`scripts/test-webspace-forwarded-headers.php`, `scripts/test-webspace-passenger-forwarded-headers/`) | **operator action pending:** run both probes against the webhoster, then decide the tarball hop count (shipped default stays 1, unverified) |
+| WP8 (B050) cmru versions cover every image | merged (`c2d31a4`) | targets python 3.11.17 / 3.14.9, mailpit 1.33.0, powerdns 4.8.5; PowerDNS 4.8 is EOL upstream, 5.1 recommended (decision open) |
+| ciu CIU-193/205/206 | merged in vbpub main, unreleased (ciu 7.25.0 planned by the vbpub controller) | worktree-safe `ciu down`, selection facts + selection record under `ciu up --dir`, `ASK_HOST` host-wide secret |
+| WP4b-1/WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | wait for ciu 7.25.0 (identity, deployment type, public stacks, credentials, `e2e-public`) |
+| R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
+
+Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
 
 ## Release & infra model (current)
 
