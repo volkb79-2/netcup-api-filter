@@ -28,51 +28,21 @@ then check every job in section 4 before doing anything else. Facts here beat me
   `ciu worktree rm` refuses worktrees without generated identity: use `git worktree remove --force` + `git branch -D` after verifying merged.
 - Interview/questions: ask only for decisions that are the user's; otherwise decide, record in trove decisions, proceed.
 
-## 2. State of the repos (verify with git before acting)
-- naf `main` = `482181c` (local; origin behind: NOT pushed yet). Content: migration commits, tests, survivor fixes (token_auth/utils/account_auth), shim cleanup,
-  `d077df0` (assay R2 lane lists include the survivor test files), plan + trove records (F028/F029, M9, B041..B055, D-008..D-013), spike + Opus-review amendments.
-  Last full gates: `release-gate` PASS and `e2e` PASS (315 passed, 37 skipped) at `e2c34cf` (the code is unchanged since; later commits are docs/assay.toml).
-  R2 has NOT been confirmed: first run showed token_auth_r2 with 9 survivors only because the lane lists lacked the survivor files; fixed (d077df0); the rerun was
-  stopped on purpose (WP2 changes account.py, so a rerun must wait for a stable commit).
-- naf worktrees: `.worktrees/r2f` (branch `r2-final`, ab4f8c0, R2 throwaway; remove when R2 is redone from a fresh worktree), `.worktrees/wp1` (`wp1-config-hygiene`),
-  `.worktrees/wp2` (`wp2-proxy-hops`).
-- vbpub (shared checkout `/workspaces/vbpub`, main pushed to origin by the vbpub controller up to `f731d0437`): merged by me: backlog entries assay B525, run-gate RG-261,
-  cmru KI-149 (the vbpub controller renumbers it to KI-151). Worktrees of mine: `.worktrees/naf-wp3-probe-20261111` (branch `naf-wp3-probe-20261111`, acddea785),
-  `.worktrees/naf-gaps2-20261111` (branch `naf-gaps2-20261111`, 4717f1c6d).
-- Peer sessions (SendMessage by name): `vbpub-controller-joint-release` (owns vbpub releases; told about all my vbpub additions; says: no ciu code in flight, I may take
-  CIU-205/206/193; tell it before any ciu/cmru release is needed; it never releases while our ciu work is unmerged unless told), `dstdns-9d` (idle, untouched).
-- Plan docs (read them): `docs/plans/deployed-e2e-and-modern-ciu-2026-11.md` (plan, decisions D-008..D-013, WP table WP0..WP11, spike table, risks),
-  `docs/plans/deployed-e2e-opus-review-2026-11-11.md` (independent Opus review), trove: `nyxloom-trove/decisions.md`, `2-product-definition.md` (F028, F029),
-  `3-roadmap.md` (M9), `4-backlog.md` (B041..B055 in section B-DEPLOY).
+## 2. State (updated 2026-11-11 ~14:30 UTC, after the first migration batch)
+- naf `main` (local, NOT pushed): merged WP1 (`ed42b97`), WP8 (`c2d31a4`), WP2 (`51083e3`), trove STATE/B056 and this doc. All via independent MERGE verdicts; branches/worktrees removed
+  except `.worktrees/r2f` (branch `r2-final`, R2 throwaway: remove when R2 is redone from a fresh worktree).
+- vbpub main (pushed by the vbpub controller up to 6a37e3b87; CIU-208/209 merge `cc4fb8fd3` and the probes `51ed5fdfa`, `6f02577d4` may still be unpushed): merged by me: backlog CIU-205/206/RG-262, CIU-208/209, PHP and Passenger probes (WP3/WP3b), and the Opus-built ciu changes CIU-193/205/206 (merged `2de80e124`, `345afffad`, `0d40aefbd`, status `6a37e3b87`; merged-head ciu-gate PASS). ciu 7.25.0 will be cut by the vbpub controller; it never releases without telling me. I never run cmru release.
+- Peer sessions (SendMessage by name): `vbpub-controller-joint-release`, `dstdns-9d` (idle). Its R2/instances Opus implementer has my constraints.
+- Pending operator items: run both webhoster probes and report; `.env.live` credentials, delegation/A records, port-53 firewall, PowerDNS series (4.8 is EOL; 5.1 recommended, not live-tested).
 
-## 3. The plan in one paragraph
-Two deployment types per checkout (`internal`, `public`) stored as a per-checkout fact (`[topology.deployment] type` + `service_profiles` in the instance overlay, with a
-pre-compose change guard), `environment_tag="$INSTANCE_ID"` in every checkout with derived traefik names, two public roles (`public-edge` any checkout / `public-dns` exactly one
-checkout owning `${PUBLIC_IP}:53`), frontends run the OCI release image, per-session realm labels + reaper instead of sub-zones, credentials via prompt/`ASK_FILE` mounted only into
-frontend + a dedicated live runner with read-only login probes in the lane preflight, a small deployment-contract suite on the remote target (`e2e-public`, on demand),
-proxy trust (`TRUSTED_PROXY_HOPS`, `PUBLIC_BASE_URL`, `x_host=0`, host-only cookies, ten raw X-Forwarded-For reads removed, static guard test; tarball keeps 1 hop until the
-webhoster is measured), cmru versions covering every stack image, OCI boot smoke. The operator's directive now: DRIVE THE CIU CHANGES naf needs (CIU-193, CIU-205, CIU-206),
-then migrate naf's config/test setup onto them (WP4b-1, WP4b-2, WP5...).
+## 4. In flight at this checkpoint
+Final gates on the current naf main HEAD via `/tmp/naf-ctl/final-gates.sh` (trove, release-gate, local-build, e2e; logs `/tmp/naf-ctl/fg-<lane>.log`, `fg-done` marker). Trove lint was the only failure of the first attempt (handoff frontmatter): fixed by moving this file to docs/plans. Do not commit to main while they run (gate label must equal HEAD). Docker Hub authenticated pulls are limited to 200/hour: run `cmru versions resolve|check` at most once per hour; `cmru versions check naf` (release-gate step) has not yet been run against the new targets.
 
-## 4. Jobs in flight (check each with `job-check.sh`, `.done` files, git logs) and the next action for each
-| Job / run | What | State at handoff | Next action |
-|---|---|---|---|
-| `naf-wp1-ds1` (deepseek, thread `01a1c830-ce6a-7073-bf2c-6a4c8dcf63f1`) | WP1 PowerDNS config hygiene in `.worktrees/wp1`; brief `/tmp/naf-ctl/wp1-brief.md`, report `/tmp/naf-ctl/wp1-report.md` | running; commit 071ac59 exists; its `unit-py311` lane runs via direct flock; gate log `/tmp/naf-ctl/wp1-unit.log` (HEAD=/STATUS= first lines) | when `.done`: job-check, read report + log (PASS line), then luna review (brief like `/tmp/naf-ctl/gaps-rereview-brief.md`, ABS report path), fix by resume, merge into naf main (squash or ff keeps trailer), remove worktree/branch |
-| `naf-wp2-luna2` (luna, thread `01a1c830-ce61-7bd2-9b52-489680d40a03`, resumed with `/tmp/naf-ctl/wp2-resume1.md`) | WP2 proxy trust in `.worktrees/wp2`; first run STOPPED at a design question that I answered: `PUBLIC_BASE_URL`, `x_host=0`, host-only cookies, ten XFF reads, static guard test, tarball keeps hops=1 | running; gates unit-py311 + unit-py314 to `/tmp/naf-ctl/wp2-unit.log`, `wp2-unit314.log`; report `/tmp/naf-ctl/wp2-report.md` | job-check; review by DEEPSEEK (security change: demand a careful review incl. cookie/URL regressions); merge |
-| `naf-wp3-ds1` + review `naf-wp3-luna-rev1` | WP3 forwarded-headers probe, vbpub `scripts/test-webspace-forwarded-headers.php`, commit acddea785, worktree `/workspaces/vbpub/.worktrees/naf-wp3-probe-20261111` | review verdict FIX (report `/tmp/naf-ctl/wp3-review-report.md`): never recommend a hop count from an unmarked multi-entry XFF chain; no TEST-NET-3 marker => UNDETERMINED; recheck plain and forged cases incl. a plain multi-entry chain | resume the deepseek author thread `01a1c830-ce6d-7e70-8188-c91f3c0c879c` with that fix (amend, same trailer), luna re-review (delta), then merge no-ff into vbpub main with my trailer, tell the vbpub controller, remove worktree; then WP3b (Passenger WSGI probe in vbpub scripts, B054) |
-| `naf-gaps2-ds1` (deepseek, thread `01a1c844-52b7-7c42-8d4e-d40ec83ca01f`) | vbpub backlog entries CIU-205, CIU-206 (ciu backlog, ~130 lines, includes a changed index/closeout line) and RG-262; commit 4717f1c6d in `/workspaces/vbpub/.worktrees/naf-gaps2-20261111`; report `/tmp/naf-ctl/gaps2-report.md` | author done, job-check green, NOT yet reviewed | luna review (check facts/ids/cross-references, current-main collisions: vbpub main moved; merge-tree), fix by resume, merge no-ff + tell vbpub controller so it can push |
-| Opus research agent `a6e16fe4fac373af0` (ref e62010) | reviewed the plan (report `/tmp/naf-ctl/opus-plan-review.md`); I asked it to start ONE fresh Opus for CIU-193/205/206 if its context < 400k | message sent, reply pending | if it declined or failed: start the fresh Opus myself (Agent tool, model opus) with the full text of `/tmp/naf-ctl/ciu-impl-opus-brief.md`; track its report `/tmp/naf-ctl/ciu-impl-report.md`; its branches need Codex-route reviews and my merge; releases stay with the vbpub controller |
-
-## 5. Queue after the jobs (in order)
-1. Merge WP1, WP2 (+WP3) as reviewed. Then ONE stable naf commit: `gate-run.sh trove`, `release-gate`, `e2e` (setup as before: `set -a; . ./.env.services; set +a; export PLAYWRIGHT_SERVER_WS=ws://pwmcp:3000/`,
-   `run-gate local-build --worktree "$PWD"` then `run-gate e2e --worktree "$PWD"`; scripts in the scratchpad `e2ef.sh`, `r2f.sh` are the pattern) and the four R2 lanes sequentially in a fresh ciu worktree
-   (`env -i ... ciu worktree create`, delete `ciu.worktree-instance.json`, verify HEAD in `r2f-head.txt`), through `gate-run.sh`, one slot at a time. Triage survivors (tests, delete dead code, waive only provable equivalents).
-2. Trove lint of the committed F028/F029/M9/B041..B055 records was never confirmed (`run-gate trove` was killed while queued): rerun it.
-3. Then plan packages: WP8 (cmru versions targets; the author edits cmru.toml + tests, I run `cmru versions resolve` myself, the Docker Hub token only via env, never printed; pdns series/EOL decision),
-   WP4b-1 identity (after ciu CIU-193 fix lands in a ciu release or is worked around), WP4b-2, WP5, WP6, WP9, WP7, WP11, WP10. Each with author/reviewer on different routes.
-4. Final: update `nyxloom-trove/STATE.md` (not yet updated for this session's results), push naf `main` (no tags), `cmru release --dry-run`.
-5. Cleanup: `.worktrees/r2f`, `wp1`, `wp2`, finished vbpub worktrees; keep the environment clean.
-6. Operator-only items to remind the user about when relevant: fill `.env.live` / answer prompts, upstream delegation + A records, run the webhoster probes (WP3/WP3b) and report, provider firewall for port 53.
+## 5. Queue (in order)
+1. Finish the final gates above; read verdict lines in a SEPARATE step. Then R2: fresh ciu worktree (`env -i HOME=$HOME PATH=$PATH ciu worktree create r2x --base main --branch r2-x`, delete `ciu.worktree-instance.json`), the four lanes (`token_auth_r2 account_auth_r2 recovery_codes_r2 utils_r2`) sequentially via `gate-run.sh`, triage survivors; clean `.worktrees/r2f`.
+2. Push naf main (no tags) once release-gate + e2e + trove PASS; `cmru release --dry-run`.
+3. After ciu 7.25.0: WP4b-1 identity (`environment_tag="$INSTANCE_ID"`, derived names, `ciu resolve`, POWERDNS_API_KEY as GEN_LOCAL), WP4b-2 deployment type (selection record + service_profiles, templates branch on `ciu.selected_profiles`; CIU-208 means topology_overrides are NOT applied per stack in profile mode), WP9 OCI boot smoke, WP5 public stacks, WP6 credentials (ASK_HOST), WP7 e2e-public, WP11 e2e-remote, WP10 closeout (docs, STATE, R2 evidence). Authors on one route, reviewers on the other (deepseek author -> luna reviewer, luna author -> deepseek reviewer); briefs under /tmp/naf-ctl/wp*-brief.md are the pattern; ask authors to poll gates themselves and retry on exit 3.
+4. B056 legacy filter_proxy blueprint (remove or fix; delete the stubs in tests/test_proxy_hops.py); PowerDNS series decision.
 
 ## 6. What worked well (repeat it)
 - Brief files with: goal/non-goals, worktree, facts to verify, contract, steps, gate command with HEAD=/STATUS= log header, trailer, ABSOLUTE report path, stop conditions. Authors that hit a genuine design question stop and ask (WP2 did): answer by resume.
