@@ -42,6 +42,18 @@ items:
   - {id: B038, title: Remove colliding mock SMTP fixture, type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F009}
   - {id: B039, title: "Adopt a meaningful, verified gate: confirm/build a separate runtime-faithful test env (not the cockpit) + coverage floor + parallelism, and prove the gate rejects a known-bad canary — nyxloom reference/STANDARD.md gate contract + docs/plan-gate-adoption.md checklist", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B040, title: Offer HTTP SCRAM-SHA-256 for scoped DNS API clients, type: feature, component: api-auth, context_estimate: large, folds_into: F027}
+  - {id: B041, title: "Close R2: survivor files in the lane lists, rerun on the stable commit, triage", type: bugfix, component: tests, context_estimate: small, folds_into: F028}
+  - {id: B042, title: "Single source for PowerDNS URLs; PowerDNS API key as a ciu secret", type: bugfix, component: config, context_estimate: medium, folds_into: F028}
+  - {id: B043, title: "Trusted-proxy hops setting; no raw X-Forwarded-For reads", type: bugfix, component: api-auth, context_estimate: medium, folds_into: F029}
+  - {id: B044, title: "Webhoster forwarded-headers probe script and runbook", type: feature, component: tooling, context_estimate: small, folds_into: F029}
+  - {id: B045, title: "ciu 7.24 spike: profiles, shared infra, shared secrets, ASK_EXTERNAL", type: feature, component: infra, context_estimate: small, folds_into: F028}
+  - {id: B046, title: "Modern ciu configuration: instance-scoped names, internal and public profiles", type: feature, component: infra, context_estimate: large, folds_into: F028}
+  - {id: B047, title: "Public stack: PowerDNS singleton, per-instance frontend name, sub-zone helper", type: feature, component: infra, context_estimate: large, folds_into: F028}
+  - {id: B048, title: "Credentials: ASK_EXTERNAL secrets and .env.live skeleton, delivered as files", type: feature, component: infra, context_estimate: medium, folds_into: F028}
+  - {id: B049, title: "On-demand e2e-public lane with preflight and hard-failing live tests", type: feature, component: tests, context_estimate: large, folds_into: F028}
+  - {id: B050, title: "cmru versions: cover every stack image, check in the release gate", type: feature, component: release, context_estimate: medium, folds_into: F028}
+  - {id: B051, title: "Internal-profile e2e against the app container", type: feature, component: tests, context_estimate: medium, folds_into: F028}
+  - {id: B052, title: "Docs and closeout of the deployed tier", type: feature, component: docs, context_estimate: small, folds_into: F028}
 ---
 
 # Backlog
@@ -214,3 +226,34 @@ Root cause of the 2026-11-05 e2e meltdown: the suite uses the shipped admin as i
 - **S5 clean artifacts:** tarball/golden DB without demo data and without `.env.defaults`; `build_deployment.py` stops writing `deployment_state_*.json`; one `.env` parser.
 - **S6 dev-infra separation + dead code; S7 webhosting smoke is read-only (`UI_ALLOW_WRITES=0`); S8 move HTTP-only suites from `ui_tests/` to `tests/`.**
 - Also open: the shipped tarball includes demo accounts/tokens whose password is published in `.env.defaults` (decide: strip in S5); the e2e lane takes > 60 min; `require_account_auth` rejection falls back to `logout()`, which revokes the session row named by the token alone (a cookie naming account A with account B's token revokes B's row; low severity, signed cookie).
+
+## B-DEPLOY
+
+Plan: [`docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`](../docs/plans/deployed-e2e-and-modern-ciu-2026-11.md); decisions D-008..D-011.
+
+- **B041 — Close R2.** `assay.toml` R2 lanes listed curated test files that omitted the survivor
+  files, so killed mutants were still reported as survivors (token_auth_r2: 9 survivors on
+  e2c34cf). Lists fixed (ab4f8c0); rerun all four lanes on the stable commit and triage.
+- **B042 — Single source for PowerDNS.** `.env.defaults` still carries `POWERDNS_PROXY_*`
+  (`/backend-powerdns` path) and `POWERDNS_SOA=powerhosts.vxxu.de` (contradicts D-007);
+  `.env.services` derives `naf-pdns.<fqdn>`. `POWERDNS_API_KEY` is a plaintext dev key in
+  `.env.operator`, passed through the shell; make it a `GEN_LOCAL` ciu secret read through ciu.
+- **B043 — Trusted-proxy hops.** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`;
+  `api/account.py:187,356,822,1258,1307` read the raw `X-Forwarded-For` header. Add
+  `TRUSTED_PROXY_HOPS` (fail-fast), use `request.remote_addr` everywhere, test through the middleware.
+- **B044 — Webhoster probe.** `scripts/test-webspace-forwarded-headers.php` in vbpub next to the
+  other `test-webspace-*` scripts; the operator runs it once; the tarball default stays 0 until then.
+- **B045 — ciu spike.** Verify `topology_overrides` flag switching, shared-infra join for a
+  worktree, one `GEN_LOCAL` key across stacks, `ASK_EXTERNAL` non-interactive behaviour, `ciu check`.
+- **B046 — Modern ciu configuration.** `environment_tag = "$INSTANCE_ID"` for worktrees (ciu
+  CONSUMERS section 26), profiles `internal`/`public`, flags under `[topology.*]`, no hand-formed names.
+- **B047 — Public stack.** PowerDNS singleton on port 53 (data dir outside the checkout),
+  `naf-<instance>.<PUBLIC_FQDN>` frontend, per-session sub-zone create/delete, seed hook tested end to end.
+- **B048 — Credentials.** `ASK_EXTERNAL` for SMTP/IMAP and netcup CCP, `.env.live.example`,
+  delivered as files, applied at first boot only.
+- **B049 — `e2e-public` lane.** On-demand; preflight names each missing prerequisite; UI suite
+  through the edge; live tests (DNS propagation, TLS, mail round trip, real netcup) hard-fail.
+- **B050 — cmru versions coverage.** `alpine` (pdns init), the `python` bases of the mocks and
+  runners; `cmru versions check` in the release gate; the drift test covers every stack image.
+- **B051 — Internal-profile e2e.** Same suite against the app container by container name.
+- **B052 — Closeout.** Docs, STATE, release-gate + e2e on the final HEAD, R2 evidence, push.

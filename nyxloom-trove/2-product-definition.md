@@ -34,6 +34,21 @@ features:
       - When the exchange succeeds, requests use the provisioned realm scope and existing record-level authorization; failed or replayed exchanges are rate-limited and audited.
     status: planned
     milestone: M8
+  - id: F028
+    title: The deployed tier is exercised end to end, in two deployment types
+    acceptance:
+      - When the operator selects the public deployment type, the app container runs behind the host edge with its own name and certificate, the self-hosted PowerDNS answers for the delegated zone on the public DNS port, and an on-demand lane runs the UI suite and the live tests against it with real mail and netcup credentials, failing (never skipping) on a missing prerequisite.
+      - When the operator selects the internal deployment type, the same app container is exercised on the instance network by container name with mocks only and nothing published.
+      - Every credential is a generated or operator-supplied ciu secret; none is tracked, and every pinned third-party image version comes from the 7-day-window resolution.
+    status: planned
+    milestone: M9
+  - id: F029
+    title: The client address is taken only from proxies the operator declares
+    acceptance:
+      - When the app is configured with N trusted proxy hops, the client address is the Nth-from-last forwarded entry; a forged leading entry never changes it, and with zero hops forwarded headers are ignored.
+      - When any route logs, rate-limits or authorizes by client address, it uses the middleware-resolved address, not a raw header.
+    status: planned
+    milestone: M9
   - id: F004
     title: Sensitive DNS and revoke actions leave usable audit records
     acceptance:
