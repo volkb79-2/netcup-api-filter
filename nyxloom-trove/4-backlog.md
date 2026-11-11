@@ -237,9 +237,9 @@ Opus review); decisions D-008..D-013.
 
 - **B041 — Close R2.** `assay.toml` R2 lanes listed curated test files that omitted the survivor files, so killed mutants were still
   reported (token_auth_r2: 9 survivors on e2c34cf). Lists fixed on main by `d077df0`; rerun all four lanes on the stable commit, triage.
-- **B042 — Single source for PowerDNS.** `.env.defaults` carries `POWERDNS_PROXY_*` (`/backend-powerdns` path) and
-  `POWERDNS_SOA=powerhosts.vxxu.de` (contradicts D-007); `.env.services` derives `naf-pdns.<fqdn>`; remove the dead keys/helpers,
-  add drift tests. (The key moving to a checkout-local `GEN_LOCAL` secret is B046/B047.)
+- **B042 — Single source for PowerDNS.** `.env.defaults` carried retired proxy-path variables and an invented SOA default
+  (contradicting D-007); `.env.services` derives `naf-pdns.<fqdn>`. WP1 removed the dead defaults and helpers, added drift tests, and retains
+  `POWERDNS_API_KEY` as an empty operator entry. (The key moving to a checkout-local `GEN_LOCAL` secret is B046/B047.)
 - **B043 — Proxy trust (D-013).** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`; ten raw `X-Forwarded-For` reads
   (`api/account.py` 187,356,822,1258,1307,1851,2148,2192; `filter_proxy.py` 505,597); session cookie domain `auto` = `.PUBLIC_FQDN`.
   `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; tarball keeps 1 until B044/B054.

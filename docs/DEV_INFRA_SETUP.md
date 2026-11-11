@@ -20,16 +20,17 @@ so end-to-end tests exercise the true DNS path over TLS.
   (see §2) — the marker sets `standalone_root = true`, so ciu refuses to run if
   `$REPO_ROOT` points at a sibling repo.
 - The host's public IP and base FQDN come from `ciu.env` (auto-detected):
-  `PUBLIC_IP` and `PUBLIC_FQDN`. On this host: **`152.53.179.117`** /
-  **`gstammtisch.dchive.de`**.
+  `PUBLIC_IP` and `PUBLIC_FQDN`. Read them from that environment; they are not
+  committed documentation values.
 
 ## 1. Operator secrets & facts (gitignored env files)
 
-Three env files are sourced before every ciu command; none are committed:
+Four env files are sourced before every ciu command; none are committed:
 
 | File | Origin | Holds |
 |---|---|---|
 | `ciu.env` | `ciu env generate` (machine facts) | `REPO_ROOT`, `PHYSICAL_REPO_ROOT`, `PUBLIC_IP`, `PUBLIC_FQDN`, network name |
+| `.env` | local operator environment | `POWERDNS_API_KEY` until it moves to a ciu secret (B045), plus other local overrides |
 | `.env.operator` | **you create** | `NAF_DELEGATED_DNS_ZONE` — the zone PowerDNS serves |
 | `.env.guard` | generated (bcrypt) | `NAF_GUARD_USER` / `NAF_GUARD_PASSWORD` / `NAF_GUARD_HTPASSWD` — the traefik basicauth credential guarding every exposed route |
 
@@ -37,7 +38,7 @@ Three env files are sourced before every ciu command; none are committed:
 
 ```bash
 # .env.operator  (gitignored)
-export NAF_DELEGATED_DNS_ZONE="managed.vxxu.de"
+export NAF_DELEGATED_DNS_ZONE="<delegated-zone>"
 ```
 
 The basicauth guard exists because the product is **not production-ready and must not be
@@ -50,7 +51,7 @@ credentials.
 ## 2. Load the env, then drive ciu
 
 ```bash
-set -a; . ./ciu.env; . ./.env.operator; . ./.env.guard; set +a
+set -a; . ./ciu.env; . ./.env; . ./.env.operator; . ./.env.guard; set +a
 ciu render                       # sanity: renders only naf's stacks
 ciu up --profile full            # mocks + pwmcp + app + gate + PowerDNS
 ```
@@ -59,57 +60,60 @@ ciu up --profile full            # mocks + pwmcp + app + gate + PowerDNS
 
 Two independent things resolve to this host — set both.
 
-### 3a. Delegate the PowerDNS zone (`managed.vxxu.de`)
+### 3a. Delegate the PowerDNS zone (`NAF_DELEGATED_DNS_ZONE`)
 
-PowerDNS on this host is **authoritative** for `managed.vxxu.de`. For the internet to reach
-it, the **parent zone `vxxu.de`** must delegate the subzone here. DNS queries hit **port 53
-directly — NOT traefik** (traefik is HTTP/443 only). Create, at the `vxxu.de` authoritative
-DNS / registrar:
+PowerDNS on this host is **authoritative** for the operator-supplied
+`NAF_DELEGATED_DNS_ZONE`. For the internet to reach it, the parent zone must
+delegate that subzone here. DNS queries hit **port 53 directly — NOT traefik**
+(traefik is HTTP/443 only). Create the following at the parent zone's
+authoritative DNS / registrar:
 
 | Type | Name | Value | Purpose |
 |---|---|---|---|
-| **NS** | `managed.vxxu.de.` | `ns1.managed.vxxu.de.` | delegate the subzone to this host's nameserver |
-| **A** (glue) | `ns1.managed.vxxu.de.` | `152.53.179.117` | resolve that nameserver to this host |
+| **NS** | `<delegated-zone>.` | `ns1.<delegated-zone>.` | delegate the subzone to this host's nameserver |
+| **A** (glue) | `ns1.<delegated-zone>.` | `$PUBLIC_IP` | resolve that nameserver to this host |
 
 So: **one NS (the delegation) + one A (glue for the nameserver name)** — your intuition was
-right. (If you prefer a nameserver name already under `vxxu.de` that already A-records to
-this host, point the NS at it and skip the glue.)
+right. If a nameserver name in the parent zone already has an A/AAAA record for this host,
+point the NS at it and skip the glue.
 
 Also required for the delegation to actually answer:
-- PowerDNS must **publish port 53/udp + 53/tcp** on `152.53.179.117` (the `backend-powerdns`
+- PowerDNS must **publish port 53/udp + 53/tcp** on `$PUBLIC_IP` (the `backend-powerdns`
   stack does this; the host firewall must allow inbound 53).
 - The zone inside PowerDNS carries its own SOA + NS:
-  `managed.vxxu.de SOA ns1.managed.vxxu.de. hostmaster.vxxu.de. …` and
-  `managed.vxxu.de NS ns1.managed.vxxu.de.` — created from `NAF_DELEGATED_DNS_ZONE`, not
-  hardcoded.
+  `NS ns1.<delegated-zone>.` and
+  `SOA ns1.<delegated-zone>. hostmaster.<delegated-zone>. …` — both derived from
+  `NAF_DELEGATED_DNS_ZONE` by the post-compose hook, never hardcoded.
 
-### 3b. The traefik-exposed HTTPS hostnames (under `gstammtisch.dchive.de`)
+### 3b. The traefik-exposed HTTPS hostnames (under `$PUBLIC_FQDN`)
 
 These are the HTTP surfaces traefik routes + issues certs for. They must resolve to the host:
 
 | Type | Name | Value | Serves |
 |---|---|---|---|
-| A | `naf.gstammtisch.dchive.de` | `152.53.179.117` | the app UI/API |
-| A | `naf-pdns.gstammtisch.dchive.de` | `152.53.179.117` | the PowerDNS HTTP API (record management) |
+| A | `naf.$PUBLIC_FQDN` | `$PUBLIC_IP` | the app UI/API |
+| A | `naf-pdns.$PUBLIC_FQDN` | `$PUBLIC_IP` | the PowerDNS HTTP API (record management) |
 
-If a wildcard `*.gstammtisch.dchive.de → 152.53.179.117` already exists (this base is shared
-with dstdns), these are already covered — **nothing to add**. The hostnames are templated
-from `PUBLIC_FQDN`, never hardcoded.
+If a wildcard `*.$PUBLIC_FQDN → $PUBLIC_IP` already exists, these are already
+covered — **nothing to add**. The hostnames are templated from `PUBLIC_FQDN`,
+never hardcoded.
 
 > **Two PowerDNS surfaces, two paths:** the **DNS protocol** (port 53) answers zone queries
 > directly on the public IP via the delegation in §3a; the **HTTP API** (record CRUD) is
 > reached by naf container-to-container internally, and — if external API access is wanted —
 > exposed at `naf-pdns.<FQDN>` through traefik behind basicauth (§3b). The app does **not**
-> need §3b to talk to PowerDNS; it's only for outside API access.
+> need §3b to talk to PowerDNS; it's only for outside API access. `.env.services` is the
+> single source for both URLs: `POWERDNS_API_URL_INTERNAL` is the container URL and
+> `POWERDNS_API_URL` is `https://naf-pdns.<FQDN>` (empty when `PUBLIC_FQDN` is unavailable).
 
 ## 4. Verify
 
 ```bash
 # app reachable over TLS behind the guard
-curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" https://naf.gstammtisch.dchive.de/admin/login -I
+curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" "https://naf.$PUBLIC_FQDN/admin/login" -I
 # the delegation answers on port 53
-dig +short NS managed.vxxu.de @152.53.179.117
-dig +short A test.managed.vxxu.de @152.53.179.117    # once a record exists
+dig +short NS "$NAF_DELEGATED_DNS_ZONE" @$PUBLIC_IP
+dig +short A "test.$NAF_DELEGATED_DNS_ZONE" @$PUBLIC_IP    # once a record exists
 # gate still green
 run-gate gate --worktree "$PWD"
 ```

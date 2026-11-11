@@ -11,7 +11,10 @@ Prerequisites:
 
 Backend options:
 - PowerDNS (recommended for local/self-hosted authoritative DNS):
-    - POWERDNS_API_URL (usually comes from .env.services)
+    - POWERDNS_API_URL (the guarded public edge, from .env.services; empty when PUBLIC_FQDN
+      is unavailable)
+    - POWERDNS_API_URL_INTERNAL (the container-to-container API, from .env.services; used
+      when the public URL is empty)
     - POWERDNS_API_KEY
     - Zone DNS_TEST_DOMAIN must exist in PowerDNS
 
@@ -20,7 +23,8 @@ implement record lifecycle via PowerDNS HTTP API because it is deterministic
 and works in local dev setups.
 
 Usage:
-    pytest ui_tests/tests/test_live_dns_verification.py -v --mode live
+    set -a; . ./.env.services; set +a
+    pytest ui_tests/tests/live/test_live_dns_verification.py -v --mode live
 
 Note: These tests only run in live mode (--mode live) as they require
 real DNS infrastructure and may take several minutes for propagation.
@@ -66,6 +70,14 @@ def get_dns_config() -> dict:
         'propagation_poll_interval': int(os.environ.get('DNS_PROPAGATION_POLL_INTERVAL', '10')),
         'check_servers': os.environ.get('DNS_CHECK_SERVERS', '8.8.8.8,1.1.1.1').split(','),
     }
+
+
+def _powerdns_api_url() -> str:
+    """Public edge when available, otherwise the canonical internal URL."""
+    return (
+        (os.environ.get('POWERDNS_API_URL') or '').strip()
+        or (os.environ.get('POWERDNS_API_URL_INTERNAL') or '').strip()
+    )
 
 
 def is_dns_test_configured() -> bool:
@@ -256,10 +268,10 @@ def _ensure_live_dns_domain(dns_config: dict) -> str:
 @pytest.fixture
 def powerdns_backend(skip_unless_live):
     """Construct a PowerDNS backend if configured; otherwise skip."""
-    api_url = (os.environ.get('POWERDNS_API_URL') or '').strip()
+    api_url = _powerdns_api_url()
     api_key = (os.environ.get('POWERDNS_API_KEY') or '').strip()
     if not api_url:
-        pytest.skip("POWERDNS_API_URL not set (source .env.services or set explicitly)")
+        pytest.skip("POWERDNS_API_URL and POWERDNS_API_URL_INTERNAL are unset (source .env.services)")
     if not api_key:
         pytest.skip("POWERDNS_API_KEY not set")
 
@@ -341,10 +353,12 @@ class TestDNSRecordLifecycle:
         4. Verify record no longer resolves
         """
         # Implemented via PowerDNS HTTP API
-        api_url = (os.environ.get('POWERDNS_API_URL') or '').strip()
+        api_url = _powerdns_api_url()
         api_key = (os.environ.get('POWERDNS_API_KEY') or '').strip()
         if not api_url or not api_key:
-            pytest.skip("PowerDNS not configured (need POWERDNS_API_URL and POWERDNS_API_KEY)")
+            pytest.skip(
+                "PowerDNS not configured (need an API URL from .env.services and POWERDNS_API_KEY)"
+            )
 
         backend = PowerDNSBackend({'api_url': api_url, 'api_key': api_key})
         test_domain = _ensure_live_dns_domain(dns_config)

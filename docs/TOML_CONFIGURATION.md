@@ -239,8 +239,9 @@ config = {
 3. `platform_backends.py` replaces `${...}` with `os.environ.get(...)` at bootstrap time
 
 **Common variables:**
-- `POWERDNS_API_KEY` - PowerDNS authentication (from `.env.workspace`)
-- `PUBLIC_FQDN` - Public hostname (auto-detected by `post-create.sh`)
+- `POWERDNS_API_KEY` - PowerDNS authentication (operator environment, gitignored)
+- `POWERDNS_API_URL` - guarded public API URL from `.env.services`
+- `POWERDNS_API_URL_INTERNAL` - container-to-container API URL from `.env.services`
 
 ## Auto-Detection
 
@@ -248,9 +249,12 @@ config = {
 
 Uses first available:
 1. Explicit `api_url` in config (if not "auto")
-2. Internal container hostname: `http://naf-dev-powerdns:8081` (Docker network)
-3. Public HTTPS URL: `https://${PUBLIC_FQDN}/backend-powerdns` (TLS proxy)
-4. Fallback: `http://localhost:8081` (with warning)
+2. `POWERDNS_API_URL_INTERNAL` from `.env.services` (container network)
+3. `POWERDNS_API_URL` from `.env.services` (guarded public edge)
+
+If none is set, startup fails; there is no invented hostname, path, or localhost
+fallback. `POWERDNS_API_URL` is empty when `PUBLIC_FQDN` is unavailable, so mock-only
+flows select the internal URL.
 
 **Implementation:** `platform_backends.py::get_powerdns_api_url()`
 

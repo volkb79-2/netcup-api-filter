@@ -101,27 +101,39 @@ PowerDNS provides an alternative to the Netcup API for DNS management:
 **Quick Start:**
 ```bash
 # Start the required local service stack before testing PowerDNS.
-# Test API connectivity
-curl -sf -H "X-API-Key: $(grep POWERDNS_API_KEY .env.defaults | cut -d= -f2)" \
-  http://naf-dev-powerdns:8081/api/v1/servers/localhost | python3 -m json.tool
+# POWERDNS_API_KEY comes from the gitignored `.env`; the public route's
+# basicauth username/password come from the gitignored `.env.guard`; both API
+# URLs come from `.env.services`. Source all three before the commands below.
+# The public URL is empty when PUBLIC_FQDN is unavailable; the internal URL
+# always works between containers on the project network.
+set -a
+. ./.env
+. ./.env.guard
+. ./.env.services
+set +a
 
-# Create test zone
-cd tooling/backend-powerdns
-./setup-zones.sh dyn.vxxu.de
+# Test API connectivity
+curl -sf -H "X-API-Key: $POWERDNS_API_KEY" \
+  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" | python3 -m json.tool
+
+# The ciu post-compose hook creates the delegated zone when
+# NAF_DELEGATED_DNS_ZONE is set.
 
 # List zones
-curl -s -H "X-API-Key: $(grep POWERDNS_API_KEY .env.defaults | cut -d= -f2)" \
-  http://naf-dev-powerdns:8081/api/v1/servers/localhost/zones | python3 -m json.tool
+curl -s -H "X-API-Key: $POWERDNS_API_KEY" \
+  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones" | python3 -m json.tool
 
-# External access via reverse proxy
-curl -sf -H "X-API-Key: YOUR_KEY" \
-  https://${PUBLIC_FQDN}/backend-powerdns/api/v1/servers/localhost
+# External access through the host traefik route at naf-pdns.<PUBLIC_FQDN>,
+# behind the same basicauth guard as the app.
+curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" \
+  -H "X-API-Key: $POWERDNS_API_KEY" \
+  "$POWERDNS_API_URL/api/v1/servers/localhost"
 ```
 
-**DNS Delegation (at parent zone, e.g., Netcup for vxxu.de):**
+**DNS Delegation (at the delegated zone's parent):**
 ```dns
-dyn.vxxu.de.  IN  NS  ${PUBLIC_FQDN}.
-${PUBLIC_FQDN}.  IN  A   <server-public-ip>
+<delegated-zone>.         IN  NS  ns1.<delegated-zone>.
+ns1.<delegated-zone>.     IN  A   <server-public-ip>
 ```
 
 See `tooling/backend-powerdns/README.md` for complete documentation.

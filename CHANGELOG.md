@@ -21,6 +21,16 @@
   hardcoded production hostnames and the stale `WEBHOSTING_TESTING_GUIDE.md` flow are gone. The local
   mode stays the default.
 
+### Changed
+
+- **PowerDNS configuration has one source per fact**: `POWERDNS_API_URL` and
+  `POWERDNS_API_URL_INTERNAL` are defined only by `.env.services`; the app consumes
+  `POWERDNS_API_URL_INTERNAL` directly instead of rebuilding a URL from separate
+  scheme/port settings. Retired proxy-path settings, `POWERDNS_SOA`, the legacy
+  `ensure_zone.py` / `setup-zones.sh` / `init-db.sh` helpers, and their stale docs are
+  removed. `POWERDNS_API_KEY` remains an empty, operator-supplied catalog entry until
+  B045 moves it to a ciu `GEN_LOCAL` secret.
+
 ### Security
 
 - **Fixed (review #15):** the OCI image ran gunicorn as root and had no `.dockerignore` (`.env*`

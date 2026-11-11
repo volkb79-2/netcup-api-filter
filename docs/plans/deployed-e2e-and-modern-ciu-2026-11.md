@@ -65,7 +65,7 @@ Routes: author on one route, independent review on the other; every merge needs 
 | WP | Backlog | Content | Route | Depends |
 |---|---|---|---|---|
 | WP0 | B041 | R2 close-out: lane lists include the survivor files (main `d077df0`), rerun the four lanes on the stable commit, triage | controller + ds | - |
-| WP1 | B042 | Config hygiene: one source for the PowerDNS URLs, delete `POWERDNS_PROXY_*`/`POWERDNS_SOA`/dead helpers, drift tests (the API-key move to `GEN_LOCAL` is WP4b-1/WP5, not here) | A=ds | - |
+| WP1 | B042 | Config hygiene: one source for the PowerDNS URLs, remove the retired proxy-path variables, invented SOA default and dead helpers from the defaults, drift tests (the API-key move to `GEN_LOCAL` is WP4b-1/WP5, not here) | A=ds | - |
 | WP2 | B043 | Proxy trust (D-013): `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, ten raw forwarded-header reads removed + static guard test, tarball keeps 1 until WP3 | A=luna | - |
 | WP3 | B044 | Webhoster probe: run the EXISTING `test-webspace-php-environment.php` now (it already reports XFF/XFP/REMOTE_ADDR); new `test-webspace-forwarded-headers.php` (forged-header verdict) | A=ds | - |
 | WP3b | B054 | Passenger probe: a standalone WSGI app dir (vbpub scripts) that dumps what a Passenger app sees for a forged header (PHP-FPM may sit behind a different front than Passenger); operator runs it, decides the tarball default | A=ds | WP3 |

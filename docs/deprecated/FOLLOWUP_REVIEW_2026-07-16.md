@@ -313,7 +313,7 @@ scripts + `.vscode/mcp.json` still `docker exec` into it); `run-local-tests.sh` 
 8. `docs/RATE_LIMITING.md` — delete the "Known Gap" claiming DNS/DDNS aren't rate-limited (they are,
    `app.py:291`).
 9. `app-config.example.toml:100-152` — replace live-looking operator values
-   (`mxe98f.netcup.net`, `dstdns@vxxu.de`, `powerhosts.vxxu.de`) with `example.com` placeholders and
+   (`mxe98f.netcup.net`, `dstdns@vxxu.de`, and the legacy hardcoded DDNS domain) with `example.com` placeholders and
    re-comment the blocks.
 10. `CHANGELOG.md` — add an Unreleased entry for the browser-offload and Passenger 3.9/3.11 build
     commits.

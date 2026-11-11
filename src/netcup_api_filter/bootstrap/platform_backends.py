@@ -40,19 +40,14 @@ def _decoded_list(value, key: str) -> list:
     return value
 
 
-def get_public_fqdn() -> str | None:
-    """Get PUBLIC_FQDN from environment (.env.workspace)."""
-    return os.environ.get('PUBLIC_FQDN')
-
-
 def get_powerdns_api_url() -> str:
     """
-    Get PowerDNS API URL with auto-detection.
+    Get the PowerDNS API URL from the configured database or the environment.
     
     Priority:
     1. platform_backends_config.powerdns_api_url (if set)
-    2. Internal container hostname (if running in Docker network)
-    3. PUBLIC_FQDN-based HTTPS URL (if PUBLIC_FQDN available)
+    2. POWERDNS_API_URL_INTERNAL (container-to-container, defined by .env.services)
+    3. POWERDNS_API_URL (public edge, defined by .env.services)
     
     Returns:
         PowerDNS API URL
@@ -67,44 +62,19 @@ def get_powerdns_api_url() -> str:
         except (json.JSONDecodeError, TypeError):
             pass
     
-    # Explicit env override (preferred; config-driven)
+    internal_url = os.environ.get('POWERDNS_API_URL_INTERNAL')
+    if internal_url:
+        logger.info(f"Using internal PowerDNS URL: {internal_url}")
+        return internal_url
+
     powerdns_api_url = os.environ.get('POWERDNS_API_URL')
     if powerdns_api_url:
         logger.info("Using PowerDNS API URL from env (POWERDNS_API_URL)")
         return powerdns_api_url
 
-    # Internal container hostname (Docker network)
-    powerdns_hostname = os.environ.get('HOSTNAME_POWERDNS')
-    if powerdns_hostname:
-        scheme = os.environ.get('POWERDNS_INTERNAL_SCHEME')
-        port = os.environ.get('POWERDNS_INTERNAL_API_PORT')
-        if not scheme or not port:
-            raise RuntimeError(
-                "HOSTNAME_POWERDNS is set but POWERDNS_INTERNAL_SCHEME/POWERDNS_INTERNAL_API_PORT are missing. "
-                "Set them in .env.defaults or .env."
-            )
-        internal_url = f"{scheme}://{powerdns_hostname}:{port}"
-        logger.info(f"Using internal PowerDNS URL: {internal_url}")
-        return internal_url
-
-    # PUBLIC_FQDN-based URL (reverse proxy route)
-    public_fqdn = get_public_fqdn()
-    if public_fqdn:
-        scheme = os.environ.get('POWERDNS_PROXY_SCHEME')
-        path = os.environ.get('POWERDNS_PROXY_PATH')
-        if not scheme or not path:
-            raise RuntimeError(
-                "PUBLIC_FQDN is set but POWERDNS_PROXY_SCHEME/POWERDNS_PROXY_PATH are missing. "
-                "Set them in .env.defaults or .env."
-            )
-        https_url = f"{scheme}://{public_fqdn}{path}"
-        logger.info(f"Using public PowerDNS URL: {https_url}")
-        return https_url
-
     raise RuntimeError(
-        "Could not determine PowerDNS API URL. Set POWERDNS_API_URL explicitly, "
-        "or provide HOSTNAME_POWERDNS+POWERDNS_INTERNAL_API_PORT, "
-        "or set PUBLIC_FQDN+POWERDNS_PROXY_SCHEME+POWERDNS_PROXY_PATH."
+        "Could not determine PowerDNS API URL. Set POWERDNS_API_URL or "
+        "POWERDNS_API_URL_INTERNAL explicitly; both are defined by .env.services."
     )
 
 

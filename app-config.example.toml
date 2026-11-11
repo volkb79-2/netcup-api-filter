@@ -146,9 +146,11 @@ service_name = "platform-powerdns"
 provider = "powerdns"
 owner = "platform"
 display_name = "Platform PowerDNS"
-# Use "${POWERDNS_API_URL}" and "${POWERDNS_API_KEY}" to reference environment variables.
+# Use "${POWERDNS_API_URL_INTERNAL}" and "${POWERDNS_API_KEY}" to reference operator
+# environment variables. The app reaches PowerDNS over the project network, not the
+# guarded public edge.
 # NOTE: deploy builds render these placeholders into a self-contained app-config.toml.
-config = { api_url = "${POWERDNS_API_URL}", api_key = "${POWERDNS_API_KEY}", server_id = "localhost" }
+config = { api_url = "${POWERDNS_API_URL_INTERNAL}", api_key = "${POWERDNS_API_KEY}", server_id = "localhost" }
 
 # User-owned backend example (requires user to exist - see [[users]] section)
 # [[backends]]
@@ -167,14 +169,14 @@ config = { api_url = "${POWERDNS_API_URL}", api_key = "${POWERDNS_API_KEY}", ser
 # Free DDNS domain on PowerDNS
 [[domain_roots]]
 backend = "platform-powerdns"  # References backends.service_name
-domain = "powerhosts.vxxu.de"
-dns_zone = "powerhosts.vxxu.de"  # Actual zone name in backend (usually same as domain)
+domain = "example.com"
+dns_zone = "example.com"  # Actual zone name in backend (usually same as domain)
 visibility = "public"  # "public" (free DDNS), "private" (admin only), "invite" (invite-only)
 display_name = "Free PowerDNS DDNS"
 description = "Public DDNS domain - users can create hosts without approval"
-allow_apex_access = false  # Can users request access to apex (powerhosts.vxxu.de itself)?
-min_subdomain_depth = 1    # Minimum depth: 1 = host.powerhosts.vxxu.de
-max_subdomain_depth = 3    # Maximum depth: 3 = a.b.c.powerhosts.vxxu.de
+allow_apex_access = false  # Can users request access to apex (example.com itself)?
+min_subdomain_depth = 1    # Minimum depth: 1 = host.example.com
+max_subdomain_depth = 3    # Maximum depth: 3 = a.b.c.example.com
 allowed_record_types = ["A", "AAAA", "CNAME", "TXT"]  # Null = all allowed
 allowed_operations = ["read", "create", "update", "delete"]  # Null = all allowed
 max_hosts_per_user = 5     # Quota for public domains
