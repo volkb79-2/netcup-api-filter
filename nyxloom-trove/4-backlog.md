@@ -47,13 +47,16 @@ items:
   - {id: B043, title: "Trusted-proxy hops setting; no raw X-Forwarded-For reads", type: bugfix, component: api-auth, context_estimate: medium, folds_into: F029}
   - {id: B044, title: "Webhoster forwarded-headers probe script and runbook", type: feature, component: tooling, context_estimate: small, folds_into: F029}
   - {id: B045, title: "ciu 7.24 spike: profiles, shared infra, shared secrets, ASK_EXTERNAL", type: feature, component: infra, context_estimate: small, folds_into: F028}
-  - {id: B046, title: "Modern ciu configuration: instance-scoped names, internal and public profiles", type: feature, component: infra, context_estimate: large, folds_into: F028}
-  - {id: B047, title: "Public stack: PowerDNS singleton, per-instance frontend name, sub-zone helper", type: feature, component: infra, context_estimate: large, folds_into: F028}
+  - {id: B046, title: "Identity: INSTANCE_ID in every checkout, derived traefik names, ciu resolve instead of name building", type: feature, component: infra, context_estimate: large, folds_into: F028}
+  - {id: B047, title: "Public stacks: OCI release-image frontends, public-dns role, realm-label reaper", type: feature, component: infra, context_estimate: large, folds_into: F028}
   - {id: B048, title: "Credentials: ASK_EXTERNAL secrets and .env.live skeleton, delivered as files", type: feature, component: infra, context_estimate: medium, folds_into: F028}
-  - {id: B049, title: "On-demand e2e-public lane with preflight and hard-failing live tests", type: feature, component: tests, context_estimate: large, folds_into: F028}
-  - {id: B050, title: "cmru versions: cover every stack image, check in the release gate", type: feature, component: release, context_estimate: medium, folds_into: F028}
-  - {id: B051, title: "Internal-profile e2e against the app container", type: feature, component: tests, context_estimate: medium, folds_into: F028}
+  - {id: B049, title: "Deployment-contract suite and on-demand e2e-public lane with probing preflight", type: feature, component: tests, context_estimate: large, folds_into: F028}
+  - {id: B050, title: "cmru versions: cover every stack image, check in the release gate, pdns series decision", type: feature, component: release, context_estimate: medium, folds_into: F028}
+  - {id: B051, title: "OCI release image boot smoke", type: feature, component: tests, context_estimate: medium, folds_into: F028}
   - {id: B052, title: "Docs and closeout of the deployed tier", type: feature, component: docs, context_estimate: small, folds_into: F028}
+  - {id: B053, title: "Deployment type as a per-checkout fact with a change guard", type: feature, component: infra, context_estimate: medium, folds_into: F028}
+  - {id: B054, title: "Passenger WSGI forwarded-headers probe", type: feature, component: tooling, context_estimate: small, folds_into: F029}
+  - {id: B055, title: "On-demand e2e-remote lane against the webhoster", type: feature, component: tests, context_estimate: medium, folds_into: F028}
 ---
 
 # Backlog
@@ -229,33 +232,35 @@ Root cause of the 2026-11-05 e2e meltdown: the suite uses the shipped admin as i
 
 ## B-DEPLOY
 
-Plan: [`docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`](../docs/plans/deployed-e2e-and-modern-ciu-2026-11.md); decisions D-008..D-011.
+Plan: [`docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`](../docs/plans/deployed-e2e-and-modern-ciu-2026-11.md) (amended after the
+Opus review); decisions D-008..D-013.
 
-- **B041 — Close R2.** `assay.toml` R2 lanes listed curated test files that omitted the survivor
-  files, so killed mutants were still reported as survivors (token_auth_r2: 9 survivors on
-  e2c34cf). Lists fixed (ab4f8c0); rerun all four lanes on the stable commit and triage.
-- **B042 — Single source for PowerDNS.** `.env.defaults` still carries `POWERDNS_PROXY_*`
-  (`/backend-powerdns` path) and `POWERDNS_SOA=powerhosts.vxxu.de` (contradicts D-007);
-  `.env.services` derives `naf-pdns.<fqdn>`. `POWERDNS_API_KEY` is a plaintext dev key in
-  `.env.operator`, passed through the shell; make it a `GEN_LOCAL` ciu secret read through ciu.
-- **B043 — Trusted-proxy hops.** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`;
-  `api/account.py:187,356,822,1258,1307` read the raw `X-Forwarded-For` header. Add
-  `TRUSTED_PROXY_HOPS` (fail-fast), use `request.remote_addr` everywhere, test through the middleware.
-- **B044 — Webhoster probe.** `scripts/test-webspace-forwarded-headers.php` in vbpub next to the
-  other `test-webspace-*` scripts; the operator runs it once; the tarball default stays 0 until then.
-- **B045 — ciu spike. DONE 2026-11-11** (findings: plan section 6). Flags derive from
-  `ciu.selected_profiles`; shared-infra join via `--shared-infra-ref-services`; `GEN_LOCAL` is per
-  checkout (a joined worktree needs `ASK_EXTERNAL`/`ASK_FILE` for the primary's PowerDNS key);
-  `ASK_EXTERNAL` aborts non-interactively without a value; `ciu check` passes (gitignore WARN for B046).
-- **B046 — Modern ciu configuration.** `environment_tag = "$INSTANCE_ID"` for worktrees (ciu
-  CONSUMERS section 26), profiles `internal`/`public`, flags under `[topology.*]`, no hand-formed names.
-- **B047 — Public stack.** PowerDNS singleton on port 53 (data dir outside the checkout),
-  `naf-<instance>.<PUBLIC_FQDN>` frontend, per-session sub-zone create/delete, seed hook tested end to end.
-- **B048 — Credentials.** `ASK_EXTERNAL` for SMTP/IMAP and netcup CCP, `.env.live.example`,
-  delivered as files, applied at first boot only.
-- **B049 — `e2e-public` lane.** On-demand; preflight names each missing prerequisite; UI suite
-  through the edge; live tests (DNS propagation, TLS, mail round trip, real netcup) hard-fail.
-- **B050 — cmru versions coverage.** `alpine` (pdns init), the `python` bases of the mocks and
-  runners; `cmru versions check` in the release gate; the drift test covers every stack image.
-- **B051 — Internal-profile e2e.** Same suite against the app container by container name.
+- **B041 — Close R2.** `assay.toml` R2 lanes listed curated test files that omitted the survivor files, so killed mutants were still
+  reported (token_auth_r2: 9 survivors on e2c34cf). Lists fixed on main by `d077df0`; rerun all four lanes on the stable commit, triage.
+- **B042 — Single source for PowerDNS.** `.env.defaults` carries `POWERDNS_PROXY_*` (`/backend-powerdns` path) and
+  `POWERDNS_SOA=powerhosts.vxxu.de` (contradicts D-007); `.env.services` derives `naf-pdns.<fqdn>`; remove the dead keys/helpers,
+  add drift tests. (The key moving to a checkout-local `GEN_LOCAL` secret is B046/B047.)
+- **B043 — Proxy trust (D-013).** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`; ten raw `X-Forwarded-For` reads
+  (`api/account.py` 187,356,822,1258,1307,1851,2148,2192; `filter_proxy.py` 505,597); session cookie domain `auto` = `.PUBLIC_FQDN`.
+  `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; tarball keeps 1 until B044/B054.
+- **B044 — Webhoster probe.** Run the existing `test-webspace-php-environment.php` (reports XFF/XFP/REMOTE_ADDR) and the new
+  `test-webspace-forwarded-headers.php` (forged-header verdict) in vbpub scripts; the operator reports the result.
+- **B045 — ciu spike. DONE 2026-11-11, corrected by the Opus review** (plan section 6).
+- **B046 — Identity.** `environment_tag = "$INSTANCE_ID"` everywhere (CIU-193 open), derived traefik router/service/middleware/
+  subdomain, `ciu resolve --json [--live]` instead of name building in `.env.services` and hooks, `.gitignore` ciu entries,
+  `ciu.user_tables`, re-run the CIU-176 repro (fixed in 7.23.0), PowerDNS key as checkout-local `GEN_LOCAL`.
+- **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
+  delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
+- **B048 — Credentials.** Prompt/`ASK_FILE` secrets for SMTP/IMAP/netcup CCP, `.env.live.example`, mounts only into the frontend
+  and a dedicated live runner, applied at first boot only.
+- **B049 — Deployment-contract suite / `e2e-public`.** Contract suite on the remote target (TLS, cookies, forged headers through
+  the edge, https links, guard, app-to-PowerDNS wire, live mail/netcup/DNS), `endpoints.json` manifest, lane preflight with real
+  read-only login probes, certificate SAN wait, failure classes, secret scrubbing, per-instance guard credential.
+- **B050 — cmru versions coverage.** Every stack image a target, floating tags gone, `cmru versions check` in the release gate,
+  the pdns series/EOL decision (`<4.9.0` can never advance), alpine init removed or pinned.
+- **B051 — OCI boot smoke.** Build the release image, boot with/without `NAF_BOOTSTRAP_ADMIN_*`, non-root `/data` and `/config`.
 - **B052 — Closeout.** Docs, STATE, release-gate + e2e on the final HEAD, R2 evidence, push.
+- **B053 — Deployment type guard.** Per-checkout fact (`[topology.deployment] type`, `service_profiles`), pre-compose guard that
+  refuses a change until `ciu clean`, v8-named realness/publish keys; ciu request: selection context under `--dir`.
+- **B054 — Passenger probe.** Standalone WSGI app dir in vbpub scripts dumping what Passenger gives the app for a forged header.
+- **B055 — `e2e-remote`.** On-demand remote smoke against the Passenger tarball on the webhoster.

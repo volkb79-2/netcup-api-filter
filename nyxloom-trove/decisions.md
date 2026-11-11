@@ -219,20 +219,21 @@ cascades are wrong just preserves the wrong data faithfully.
 
 ---
 
-## D-008 .. D-011 — deployed e2e tier, deployment types, identity, credentials
+## D-008 .. D-013 — deployed e2e tier, deployment types, identity, credentials, proxy trust
 
-**Status:** DECIDED (controller with the operator interview, 2026-11-11) · plan:
-`docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`
+**Status:** DECIDED (controller with the operator interview 2026-11-11; amended after an independent Opus review the same day) ·
+plan: `docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`, review: `docs/plans/deployed-e2e-opus-review-2026-11-11.md`
 
-- **D-008 deployment types:** `internal` (instance network, mocks, nothing published, reached by
-  container name) and `public` (behind the host edge, PowerDNS on port 53, real SMTP/IMAP/netcup),
-  chosen with `ciu up --profile`; ciu 7.24 profiles; stack flags derive from `ciu.selected_profiles` (spike B045), v8-shaped.
-- **D-009 identity:** worktrees get per-instance names through `deploy.environment_tag = "$INSTANCE_ID"`;
-  the primary keeps `dev`.
-- **D-010 DNS singleton:** one PowerDNS owns host port 53; session stacks create `e2e-<id>.<zone>`
-  sub-zones through its API; public frontends are `naf-<instance>.<PUBLIC_FQDN>` (operator choice:
-  names under the host FQDN; the internal e2e needs no DNS name).
-- **D-011 credentials:** `GEN_LOCAL` for generated secrets, `ASK_EXTERNAL` for operator-supplied
-  real credentials, non-secret facts in gitignored `.env.live`; the live tier fails on a missing
-  value; the deployed lane is on-demand and not part of `release-gate`.
-
+- **D-008 deployment types** `internal` / `public` are a per-checkout fact (`[topology.deployment] type` + `service_profiles` in the
+  instance overlay), not a per-invocation selection: `ciu up --dir` gets no selection context and nothing is persisted. A
+  pre-compose guard refuses a type change until `ciu clean`. v8-named flags: `[topology.realness]`, `publish = host|proxy|instance`.
+- **D-009 identity:** `deploy.environment_tag = "$INSTANCE_ID"` in every checkout; traefik router/service/middleware/subdomain derive
+  from it; names are read (`ciu resolve --json`), never formed. Lands first (CIU-193).
+- **D-010 two public roles:** `public-edge` (any checkout, own backing PowerDNS, no :53) and `public-dns` (exactly one checkout,
+  `${PUBLIC_IP}:53`, delegated zone, live tier). Sessions isolate by realm labels `e2e-<utc>-<rand>.<zone>` plus a reaper; no
+  shared-infra join; no public PowerDNS API route. Public frontends: `naf-<instance>.<PUBLIC_FQDN>` (operator choice), stable names.
+- **D-011 credentials:** `GEN_LOCAL` checkout-local for generated secrets; operator-supplied via prompt/`ASK_FILE`, never cockpit
+  env, mounted only into the frontend and a dedicated live runner; lane preflight proves them with read-only logins; failure classes.
+- **D-012 frontends run the OCI release image** (non-root, data volume only), never the test-runner image with the repo mounted rw.
+- **D-013 proxy trust:** `TRUSTED_PROXY_HOPS` (default 0), `x_host` never trusted, canonical `PUBLIC_BASE_URL` for emailed links,
+  host-only session cookies, `request.remote_addr` only (static guard test); the tarball keeps 1 hop until the webhoster is measured.
