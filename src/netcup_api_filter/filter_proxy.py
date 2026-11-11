@@ -22,6 +22,7 @@ from .token_auth import (
     require_auth,
     log_activity,
 )
+from .utils import parse_client_address
 
 logger = logging.getLogger(__name__)
 
@@ -501,12 +502,16 @@ def ddns_update(domain: str, hostname: str):
     auto = request.args.get('auto', '').lower() in ('true', '1', 'yes')
     
     if auto or (not ipv4 and not ipv6):
-        # Auto-detect from request
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        if client_ip:
-            client_ip = client_ip.split(',')[0].strip()
-        
-        if ':' in client_ip:
+        # ProxyFix has already resolved remote_addr using the configured hops.
+        client_address = parse_client_address(request.remote_addr)
+        if client_address is None:
+            return jsonify({
+                'error': 'bad_request',
+                'message': 'No valid IP address could be detected'
+            }), 400
+
+        client_ip = str(client_address)
+        if client_address.version == 6:
             ipv6 = ipv6 or client_ip
         else:
             ipv4 = ipv4 or client_ip
@@ -594,8 +599,6 @@ def my_ip():
     
     This endpoint does not require authentication.
     """
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0].strip()
+    client_ip = request.remote_addr
     
     return jsonify({'ip': client_ip})

@@ -141,9 +141,16 @@ def ship_runtime_defaults(staging: Path) -> None:
     (staging / ".env.defaults").unlink()
     sys.path.insert(0, str(REPO_ROOT / "src"))
     try:
-        from netcup_api_filter.config_defaults import write_shipped_defaults
+        from netcup_api_filter.config_defaults import (
+            SHIPPED_RUNTIME_OVERRIDES,
+            write_shipped_defaults,
+        )
 
-        write_shipped_defaults(REPO_ROOT / ".env.defaults", staging)
+        write_shipped_defaults(
+            REPO_ROOT / ".env.defaults",
+            staging,
+            overrides=SHIPPED_RUNTIME_OVERRIDES,
+        )
     finally:
         sys.path.remove(str(REPO_ROOT / "src"))
 

@@ -172,8 +172,20 @@ def _get_admin_email() -> str | None:
 
 def _get_base_url() -> str:
     """Get base URL for links in emails."""
+    from flask import current_app, has_app_context
     from .database import get_system_config
     import os
+
+    if has_app_context():
+        public_base_url = current_app.config.get('PUBLIC_BASE_URL')
+        if public_base_url:
+            return public_base_url.rstrip('/')
+    else:
+        from .public_url import get_configured_public_base_url
+
+        public_base_url = get_configured_public_base_url()
+        if public_base_url:
+            return public_base_url.rstrip('/')
     
     # Try config first, then environment
     general_config = get_system_config('general')

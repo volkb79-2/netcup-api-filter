@@ -264,10 +264,10 @@
                 </table>
                 
                 <h6 class="mt-4">Example: Update A Record</h6>
-                <pre class="bg-dark text-light p-3 rounded"><code>curl -X PUT https://api.example.com/api/dns/records \
+                <pre class="bg-dark text-light p-3 rounded"><code>curl -X PUT "{{ public_base_url.rstrip('/') }}/api/dns/records" \
   -H "Authorization: Bearer naf_user_xxx..." \
   -H "Content-Type: application/json" \
-  -d '{"hostname": "home.example.com", "type": "A", "value": "1.2.3.4"}'</code></pre>
+  -d '{"hostname": "your-hostname.your-domain", "type": "A", "value": "1.2.3.4"}'</code></pre>
             </div>
             <div class="modal-footer">
                 <a href="/docs/api" class="btn btn-outline-primary" target="_blank">

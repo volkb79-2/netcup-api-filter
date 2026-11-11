@@ -23,6 +23,8 @@
 
 ### Security
 
+- **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog keeps one unverified hop as the status quo until B044 measures the webhoster chain.
+
 - **Fixed (review #15):** the OCI image ran gunicorn as root and had no `.dockerignore` (`.env*`
   and `.ciu/secrets` reached the builder context). It now runs as `naf` (uid/gid 10001) with only
   `/data` and `/config` writable, and the build context is an allowlist.

@@ -37,6 +37,8 @@ services:
       - {{ key }}={{ value }}
       {% endfor %}
       - GUNICORN_BIND=0.0.0.0:{{ app_local.port }}
+      - TRUSTED_PROXY_HOPS={{ app_local.trusted_proxy_hops }}
+      - PUBLIC_BASE_URL={{ app_local.public_base_url_scheme }}://{{ app_local.external.subdomain }}.{{ topology.external.public_fqdn }}
       # Stated, never inferred: see app_local.cookie_secure.
       - FLASK_SESSION_COOKIE_SECURE={{ app_local.cookie_secure }}
       # Instance data + first-boot inputs (bootstrap/admin.py, app.py). Secrets arrive as files.

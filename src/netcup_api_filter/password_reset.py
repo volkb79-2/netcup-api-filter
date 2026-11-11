@@ -28,6 +28,13 @@ from .models import Account, ResetToken, RegistrationRequest, db, validate_passw
 logger = logging.getLogger(__name__)
 
 
+def _external_base_url_fallback() -> str:
+    """Use the configured canonical origin before legacy manual URL settings."""
+    from .public_url import get_configured_public_base_url
+
+    return get_configured_public_base_url() or os.environ.get('BASE_URL', 'http://localhost:5100')
+
+
 def _hash_token(raw_token: str) -> str:
     """Hash a token with SHA256 for storage."""
     return hashlib.sha256(raw_token.encode()).hexdigest()
@@ -347,7 +354,7 @@ def send_password_reset_email(
         reset_url = url_for('account.reset_password', token=raw_token, _external=True)
     except RuntimeError:
         # If we're outside request context, build manually
-        base_url = os.environ.get('BASE_URL', 'http://localhost:5100')
+        base_url = _external_base_url_fallback()
         reset_url = f"{base_url}/account/reset-password/{raw_token}"
 
     # Get email configuration
@@ -477,7 +484,7 @@ def send_registration_verification_email(
         verify_url = url_for('account.verify_email_link', token=raw_token, _external=True)
     except RuntimeError:
         # If we're outside request context, build manually
-        base_url = os.environ.get('BASE_URL', 'http://localhost:5100')
+        base_url = _external_base_url_fallback()
         verify_url = f"{base_url}/account/register/verify/{raw_token}"
     
     # Get email configuration
@@ -603,7 +610,7 @@ def send_account_invite_email(
         invite_url = url_for('account.accept_invite', token=raw_token, _external=True)
     except RuntimeError:
         # If we're outside request context, build manually
-        base_url = os.environ.get('BASE_URL', 'http://localhost:5100')
+        base_url = _external_base_url_fallback()
         invite_url = f"{base_url}/account/invite/{raw_token}"
     
     # Get email configuration

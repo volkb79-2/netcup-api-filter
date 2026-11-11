@@ -37,12 +37,16 @@ def _bootstrap_admin_env(monkeypatch):
     init_db() refuses to start without an administrator (bootstrap/admin.py); a fresh
     test DB has none, so the app creates "admin" from these variables. The password
     is random per test: no test may depend on knowing it (create your own admin with
-    make_account(..., is_admin=1, password=...) instead).
+    make_account(..., is_admin=1, password=...) instead). Proxy trust defaults to zero;
+    tests that exercise trusted hops state their hop count explicitly.
     """
     monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_USERNAME", "admin")
     monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_EMAIL", "admin@localhost")
     monkeypatch.setenv("NAF_BOOTSTRAP_ADMIN_PASSWORD", secrets.token_urlsafe(18) + "Aa1@")
     monkeypatch.delenv("NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE", raising=False)
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "0")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "")
+    monkeypatch.setenv("FLASK_SESSION_COOKIE_DOMAIN", "")
 
 
 @pytest.fixture

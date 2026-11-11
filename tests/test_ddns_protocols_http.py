@@ -157,15 +157,16 @@ def test_missing_myip_uses_client_ip(client, backend, token):
 
 
 def test_forged_leftmost_x_forwarded_for_is_not_the_detected_ip(client, backend, token):
-    """ProxyFix(x_for=1) trusts only the rightmost hop; the leftmost is attacker-controlled."""
+    """The default zero-hop policy ignores both values in an untrusted header."""
     resp = client.get(
         PROTOCOLS["dyndns2"][0],
         headers={**_auth(token), "X-Forwarded-For": "203.0.113.1, 198.51.100.1"},
         query_string={"hostname": DOMAIN, "myip": "auto"},
     )
-    assert resp.get_data(as_text=True).strip() == "good 198.51.100.1"
-    assert backend.find(DOMAIN, "@", "A")["destination"] == "198.51.100.1"
-    assert all(r["destination"] != "203.0.113.1" for r in backend.records_for(DOMAIN))
+    assert resp.get_data(as_text=True).strip() == f"good {CLIENT_IP}"
+    assert backend.find(DOMAIN, "@", "A")["destination"] == CLIENT_IP
+    assert all(r["destination"] not in ("203.0.113.1", "198.51.100.1")
+               for r in backend.records_for(DOMAIN))
 
 
 def test_ipv6_creates_aaaa_record(client, backend, token):

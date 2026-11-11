@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from flask import (
-    Blueprint, flash, g, jsonify, redirect, render_template,
+    Blueprint, current_app, flash, g, jsonify, redirect, render_template,
     request, session, url_for
 )
 from functools import wraps
@@ -52,11 +52,35 @@ import json
 import os
 import random
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+
+def _redirect_back_or(endpoint: str):
+    """Redirect back while keeping any absolute referrer on the configured origin."""
+    public_base_url = current_app.config.get('PUBLIC_BASE_URL')
+    if not public_base_url:
+        return redirect(request.referrer or url_for(endpoint))
+
+    fallback_url = url_for(endpoint, _external=True)
+    if not request.referrer:
+        return redirect(fallback_url)
+
+    try:
+        referrer = urlsplit(request.referrer)
+    except ValueError:
+        return redirect(fallback_url)
+
+    path = referrer.path
+    if not path.startswith('/') or any(char in path for char in ('\\', '\r', '\n')):
+        return redirect(fallback_url)
+
+    origin = urlsplit(public_base_url)
+    canonical_url = urlunsplit((origin.scheme, origin.netloc, path, referrer.query, ''))
+    return redirect(canonical_url)
 
 # Admin session keys
 SESSION_KEY_ADMIN_ID = 'admin_id'
@@ -112,10 +136,9 @@ def _add_timing_jitter():
 def _get_client_ip() -> str:
     """Get real client IP.
 
-    ProxyFix (x_for=1, see app.py) already normalizes request.remote_addr to
-    the trusted client hop. Do NOT re-parse X-Forwarded-For here — the raw
-    header is attacker-controlled and re-parsing it defeats ProxyFix's
-    trusted-hop extraction.
+    ProxyFix (configured by TRUSTED_PROXY_HOPS in app.py) normalizes
+    request.remote_addr to the address selected by the trusted-hop policy. Do
+    NOT re-parse forwarding headers here; they are attacker-controlled input.
     """
     return request.remote_addr or 'unknown'
 
@@ -1111,7 +1134,7 @@ def account_approve(account_id):
     else:
         flash(error, 'error')
     
-    return redirect(request.referrer or url_for('admin.accounts_pending'))
+    return _redirect_back_or('admin.accounts_pending')
 
 
 @admin_bp.route('/accounts/<int:account_id>/reject', methods=['POST'])
@@ -1126,7 +1149,7 @@ def account_reject(account_id):
     else:
         flash(error, 'error')
     
-    return redirect(request.referrer or url_for('admin.accounts_pending'))
+    return _redirect_back_or('admin.accounts_pending')
 
 
 @admin_bp.route('/accounts/<int:account_id>/disable', methods=['POST'])
@@ -1140,7 +1163,7 @@ def account_disable(account_id):
     else:
         flash(error, 'error')
     
-    return redirect(request.referrer or url_for('admin.accounts_list'))
+    return _redirect_back_or('admin.accounts_list')
 
 
 @admin_bp.route('/accounts/<int:account_id>/delete', methods=['POST'])
@@ -1516,7 +1539,7 @@ def realm_approve(realm_id):
     else:
         flash(result.error, 'error')
     
-    return redirect(request.referrer or url_for('admin.realms_pending'))
+    return _redirect_back_or('admin.realms_pending')
 
 
 @admin_bp.route('/realms/<int:realm_id>/reject', methods=['POST'])
@@ -1531,7 +1554,7 @@ def realm_reject(realm_id):
     else:
         flash(result.error, 'error')
     
-    return redirect(request.referrer or url_for('admin.realms_pending'))
+    return _redirect_back_or('admin.realms_pending')
 
 
 @admin_bp.route('/realms/<int:realm_id>/revoke', methods=['POST'])

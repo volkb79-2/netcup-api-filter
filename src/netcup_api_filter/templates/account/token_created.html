@@ -76,11 +76,11 @@
             </div>
             <div class="card-body">
                 <h6>cURL - List Records</h6>
-                <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X GET "{{ request.url_root }}api/dns/records?domain={{ realm.realm_value }}" \
+                <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X GET "{{ public_base_url }}api/dns/records?domain={{ realm.realm_value }}" \
   -H "Authorization: Bearer {{ token_plain }}"</code></pre>
                 
                 <h6>cURL - Update A Record</h6>
-                <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X PUT "{{ request.url_root }}api/dns/records" \
+                <pre class="bg-dark text-light p-3 rounded small mb-4"><code>curl -X PUT "{{ public_base_url }}api/dns/records" \
   -H "Authorization: Bearer {{ token_plain }}" \
   -H "Content-Type: application/json" \
   -d '{"hostname": "{{ realm.realm_value }}", "type": "A", "value": "1.2.3.4"}'</code></pre>
@@ -90,7 +90,7 @@
 
 headers = {"Authorization": "Bearer {{ token_plain }}"}
 response = requests.get(
-    "{{ request.url_root }}api/dns/records",
+    "{{ public_base_url }}api/dns/records",
     params={"domain": "{{ realm.realm_value }}"},
     headers=headers
 )
