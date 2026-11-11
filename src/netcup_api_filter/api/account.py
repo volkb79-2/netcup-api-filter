@@ -58,7 +58,7 @@ from ..telegram_service import (
     send_telegram_message,
     sha256_hex,
 )
-from ..utils import generate_token
+from ..utils import generate_token, parse_client_address
 
 # Raw Telegram link token cached in the user's session so a page refresh or a
 # second tab reuses the same deep-link instead of rotating it (only the hash is
@@ -183,10 +183,8 @@ def forgot_password():
         if not email:
             flash('Please enter your email address', 'error')
         else:
-            # Get client IP for IP-bound token
-            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-            if client_ip and ',' in client_ip:
-                client_ip = client_ip.split(',')[0].strip()
+            # ProxyFix resolves remote_addr using only the configured trusted hops.
+            client_ip = request.remote_addr
             
             # Always show success to prevent email enumeration
             account = Account.query.filter_by(email=email).first()
@@ -209,8 +207,8 @@ def reset_password(token):
     
     from ..password_reset import verify_reset_token, complete_password_reset
 
-    # Client IP for reset-token IP-binding validation. ProxyFix (x_for=1) is
-    # configured in app.py, so remote_addr is already the trusted client IP;
+    # Client IP for reset-token IP-binding validation. ProxyFix uses the
+    # operator-configured trusted hop count, so remote_addr is the resolved IP;
     # trusting a client-supplied X-Forwarded-For value here would let the
     # leftmost (attacker-controlled) hop spoof its way past IP binding.
     client_ip = request.remote_addr
@@ -352,10 +350,8 @@ def verify_email_link(token):
     """
     from ..password_reset import verify_reset_token
     
-    # Get client IP for security validation
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip and ',' in client_ip:
-        client_ip = client_ip.split(',')[0].strip()
+    # ProxyFix resolves remote_addr using only the configured trusted hops.
+    client_ip = request.remote_addr
     
     # Verify the token with IP binding
     reg_request, error = verify_reset_token(token, current_ip=client_ip, expected_type='verify')
@@ -819,7 +815,7 @@ def settings():
             if new_password != confirm_password:
                 flash('Passwords do not match', 'error')
             else:
-                source_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+                source_ip = request.remote_addr
                 success, error = change_password(account, current_password, new_password, source_ip)
                 if success:
                     flash('Password changed successfully', 'success')
@@ -1255,9 +1251,7 @@ def realm_detail(realm_id):
     can_ddns = 'update' in realm_ops and ('A' in realm_types or 'AAAA' in realm_types)
     
     # Get client IP for DDNS display
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0].strip()
+    client_ip = request.remote_addr
     
     return render_template('account/realm_detail.html',
                           account=account,
@@ -1304,17 +1298,14 @@ def ddns_update(realm_id):
         return redirect(url_for('account.realm_detail', realm_id=realm_id))
     
     # Get client IP
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0].strip()
-    
-    if not client_ip:
-        flash('Could not detect your IP address', 'error')
+    client_address = parse_client_address(request.remote_addr)
+
+    if client_address is None:
+        flash('Could not detect a valid IP address', 'error')
         return redirect(url_for('account.realm_detail', realm_id=realm_id))
-    
-    # Determine IP type
-    is_ipv6 = ':' in client_ip
-    record_type = 'AAAA' if is_ipv6 else 'A'
+
+    client_ip = str(client_address)
+    record_type = 'AAAA' if client_address.version == 6 else 'A'
     
     if record_type not in realm_types:
         flash(f'This realm does not allow {record_type} record type', 'error')
@@ -1848,7 +1839,7 @@ def change_password_page():
         if new_password != confirm_password:
             flash('New passwords do not match', 'error')
         else:
-            source_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            source_ip = request.remote_addr
             success, error = change_password(account, current_password, new_password, source_ip)
             if success:
                 flash('Password changed successfully', 'success')
@@ -2145,7 +2136,7 @@ def disable_2fa():
     account.totp_enabled = False
     account.totp_secret = None
 
-    source_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+    source_ip = request.remote_addr or 'unknown'
     try:
         log = ActivityLog(
             account_id=account.id,
@@ -2189,7 +2180,7 @@ def unlink_telegram():
     # Drop any cached deep-link token so a future link starts fresh.
     session.pop(SESSION_KEY_TELEGRAM_LINK_TOKEN, None)
 
-    source_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+    source_ip = request.remote_addr or 'unknown'
     try:
         log = ActivityLog(
             account_id=account.id,

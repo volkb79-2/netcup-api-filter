@@ -30,6 +30,12 @@ image_tag = "py311"
 # 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.
 port = 5100
 
+# This stack is behind the host edge-traefik, so trust exactly that one proxy.
+trusted_proxy_hops = 1
+
+# Compose combines this scheme with the configured external subdomain and CIU public FQDN.
+public_base_url_scheme = "https"
+
 # Session cookie `Secure` flag for THIS long-lived instance. Humans reach it over HTTPS through traefik,
 # so it is true. (The e2e gate no longer uses this stack: it starts its own throwaway instance inside the
 # test runner, which states FLASK_SESSION_COOKIE_SECURE=false for its plain-HTTP origin.) Never implicit.

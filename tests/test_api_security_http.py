@@ -241,10 +241,10 @@ def test_myip_requires_no_auth_and_returns_peer_ip(client):
     assert resp.get_json()["ip"] == "127.0.0.1"
 
 
-def test_myip_uses_trusted_forwarded_hop(client):
+def test_myip_ignores_forwarded_for_with_zero_trusted_hops(client):
     resp = client.get("/api/myip", headers={"X-Forwarded-For": "203.0.113.50"})
     assert resp.status_code == 200
-    assert resp.get_json()["ip"] == "203.0.113.50"
+    assert resp.get_json()["ip"] == "127.0.0.1"
 
 
 def test_myip_exposes_only_ip_and_echoed_headers(client):

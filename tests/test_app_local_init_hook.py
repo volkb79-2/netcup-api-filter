@@ -141,6 +141,19 @@ def test_compose_mounts_the_secrets_and_points_the_app_at_them():
     assert "NETCUP_FILTER_DB_PATH=/data/" in compose and "hostdir.data }}:/data" in compose
 
 
+def test_compose_states_the_proxy_hops_and_canonical_public_origin():
+    stack = _stack_defaults()["app_local"]
+    compose = (STACK / "ciu.compose.yml.j2").read_text()
+
+    assert stack["trusted_proxy_hops"] == 1
+    assert stack["public_base_url_scheme"] == "https"
+    assert "TRUSTED_PROXY_HOPS={{ app_local.trusted_proxy_hops }}" in compose
+    assert (
+        "PUBLIC_BASE_URL={{ app_local.public_base_url_scheme }}://"
+        "{{ app_local.external.subdomain }}.{{ topology.external.public_fqdn }}"
+    ) in compose
+
+
 def test_declared_mail_service_equals_the_mailpit_stack():
     """app-local declares the Mailpit name/port itself (a lone `ciu up --dir` does not load the Mailpit
     stack's config); this keeps the two declarations equal."""

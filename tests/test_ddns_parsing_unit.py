@@ -228,8 +228,8 @@ def test_should_auto_detect_ip_custom_env_keyword(monkeypatch):
 #
 # Trust contract:
 #   get_client_ip() trusts request.remote_addr only. app.py installs
-#   ProxyFix(app.wsgi_app, x_for=1, ...), which normalizes remote_addr to the
-#   trusted (rightmost) X-Forwarded-For hop as part of the real WSGI stack.
+#   ProxyFix(app.wsgi_app, x_for=TRUSTED_PROXY_HOPS, ...), which normalizes
+#   remote_addr only when the operator declares one or more trusted hops.
 #   get_client_ip() itself does NOT re-parse X-Forwarded-For: the raw header is
 #   attacker-controlled, and re-parsing it (taking the leftmost value) would
 #   defeat ProxyFix's trusted-hop extraction and let a client forge its own IP.

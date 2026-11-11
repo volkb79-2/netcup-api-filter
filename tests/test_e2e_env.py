@@ -90,6 +90,34 @@ def test_e2e_app_does_not_throttle_admin_2fa_mail():
     assert int(require_default("ADMIN_2FA_EMAIL_MIN_INTERVAL_SECONDS")) > 0  # production default untouched
 
 
+def test_e2e_app_explicitly_uses_direct_proxy_and_request_origin_settings(
+    tmp_path, monkeypatch
+):
+    tree = tmp_path / "deploy"
+    tree.mkdir()
+    captured = {}
+    monkeypatch.setattr(e2e_env, "deploy_dir", lambda: tree)
+    monkeypatch.setattr(e2e_env, "advertise_host", lambda: "runner")
+    monkeypatch.setattr(e2e_env, "copy_golden_db", lambda dest: None)
+    monkeypatch.setattr(e2e_env, "retire_shipped_admin", lambda db: None)
+    monkeypatch.setattr(e2e_env, "_free_port", lambda: 45678)
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "2")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://inherited.example.invalid")
+
+    def capture_popen(*args, **kwargs):
+        captured.update(kwargs["env"])
+        return _FakeProc()
+
+    monkeypatch.setattr(e2e_env.subprocess, "Popen", capture_popen)
+    monkeypatch.setattr(e2e_env, "_wait_ready", lambda *args: None)
+
+    with e2e_env.app_instance():
+        pass
+
+    assert captured["TRUSTED_PROXY_HOPS"] == "0"
+    assert captured["PUBLIC_BASE_URL"] == ""
+
+
 # --- review #14 ---------------------------------------------------------------
 
 def _accounts_db(path, username, password_hash="$2b$12$shipped"):

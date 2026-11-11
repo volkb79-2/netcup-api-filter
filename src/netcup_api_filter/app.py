@@ -8,16 +8,86 @@ This application factory uses:
 """
 import logging
 import os
-from flask import Flask
+import threading
+from urllib.parse import urlsplit, urlunsplit
+
+from flask import Flask, has_request_context, request
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config_defaults import get_default
 from .database import init_db
 from .api import account_bp, admin_bp, dns_api_bp, ddns_protocols_bp, telegram_bp
+from .public_url import get_configured_public_base_url, host_is_valid
 from .utils import parse_bool
 
 logger = logging.getLogger(__name__)
+
+_forwarded_header_warning_logged = False
+_forwarded_header_warning_lock = threading.Lock()
+
+
+def _validate_cookie_domain(value: str) -> str:
+    """Validate an explicit cookie Domain attribute; empty means host-only."""
+    domain = value[1:] if value.startswith(".") else value
+    if (
+        value.lower() == "auto"
+        or value != value.strip()
+        or not domain
+        or any(char in value for char in ":/?#@[]\\")
+        or not host_is_valid(domain, allow_ip=False)
+    ):
+        raise RuntimeError(
+            "FLASK_SESSION_COOKIE_DOMAIN must be empty for host-only cookies or a valid cookie domain"
+        )
+    return value
+
+
+def _trusted_proxy_hops() -> int:
+    raw_value = os.environ.get("TRUSTED_PROXY_HOPS", get_default("TRUSTED_PROXY_HOPS"))
+    try:
+        hops = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("TRUSTED_PROXY_HOPS must be a non-negative integer") from exc
+    if hops < 0:
+        raise RuntimeError("TRUSTED_PROXY_HOPS must be a non-negative integer")
+    return hops
+
+
+class NAFFlask(Flask):
+    """Flask app whose external URL generation can use the configured public origin."""
+
+    def url_for(self, endpoint: str, **values) -> str:
+        public_base_url = self.config.get("PUBLIC_BASE_URL")
+        if not public_base_url:
+            return super().url_for(endpoint, **values)
+
+        explicit_external = values.get("_external")
+        has_scheme = values.get("_scheme") is not None
+        if explicit_external is False:
+            return super().url_for(endpoint, **values)
+
+        if has_request_context() and explicit_external is None and not has_scheme:
+            # A configured SERVER_NAME enables outside-request URL generation;
+            # preserve Flask's former request-context default of relative URLs.
+            values["_external"] = False
+            return super().url_for(endpoint, **values)
+
+        should_be_external = (
+            explicit_external is True
+            or has_scheme
+            or (explicit_external is None and not has_request_context())
+        )
+        if not should_be_external:
+            return super().url_for(endpoint, **values)
+
+        relative_values = dict(values)
+        relative_values["_external"] = False
+        relative_values.pop("_scheme", None)
+        relative_url = super().url_for(endpoint, **relative_values)
+        base = urlsplit(public_base_url)
+        target = urlsplit(relative_url)
+        return urlunsplit((base.scheme, base.netloc, target.path, target.query, target.fragment))
 
 # Initialize CSRF protection globally
 csrf = CSRFProtect()
@@ -69,10 +139,49 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     Returns:
         Configured Flask application instance
     """
-    app = Flask(__name__)
-    
-    # Trust proxy headers (for reverse proxy deployments)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app = NAFFlask(__name__)
+
+    trusted_proxy_hops = _trusted_proxy_hops()
+    app.config["TRUSTED_PROXY_HOPS"] = trusted_proxy_hops
+    if trusted_proxy_hops > 0:
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=trusted_proxy_hops,
+            x_proto=trusted_proxy_hops,
+            x_host=0,
+        )
+    else:
+        @app.before_request
+        def warn_if_forwarded_headers_are_ignored():
+            if not any(name.lower().startswith("x-forwarded-") for name in request.headers.keys()):
+                return
+
+            global _forwarded_header_warning_logged
+            with _forwarded_header_warning_lock:
+                if _forwarded_header_warning_logged:
+                    return
+                _forwarded_header_warning_logged = True
+            logger.warning(
+                "Forwarded headers are ignored because TRUSTED_PROXY_HOPS=0; "
+                "set TRUSTED_PROXY_HOPS to the number of trusted proxies in front of this app."
+            )
+
+    public_base_url = get_configured_public_base_url()
+    if public_base_url:
+        parsed_public_base_url = urlsplit(public_base_url)
+        scheme, authority = parsed_public_base_url.scheme, parsed_public_base_url.netloc
+        app.config["PUBLIC_BASE_URL"] = public_base_url
+        # SERVER_NAME enables URL building outside a request context. NAFFlask
+        # keeps request-context links relative unless the caller asks for an
+        # external URL, and then replaces the request origin with this origin.
+        app.config["SERVER_NAME"] = authority
+        app.config["PREFERRED_URL_SCHEME"] = scheme
+    else:
+        app.config["PUBLIC_BASE_URL"] = ""
+        logger.warning(
+            "PUBLIC_BASE_URL is unset; externally generated URLs use the request origin, "
+            "so an untrusted Host can poison emailed links. Set PUBLIC_BASE_URL to the public origin."
+        )
     
     # =========================================================================
     # Security Configuration
@@ -130,36 +239,14 @@ def create_app(config_path: str = "config.yaml") -> Flask:
         get_default('FLASK_SESSION_LIFETIME', '3600')
     ))
     
-    # Session cookie domain - for TLS proxy scenarios
-    # When using reverse proxy with public FQDN, cookies must use the public domain
-    # so browsers send them through the proxy (not just to internal hostname)
+    # Empty is host-only. A configured domain is explicit and validated.
     domain_setting = os.environ.get(
         'FLASK_SESSION_COOKIE_DOMAIN',
-        get_default('FLASK_SESSION_COOKIE_DOMAIN', 'auto')
+        get_default('FLASK_SESSION_COOKIE_DOMAIN'),
     )
-    
-    if domain_setting == 'auto':
-        # In local test mode we often access the app via an internal hostname
-        # (e.g., devcontainer hostname). Forcing SESSION_COOKIE_DOMAIN to
-        # PUBLIC_FQDN would prevent cookies from being sent and break CSRF.
-        if flask_env == 'local_test':
-            logger.debug("local_test: leaving SESSION_COOKIE_DOMAIN unset (use request hostname)")
-        else:
-            # Use PUBLIC_FQDN if available (from .env.workspace)
-            public_fqdn = os.environ.get('PUBLIC_FQDN')
-            if public_fqdn:
-                # Leading dot allows cookies to work on subdomains
-                app.config['SESSION_COOKIE_DOMAIN'] = f'.{public_fqdn}'
-                logger.info(f"Session cookies set for domain: .{public_fqdn} (auto-detected from PUBLIC_FQDN)")
-            else:
-                # No PUBLIC_FQDN - use Flask default (current request hostname)
-                # Don't set SESSION_COOKIE_DOMAIN at all (Flask will use request domain)
-                logger.debug("No PUBLIC_FQDN found, using Flask default session cookie domain (request hostname)")
-    elif domain_setting:
-        # Explicit domain set (empty string is treated as False)
-        app.config['SESSION_COOKIE_DOMAIN'] = domain_setting
-        logger.info(f"Session cookies set for domain: {domain_setting} (explicit)")
-    # else: empty string or not set, use Flask default (don't set SESSION_COOKIE_DOMAIN)
+    if domain_setting:
+        app.config['SESSION_COOKIE_DOMAIN'] = _validate_cookie_domain(domain_setting)
+        logger.info("Session cookies use an explicitly configured domain.")
     
     # =========================================================================
     # Template and Static Configuration
@@ -373,6 +460,13 @@ def create_app(config_path: str = "config.yaml") -> Flask:
             return {'build_info': get_build_info() or {}}
         except Exception:
             return {'build_info': {}}
+
+    @app.context_processor
+    def inject_public_base_url():
+        configured_origin = app.config['PUBLIC_BASE_URL']
+        if configured_origin:
+            return {'public_base_url': f"{configured_origin}/"}
+        return {'public_base_url': request.url_root}
     
     @app.context_processor
     def inject_geoip_functions():

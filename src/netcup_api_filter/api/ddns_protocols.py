@@ -13,7 +13,7 @@ Security:
 - All requests through @require_auth decorator
 - Realm-based authorization via check_permission()
 - IP whitelisting support
-- Auto IP detection with X-Forwarded-For handling
+- Auto IP detection using request.remote_addr after configured proxy middleware
 
 Response Format:
 - Protocol-compliant text responses (not JSON)
@@ -62,10 +62,9 @@ def get_client_ip():
     """
     Extract client IP from request.
 
-    ProxyFix (x_for=1, see app.py) already normalizes request.remote_addr to
-    the trusted client hop. Do NOT re-parse X-Forwarded-For here — the raw
-    header is attacker-controlled and re-parsing it defeats ProxyFix's
-    trusted-hop extraction.
+    ProxyFix (configured by TRUSTED_PROXY_HOPS in app.py) normalizes
+    request.remote_addr to the address selected by the trusted-hop policy. Do
+    NOT re-parse forwarding headers here; they are attacker-controlled input.
     """
     client_ip = request.remote_addr or 'unknown'
     logger.debug(f"Client IP from remote_addr: {client_ip}")

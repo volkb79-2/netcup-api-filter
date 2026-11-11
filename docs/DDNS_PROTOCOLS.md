@@ -38,6 +38,11 @@ These endpoints allow automated DNS record updates for dynamic IP addresses (hom
 - ✅ **Activity Logging** - Full audit trail of all updates
 - ✅ **IP Whitelisting** - Optional source IP restrictions
 
+When `myip` requests automatic detection, the app uses the middleware-resolved
+`request.remote_addr`. `TRUSTED_PROXY_HOPS` controls whether proxy forwarding headers
+can influence that address; the source default is zero. See [`SECURITY.md`](SECURITY.md)
+for hop configuration and the Passenger runtime's unverified status-quo setting.
+
 ---
 
 ## Protocol Details
@@ -187,7 +192,9 @@ Optionally restrict tokens to specific source IPs:
 - Empty list = allow all IPs
 - Example: `192.168.1.0/24,203.0.113.5`
 
-**Note:** The system respects `X-Forwarded-For` headers for reverse proxy deployments.
+**Note:** Token IP allow-lists compare the middleware-resolved `request.remote_addr`. Forwarding
+headers affect that address only when the operator sets `TRUSTED_PROXY_HOPS` to the measured
+proxy count; the repository default is zero. See [`SECURITY.md`](SECURITY.md).
 
 ### Auto IP Detection
 
@@ -203,9 +210,8 @@ The `myip` parameter supports auto-detection:
 
 **Keywords are configurable** via `DDNS_AUTO_IP_KEYWORDS` environment variable.
 
-**X-Forwarded-For Handling:**
-- If present: Uses first IP in chain (original client)
-- If absent: Uses `request.remote_addr`
+**Client IP source:** Automatic detection always uses `request.remote_addr` after middleware.
+The app never reads the raw `X-Forwarded-For` header to choose the update address.
 
 **IPv6 Support:**
 - IPv6 addresses automatically create/update AAAA records
@@ -559,10 +565,9 @@ dig @ns1.netcup.net device.example.com A +short
 # Check your public IP
 curl https://naf.example.com/api/myip
 
-# Test auto-detection with X-Forwarded-For
+# Test auto-detection; the service resolves its address from request.remote_addr
 curl -i "https://naf.example.com/api/ddns/dyndns2/update?hostname=device.example.com&myip=auto" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -H "X-Forwarded-For: 203.0.113.1"
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
 ### Client-Specific Issues

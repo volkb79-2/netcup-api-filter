@@ -243,10 +243,13 @@ def app_instance(
         prepared = prepare(db_path) if prepare is not None else None
 
         env = {key: value for key, value in os.environ.items() if not key.startswith("NAF_BOOTSTRAP_ADMIN_")}
+        # The per-session app is reached directly over HTTP, with no proxy in front of it.
         env.update({
             "NETCUP_FILTER_DB_PATH": str(db_path),
             "NETCUP_FILTER_LOG_FILE": str(workdir / "netcup_filter.log"),
             "FLASK_ENV": "local_test",
+            "TRUSTED_PROXY_HOPS": "0",
+            "PUBLIC_BASE_URL": "",
             "FLASK_SESSION_COOKIE_SECURE": "false",
             "SECRET_KEY": secrets.token_hex(32),
             "GUNICORN_WORKERS": _setting("E2E_APP_WORKERS"),

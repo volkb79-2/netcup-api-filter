@@ -264,9 +264,12 @@ Both endpoints support automatic IP detection:
 - `myip=detect`
 
 **Behavior:**
-- Uses client IP from request
-- Respects `X-Forwarded-For` header (first IP)
+- Uses `request.remote_addr` after the configured proxy middleware
+- Forwarding headers affect the client address only when `TRUSTED_PROXY_HOPS` is set to the measured proxy count (default `0`)
 - Automatically detects IPv4/IPv6 (creates A/AAAA record accordingly)
+
+See [`SECURITY.md`](SECURITY.md) for proxy trust configuration and the Passenger runtime's
+unverified one-hop status quo pending probe B044.
 
 **Example with IPv6:**
 ```bash

@@ -86,8 +86,11 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
 - **CSRF**: Flask-WTF `CSRFProtect` protects all cookie-authenticated routes; the token-auth API
   (`dns_api`, `ddns_protocols`) and the shared-secret Telegram callback are exempt by design
   (they don't use cookies).
-- **Session cookies** are config-driven (`FLASK_SESSION_COOKIE_*`); `SECURE=auto` resolves to
-  Secure over HTTPS and relaxes only for explicit local HTTP testing.
+- **Session cookies** are config-driven (`FLASK_SESSION_COOKIE_*`). `SECURE=auto` is true outside
+  `FLASK_ENV=local_test` and false in that explicitly stated local HTTP mode; it does not infer
+  transport security from request headers. Cookie `Domain` is empty by default, so the browser
+  keeps the session host-only. An explicit `FLASK_SESSION_COOKIE_DOMAIN` is validated and may
+  widen the cookie to sibling hosts.
 - **Rate limiting** (`flask_limiter`) is applied to the admin, account, Telegram, **and the
   DNS/DDNS data API** blueprints, plus a global default. Values come from DB settings → env →
   defaults and are reloadable. Note the limiter uses in-memory storage, so limits are
@@ -95,6 +98,37 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
 - **GeoIP** location checks (optional) flag logins/requests from unexpected locations.
 - **Audit trail**: `ActivityLog` records authentication outcomes, grant add/revoke, Telegram
   linking, and scoped API activity; the admin **security dashboard** surfaces attack-flagged events.
+
+### Proxy trust, public URLs, and cookies
+
+`TRUSTED_PROXY_HOPS` controls which forwarding headers can affect the request. The repository
+default in `.env.defaults` is `0`: no proxy headers influence the client address or scheme. For a
+positive value `N`, `ProxyFix` trusts the `N` rightmost values for client address and scheme;
+`X-Forwarded-Host` is never trusted. Every client-address use reads the middleware-resolved
+`request.remote_addr`. Invalid, empty, and negative hop counts stop startup. If a zero-hop app
+receives forwarded headers, it emits one warning per process and explains how to set the hop count.
+Automatic DDNS address detection accepts parsed IPv4/IPv6 values, including unambiguous `IPv4:port`
+and `[IPv6]:port` forms; malformed or ambiguous addresses fail closed instead of selecting a record
+type from the presence of a colon.
+
+Set `PUBLIC_BASE_URL` to the public HTTP(S) origin when links must not depend on request Host or
+scheme. It accepts only `http[s]://host[:port]`, with no credentials, path, query, or fragment.
+When set, it is the origin for reset, verification, invitation, notification, redirect, and UI
+example links. When empty, existing URL generation remains in place: Flask external URLs and UI
+examples use the request origin, and notification emails keep their existing configured-base
+behavior. Startup warns because reset, verification, and invitation links can use an untrusted
+request Host. The app does not reject request Host values.
+
+`tooling/app-local` states one trusted proxy and builds `PUBLIC_BASE_URL` from its configured
+external subdomain and CIU's public FQDN. The per-session e2e app connects directly over HTTP, so it
+explicitly sets `TRUSTED_PROXY_HOPS=0` and `PUBLIC_BASE_URL` to empty, using its request-derived
+origin regardless of inherited runner environment values.
+
+The source catalog default for `TRUSTED_PROXY_HOPS` is `0`, but the generated Passenger tarball
+runtime catalog deliberately sets it to `1` to preserve the pre-change behavior. That value is
+**unverified**: it remains the status quo until the operator runs the forwarded-header probe B044.
+Do not describe it as measured. After the probe, set the webhoster runtime value to the measured
+proxy count.
 
 ## Deployment posture
 

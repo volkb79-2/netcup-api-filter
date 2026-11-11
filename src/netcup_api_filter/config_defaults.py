@@ -33,6 +33,8 @@ RUNTIME_DEFAULT_KEYS = frozenset({
     # session cookies (app.py)
     "FLASK_SESSION_COOKIE_SECURE", "FLASK_SESSION_COOKIE_HTTPONLY", "FLASK_SESSION_COOKIE_SAMESITE",
     "FLASK_SESSION_LIFETIME", "FLASK_SESSION_COOKIE_DOMAIN",
+    # proxy trust and external URL generation (app.py)
+    "TRUSTED_PROXY_HOPS", "PUBLIC_BASE_URL",
     # demo pages switch (bootstrap/seeding.seed_settings_from_env)
     "DEMO_PAGES_ENABLED_LOCAL", "DEMO_PAGES_ENABLED_WEBHOSTING",
     # email references / 2FA mail subject (email_reference.py, notification_service.py)
@@ -44,14 +46,27 @@ RUNTIME_DEFAULT_KEYS = frozenset({
 # Never shipped, whatever the allowlist says (defence in depth): credential-like names.
 SECRET_LOOKING_MARKERS = ("PASSWORD", "SECRET", "TOKEN", "API_KEY", "LICENSE_KEY", "PRIVATE")
 
+# Preserve the webhosting tarball's pre-WP2 client/protocol hop count until the operator
+# measures its front-end chain with probe B044. Repository and app-local defaults remain
+# zero; this is an explicit shipped compatibility policy, not a code fallback. X-Forwarded-Host
+# remains untrusted under the new policy.
+SHIPPED_RUNTIME_OVERRIDES = {
+    "TRUSTED_PROXY_HOPS": ("1", "status quo, unverified, see B044"),
+}
+
 
 def is_shipped_key(key: str) -> bool:
     return key in RUNTIME_DEFAULT_KEYS and not any(m in key for m in SECRET_LOOKING_MARKERS)
 
 
-def render_shipped_defaults(source: Path) -> str:
-    """The shipped runtime catalog: the RUNTIME_DEFAULT_KEYS of ``source`` (.env.defaults)."""
+def render_shipped_defaults(
+    source: Path,
+    *,
+    overrides: dict[str, tuple[str, str]] | None = None,
+) -> str:
+    """Render runtime defaults, with optional artifact-specific deployment overrides."""
     catalog = _parse_env_file(source)
+    overrides = overrides or {}
     missing = sorted(RUNTIME_DEFAULT_KEYS - catalog.keys())
     if missing:
         raise RuntimeError(f"{source} lacks runtime default keys {missing} (config_defaults.RUNTIME_DEFAULT_KEYS)")
@@ -61,13 +76,25 @@ def render_shipped_defaults(source: Path) -> str:
     ]
     for key, value in catalog.items():
         if is_shipped_key(key):
+            override = overrides.get(key)
+            if override:
+                value, comment = override
+                lines.append(f"# {comment}")
             lines.append(f"{key}={value}")
     return "\n".join(lines) + "\n"
 
 
-def write_shipped_defaults(source: Path, dest_dir: Path) -> Path:
+def write_shipped_defaults(
+    source: Path,
+    dest_dir: Path,
+    *,
+    overrides: dict[str, tuple[str, str]] | None = None,
+) -> Path:
     destination = Path(dest_dir) / SHIPPED_DEFAULTS_FILENAME
-    destination.write_text(render_shipped_defaults(Path(source)), encoding="utf-8")
+    destination.write_text(
+        render_shipped_defaults(Path(source), overrides=overrides),
+        encoding="utf-8",
+    )
     return destination
 
 

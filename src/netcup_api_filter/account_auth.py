@@ -701,7 +701,7 @@ def create_session(account: Account):
             account_id=account.id,
             session_token=session_token,
             ip_address=request.remote_addr,
-            user_agent=request.headers.get('User-Agent', ''),
+            user_agent=request.headers.get('User-Agent') or '',
             last_active=datetime.utcnow(),
         )
     )

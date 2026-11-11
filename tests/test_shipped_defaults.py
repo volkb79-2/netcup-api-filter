@@ -20,6 +20,7 @@ from netcup_api_filter.config_defaults import (
     RUNTIME_DEFAULT_KEYS,
     SECRET_LOOKING_MARKERS,
     SHIPPED_DEFAULTS_FILENAME,
+    SHIPPED_RUNTIME_OVERRIDES,
     is_shipped_key,
     render_shipped_defaults,
     write_shipped_defaults,
@@ -99,8 +100,21 @@ def test_allowlisted_key_missing_from_the_catalog_fails_the_render(tmp_path):
 def test_shipped_values_equal_the_catalog_values():
     catalog = config_defaults._parse_env_file(CATALOG)
     rendered = render_shipped_defaults(CATALOG)
-    for key in ("ADMIN_LOGIN_LOCKOUT_THRESHOLD", "ADMIN_LOGIN_LOCKOUT_MINUTES", "FLASK_SESSION_LIFETIME"):
+    for key in (
+        "ADMIN_LOGIN_LOCKOUT_THRESHOLD",
+        "ADMIN_LOGIN_LOCKOUT_MINUTES",
+        "FLASK_SESSION_LIFETIME",
+        "PUBLIC_BASE_URL",
+    ):
         assert f"{key}={catalog[key]}" in rendered
+
+
+def test_shipped_tarball_keeps_one_unverified_proxy_hop_until_probe_b044():
+    catalog = config_defaults._parse_env_file(CATALOG)
+    rendered = render_shipped_defaults(CATALOG, overrides=SHIPPED_RUNTIME_OVERRIDES)
+
+    assert catalog["TRUSTED_PROXY_HOPS"] == "0"
+    assert "# status quo, unverified, see B044\nTRUSTED_PROXY_HOPS=1\n" in rendered
 
 
 def test_shipped_tree_loads_runtime_defaults_without_env_defaults(tmp_path):
@@ -108,4 +122,5 @@ def test_shipped_tree_loads_runtime_defaults_without_env_defaults(tmp_path):
     loaded = config_defaults._parse_env_file(tmp_path / SHIPPED_DEFAULTS_FILENAME)
     assert loaded["ADMIN_LOGIN_LOCKOUT_THRESHOLD"] == config_defaults._parse_env_file(CATALOG)[
         "ADMIN_LOGIN_LOCKOUT_THRESHOLD"]
+    assert loaded["TRUSTED_PROXY_HOPS"] == "0"
     assert "DEFAULT_ADMIN_PASSWORD" not in loaded

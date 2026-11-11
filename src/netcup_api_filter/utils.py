@@ -23,6 +23,58 @@ _TRUTHY_VALUES = {"1", "true", "yes", "on"}
 _FALSY_VALUES = {"0", "false", "no", "off"}
 
 
+def parse_client_address(value: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse a resolved client address, accepting only unambiguous port syntax.
+
+    Proxy headers can carry ``IPv4:port`` or bracketed ``[IPv6]:port`` values.
+    Parse plain IP literals first so an IPv6 colon is never mistaken for a port
+    separator. For every other shape, return ``None`` and let callers fail closed.
+    """
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate or "%" in candidate:
+        return None
+
+    try:
+        return ipaddress.ip_address(candidate)
+    except ValueError:
+        pass
+
+    def valid_port(raw_port: str) -> bool:
+        if len(raw_port) > 5 or not raw_port.isascii() or not raw_port.isdigit():
+            return False
+        port = int(raw_port)
+        return 1 <= port <= 65535
+
+    if candidate.startswith("["):
+        closing_bracket = candidate.find("]")
+        if closing_bracket < 0:
+            return None
+        host = candidate[1:closing_bracket]
+        suffix = candidate[closing_bracket + 1:]
+        if suffix and (not suffix.startswith(":") or not valid_port(suffix[1:])):
+            return None
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return None
+        return address if address.version == 6 else None
+
+    if candidate.count(":") == 1:
+        host, raw_port = candidate.rsplit(":", 1)
+        if not valid_port(raw_port):
+            return None
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return None
+        return address if address.version == 4 else None
+
+    return None
+
+
 def parse_bool(raw: object, *, default: bool = False) -> bool:
     """Parse a boolean from an env string / setting value / actual bool.
 

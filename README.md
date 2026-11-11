@@ -82,7 +82,7 @@ curl "https://${PUBLIC_FQDN}/api/ddns/dyndns2/update?hostname=device.iot.example
 **Supported:**
 - ✅ DynDNS2 protocol (`/api/ddns/dyndns2/update`)
 - ✅ No-IP protocol (`/api/ddns/noip/update`)
-- ✅ Auto IP detection (respects X-Forwarded-For)
+- ✅ Auto IP detection from `request.remote_addr` after the configured `TRUSTED_PROXY_HOPS` policy
 - ✅ IPv6 support (automatic AAAA record handling)
 - ✅ Bearer token authentication (no username/password fallback)
 
