@@ -493,7 +493,7 @@ def test_admin_email_setup_login_is_audited(app, make_account, monkeypatch):
     response = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
 
     assert response.status_code == 302
-    assert response.headers.get("Location") == "/admin/change_password"
+    assert response.headers.get("Location") == "/admin/change-password"
     rows = (
         ActivityLog.query.filter_by(account_id=admin.id, action="login")
         .order_by(ActivityLog.id)
@@ -665,8 +665,17 @@ def test_admin_2fa_success_commit_failure_does_not_authenticate(
         telegram_enabled=0,
     )
 
+    real_commit = admin_mod.db.session.commit
+
     def fail_commit():
-        raise RuntimeError("simulated audit commit failure")
+        # Fail only the commit that carries the pending login audit row, so the
+        # test proves THAT commit (not an earlier counter commit) gates the login.
+        if any(
+            isinstance(obj, ActivityLog) and obj.action == "login"
+            for obj in admin_mod.db.session.new
+        ):
+            raise RuntimeError("simulated audit commit failure")
+        return real_commit()
 
     with app.test_request_context(headers={"User-Agent": AUDIT_USER_AGENT}):
         session[admin_mod.SESSION_KEY_ADMIN_2FA_PENDING] = admin.id
@@ -680,6 +689,9 @@ def test_admin_2fa_success_commit_failure_does_not_authenticate(
         assert admin_mod.SESSION_KEY_ADMIN_USERNAME not in session
         assert admin_mod.SESSION_KEY_ADMIN_SESSION_IP not in session
 
+        admin_mod.db.session.rollback()
+        assert ActivityLog.query.filter_by(account_id=admin.id, action="login").count() == 0
+
 
 def test_admin_email_setup_commit_failure_does_not_authenticate(
     app, make_account, monkeypatch,
@@ -689,8 +701,17 @@ def test_admin_email_setup_commit_failure_does_not_authenticate(
         make_account, "audit-admin-commit-failure-email-setup",
     )
 
+    real_commit = admin_mod.db.session.commit
+
     def fail_commit():
-        raise RuntimeError("simulated audit commit failure")
+        # Fail only the commit that carries the pending login audit row, so the
+        # test proves THAT commit (not an earlier counter commit) gates the login.
+        if any(
+            isinstance(obj, ActivityLog) and obj.action == "login"
+            for obj in admin_mod.db.session.new
+        ):
+            raise RuntimeError("simulated audit commit failure")
+        return real_commit()
 
     with app.test_request_context(
         "/admin/login",
@@ -706,6 +727,9 @@ def test_admin_email_setup_commit_failure_does_not_authenticate(
         assert admin_mod.SESSION_KEY_ADMIN_ID not in session
         assert admin_mod.SESSION_KEY_ADMIN_USERNAME not in session
         assert admin_mod.SESSION_KEY_ADMIN_SESSION_IP not in session
+
+        admin_mod.db.session.rollback()
+        assert ActivityLog.query.filter_by(account_id=admin.id, action="login").count() == 0
 
 
 @pytest.mark.parametrize("method", ["totp", "email"])
