@@ -334,18 +334,18 @@ def _local_service_var(name: str) -> str:
     return value
 
 
-def _service_mailpit_host() -> str:
-    """Mailpit host of a LOCAL build (SERVICE_MAILPIT)."""
-    return _local_service_var("SERVICE_MAILPIT")
+def _mailpit_host() -> str:
+    """Resolved Mailpit container identity supplied by `.env.services`."""
+    return _local_service_var("MAILPIT_HOST")
 
 
 def _local_mock_email():
-    """Mailpit email config of a LOCAL build: host per _service_mailpit_host, rest from the defaults catalog."""
+    """Mailpit email config of a LOCAL build: host per _mailpit_host, rest from the defaults catalog."""
     from netcup_api_filter.bootstrap import MockEmail
     from netcup_api_filter.config_defaults import require_default
 
     return MockEmail(
-        smtp_host=_service_mailpit_host(),
+        smtp_host=_mailpit_host(),
         smtp_port=int(require_default("LOCAL_MAILPIT_SMTP_PORT")),
         from_email=require_default("LOCAL_MAIL_FROM"),
         admin_email=require_default("LOCAL_MAIL_ADMIN_EMAIL"),

@@ -6,26 +6,27 @@ Modern SMTP testing server with web UI for email capture during development and 
 
 Mailpit is a **ciu-managed** stack — there is no `docker-compose.yml` in this directory.
 `ciu.compose.yml` is a RENDERED, gitignored artifact; edit `ciu.compose.yml.j2` (or the
-name/image/port scalars in `ciu.defaults.toml.j2`), never the rendered output. Note the
-`--define-root`: this devcontainer's shell exports a sibling repo's `REPO_ROOT`, so a
-bare `ciu` call resolves to the wrong repo (backlog B-INFRA).
+name/image/port scalars in `ciu.defaults.toml.j2`), never the rendered output.
+Load this checkout's generated environment before any ciu command.
 
 ```bash
+eval "$(ciu env print)"
+
 # Start Mailpit (also started by `run-gate local-build --with-mocks`)
-ciu up --dir tooling/mailpit --define-root /workspaces/netcup-api-filter
+ciu up --dir tooling/mailpit
 
 # View logs
-docker logs -f naf-dev-mailpit
+docker logs -f naf-<INSTANCE_ID>-mailpit
 
-# Stop Mailpit (stops the active profile's stacks; there is no per-directory `down`)
-ciu down --define-root /workspaces/netcup-api-filter
+# Stop only this checkout's Mailpit stack
+ciu down --dir tooling/mailpit
 ```
 
 ## Access
 
 - **Web UI**: http://localhost:8025
-- **SMTP**: naf-mailpit:1025 (from containers) or localhost:1025 (from host)
-- **API**: http://naf-mailpit:8025/api/v1
+- **SMTP**: `naf-<INSTANCE_ID>-mailpit:1025` from peers on the checkout network
+- **API**: `http://naf-<INSTANCE_ID>-mailpit:8025/mailpit/api/v1`
 
 ## Authentication
 
@@ -34,13 +35,13 @@ runs without auth and test processes need no credentials. Never publish it.
 
 ## Configuration
 
-All settings in `.env`:
+Stack-local settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MAILPIT_WEB_PORT` | `8025` | Web UI/API port |
 | `MAILPIT_SMTP_PORT` | `1025` | SMTP port |
-| `DOCKER_NETWORK_INTERNAL` | `naf-dev-network` | Docker network |
+| `DOCKER_NETWORK_INTERNAL` | checkout network | Generated per-checkout ciu network identity |
 | `MAILPIT_MAX_MESSAGE_SIZE` | `10485760` | Max email size (10MB) |
 | `MAILPIT_VERBOSE` | `false` | Enable verbose logging |
 
@@ -109,7 +110,7 @@ Configure Flask to send emails to Mailpit:
 
 ```python
 # In Flask app config
-MAIL_SERVER = 'naf-mailpit'  # Container hostname
+MAIL_SERVER = 'naf-<INSTANCE_ID>-mailpit'  # resolved container hostname
 MAIL_PORT = 1025
 MAIL_USE_TLS = False
 MAIL_USE_SSL = False
@@ -122,15 +123,14 @@ MAIL_PASSWORD = None
 ### Web UI not accessible
 
 ```bash
-# Check if container is running
-docker ps | grep naf-mailpit
+# Check if this checkout's container is running
+docker ps --filter label=ciu.instance="$INSTANCE_ID"
 
 # Check logs
-docker logs naf-dev-mailpit
+docker logs naf-<INSTANCE_ID>-mailpit
 
-# Verify port binding
-docker port naf-mailpit
-# Should show: 8025/tcp -> 0.0.0.0:8025
+# Mailpit is internal-only: reach it on this checkout's Docker network; it has no
+# published host port.
 ```
 
 ### Authentication fails
@@ -140,18 +140,14 @@ docker port naf-mailpit
 cat .env | grep MAILPIT
 
 # Restart after changing credentials
-docker restart naf-dev-mailpit
+docker restart naf-<INSTANCE_ID>-mailpit
 ```
 
 ### SMTP connection refused
 
 ```bash
-# Test SMTP connection
-telnet localhost 1025
-# Should show: 220 Mailpit ESMTP Service Ready
-
-# From container
-telnet naf-mailpit 1025
+# From a peer container on this checkout's network
+telnet naf-<INSTANCE_ID>-mailpit 1025
 ```
 
 ## Related Documentation

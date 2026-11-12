@@ -25,14 +25,16 @@ image = "netcup-api-filter/test-runner:py311"
 mode = "exec"
 state_root = "/run-gate-state"
 forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS",
-    "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
+    "MAILPIT_HOST", "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL",
+    "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
 
 [environments.test-runner-py314]
 image = "netcup-api-filter/test-runner:py314"
 mode = "exec"
 state_root = "/run-gate-state"
 forward_env = ["CGROUP_PARENT_DEV_BACKGROUND", "PLAYWRIGHT_SERVER_WS",
-    "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL", "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
+    "MAILPIT_HOST", "MAILPIT_URL", "MAILPIT_API_URL", "MOCK_NETCUP_API_URL",
+    "MOCK_GEOIP_API_URL", "PUBLIC_FQDN"]
 
 # Native R2 needs run-gate's cgroup observer, which a persistent exec runner cannot give
 # (NO_MEASUREMENT/CGROUP_OBSERVATION_UNAVAILABLE): R2 lanes run in an ephemeral container of the
@@ -105,7 +107,7 @@ budget = "5m"
 
 # --- local app build + e2e ---------------------------------------------------
 # Local flow (all in containers; the cockpit only drives):
-#   set -a; . ./.env.services; set +a            # service URLs (Mailpit/mocks) for the e2e lane
+#   set -a; . ./.env.services; set +a            # ciu-resolved service identities for the e2e lane
 #   ciu up --dir tooling/mailpit; ciu up --dir tooling/geoip-mock; ciu up --dir tooling/netcup-api-mock
 #   run-gate local-build --worktree "$PWD"      # deploy-local/ + its golden netcup_filter.db
 #   run-gate e2e --worktree "$PWD"              # pwmcp is the estate instance, not ours

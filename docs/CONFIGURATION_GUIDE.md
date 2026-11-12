@@ -87,8 +87,9 @@ at least 16 characters). Unset, the app creates a random key **once** in `settin
 (`INSERT OR IGNORE`, so all gunicorn workers agree) and reuses it; `scripts/activate.py` carries
 that row across greenfield webhosting releases. There is no published default key.
 
-**Local Mailpit config** (local builds and the app stack only): host from `SERVICE_MAILPIT`
-(`.env.services`), `LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, `LOCAL_MAIL_ADMIN_EMAIL`.
+**Local Mailpit config** (local builds and the app stack only): host from
+`MAILPIT_HOST` (`.env.services`, resolved through `ciu resolve --json`),
+`LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, `LOCAL_MAIL_ADMIN_EMAIL`.
 
 **Local mock Netcup backend** (local/e2e builds only, never the tarball or OCI image): URL from
 `MOCK_NETCUP_API_URL` (environment or `.env.services`; the local build fails without it), credentials

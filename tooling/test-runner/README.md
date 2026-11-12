@@ -50,14 +50,16 @@ run-gate e2e --worktree "$PWD"       # needs app-local + mocks + pwmcp stacks up
 ```
 
 Runners are ciu-managed persistent containers, one per Python version
-(`naf-dev-test-runner-py311`, `naf-dev-test-runner-py314`); run-gate `docker exec`s into
-them. `ciu.compose.yml` is a RENDERED, gitignored artifact: edit `ciu.compose.yml.j2`.
+(`naf-<INSTANCE_ID>-test-runner-py311`, `naf-<INSTANCE_ID>-test-runner-py314`);
+run-gate `docker exec`s into them. `ciu.compose.yml` is a RENDERED, gitignored
+artifact: edit `ciu.compose.yml.j2`.
 
 ```bash
-ciu up --dir tooling/test-runner --define-root /workspaces/netcup-api-filter
+ciu up --dir tooling/test-runner
 ```
 
-Prerequisites: `PWMCP_NETWORK` (see AGENTS.md) and the per-stack env: `set -a; . ./ciu.env; . ./.env.workspace; set +a`. `--define-root` is needed because this devcontainer's shell exports dstdns's `REPO_ROOT`.
+Prerequisites: the checkout's generated ciu env (`eval "$(ciu env print)"`) and
+`PWMCP_NETWORK` (see AGENTS.md).
 `ciu up` applies the cgroup/memory/IOPS governance overlay from `[governance]` in
 `ciu.global.defaults.toml.j2`.
 

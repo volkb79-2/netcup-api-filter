@@ -48,7 +48,7 @@ docker exec -w "$PWD" \
   -e NAF_REMOTE_ADMIN_USERNAME=<operator-admin> \
   -e NAF_REMOTE_ADMIN_PASSWORD_FILE=<path-visible-in-the-runner> \
   -e NAF_REMOTE_ADMIN_TOTP_SECRET_FILE=<path-visible-in-the-runner> \
-  naf-dev-test-runner-py311 /opt/tester-venv/bin/python -m pytest -m remote_smoke ui_tests/tests/smoke/test_remote_smoke.py -v
+  naf-<INSTANCE_ID>-test-runner-py311 /opt/tester-venv/bin/python -m pytest -m remote_smoke ui_tests/tests/smoke/test_remote_smoke.py -v
 ```
 
 The password file must exist inside the runner's filesystem (mount or copy it there; remove it afterwards).

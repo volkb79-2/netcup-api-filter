@@ -42,6 +42,10 @@ require_certs = false
 require_fqdn = false
 fail_fast = true
 auto_connect_network = true
+# S3.13 (V8-PREP-1): declare every non-reserved top-level global table naf owns.
+# `build` is the only one today; `deploy`, `topology`, `governance`, and `ciu`
+# are CIU-reserved. Once declared, CIU rejects any new undeclared top-level table.
+user_tables = ["build"]
 
 # =============================================================================
 # Build — the shipped runtimes. SINGLE SOURCE for the gate images and CMRU's
@@ -59,10 +63,12 @@ python_base_image = "python:3.11.17-slim-trixie"
 python_base_image_secondary = "python:3.14.9-slim-trixie"
 
 [deploy]
-# naf's container convention is <project>-<env>-<svc> => naf-dev-test-runner,
-# matching DOCKER_NETWORK_INTERNAL="naf-dev-network" in .env.workspace.
+# naf's container convention is <project>-<instance>-<svc>. `environment_tag`
+# reads the generated per-checkout INSTANCE_ID, never a primary-checkout literal:
+# every Git worktree gets stable, collision-free container, Compose, router and
+# host identities.
 project_name = "naf"
-environment_tag = "dev"
+environment_tag = "$INSTANCE_ID"
 # The ciu-derived name (<repo>-<path-hash>-network) is authoritative now. This is safe
 # to reference again ONLY because standalone_root above guarantees $REPO_ROOT is naf's —
 # without it, a dstdns-contaminated shell would resolve this to dstdns's network.
@@ -188,8 +194,8 @@ stacks = [
 [topology.external]
 # NEVER hardcode the FQDN. ciu.env already detects PUBLIC_FQDN (reverse DNS of PUBLIC_IP),
 # so exposed stacks template their Host() rule from topology.external.public_fqdn:
-#     app            -> naf.<public_fqdn>
-#     PowerDNS edge  -> naf-pdns.<public_fqdn>
+#     app            -> naf-<instance>.<public_fqdn>
+#     PowerDNS edge  -> naf-pdns-<instance>.<public_fqdn>
 # (Written without Jinja braces on purpose: '#' is NOT a Jinja comment, so a real
 # expression here would be evaluated while rendering THIS file and blow up.)
 # A wildcard record on that base points every <name>.<fqdn> at this host, and traefik's
@@ -225,8 +231,9 @@ network = "$PWMCP_NETWORK"
 # "$VAR") so render does NOT hard-fail when it is unset; consumers guard on non-empty.
 [topology.dns]
 delegated_zone = "{{ env.get('NAF_DELEGATED_DNS_ZONE') or '' }}"
-# The public FQDN the PowerDNS API is reached at through traefik (naf-pdns.<fqdn>).
-pdns_subdomain = "naf-pdns"
+# The public FQDN the PowerDNS API is reached at through traefik. The subdomain
+# carries the same stable instance identity as the containers and app route.
+pdns_subdomain = "naf-pdns-$INSTANCE_ID"
 
 # ---------------------------------------------------------------------------
 # basicauth guard (operator decision 2026-07-20): the product is NOT production

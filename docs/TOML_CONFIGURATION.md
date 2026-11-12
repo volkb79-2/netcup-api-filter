@@ -239,7 +239,8 @@ config = {
 3. `platform_backends.py` replaces `${...}` with `os.environ.get(...)` at bootstrap time
 
 **Common variables:**
-- `POWERDNS_API_KEY` - PowerDNS authentication (operator environment, gitignored)
+- `POWERDNS_API_KEY` - PowerDNS authentication delivered from this checkout's ciu
+  `GEN_LOCAL` store; it is not an operator or `.env` value
 - `POWERDNS_API_URL` - guarded public API URL from `.env.services`
 - `POWERDNS_API_URL_INTERNAL` - container-to-container API URL from `.env.services`
 
@@ -441,7 +442,7 @@ Bootstrap logs during initialization:
 [INFO]   [1] platform-powerdns
 [INFO]       - provider: powerdns
 [INFO]       - owner: platform
-[INFO] Auto-detected PowerDNS URL: http://naf-dev-powerdns:8081
+[INFO] Auto-detected PowerDNS URL: http://naf-<INSTANCE_ID>-powerdns:8081
 [INFO] Created backend: platform-powerdns (powerdns, owner=platform)
 [INFO]   [1] powerdomains.vxxu.de (backend: platform-powerdns)
 [INFO]       - visibility: public
@@ -494,9 +495,10 @@ max_hosts_per_user = 5
 
 ### Environment Variable Not Set
 ```
-[WARN] Environment variable POWERDNS_API_KEY not set for platform-powerdns.api_key
+[WARN] ciu secret powerdns_api_key is not materialized for platform-powerdns.api_key
 ```
-**Solution:** Set variable in `.env.workspace` or use explicit value.
+**Solution:** Run `ciu up` from the owning checkout so it materializes
+`GEN_LOCAL:naf/powerdns_api_key`, or use an explicit deployment-supplied value.
 
 ### Service Already Exists
 ```

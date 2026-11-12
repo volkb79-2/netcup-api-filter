@@ -2271,7 +2271,7 @@ Templates provide pre-configured realm settings for common use cases.
 
 ### 11.1 Mock SMTP Server (Mailpit)
 
-**Location:** `tooling/mailpit/` (container `naf-dev-mailpit`, SMTP 1025, API `/mailpit/api/v1`);
+**Location:** `tooling/mailpit/` (container `naf-<INSTANCE_ID>-mailpit`, SMTP 1025, API `/mailpit/api/v1`);
 test client `ui_tests/mailpit_client.py` and the `mailpit` fixture in `ui_tests/conftest.py`.
 
 The in-process `aiosmtpd` server and its self-tests were removed: Mailpit is the single SMTP mock, it

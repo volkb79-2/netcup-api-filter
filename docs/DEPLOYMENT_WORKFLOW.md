@@ -40,7 +40,7 @@ cmru release
 ```
 
 CMRU invokes `scripts/build_webhosting_tarball.py` for the Passenger assets. That builder uses
-`docker exec` into the matching ciu runner (`naf-dev-test-runner-py311`) so dependency vendoring and database
+`docker exec` into the matching ciu runner (`naf-<INSTANCE_ID>-test-runner-py311`) so dependency vendoring and database
 seeding run under the target interpreter. It is separate from the local
 `build_deployment.py --local` build.
 

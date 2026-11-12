@@ -46,7 +46,11 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ciu_identity import container_for
 
 
 def _require(value: Any, label: str) -> Any:
@@ -132,37 +136,25 @@ def run(config: dict, ctx) -> dict:
         )
         return {}
 
-    deploy_cfg = config.get("deploy", {})
-    project_name = _require(deploy_cfg.get("project_name"), "deploy.project_name")
-    environment_tag = _require(deploy_cfg.get("environment_tag"), "deploy.environment_tag")
-
     app_cfg = config.get("app_local", {})
     app_service = _require(app_cfg.get("name"), "app_local.name")
-    app_container = f"{project_name}-{environment_tag}-{app_service}"
+    app_container = container_for(ctx, "tooling/app-local", app_service)
 
-    # Internal PowerDNS URL, derived the same way backend-powerdns's own hook
-    # derives its container name — NOT read from .env.services (that file is
-    # bash-sourced by build_deployment.py/shell scripts, not by this Python
-    # hook process). Mirrors .env.services' POWERDNS_API_URL_INTERNAL
-    # construction exactly (same container-name + port convention).
+    # The container identity comes from ciu resolve. The port remains the stack
+    # contract in backend_powerdns.ports.api and is never reconstructed here.
     backend_cfg = config.get("backend_powerdns", {})
     pdns_service = _require(backend_cfg.get("name"), "backend_powerdns.name")
     pdns_api_port = _require((backend_cfg.get("ports") or {}).get("api"), "backend_powerdns.ports.api")
-    pdns_container = f"{project_name}-{environment_tag}-{pdns_service}"
+    pdns_container = container_for(ctx, "tooling/backend-powerdns", pdns_service)
     powerdns_api_url_internal = f"http://{pdns_container}:{pdns_api_port}"
 
-    # The API key is a SECRET — never part of ciu's rendered config (see
-    # backend-powerdns/ciu.compose.yml.j2, which takes it straight from the
-    # shell via ${POWERDNS_API_KEY:?...} at compose-interpolation time). This
-    # hook process must have it in its own environment for the same reason
-    # `docker compose up` for backend-powerdns needs it: both run from the
-    # same operator shell that sourced .env before `ciu up`.
-    powerdns_api_key = os.environ.get("POWERDNS_API_KEY")
+    # Same checkout-local GEN_LOCAL locator as backend-powerdns. Context's
+    # secret_file API is the only hook-side access to the materialised store.
+    powerdns_api_key = ctx.secret_file("powerdns_api_key").read_text(encoding="utf-8").strip()
     if not powerdns_api_key:
         raise RuntimeError(
-            "[app-local post hook] POWERDNS_API_KEY not set in the environment "
-            "(source .env before `ciu up` — see .env.defaults). Required to "
-            "seed the delegated-zone BackendService; not invented (D-007)."
+            "[app-local post hook] powerdns_api_key is empty in the checkout-local "
+            "GEN_LOCAL store; required to seed the delegated-zone BackendService"
         )
 
     print(f"[INFO] Seeding delegated zone '{zone}' as a domain root in {app_container}", flush=True)

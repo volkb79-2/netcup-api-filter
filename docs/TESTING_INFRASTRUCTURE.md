@@ -151,7 +151,7 @@ Use `-m <marker>` to select by bucket regardless of path.
 There is no cockpit runner script: the e2e flow is the two run-gate lanes above (header of
 `run-gate.toml` has the full sequence including the mock stacks). To run a subset, use the
 lane's command inside the runner, e.g.
-`docker exec -w "$PWD" naf-dev-test-runner-py311 /opt/tester-venv/bin/python -m pytest ui_tests/tests/smoke -q -p no:cacheprovider -o addopts=`.
+`docker exec -w "$PWD" naf-<INSTANCE_ID>-test-runner-py311 /opt/tester-venv/bin/python -m pytest ui_tests/tests/smoke -q -p no:cacheprovider -o addopts=`.
 `tooling/app-local` is the long-lived instance for humans; the e2e lane never uses it.
 
 ---
@@ -191,8 +191,8 @@ Env vars set by the job:
 
 | Var | Value | Purpose |
 |-----|-------|---------|
-| `SERVICE_MAILPIT` | `localhost` | Mailpit host written into the golden DB's email config (`build_deployment.py --local`; locally it comes from `.env.services`) |
-| `MOCK_NETCUP_API_URL` | `http://localhost:5555` | Netcup mock written into the golden DB's `netcup_config` (`build_deployment.py --local`; locally from `.env.services`) |
+| `MAILPIT_HOST` | `localhost` | Mailpit container identity written into the golden DB's email config (`build_deployment.py --local`; locally `.env.services` reads it from `ciu resolve --json`) |
+| `MOCK_NETCUP_API_URL` | `http://localhost:5555` | Netcup mock written into the golden DB's `netcup_config` (`build_deployment.py --local`; locally `.env.services` reads the container identity from `ciu resolve --json`) |
 | `NAF_E2E_ADVERTISE_HOST` | `127.0.0.1` | Host under which the browser reaches the per-session app (same host as the runner) |
 | `MAILPIT_URL` | `http://localhost:8025` | Mailpit REST client |
 | `NAF_E2E_KEEP_WORKDIR` | `1` | Keeps the per-session work dir so the app logs can be uploaded on failure |
@@ -258,7 +258,7 @@ invite form, realm/token creation).
 
 ```bash
 # Check logs
-docker logs naf-dev-app-local
+docker logs naf-<INSTANCE_ID>-app
 
 # Check if port is in use
 netstat -tuln | grep 5100

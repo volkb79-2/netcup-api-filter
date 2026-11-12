@@ -23,15 +23,29 @@
 
 ### Changed
 
+- **Dev stacks have a stable per-checkout identity (B046/WP4b-1)**: every checkout
+  renders `deploy.environment_tag = "$INSTANCE_ID"`, so containers, Compose projects,
+  Traefik routers/services/middlewares and frontend hostnames are checkout-local. The
+  app frontend is `naf-<INSTANCE_ID>.<PUBLIC_FQDN>` and PowerDNS is
+  `naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>`. Post-compose hooks and `.env.services` read
+  identities from `ciu resolve --json`; they no longer construct
+  `PROJECT_TAG-ENV_TAG-service` names.
+
 - **PowerDNS configuration has one source per fact**: `POWERDNS_API_URL` and
   `POWERDNS_API_URL_INTERNAL` are defined only by `.env.services`; the app consumes
   `POWERDNS_API_URL_INTERNAL` directly instead of rebuilding a URL from separate
   scheme/port settings. Retired proxy-path settings, `POWERDNS_SOA`, the legacy
   `ensure_zone.py` / `setup-zones.sh` / `init-db.sh` helpers, and their stale docs are
-  removed. `POWERDNS_API_KEY` remains an empty, operator-supplied catalog entry until
-  B045 moves it to a ciu `GEN_LOCAL` secret.
+  removed. `POWERDNS_API_KEY` is no longer a catalog or operator-environment entry:
+  it is a checkout-local `GEN_LOCAL:naf/powerdns_api_key` materialized by ciu and
+  consumed by both the PowerDNS stack and the app seed hook.
 
 ### Security
+
+- **The PowerDNS API key is checkout-local**: `GEN_LOCAL:naf/powerdns_api_key` is
+  generated once per checkout secret store, never shared across worktrees and never
+  tracked. PowerDNS receives it through ciu's explicit `expose_env` channel; the app
+  hook reads the same materialized file through `ctx.secret_file`.
 
 - **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog keeps one unverified hop as the status quo until B044 measures the webhoster chain.
 
@@ -112,7 +126,7 @@
   `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db` and `VOLUME /data` (still no account, no
   `.env.defaults`). `build_deployment.py` no longer writes `deployment_state_*.json` or
   `.env.webhosting` (the latter carried `DEPLOYED_ADMIN_PASSWORD`), no longer mutates `os.environ`
-  from `.env.services` (`SERVICE_MAILPIT` from the environment, else evaluated read-only), and is
+  from `.env.services` (`MAILPIT_HOST` from the environment, else evaluated read-only), and is
   ruff-clean. CI `e2e-smoke` uses the per-session fixture on the `--local` deploy tree;
   `scripts/ci_bootstrap_e2e.py` is deleted. New `tests/test_release_artifacts.py` pins the tarball
   contents (one admin with `must_change_password`, no `secret_key` row, no `.env*`/state files).

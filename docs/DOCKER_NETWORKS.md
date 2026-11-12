@@ -45,7 +45,7 @@ ports:
 # No ports directive → only accessible within Docker network
 ```
 
-**Use Case**: **Our setup** - `naf-dev-network` bridge network
+**Use Case**: **Our setup** - a per-checkout ciu bridge network
 - Devcontainer + Playwright on same bridge network
 - Playwright accessible by name: `http://playwright:8765`
 - **NO port exposure** → MCP server private (secure)
@@ -130,17 +130,18 @@ network_mode: host
 
 ## Our Configuration: Bridge Network
 
-### Network: `naf-dev-network` (Bridge Driver)
+### Network: checkout instance network (Bridge Driver)
 
 ```yaml
 # tooling/<service>/docker-compose.yml
 networks:
   default:
-    name: ${DOCKER_NETWORK_INTERNAL:-naf-dev-network}
+    name: ${DOCKER_NETWORK_INTERNAL:?run: eval "$(ciu env print)"}
     driver: bridge
 ```
 
-The network name comes from `DOCKER_NETWORK_INTERNAL` (default `naf-dev-network`).
+The network name comes from the checkout's generated `DOCKER_NETWORK_INTERNAL`
+identity; there is no shared primary-checkout fallback.
 
 ### Architecture
 
@@ -150,7 +151,7 @@ Physical Host (e.g., 192.168.1.100)
 ├─ docker0 bridge (172.17.0.1)        ← Default Docker bridge
 │  └─ [Other containers]
 │
-└─ naf-dev-network bridge (172.18.0.1)  ← Our custom bridge from TOML config
+└─ checkout instance bridge (172.18.0.1) ← Our per-checkout ciu network
    ├─ devcontainer (172.18.0.2)       ← Auto-assigned IP
    │  └─ Can access: playwright:8765, 172.18.0.3:8765
    │
@@ -160,7 +161,7 @@ Physical Host (e.g., 192.168.1.100)
 
 ### DNS Resolution
 
-**Within `naf-dev-network` network**:
+**Within the checkout's ciu network**:
 ```bash
 # From devcontainer
 curl http://playwright:8765/mcp
@@ -189,7 +190,7 @@ curl http://172.17.0.1:8765
 | Component | IP Address | Notes |
 |-----------|-----------|-------|
 | Docker Host | `172.17.0.1` (docker0) | Gateway for default bridge |
-| Docker Host | `172.18.0.1` (naf-dev-network) | Gateway for our bridge (from TOML config) |
+| Docker Host | `172.18.0.1` | Illustrative gateway for the checkout bridge |
 | Devcontainer | `172.18.0.2` | Dynamic, assigned by Docker |
 | Playwright | `172.18.0.3` | Dynamic, assigned by Docker |
 
@@ -255,14 +256,14 @@ networks:
 # tooling/<service>/docker-compose.yml
 networks:
   default:
-    name: ${DOCKER_NETWORK_INTERNAL:-naf-dev-network}
+    name: ${DOCKER_NETWORK_INTERNAL:?run: eval "$(ciu env print)"}
     external: true  # Network created by .devcontainer/post-create.sh
 ```
 
 **Why external:true here?**
-1. `.devcontainer/post-create.sh` creates `naf-dev-network` on startup
-2. Devcontainer auto-connects to `naf-dev-network`
-3. Playwright needs to join the **same** network
+1. `ciu up` creates this checkout's instance network
+2. CIU connects the devcontainer to that network
+3. External peers such as pwmcp join the **same** network
 4. `docker compose down` shouldn't destroy network (devcontainer still needs it)
 
 ## Why Bridge Network for Our Use Case?

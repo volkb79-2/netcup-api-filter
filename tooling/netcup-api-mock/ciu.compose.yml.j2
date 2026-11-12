@@ -5,8 +5,8 @@
 #   [governance] in ciu.global.toml — cgroup_parent / mem_limit / blkio IOPS)
 #
 # Netcup CCP API mock — stays up as a peer on the naf network so the gate
-# suite (mocks/roundtrip/e2e) can reach it. Tests point `api_url` at
-# naf-dev-mock-netcup-api:<port> (see conftest_mock_api.py).
+# suite (mocks/roundtrip/e2e) can reach it. Tests point `api_url` at the
+# resolved instance-derived container name and port (see conftest_mock_api.py).
 #
 # WART (not fixed here, carried unchanged from the old docker-compose.yml):
 # the container `pip install`s flask at start instead of a purpose-built

@@ -15,7 +15,7 @@ the `run-gate local-build` → `build_deployment.py --local` path.
 
 CMRU owns release versioning, tagging, checksums, and publication. Its project-local build step,
 `scripts/build_webhosting_tarball.py`, produces a tarball for each Passenger ABI. It invokes
-`docker exec` into the matching ciu runner (`naf-dev-test-runner-py311`) so wheels are vendored and the
+`docker exec` into the matching ciu runner (`naf-<INSTANCE_ID>-test-runner-py311`) so wheels are vendored and the
 seed database is created with the interpreter that will load them.
 
 CIU reads the webhoster connection and bundle settings from `.ciu.hosts.toml`. It transfers the

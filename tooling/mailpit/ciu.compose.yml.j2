@@ -7,8 +7,8 @@
 # Mailpit captures outbound SMTP from the app and the test suite (password reset,
 # 2FA, invite emails) and exposes a web UI + REST API to inspect/assert against
 # captured messages. ui_tests/mailpit_client.py, the e2e lane and
-# build_deployment.py all reach it by CONTAINER NAME — naf-dev-mailpit — so that
-# name is not cosmetic: it is load-bearing SMTP/API routing, kept identical here.
+# build_deployment.py all reach this checkout's resolved container identity, so
+# the explicit instance-derived container_name is load-bearing SMTP/API routing.
 #
 # INTERNAL-ONLY: no traefik.* labels. Mailpit is never exposed outside the naf
 # network; exposure is a centrally-decided concern (see the marker header).

@@ -265,6 +265,10 @@ Opus review); decisions D-008..D-013.
 - **B046 — Identity.** `environment_tag = "$INSTANCE_ID"` everywhere (CIU-193 open), derived traefik router/service/middleware/
   subdomain, `ciu resolve --json [--live]` instead of name building in `.env.services` and hooks, `.gitignore` ciu entries,
   `ciu.user_tables`, re-run the CIU-176 repro (fixed in 7.23.0), PowerDNS key as checkout-local `GEN_LOCAL`.
+  **Implemented on `wp4b1-identity`:** container/Traefik/frontend names derive from `INSTANCE_ID`; `.env.services` and hooks
+  consume ciu-resolved identities; `.gitignore` covers worktree artifacts; `ciu.user_tables = ["build"]`; app-local sets explicit
+  internal proxy/public-origin facts; and the PowerDNS key is a shared checkout-local `GEN_LOCAL` consumed by backend and app.
+  The branch awaits controller review, main-checkout cutover, and its authoritative gate receipt.
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
 - **B048 — Credentials.** Prompt/`ASK_FILE` secrets for SMTP/IMAP/netcup CCP, `.env.live.example`, mounts only into the frontend

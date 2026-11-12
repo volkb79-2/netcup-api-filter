@@ -106,8 +106,11 @@ jobs:
 
     env:
       # Mailpit host for the golden DB's mock email config: build_deployment.py --local reads
-      # SERVICE_MAILPIT (in the ciu stack it comes from .env.services). The app and Playwright run
+      # MAILPIT_HOST (in the ciu stack it comes from .env.services). The app and Playwright run
       # on this same runner, so the service is reachable as localhost.
+      MAILPIT_HOST: localhost
+      # Compatibility for ui_tests/workflows.py until its SERVICE_MAILPIT -> MAILPIT_HOST
+      # migration lands (outside B046's file scope).
       SERVICE_MAILPIT: localhost
       # Netcup CCP mock for the golden DB's netcup_config (build_deployment.py --local fails
       # without it; started by the "Start mock Netcup API" step, same runner).

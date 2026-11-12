@@ -12,14 +12,14 @@ gitignored artifact and is never edited directly. See
 (same repo-root caveats apply).
 
 ```bash
-# From the repo root, with the correct REPO_ROOT sourced:
-source ciu.env
-ciu render --define-root /workspaces/netcup-api-filter
-ciu up --dir tooling/netcup-api-mock --define-root /workspaces/netcup-api-filter
+# From the repo root with this checkout's generated environment loaded:
+eval "$(ciu env print)"
+ciu render
+ciu up --dir tooling/netcup-api-mock
 
 # View logs / stop (container_name is fixed, see ciu.defaults.toml.j2)
-docker logs -f naf-dev-mock-netcup-api
-docker stop naf-dev-mock-netcup-api
+docker logs -f naf-<INSTANCE_ID>-mock-netcup-api
+docker stop naf-<INSTANCE_ID>-mock-netcup-api
 ```
 
 Normally this is not brought up standalone: it is a peer of the gating test-runner and
@@ -148,8 +148,8 @@ lsof -i :5555
 # Change the host binding (NETCUP_MOCK_PORT lives in .env.workspace, not a
 # per-service .env — this stack has no docker-compose.yml of its own anymore)
 echo "NETCUP_MOCK_PORT=5554" >> ../../.env.workspace
-docker stop naf-dev-mock-netcup-api
-ciu up --dir tooling/netcup-api-mock --define-root /workspaces/netcup-api-filter
+docker stop naf-<INSTANCE_ID>-mock-netcup-api
+ciu up --dir tooling/netcup-api-mock
 ```
 
 ## Related Documentation

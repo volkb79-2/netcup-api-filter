@@ -6,20 +6,19 @@ Mock implementation of MaxMind GeoIP API for testing IP geolocation features.
 
 This stack is **ciu-managed** (naf-I01 follow-on). `ciu.compose.yml` is a RENDERED,
 gitignored artifact — edit `ciu.compose.yml.j2` / `ciu.defaults.toml.j2`, never the
-output. Note the `--define-root`: this devcontainer's shell exports dstdns's
-`REPO_ROOT`, so a bare `ciu` call resolves to the wrong repo (backlog B-INFRA).
+output. Load this checkout's generated environment before any ciu command.
 
 ```bash
-# Ensure GEOIP_MOCK_PORT is set (host port binding); PHYSICAL_REPO_ROOT and
-# DOCKER_NETWORK_INTERNAL come from .env.workspace / ciu.env.
-ciu render --define-root /workspaces/netcup-api-filter
-ciu up --dir tooling/geoip-mock --define-root /workspaces/netcup-api-filter
+# Ensure GEOIP_MOCK_PORT is exported; network and repo facts come from ciu.
+eval "$(ciu env print)"
+ciu render
+ciu up --dir tooling/geoip-mock
 
 # View logs
-docker logs -f naf-dev-mock-geoip
+docker logs -f naf-<INSTANCE_ID>-mock-geoip
 
 # Stop server
-ciu down --dir tooling/geoip-mock --define-root /workspaces/netcup-api-filter
+ciu down --dir tooling/geoip-mock
 ```
 
 `ciu up` also applies the cgroup/memory/IOPS governance overlay from `[governance]`
@@ -28,9 +27,9 @@ in `ciu.global.defaults.toml.j2` (`.ciu/ciu.compose.overlay.yml`).
 ## Access
 
 - **API**: http://localhost:5556 (from host)
-- **Container**: http://naf-dev-mock-geoip:5556 (from containers on `naf-dev-network`;
-  matches `HOSTNAME_MOCK_GEOIP` / `MOCK_GEOIP_API_URL` in `.env.services`. The short
-  service alias `mock-geoip` also resolves, via Docker's automatic per-service DNS.)
+- **Container**: `http://naf-<INSTANCE_ID>-mock-geoip:5556` from peers on this
+  checkout's network; `MOCK_GEOIP_API_URL` in `.env.services` carries the resolved
+  identity.
 - **Health check**: http://localhost:5556/health
 
 ## Configuration
@@ -121,9 +120,9 @@ lsof -i :5556
 
 # Change the host port binding, then re-render + re-up
 export GEOIP_MOCK_PORT=5557
-ciu down --dir tooling/geoip-mock --define-root /workspaces/netcup-api-filter
-ciu render --define-root /workspaces/netcup-api-filter
-ciu up --dir tooling/geoip-mock --define-root /workspaces/netcup-api-filter
+ciu down --dir tooling/geoip-mock
+ciu render
+ciu up --dir tooling/geoip-mock
 ```
 
 ## Related Documentation

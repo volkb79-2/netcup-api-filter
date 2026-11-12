@@ -122,6 +122,9 @@ services:
       - PDNS_DISABLE_AXFR={{ backend_powerdns.pdns.disable_axfr }}
       - PDNS_ALLOW_AXFR_IPS={{ backend_powerdns.pdns.allow_axfr_ips }}
 
+    secrets:
+      - powerdns_api_key
+
     ports:
       # DNS server (public access required — see header. NOT a traefik route).
       - "{{ backend_powerdns.ports.dns }}:53/udp"
@@ -168,17 +171,17 @@ services:
       # is set explicitly, else traefik may pick the wrong address to route to.
       - "traefik.enable=true"
       - "traefik.docker.network={{ topology.external.ingress_network }}"
-      - "traefik.http.routers.{{ deploy.project_name }}-{{ backend_powerdns.name }}.rule=Host(`{{ topology.dns.pdns_subdomain }}.{{ topology.external.public_fqdn }}`)"
-      - "traefik.http.routers.{{ deploy.project_name }}-{{ backend_powerdns.name }}.entrypoints=websecure"
-      - "traefik.http.services.{{ deploy.project_name }}-{{ backend_powerdns.name }}.loadbalancer.server.port={{ backend_powerdns.ports.api }}"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}.rule=Host(`{{ topology.dns.pdns_subdomain }}.{{ topology.external.public_fqdn }}`)"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}.entrypoints=websecure"
+      - "traefik.http.services.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}.loadbalancer.server.port={{ backend_powerdns.ports.api }}"
     {%- if topology.guard.enabled %}
       # basicauth: same guard middleware app-local uses (D-007: "behind the
       # same basicauth guard as the app"). The hash comes from the ENVIRONMENT
       # at compose-up time, not from ciu config — see app-local's header for
       # why (bcrypt hashes begin "$2b$", which ciu's placeholder pass would
       # reject as an unresolved "$2b" placeholder).
-      - "traefik.http.routers.{{ deploy.project_name }}-{{ backend_powerdns.name }}.middlewares={{ deploy.project_name }}-guard"
-      - "traefik.http.middlewares.{{ deploy.project_name }}-guard.basicauth.users={{ topology.guard.user }}:${NAF_GUARD_HTPASSWD:?NAF_GUARD_HTPASSWD not set — source .env.guard}"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}.middlewares={{ deploy.project_name }}-{{ deploy.environment_tag }}-guard"
+      - "traefik.http.middlewares.{{ deploy.project_name }}-{{ deploy.environment_tag }}-guard.basicauth.users={{ topology.guard.user }}:${NAF_GUARD_HTPASSWD:?NAF_GUARD_HTPASSWD not set — source .env.guard}"
     {%- endif %}
     {%- endif %}
 

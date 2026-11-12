@@ -16,9 +16,10 @@ so end-to-end tests exercise the true DNS path over TLS.
   **`ingress_public`** docker network and the `letsencrypt` cert resolver on the
   `websecure` (443) entrypoint. Exposed naf containers only need `traefik.enable` + a
   `Host()` rule; TLS/cert is inherited.
-- `ciu` is installed. From this repo, **always** work with the repo's own env loaded
-  (see §2) — the marker sets `standalone_root = true`, so ciu refuses to run if
-  `$REPO_ROOT` points at a sibling repo.
+- `ciu` 7.25.0 or newer is installed. From this repo, **always** work with the
+  checkout's own generated env loaded (see §2) — the marker sets
+  `standalone_root = true`, so ciu refuses to run if `$REPO_ROOT` points at a sibling
+  repo.
 - The host's public IP and base FQDN come from `ciu.env` (auto-detected):
   `PUBLIC_IP` and `PUBLIC_FQDN`. Read them from that environment; they are not
   committed documentation values.
@@ -30,7 +31,7 @@ Four env files are sourced before every ciu command; none are committed:
 | File | Origin | Holds |
 |---|---|---|
 | `ciu.env` | `ciu env generate` (machine facts) | `REPO_ROOT`, `PHYSICAL_REPO_ROOT`, `PUBLIC_IP`, `PUBLIC_FQDN`, network name |
-| `.env` | local operator environment | `POWERDNS_API_KEY` until it moves to a ciu secret (B045), plus other local overrides |
+| `.env` | local operator environment | non-secret local overrides |
 | `.env.operator` | **you create** | `NAF_DELEGATED_DNS_ZONE` — the zone PowerDNS serves |
 | `.env.guard` | generated (bcrypt) | `NAF_GUARD_USER` / `NAF_GUARD_PASSWORD` / `NAF_GUARD_HTPASSWD` — the traefik basicauth credential guarding every exposed route |
 
@@ -48,13 +49,31 @@ and re-`ciu up` the exposed stacks. The guard is for humans only: the e2e suite 
 app over the internal docker network and never goes through traefik, so it carries no guard
 credentials.
 
-## 2. Load the env, then drive ciu
+## 2. Prepare this checkout, load its env, then drive ciu
 
 ```bash
-set -a; . ./ciu.env; . ./.env; . ./.env.operator; . ./.env.guard; set +a
+export DOCKER_HOST=unix:///run/docker-api/docker.sock   # when the cockpit exposes DooD here
+export DOCKER_GID="$(stat -c '%g' /run/docker-api/docker.sock)"
+ciu env generate
+eval "$(ciu env print)"
+export PWMCP_NETWORK="$(sed -n 's/^network_name = "\(.*\)"$/\1/p' /srv/pwmcp-instance/ciu.global.toml)"
+test -n "$PWMCP_NETWORK"
+set -a; . ./.env; . ./.env.operator; . ./.env.guard; . ./.env.services; set +a
 ciu render                       # sanity: renders only naf's stacks
 ciu up --profile full            # mocks + pwmcp + app + gate + PowerDNS
 ```
+
+Each checkout owns a stable ciu `INSTANCE_ID`. Container and Compose names are
+`naf-<INSTANCE_ID>-*`; the app frontend is `naf-<INSTANCE_ID>.<PUBLIC_FQDN>` and the
+PowerDNS API is `naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>`. A linked worktree does not
+share the main checkout's gitignored env files: load the guard environment and the
+non-secret per-stack inputs (for example `tooling/mailpit/.env`) directly from the
+canonical checkout in the shell, or copy only non-secret files. Never copy the guard
+hash, generated instance identity, or secret store between checkouts.
+
+`.env.services` asks `ciu resolve --json` for each service's exact container
+identity. There are no `PROJECT_TAG`/`ENV_TAG` name formulas; delete stale shell
+exports of those variables if an old session still has them.
 
 ## 3. DNS records to create UPSTREAM
 
@@ -91,8 +110,8 @@ These are the HTTP surfaces traefik routes + issues certs for. They must resolve
 
 | Type | Name | Value | Serves |
 |---|---|---|---|
-| A | `naf.$PUBLIC_FQDN` | `$PUBLIC_IP` | the app UI/API |
-| A | `naf-pdns.$PUBLIC_FQDN` | `$PUBLIC_IP` | the PowerDNS HTTP API (record management) |
+| A | `naf-<INSTANCE_ID>.$PUBLIC_FQDN` | `$PUBLIC_IP` | the app UI/API |
+| A | `naf-pdns-<INSTANCE_ID>.$PUBLIC_FQDN` | `$PUBLIC_IP` | the PowerDNS HTTP API (record management) |
 
 If a wildcard `*.$PUBLIC_FQDN → $PUBLIC_IP` already exists, these are already
 covered — **nothing to add**. The hostnames are templated from `PUBLIC_FQDN`,
@@ -101,16 +120,18 @@ never hardcoded.
 > **Two PowerDNS surfaces, two paths:** the **DNS protocol** (port 53) answers zone queries
 > directly on the public IP via the delegation in §3a; the **HTTP API** (record CRUD) is
 > reached by naf container-to-container internally, and — if external API access is wanted —
-> exposed at `naf-pdns.<FQDN>` through traefik behind basicauth (§3b). The app does **not**
+> exposed at `naf-pdns-<INSTANCE_ID>.<FQDN>` through traefik behind basicauth (§3b). The app does **not**
 > need §3b to talk to PowerDNS; it's only for outside API access. `.env.services` is the
 > single source for both URLs: `POWERDNS_API_URL_INTERNAL` is the container URL and
-> `POWERDNS_API_URL` is `https://naf-pdns.<FQDN>` (empty when `PUBLIC_FQDN` is unavailable).
+> `POWERDNS_API_URL` is `https://naf-pdns-<INSTANCE_ID>.<FQDN>` (empty when
+> `PUBLIC_FQDN` is unavailable). The PowerDNS API key is the checkout-local
+> `GEN_LOCAL:naf/powerdns_api_key`; never put it in `.env` or copy it between worktrees.
 
 ## 4. Verify
 
 ```bash
 # app reachable over TLS behind the guard
-curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" "https://naf.$PUBLIC_FQDN/admin/login" -I
+curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" "https://naf-${INSTANCE_ID}.$PUBLIC_FQDN/admin/login" -I
 # the delegation answers on port 53
 dig +short NS "$NAF_DELEGATED_DNS_ZONE" @$PUBLIC_IP
 dig +short A "test.$NAF_DELEGATED_DNS_ZONE" @$PUBLIC_IP    # once a record exists

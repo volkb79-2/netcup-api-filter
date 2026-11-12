@@ -55,10 +55,10 @@ pytest ui_tests/tests -v
 - No `playwright install` is needed on the client side (browser binaries live on
   the server).
 
-Example with a service named `naf-dev-playwright`:
+Example with the estate's resolved pwmcp service:
 
 ```bash
-export PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/
+export PLAYWRIGHT_SERVER_WS=ws://<pwmcp-service>:3000/
 ```
 
 ---
@@ -76,7 +76,7 @@ run-gate local-build (see run-gate.toml)
 With remote Playwright:
 
 ```bash
-PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ run-gate local-build (see run-gate.toml)
+PLAYWRIGHT_SERVER_WS=ws://<pwmcp-service>:3000/ run-gate local-build (see run-gate.toml)
 ```
 
 ---

@@ -171,20 +171,15 @@ def build_one(python_version: str, output: Path) -> None:
 
 
 def _runner_container(variant: str) -> str:
-    """Name of the ciu-managed runner for a variant: <project>-<tag>-test-runner-<variant>.
+    """Resolve the ciu-managed runner for a variant from ciu's rendered facts."""
+    sys.path.insert(0, str(REPO_ROOT / "tooling"))
+    from ciu_identity import resolve_container
 
-    Derived from the rendered ciu.global.toml (the same rule run-gate uses); absence
-    fails loudly instead of guessing a name.
-    """
-    toml_path = REPO_ROOT / "ciu.global.toml"
-    if not toml_path.is_file():
-        raise RuntimeError(f"{toml_path} missing: render it and start the runners (ciu up --dir tooling/test-runner)")
-    with toml_path.open("rb") as handle:
-        deploy = tomllib.load(handle).get("deploy", {})
-    project, tag = deploy.get("project_name"), deploy.get("environment_tag")
-    if not project or not tag:
-        raise RuntimeError(f"{toml_path}: [deploy] project_name and environment_tag are required")
-    return f"{project}-{tag}-test-runner-{variant}"
+    return resolve_container(
+        "tooling/test-runner",
+        f"test-runner-{variant}",
+        repo_root=str(REPO_ROOT),
+    )
 
 
 def _docker_out(*args: str) -> str:

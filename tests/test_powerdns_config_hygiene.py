@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -471,6 +472,22 @@ def test_every_powerdns_default_is_consumed_by_code():
     )
 
 
+def _resolve_doc() -> str:
+    identities = {
+        "tooling/mailpit": {"mailpit": {"container_name": "sample-instance-mailpit"}},
+        "tooling/netcup-api-mock": {
+            "mock-netcup-api": {"container_name": "sample-instance-mock-netcup-api"}
+        },
+        "tooling/geoip-mock": {
+            "mock-geoip": {"container_name": "sample-instance-mock-geoip"}
+        },
+        "tooling/backend-powerdns": {
+            "powerdns": {"container_name": "sample-instance-powerdns"}
+        },
+    }
+    return json.dumps({"resolved": {"identities": identities}, "schema_version": 1})
+
+
 def _source_env_services(env: dict[str, str]) -> dict[str, str]:
     script = (
         "set -euo pipefail; "
@@ -480,7 +497,11 @@ def _source_env_services(env: dict[str, str]) -> dict[str, str]:
     )
     proc = subprocess.run(
         ["bash", "-c", script],
-        env=env,
+        env={
+            **env,
+            "NAF_CIU_RESOLVE_JSON": _resolve_doc(),
+            "NAF_CIU_GLOBAL_CONFIG": str(REPO / "missing-ciu-global.toml"),
+        },
         capture_output=True,
         text=True,
         check=False,
@@ -498,12 +519,10 @@ def _load_app_local_hook():
     return module
 
 
-def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatch):
-    """`.env.services` and the app-local hook must build the same sample internal URL."""
+def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatch, tmp_path):
+    """`.env.services` and the app-local hook must consume the same ciu identities."""
     configured = _source_env_services({
         "PATH": "/usr/bin:/bin",
-        "PROJECT_TAG": "sample",
-        "ENV_TAG": "integration",
     })
     definition_files = {
         path.relative_to(REPO)
@@ -516,7 +535,14 @@ def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatc
 
     hook = _load_app_local_hook()
     calls = []
-    monkeypatch.setenv("POWERDNS_API_KEY", "test-only-key")
+    monkeypatch.setattr(
+        hook,
+        "container_for",
+        lambda _ctx, stack, service: {
+            ("tooling/app-local", "app"): "sample-instance-app",
+            ("tooling/backend-powerdns", "powerdns"): "sample-instance-powerdns",
+        }[(stack, service)],
+    )
 
     def fake_exec(container, *args, timeout=30, env=None, secret_env=None):
         calls.append((container, env, secret_env))
@@ -529,10 +555,21 @@ def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatc
         "app_local": {"name": "app"},
         "backend_powerdns": {"name": "powerdns", "ports": {"api": 8081}},
     }
-    assert hook.run(config, SimpleNamespace(wait_healthy=lambda *a, **k: True)) == {}
+    secret_file = tmp_path / "powerdns_api_key"
+    # The hook only reads through ctx.secret_file; this in-memory value never
+    # reaches a repository file or a process command line.
+    secret_file.write_text("test-only-key", encoding="utf-8")
+
+    ctx = SimpleNamespace(
+        wait_healthy=lambda *a, **k: True,
+        secret_file=lambda _name: secret_file,
+        repo_root=None,
+        selected_profiles=(),
+    )
+    assert hook.run(config, ctx) == {}
 
     container, seed_env, secret_env = calls[0]
-    assert container == "sample-integration-app"
+    assert container == "sample-instance-app"
     assert seed_env["NAF_SEED_POWERDNS_API_URL"] == configured["internal"]
     assert secret_env["NAF_SEED_POWERDNS_API_KEY"] == "test-only-key"
 

@@ -133,7 +133,7 @@ def _build_db(monkeypatch, tmp_path, *, is_local: bool) -> Path:
     tree = tmp_path / ("local" if is_local else "release")
     (tree / "vendor").mkdir(parents=True)
     (tree / "src").symlink_to(REPO / "src")
-    for name in ("MOCK_NETCUP_API_URL", "SERVICE_MAILPIT"):
+    for name in ("MOCK_NETCUP_API_URL", "MAILPIT_HOST"):
         monkeypatch.setenv(name, MOCK_URL if name.startswith("MOCK") else "naf-test-mailpit")
     # initialize_database() writes these two process variables; restore them afterwards.
     monkeypatch.setenv("DEPLOYMENT_TARGET", "unset")

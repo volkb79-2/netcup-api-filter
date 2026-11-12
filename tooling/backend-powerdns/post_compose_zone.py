@@ -39,7 +39,11 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ciu_identity import container_for
 
 
 def _require(value: Any, label: str) -> Any:
@@ -86,11 +90,8 @@ def run(config: dict, ctx) -> dict:
         )
         return {}
 
-    deploy_cfg = config.get("deploy", {})
-    project_name = _require(deploy_cfg.get("project_name"), "deploy.project_name")
-    environment_tag = _require(deploy_cfg.get("environment_tag"), "deploy.environment_tag")
     service_name = _require(backend_cfg.get("name"), "backend_powerdns.name")
-    container = f"{project_name}-{environment_tag}-{service_name}"
+    container = container_for(ctx, "tooling/backend-powerdns", service_name)
 
     print(f"[INFO] Bootstrapping PowerDNS zone '{zone}' in {container}", flush=True)
 

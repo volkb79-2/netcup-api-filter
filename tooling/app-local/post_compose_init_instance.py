@@ -17,10 +17,9 @@ the bootstrap credential, `ciu clean` the stack's volumes and `up` fresh:
    from /run/secrets itself;
 3. print WHERE the generated credential lives (the ciu store path), never the value.
 
-Everything comes from the merged ciu config (``config``) and the HookContext; there
-are no defaults here. ``build_init_argv`` and ``run`` are pure enough to unit-test
-with a fake ctx and a fake runner (tests/test_app_local_init_hook.py), because ciu
-stacks cannot be brought up from a managed worktree (CIU-176).
+Everything comes from the merged ciu config (``config``), the HookContext, and the
+container identities returned by ``ciu resolve``; there are no defaults or locally
+reconstructed names here.
 """
 from __future__ import annotations
 
@@ -28,7 +27,11 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ciu_identity import container_for
 
 PASSWORD_SECRET = "bootstrap_admin_password"
 HEALTH_TIMEOUT_S = 120.0
@@ -43,31 +46,27 @@ def _require(mapping: dict, dotted: str) -> Any:
     return node
 
 
-def app_container(config: dict) -> str:
-    return "-".join((
-        str(_require(config, "deploy.project_name")),
-        str(_require(config, "deploy.environment_tag")),
-        str(_require(config, "app_local.name")),
-    ))
+def app_container(config: dict, ctx) -> str:
+    return container_for(ctx, "tooling/app-local", str(_require(config, "app_local.name")))
 
 
-def mailpit_host(config: dict) -> str:
-    return "-".join((
-        str(_require(config, "deploy.project_name")),
-        str(_require(config, "deploy.environment_tag")),
+def mailpit_host(config: dict, ctx) -> str:
+    return container_for(
+        ctx,
+        "tooling/mailpit",
         str(_require(config, "app_local.mail.smtp_service")),
-    ))
+    )
 
 
-def build_init_argv(config: dict) -> list[str]:
+def build_init_argv(config: dict, ctx) -> list[str]:
     """The exact `docker exec` argv of the in-container initializer."""
     return [
         "docker", "exec",
         "-e", f"PYTHONPATH={_require(config, 'app_local.init_pythonpath')}",
-        app_container(config),
+        app_container(config, ctx),
         str(_require(config, "app_local.init_python")),
         "-m", "netcup_api_filter.bootstrap", "init",
-        "--mock-smtp-host", mailpit_host(config),
+        "--mock-smtp-host", mailpit_host(config, ctx),
         "--mock-smtp-port", str(_require(config, "app_local.mail.smtp_port")),
         "--mock-from-email", str(_require(config, "app_local.mail.from_email")),
         "--mock-admin-email", str(_require(config, "app_local.mail.admin_email")),
@@ -76,7 +75,7 @@ def build_init_argv(config: dict) -> list[str]:
 
 def run(config: dict, ctx, *, runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> dict:
     service = str(_require(config, "app_local.name"))
-    container = app_container(config)
+    container = app_container(config, ctx)
     if ctx.wait_healthy is None:
         raise RuntimeError("[app-local init hook] no readiness probe: this hook runs inside `ciu up` only")
     if not ctx.wait_healthy(service, timeout_s=HEALTH_TIMEOUT_S):
@@ -85,7 +84,7 @@ def run(config: dict, ctx, *, runner: Callable[..., subprocess.CompletedProcess]
             f"{HEALTH_TIMEOUT_S:.0f}s — see `docker logs {container}`"
         )
 
-    result = runner(build_init_argv(config), capture_output=True, text=True, timeout=120)
+    result = runner(build_init_argv(config, ctx), capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
         raise RuntimeError(
             f"[app-local init hook] init failed in {container} (exit {result.returncode}): "

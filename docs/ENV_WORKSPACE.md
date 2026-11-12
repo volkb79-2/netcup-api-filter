@@ -55,7 +55,7 @@ export USER_GID="1003"
 export DOCKER_GID="994"
 export REPO_ROOT="/workspaces/netcup-api-filter"
 export PHYSICAL_REPO_ROOT="/home/vb/volkb79-2/netcup-api-filter"
-export DOCKER_NETWORK_INTERNAL="naf-dev-network"
+export DOCKER_NETWORK_INTERNAL="<checkout-instance-network>"
 ```
 
 ## Who Uses It?
@@ -80,11 +80,12 @@ if [[ -f "/workspaces/netcup-api-filter/.env.workspace" ]]; then
     source "/workspaces/netcup-api-filter/.env.workspace"
 fi
 
-# Use network name from TOML config (default: naf-dev-network)
-NETWORK="${DOCKER_NETWORK_INTERNAL:-naf-dev-network}"
+# Use this checkout's generated ciu network identity.
+NETWORK="${DOCKER_NETWORK_INTERNAL:?run: eval \"\$(ciu env print)\"}"
 ```
 
-**Why**: Needs to know which network to verify connectivity for (from `DOCKER_NETWORK_INTERNAL`, default `naf-dev-network`).
+**Why**: Needs to know which per-checkout network to verify connectivity for
+(`DOCKER_NETWORK_INTERNAL` from ciu's generated facts).
 
 ### 4. Future Scripts
 Any new script that needs workspace configuration can simply `source .env.workspace`.
@@ -134,7 +135,7 @@ File is **overwritten** each time `post-create.sh` runs. Do not manually edit.
 | `DOCKER_GID` | Docker group ID | `994` |
 | `REPO_ROOT` | Repository root (inside container) | `/workspaces/netcup-api-filter` |
 | `PHYSICAL_REPO_ROOT` | Repository root (on host) | `/home/vb/volkb79-2/netcup-api-filter` |
-| `DOCKER_NETWORK_INTERNAL` | Docker network name (from TOML config) | `naf-dev-network` |
+| `DOCKER_NETWORK_INTERNAL` | Per-checkout Docker network name | `<checkout-instance-network>` |
 
 ## Best Practices
 
@@ -147,9 +148,9 @@ File is **overwritten** each time `post-create.sh` runs. Do not manually edit.
    fi
    ```
 
-2. **Provide fallback defaults**:
+2. **Read the generated identity instead of inventing a fallback**:
    ```bash
-   DOCKER_NETWORK_INTERNAL="${DOCKER_NETWORK_INTERNAL:-naf-dev-network}"
+   DOCKER_NETWORK_INTERNAL="${DOCKER_NETWORK_INTERNAL:?run: eval \"\$(ciu env print)\"}"
    ```
 
 3. **Document which variables your script needs** in comments:

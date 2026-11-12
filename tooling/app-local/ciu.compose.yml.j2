@@ -38,7 +38,7 @@ services:
       {% endfor %}
       - GUNICORN_BIND=0.0.0.0:{{ app_local.port }}
       - TRUSTED_PROXY_HOPS={{ app_local.trusted_proxy_hops }}
-      - PUBLIC_BASE_URL={{ app_local.public_base_url_scheme }}://{{ app_local.external.subdomain }}.{{ topology.external.public_fqdn }}
+      - PUBLIC_BASE_URL={{ app_local.public_base_url }}
       # Stated, never inferred: see app_local.cookie_secure.
       - FLASK_SESSION_COOKIE_SECURE={{ app_local.cookie_secure }}
       # Instance data + first-boot inputs (bootstrap/admin.py, app.py). Secrets arrive as files.
@@ -75,9 +75,9 @@ services:
       # --- traefik ingress (host edge-traefik). TLS/cert inherited from the entrypoint. ---
       - "traefik.enable=true"
       - "traefik.docker.network={{ topology.external.ingress_network }}"
-      - "traefik.http.routers.{{ deploy.project_name }}-{{ app_local.name }}.rule=Host(`{{ app_local.external.subdomain }}.{{ topology.external.public_fqdn }}`)"
-      - "traefik.http.routers.{{ deploy.project_name }}-{{ app_local.name }}.entrypoints=websecure"
-      - "traefik.http.services.{{ deploy.project_name }}-{{ app_local.name }}.loadbalancer.server.port={{ app_local.port }}"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}.rule=Host(`{{ app_local.external.subdomain }}.{{ topology.external.public_fqdn }}`)"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}.entrypoints=websecure"
+      - "traefik.http.services.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}.loadbalancer.server.port={{ app_local.port }}"
     {%- if topology.guard.enabled %}
       # basicauth: the product is not production ready and must not be publicly reachable.
       # For humans only (credentials in .env.guard): the e2e suite targets the app over
@@ -85,8 +85,8 @@ services:
       # The hash comes from the ENVIRONMENT at compose-up time, not from ciu config: a
       # bcrypt hash begins "$2b$", which ciu's placeholder pass would reject as an
       # unresolved "$2b". This also keeps the hash out of every rendered artifact.
-      - "traefik.http.routers.{{ deploy.project_name }}-{{ app_local.name }}.middlewares={{ deploy.project_name }}-guard"
-      - "traefik.http.middlewares.{{ deploy.project_name }}-guard.basicauth.users={{ topology.guard.user }}:${NAF_GUARD_HTPASSWD:?NAF_GUARD_HTPASSWD not set — source .env.guard}"
+      - "traefik.http.routers.{{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ app_local.name }}.middlewares={{ deploy.project_name }}-{{ deploy.environment_tag }}-guard"
+      - "traefik.http.middlewares.{{ deploy.project_name }}-{{ deploy.environment_tag }}-guard.basicauth.users={{ topology.guard.user }}:${NAF_GUARD_HTPASSWD:?NAF_GUARD_HTPASSWD not set — source .env.guard}"
     {%- endif %}
     {%- endif %}
 

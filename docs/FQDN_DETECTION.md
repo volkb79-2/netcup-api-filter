@@ -12,9 +12,9 @@ None of that exists anymore:
   on shared webhosting, where the hoster terminates TLS).
 - `PUBLIC_FQDN` is now a **ciu config fact**
   (`topology.external.public_fqdn` in `ciu.global.defaults.toml.j2`), not a reverse-DNS
-  PTR lookup. It is still used for the session-cookie domain and to derive
-  `.env.services`' `POWERDNS_API_URL` (`https://naf-pdns.${PUBLIC_FQDN}`), guarded the
-  same way it always was on `[ -n "${PUBLIC_FQDN:-}" ]`.
+  PTR lookup. `.env.services` derives the guarded `POWERDNS_API_URL` from the rendered
+  `pdns_subdomain` (`naf-pdns-<INSTANCE_ID>`) and this FQDN; the URL is empty when no
+  public FQDN is available.
 - The old detection scripts and `.env.workspace` reverse-DNS write are gone (naf-P05 O2 —
   superseded, never implemented).
 

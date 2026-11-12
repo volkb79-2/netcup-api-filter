@@ -73,6 +73,13 @@ log_dns_details = "no"
 disable_axfr = "yes"
 allow_axfr_ips = ""
 
+[backend_powerdns.secrets]
+# Checkout-local generated credential. It is never read from the operator shell
+# or shared with another worktree. PowerDNS's image consumes the value through
+# PDNS_* environment variables, so ciu's documented expose_env escape hatch is
+# the delivery channel; the value itself is replaced by a guard in templates.
+powerdns_api_key = { directive = "GEN_LOCAL:naf/powerdns_api_key", expose_env = "POWERDNS_API_KEY" }
+
 [backend_powerdns.health]
 # pdns_control talks to the running daemon's control socket directly — this
 # does NOT depend on the HTTP API being up, only the auth server process.
@@ -84,7 +91,8 @@ start_period = "10s"
 [backend_powerdns.external]
 # Exposes the HTTP API at {{ topology.dns.pdns_subdomain }}.{{ topology.external.public_fqdn }}
 # behind the same basicauth guard as app-local (D-007: "Exposure of the pdns
-# API is naf-pdns.<public_fqdn> behind the same basicauth guard as the app").
+# API is naf-pdns-<instance>.<public_fqdn> behind the same basicauth guard as
+# the app").
 # The DNS port (53) is NEVER part of this — it stays a raw host port publish,
 # never a traefik route. See ciu.compose.yml.j2.
 enabled = true

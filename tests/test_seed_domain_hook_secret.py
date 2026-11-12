@@ -15,9 +15,10 @@ def _load():
     return module
 
 
-def test_api_key_travels_via_process_env_not_argv(monkeypatch):
+def test_api_key_travels_via_process_env_not_argv(monkeypatch, tmp_path):
     hook = _load()
-    monkeypatch.setenv("POWERDNS_API_KEY", SECRET)
+    secret_file = tmp_path / "powerdns_api_key"
+    secret_file.write_text(SECRET)
     calls = []
 
     def fake_run(cmd, **kwargs):
@@ -25,13 +26,26 @@ def test_api_key_travels_via_process_env_not_argv(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, "[seed] ok", "")
 
     monkeypatch.setattr(hook.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        hook,
+        "container_for",
+        lambda _ctx, stack, service: {
+            ("tooling/app-local", "app"): "sample-instance-app",
+            ("tooling/backend-powerdns", "pdns"): "sample-instance-pdns",
+        }[(stack, service)],
+    )
     config = {
         "topology": {"dns": {"delegated_zone": "managed.example.test"}},
-        "deploy": {"project_name": "p", "environment_tag": "e"},
+        "deploy": {"project_name": "sample", "environment_tag": "instance"},
         "app_local": {"name": "app"},
         "backend_powerdns": {"name": "pdns", "ports": {"api": 8081}},
     }
-    ctx = SimpleNamespace(wait_healthy=lambda *a, **k: True)
+    ctx = SimpleNamespace(
+        wait_healthy=lambda *a, **k: True,
+        secret_file=lambda name: secret_file,
+        repo_root=None,
+        selected_profiles=(),
+    )
     hook.run(config, ctx)
 
     (cmd, kwargs), = [c for c in calls if "NAF_SEED_POWERDNS_API_KEY" in " ".join(c[0])]

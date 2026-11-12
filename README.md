@@ -101,16 +101,16 @@ PowerDNS provides an alternative to the Netcup API for DNS management:
 **Quick Start:**
 ```bash
 # Start the required local service stack before testing PowerDNS.
-# POWERDNS_API_KEY comes from the gitignored `.env`; the public route's
-# basicauth username/password come from the gitignored `.env.guard`; both API
-# URLs come from `.env.services`. Source all three before the commands below.
+# POWERDNS_API_KEY is a checkout-local ciu GEN_LOCAL secret; the public route's
+# basicauth username/password come from `.env.guard`; both API URLs come from
+# `.env.services`, which reads ciu resolve identities. Source them before use.
 # The public URL is empty when PUBLIC_FQDN is unavailable; the internal URL
 # always works between containers on the project network.
 set -a
-. ./.env
 . ./.env.guard
 . ./.env.services
 set +a
+POWERDNS_API_KEY="$(cat .ciu/secrets/naf/powerdns_api_key)"
 
 # Test API connectivity
 curl -sf -H "X-API-Key: $POWERDNS_API_KEY" \
@@ -123,7 +123,8 @@ curl -sf -H "X-API-Key: $POWERDNS_API_KEY" \
 curl -s -H "X-API-Key: $POWERDNS_API_KEY" \
   "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones" | python3 -m json.tool
 
-# External access through the host traefik route at naf-pdns.<PUBLIC_FQDN>,
+# External access through the host traefik route at
+# naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>,
 # behind the same basicauth guard as the app.
 curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" \
   -H "X-API-Key: $POWERDNS_API_KEY" \

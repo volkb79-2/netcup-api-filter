@@ -20,8 +20,8 @@ Publish and exposure are deliberately different:
   reach an authoritative server through an HTTP reverse proxy.
 - The HTTP API listens on `backend_powerdns.ports.api` (`8081` in the committed config).
   It is not published directly. Containers use the project network; external operators
-  reach it at `naf-pdns.<PUBLIC_FQDN>` through host traefik, behind the same basicauth
-  guard as the app.
+  reach it at `naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>` through host traefik, behind the
+  same basicauth guard as the app.
 
 The source of truth is `ciu.defaults.toml.j2` plus `ciu.compose.yml.j2`. Rendered
 `ciu.toml` and `ciu.compose.yml` are gitignored artifacts; do not edit or commit them.
@@ -46,41 +46,36 @@ nameserver, or SOA.
 
 ## Start the stack
 
-`POWERDNS_API_KEY` is operator-supplied and must never be committed. The tracked
-`.env.defaults` entry is intentionally empty. Until B045 moves the key to a ciu
-`GEN_LOCAL` secret, compose interpolation and the app-local seed hook read it from the
-operator environment.
+`POWERDNS_API_KEY` is generated once by ciu into this checkout's
+`GEN_LOCAL:naf/powerdns_api_key` store. It is never operator-supplied, committed, or
+shared with another worktree. The backend gets it through ciu's `expose_env` channel;
+the app-local seed hook reads the same file through `ctx.secret_file()`.
 
 ```bash
 cd /workspaces/netcup-api-filter
 
-# Generate once into the gitignored local environment.
-printf 'POWERDNS_API_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
-
 set -a
-. ./ciu.env
-. ./.env
 . ./.env.operator
 . ./.env.guard
 set +a
+eval "$(ciu env print)"
 
 # The stack alone, or the complete development profile.
 ciu up --dir tooling/backend-powerdns
 ciu up --profile full
 ```
 
-`.env` provides the operator-supplied `POWERDNS_API_KEY`; `.env.operator` provides the
-delegated zone; and `.env.guard` provides the basicauth username/password/hash used by
-the traefik route. `ciu up` fails fast when `POWERDNS_API_KEY` or the
-`NAF_GUARD_HTPASSWD` required by the compose template is absent. The command prints the
-location of its generated secret store; values are never printed.
+`.env.operator` provides the delegated zone; `.env.guard` provides the basicauth
+username/password/hash used by the traefik route. `ciu up` materializes the generated
+PowerDNS key in this checkout's secret store and fails fast when the guard hash is
+absent. Values are never printed.
 
 ## URLs
 
-Both PowerDNS URLs are defined by `.env.services`; there are no URL defaults in
-`.env.defaults`. The API key comes from the gitignored `.env`, and the public route's
-basicauth username/password come from the gitignored `.env.guard`. No secret value is
-shown here.
+Both PowerDNS URLs are defined by `.env.services` from `ciu resolve --json` and the
+rendered global topology; there are no URL defaults in `.env.defaults`. The API key
+comes from the checkout-local ciu secret store, and the public route's basicauth
+username/password come from `.env.guard`. No secret value is shown here.
 
 | Fact | Source | Use |
 |---|---|---|
@@ -92,7 +87,6 @@ available:
 
 ```bash
 set -a
-. ./.env
 . ./.env.guard
 . ./.env.services
 set +a
@@ -147,8 +141,9 @@ The stack keeps non-secret daemon configuration in `[backend_powerdns]`:
 - health-check timing and external-route toggle.
 
 Only `POWERDNS_API_KEY` is secret. The delegated zone and public FQDN are global
-topology facts. The API port is also consumed by `.env.services` to form the internal
-URL; keep the shell fact and `backend_powerdns.ports.api` aligned.
+topology facts. `.env.services` reads the PowerDNS container identity from
+`ciu resolve --json`; keep the resolved service and `backend_powerdns.ports.api`
+aligned through their stack declarations.
 
 The retired helpers `ensure_zone.py`, `setup-zones.sh`, and `init-db.sh` were removed.
 Zone creation belongs to the ciu `post_compose` hook, and schema initialization belongs
@@ -160,12 +155,11 @@ The database is the host bind mount
 `tooling/backend-powerdns/data/pdns.sqlite3`, resolved through
 `PHYSICAL_REPO_ROOT`. It is not a Docker named volume.
 
-For an idempotent stack bring-up, use ciu. For a single-stack teardown, ciu's supported
-shape is a rendered compose file scoped to the same ciu project:
+For an idempotent stack bring-up and teardown, use ciu's supported verbs:
 
 ```bash
-cd tooling/backend-powerdns
-docker compose -p <PROJECT_TAG>-<ENV_TAG>-backend-powerdns -f ciu.compose.yml down
+ciu up --dir tooling/backend-powerdns
+ciu down --dir tooling/backend-powerdns
 ```
 
 To rebuild the database, stop the stack, move the existing data directory aside, and
@@ -181,7 +175,7 @@ docker ps --filter name=powerdns
 docker logs <project-environment-powerdns>
 ```
 
-Common causes are a missing `POWERDNS_API_KEY`, port 53 already occupied, or incorrect
+Common causes are an unmaterialized ciu secret, port 53 already occupied, or incorrect
 permissions on the bind-mounted data directory. Port 53 must remain 53 for real
 delegation; do not move it to an arbitrary host port.
 
