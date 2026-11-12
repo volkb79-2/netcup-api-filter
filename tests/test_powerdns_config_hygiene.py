@@ -520,7 +520,7 @@ def _load_app_local_hook():
 
 
 def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatch, tmp_path):
-    """`.env.services` and the app-local hook must consume the same ciu identities."""
+    """Service URLs are resolved dynamically, never committed as literal values."""
     configured = _source_env_services({
         "PATH": os.environ["PATH"],
     })
@@ -530,7 +530,10 @@ def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatc
         for key in ("POWERDNS_API_URL", "POWERDNS_API_URL_INTERNAL")
         if re.search(rf"^\s*(?:export\s+)?{key}=", text, re.MULTILINE)
     }
-    assert definition_files == {Path(".env.services")}, definition_files
+    assert not definition_files, (
+        "PowerDNS service URLs must come from ciu resolve, not literal assignments: "
+        f"{definition_files}"
+    )
     assert configured["public"] == ""
 
     hook = _load_app_local_hook()
