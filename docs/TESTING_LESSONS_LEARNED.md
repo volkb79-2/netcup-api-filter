@@ -214,12 +214,16 @@ The e2e suite is one browser session with many cheap contexts, not one browser s
   gateway protocol; a mismatch fails the whole session loudly with exit 3 instead of producing
   hundreds of test failures.
 - Bound `connect()` and retry only pwmcp HTTP 503 (all browser slots busy), with exponential backoff
-  under one total deadline. Reconnect exactly once between tests if the shared browser/lease died.
+  under one total deadline. Between tests, replace a dead browser with one bounded reconnect (capped
+  per session) and renew a lease that is about to end; latch a failed replacement so the rest of the
+  session fails at once instead of retrying per test.
 - An open websocket counts as a pwmcp session, so the 30-second idle browser recycle cannot happen
   while the suite is connected. No heartbeat is needed.
 - Do not load one shared storage-state file into every context. Use `admin_browser`, `user_browser`,
   or `anon_browser` (and the equivalent `browser_session(role)` call). Role files live in the session
-  work dir and are written at most once per role; anonymous contexts start with no storage state.
+  work dir, are written after each fresh login of that role and reused while the cached login is
+  valid; anonymous contexts start with no storage state. Never hand Playwright a role file that does
+  not exist yet: `storage_state=` is read eagerly and raises `FileNotFoundError`.
 - Choose anonymous explicitly for login, registration, public docs, forgot-password, auth-redirect,
   and cookie tests. Clearing cookies after loading the wrong state hides the isolation bug.
 

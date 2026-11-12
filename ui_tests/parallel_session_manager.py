@@ -10,6 +10,8 @@ import logging
 
 from playwright.async_api import Browser, BrowserContext, Page
 
+from ui_tests.pwmcp_connection import existing_storage_state
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +107,7 @@ class ParallelSessionManager:
             role: Session role ('admin', 'account', 'anonymous')
             session_id: Custom session ID (auto-generated if not provided)
             viewport: Custom viewport size (uses default if not provided)
+            storage_state_path: Role storage-state file; loaded only if it exists
             
         Returns:
             SessionHandle for the new session
@@ -122,10 +125,18 @@ class ParallelSessionManager:
             "locale": self.locale,
             "base_url": self.base_url,
         }
-        if storage_state_path:
-            context_kwargs["storage_state"] = storage_state_path
+        # A role file exists only after that role's first login in this session; Playwright
+        # reads storage_state eagerly and raises FileNotFoundError for a missing file. Without
+        # it the context starts empty and _login_admin/_login_account log in and write it.
+        existing = existing_storage_state(storage_state_path)
+        if existing:
+            context_kwargs["storage_state"] = existing
         context = await self._context_factory(**context_kwargs)
-        page = await context.new_page()
+        try:
+            page = await context.new_page()
+        except BaseException:
+            await context.close()
+            raise
         
         handle = SessionHandle(
             session_id=session_id,

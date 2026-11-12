@@ -18,6 +18,34 @@ from ui_tests.pwmcp_connection import context_storage_state
 
 logger = logging.getLogger(__name__)
 
+REDACTED = "<redacted>"
+# One-time credentials the app puts into URLs: /account/register/verify/<token>,
+# /account/reset-password/<token>, /account/invite/<token>. A failing navigation must
+# not print them (ToolError payloads and Playwright messages end up in gate logs).
+_ONE_TIME_PATH_RE = re.compile(r"(/(?:verify|reset|reset-password|invite)/)[^/?#\s\"'<>]+", re.IGNORECASE)
+_SECRET_PARAM_WORDS = ("token", "code", "key", "secret", "password", "otp", "signature", "sig")
+_SECRET_QUERY_RE = re.compile(
+    r"([?&;](?:[^=&#\s\"'<>]*?)(?:" + "|".join(_SECRET_PARAM_WORDS) + r")(?:[^=&#\s\"'<>]*)=)[^&#\s\"'<>]+",
+    re.IGNORECASE,
+)
+
+
+def redact_url_text(text: Any) -> Any:
+    """Mask one-time path tokens and secret-named query values in a URL or message."""
+    if not isinstance(text, str):
+        return text
+    text = _ONE_TIME_PATH_RE.sub(lambda m: m.group(1) + REDACTED, text)
+    return _SECRET_QUERY_RE.sub(lambda m: m.group(1) + REDACTED, text)
+
+
+def _redact_params(params: Dict[str, Any] | None) -> Dict[str, Any] | None:
+    if not params:
+        return params
+    return {
+        key: (REDACTED if any(word in str(key).lower() for word in _SECRET_PARAM_WORDS) else value)
+        for key, value in params.items()
+    }
+
 
 @dataclass
 class ToolError(Exception):
@@ -94,7 +122,11 @@ class Browser:
                     return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
                 except PlaywrightTimeout:
                     pass  # Fall through to original error
-            raise ToolError(name="goto", payload={"url": url, "wait_until": wait_until}, message=str(exc))
+            raise ToolError(
+                name="goto",
+                payload={"url": redact_url_text(url), "wait_until": wait_until},
+                message=redact_url_text(str(exc)),
+            )
 
     async def request_get_text(
         self,
@@ -120,8 +152,8 @@ class Browser:
         except Exception as exc:
             raise ToolError(
                 name="request_get_text",
-                payload={"url": url, "params": params},
-                message=str(exc),
+                payload={"url": redact_url_text(url), "params": _redact_params(params)},
+                message=redact_url_text(str(exc)),
             )
 
     async def request_get_json(
@@ -144,8 +176,8 @@ class Browser:
         except Exception as exc:
             raise ToolError(
                 name="request_get_json",
-                payload={"url": url, "params": params},
-                message=str(exc),
+                payload={"url": redact_url_text(url), "params": _redact_params(params)},
+                message=redact_url_text(str(exc)),
             )
 
     async def request_get_bytes(
@@ -171,8 +203,8 @@ class Browser:
         except Exception as exc:
             raise ToolError(
                 name="request_get_bytes",
-                payload={"url": url, "params": params},
-                message=str(exc),
+                payload={"url": redact_url_text(url), "params": _redact_params(params)},
+                message=redact_url_text(str(exc)),
             )
 
     async def request_post_form(
@@ -195,8 +227,8 @@ class Browser:
         except Exception as exc:
             raise ToolError(
                 name="request_post_form",
-                payload={"url": url, "data_keys": sorted(list(data.keys()))},
-                message=str(exc),
+                payload={"url": redact_url_text(url), "data_keys": sorted(list(data.keys()))},
+                message=redact_url_text(str(exc)),
             )
 
     async def fill(self, selector: str, value: str) -> Dict[str, Any]:
@@ -282,12 +314,12 @@ class Browser:
             
             if status_code != expected_status:
                 page_content = await self._page.content()
-                error_msg = f"HTTP {status_code} (expected {expected_status}) on {self.current_url}"
+                error_msg = f"HTTP {status_code} (expected {expected_status}) on {redact_url_text(self.current_url)}"
                 if len(page_content) < 500:
                     error_msg += f"\nPage content: {page_content[:500]}"
                 raise ToolError(
                     name="verify_status",
-                    payload={"expected": expected_status, "actual": status_code, "url": self.current_url},
+                    payload={"expected": expected_status, "actual": status_code, "url": redact_url_text(self.current_url)},
                     message=error_msg
                 )
             
@@ -512,20 +544,22 @@ async def browser_session(role: str = "admin") -> AsyncIterator[Browser]:
     )
     await client.connect()
 
-    trace_threshold_s = _get_trace_threshold_seconds()
-    trace_dir = os.environ.get("UI_TRACE_DIR")
     trace_active = False
+    trace_threshold_s: float | None = None
+    trace_dir: str | None = None
     trace_start = time.perf_counter()
-    if trace_threshold_s is not None:
-        if not trace_dir:
-            raise RuntimeError(
-                "UI_TRACE_ON_SLOW_SECONDS is set but UI_TRACE_DIR is not set. "
-                "Set UI_TRACE_DIR to a writable directory to store trace zips."
-            )
-        os.makedirs(trace_dir, exist_ok=True)
-        await client.context.tracing.start(screenshots=True, snapshots=True, sources=True)
-        trace_active = True
     try:
+        trace_threshold_s = _get_trace_threshold_seconds()
+        trace_dir = os.environ.get("UI_TRACE_DIR")
+        if trace_threshold_s is not None:
+            if not trace_dir:
+                raise RuntimeError(
+                    "UI_TRACE_ON_SLOW_SECONDS is set but UI_TRACE_DIR is not set. "
+                    "Set UI_TRACE_DIR to a writable directory to store trace zips."
+                )
+            os.makedirs(trace_dir, exist_ok=True)
+            await client.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+            trace_active = True
         page = client.page
         browser = Browser(page)
         # CRITICAL: Set viewport globally for ALL browser sessions (including auth flow)
@@ -533,21 +567,25 @@ async def browser_session(role: str = "admin") -> AsyncIterator[Browser]:
         await browser.set_viewport()
         yield browser
     finally:
-        if trace_active:
-            duration_s = time.perf_counter() - trace_start
-            if duration_s >= (trace_threshold_s or 0):
-                test_id = os.environ.get("PYTEST_CURRENT_TEST", "unknown_test").split(" ", 1)[0]
-                trace_name = _sanitize_artifact_name(test_id) + ".zip"
-                trace_path = os.path.join(trace_dir, trace_name)
-                await client.context.tracing.stop(path=trace_path)
-                _maybe_emit_step_timing(
-                    "trace_saved",
-                    duration_s,
-                    {"path": trace_path, "threshold_s": trace_threshold_s},
-                )
-            else:
-                await client.context.tracing.stop()
-        await client.close()
+        # Inner finally: a tracing error must not leave this context open in the shared
+        # browser for the rest of the session.
+        try:
+            if trace_active:
+                duration_s = time.perf_counter() - trace_start
+                if duration_s >= (trace_threshold_s or 0):
+                    test_id = os.environ.get("PYTEST_CURRENT_TEST", "unknown_test").split(" ", 1)[0]
+                    trace_name = _sanitize_artifact_name(test_id) + ".zip"
+                    trace_path = os.path.join(trace_dir, trace_name)
+                    await client.context.tracing.stop(path=trace_path)
+                    _maybe_emit_step_timing(
+                        "trace_saved",
+                        duration_s,
+                        {"path": trace_path, "threshold_s": trace_threshold_s},
+                    )
+                else:
+                    await client.context.tracing.stop()
+        finally:
+            await client.close()
 
 
 def _sanitize_artifact_name(value: str) -> str:

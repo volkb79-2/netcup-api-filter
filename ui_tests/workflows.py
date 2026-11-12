@@ -331,7 +331,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                 found_any = False
                 found_subject_match = 0
                 found_recent = 0
-                found_code = 0
+                codes_found_count = 0
                 mailbox_stats: list[tuple[str, int, int, int, int, int, int]] = []
                 mailbox_uid_advanced = 0
 
@@ -453,7 +453,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                             if not _text_indicates_2fa(subject, body_text):
                                 continue
                             mailbox_codes += 1
-                            found_code += 1
+                            codes_found_count += 1
                             if mailbox_max_uid:
                                 seen_max_by_mailbox[mb] = max(seen_max_by_mailbox.get(mb, 0), mailbox_max_uid)
                             conn.logout()
@@ -488,10 +488,10 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                         mailboxes,
                         found_recent,
                         found_subject_match,
-                        found_code,
+                        codes_found_count,
                     )
 
-                    emit_details = (found_code > 0) or (poll_count <= 2) or (poll_count % 5 == 0)
+                    emit_details = (codes_found_count > 0) or (poll_count <= 2) or (poll_count % 5 == 0)
                     if emit_details:
                         for (mb, mailbox_ids, mailbox_recent, mailbox_subject, mailbox_codes, baseline_uid, mailbox_max_uid) in mailbox_stats:
                             logger.debug(

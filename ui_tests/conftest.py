@@ -27,6 +27,7 @@ from ui_tests.pwmcp_connection import (
     fetch_contract,
     install_shared_session,
     last_session_summary,
+    last_session_summary_details,
     load_connection_options,
     uninstall_shared_session,
 )
@@ -499,6 +500,8 @@ def pytest_runtest_call(item):
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     terminalreporter.write_line(last_session_summary())
+    for line in last_session_summary_details():
+        terminalreporter.write_line(line)
     enabled = _env_flag("PYTEST_PROFILE_ENABLED")
     if not enabled:
         return

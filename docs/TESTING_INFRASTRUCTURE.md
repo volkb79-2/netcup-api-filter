@@ -108,14 +108,20 @@ pytest session / xdist worker
   -> start one Playwright driver
   -> make one bounded chromium.connect(), retrying only gateway HTTP 503
   -> for each test: fresh browser.new_context() [+ page] -> test -> close context
-  -> if the browser is found dead between tests: close it and reconnect exactly once
+  -> before a test's first context, if needed, replace the browser (one bounded connect):
+       browser found dead  -> reconnect, at most E2E_PWMCP_MAX_RECONNECTS times per session
+       lease nearly over   -> close, reconnect with a fresh lease (only while no context is open)
+     a failed replacement is latched: every later test fails at once, no further connects
   -> session teardown: close the browser connection and stop the Playwright driver
 ```
 
 `ui_tests/pwmcp_connection.py` owns this lifecycle; `ui_tests/conftest.py` installs it through the
-autouse `pwmcp_connection` session fixture. The connect and context counters are emitted once at the
-end of the session as `pwmcp connects=<n> contexts=<n>`. There is one driver/websocket per pytest
-process (therefore one per xdist worker); tests get only the cheap fresh-context isolation.
+autouse `pwmcp_connection` session fixture. The counters are emitted once at the end of the session
+as `pwmcp connects=<n> reconnects=<n> contexts=<n>` (`connects` includes the first connect), followed
+by a `pwmcp reconnect causes: ...` line when the session reconnected and a `pwmcp connection latched as
+failed: ...` line when it gave up. There is one driver/websocket per pytest process (therefore one per
+xdist worker; under xdist the controller's summary would read `connects=0`); tests get only the cheap
+fresh-context isolation.
 
 The contract check is fail-fast: `/contract` must publish schema version 1 and a protocol matching
 the installed Playwright major.minor, plus a maximum lease. A missing contract, incompatible
@@ -125,9 +131,16 @@ and retry HTTP 503 ("all browser slots are in use") with exponential backoff und
 
 An open pwmcp websocket is an active gateway session. The 30-second idle browser recycle runs only
 while there are zero sessions, so the shared connection survives the long installation/app-start test
-without a heartbeat. The configured 30-minute lease is longer than a normal e2e lane; if the gateway
-closes the lease between tests, the harness reconnects once. A lease loss in the middle of a test is
-still a test failure (there is no mid-test retry).
+without a heartbeat. The runner requests a 7200-second lease (`tooling/test-runner`
+`[test_runner.pwmcp] lease_seconds`, equal to the e2e lane budget and the gateway's
+`max_lease_seconds`); the gateway ends a lease early when the websocket closes, so a finished lane
+frees its slot at once. The harness records when the lease started and, between tests, renews it
+when less than `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` (300) is left, so a lease never ends inside a
+test that started with at least that margin. A browser found dead between tests (gateway restart or
+recycle) is replaced by one bounded connect, at most `E2E_PWMCP_MAX_RECONNECTS` (3) times per session.
+A failed replacement is latched: every later test errors immediately with the same reason instead of
+spending a connect/503-retry budget each. A browser lost in the middle of a test is still a failure of
+that test (there is no mid-test retry).
 
 ### Per-role browser state
 
@@ -140,9 +153,12 @@ Storage state is explicit and per role:
 | `anon_browser` | none |
 | `browser_session("admin"|"user"|"anonymous")` | the named role, or none for anonymous |
 
-State files are created lazily after a successful role login and live under the throwaway session
-work dir, never in the repository. Login is therefore cached once per role per session, while admin
-and user cookies cannot contaminate each other. Public pages, login forms, registration, and
+State files are created after a successful role login and live under the throwaway session work dir,
+never in the repository. A context for a role whose file does not exist yet starts empty (the file is
+never handed to Playwright, which would raise `FileNotFoundError`); the login helpers then log in and
+write it. Every fresh login rewrites the role's file (a test may have invalidated the old session);
+a cached login that is still valid reuses it unchanged. Login is therefore normally done once per role
+per session, while admin and user cookies cannot contaminate each other. Public pages, login forms, registration, and
 forgot-password tests use an explicit anonymous context; cookie clearing is a symptom, not the
 isolation mechanism. `ParallelSessionManager` still creates multiple independent contexts on the
 shared browser and selects the admin/user cache only for the matching session persona.
@@ -151,9 +167,14 @@ shared browser and selects the admin/user cache only for the matching session pe
 
 `Browser.fill`, `Browser.select`, and `Browser.evaluate` never place typed values, selected values, or
 evaluated code in `ToolError.payload`; they record lengths/type and a redacted operation message.
-Tests and workflow helpers use `logging`, never `print`, and do not log passwords, tokens, 2FA or
-verification codes, invite/reset links, or full session cookies. The unit lane enforces both the
-`ToolError` redaction and the no-secret-print rule without starting a browser.
+`Browser.goto`, the `request_*` helpers and `verify_status` mask one-time URL tokens (the segment after
+`/verify/`, `/reset/`, `/reset-password/`, `/invite/`) and secret-named query values and request
+params, in both the payload and the Playwright message. Tests and workflow helpers use `logging`,
+never `print`, and do not log passwords, tokens, 2FA or verification codes, invite/reset links, or full
+session cookies. The unit lane enforces the `ToolError` redaction and a source guard over every
+`print(...)` and `logger.<level>(...)`/`logging.<level>(...)` call in `ui_tests/` (secret-named
+variables and attributes such as `settings.admin_password`; only `len(...)` of a secret may be logged)
+without starting a browser.
 
 ```bash
 run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runner)

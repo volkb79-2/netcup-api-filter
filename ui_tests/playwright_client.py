@@ -41,30 +41,18 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
-from ui_tests.pwmcp_connection import SharedPwmcpSession, current_shared_session
+from ui_tests.pwmcp_connection import (
+    SharedPwmcpSession,
+    current_shared_session,
+    existing_storage_state,
+    fetch_contract,
+    load_connection_options,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _pwmcp_lease_headers() -> dict:
-    """Lease headers sent to the pwmcp :3000 policy gateway.
-
-    Both values come from the runner's environment (ciu renders them from
-    ``[test_runner.pwmcp]``); there is deliberately no default: a missing value is a
-    configuration error, not something to paper over with a guess. The gateway
-    treats the headers as optional, but naf always sends an explicit lease so
-    the session lifetime and owner are visible in the gateway's session list.
-    """
-    lease = os.environ.get("PWMCP_LEASE_SECONDS", "").strip()
-    label = os.environ.get("PWMCP_SESSION_LABEL", "").strip()
-    if not lease or not label:
-        raise RuntimeError(
-            "PLAYWRIGHT_SERVER_WS is set but PWMCP_LEASE_SECONDS / PWMCP_SESSION_LABEL are not: "
-            "the pwmcp gateway needs both (they are set by tooling/test-runner/ciu.compose.yml.j2)"
-        )
-    return {"X-PWMCP-Lease-Seconds": lease, "X-PWMCP-Session-Label": label}
 
 
 class PlaywrightClient:
@@ -114,6 +102,9 @@ class PlaywrightClient:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._shared_session: SharedPwmcpSession | None = None
+        # Outside a pytest session (no installed shared session) a remote client owns a
+        # private SharedPwmcpSession: same contract check, lease headers, bounded connect.
+        self._private_session: SharedPwmcpSession | None = None
         self._owns_browser = False
         
     async def __aenter__(self):
@@ -147,6 +138,15 @@ class PlaywrightClient:
         ``Browser`` object, so ``new_context`` / ``new_page`` / ``page.request``
         work identically downstream.
         """
+        try:
+            await self._connect()
+        except BaseException:
+            # Never leak a context (or a private driver) in the shared browser when
+            # connect fails half-way, e.g. new_page() after new_context().
+            await self._close_partial()
+            raise
+
+    async def _connect(self) -> None:
         server_ws = os.environ.get("PLAYWRIGHT_SERVER_WS", "").strip()
         shared_session = current_shared_session()
         if shared_session is not None:
@@ -155,51 +155,55 @@ class PlaywrightClient:
             self._shared_session = shared_session
             self._browser = await shared_session.ensure_connected()
             self._owns_browser = False
+        elif server_ws:
+            # Remote mode outside the pytest session (helpers below): the same contract
+            # check, lease headers, per-attempt timeout and bounded 503 retry, all from
+            # .env.defaults/environment (no literal defaults here).
+            options = load_connection_options()
+            contract = fetch_contract(options.ws_url, timeout_seconds=options.contract_timeout_seconds)
+            private = SharedPwmcpSession(
+                replace(options, browser_type=self.browser_type),
+                contract=contract,
+                playwright_factory=async_playwright,
+            )
+            self._private_session = private
+            await private.start()
+            self._shared_session = private
+            self._browser = private.browser
+            self._owns_browser = False
         else:
+            # In-process mode: launch a local browser (requires installed binaries).
             self._playwright = await async_playwright().start()
             self._owns_browser = True
-
-        if shared_session is None and server_ws:
-            # Remote mode: connect to Playwright-as-a-Service container.
-            # bt.connect() returns a real Browser with the full Playwright API.
-            bt = getattr(self._playwright, self.browser_type, self._playwright.chromium)
-            self._browser = await bt.connect(
-                server_ws,
-                headers=_pwmcp_lease_headers(),
-                timeout=int(float(os.getenv("E2E_PWMCP_CONNECT_TIMEOUT_SECONDS", "30")) * 1000),
-            )
-        elif shared_session is None:
-            # In-process mode: launch a local browser (requires installed binaries).
             if self.browser_type == 'firefox':
                 self._browser = await self._playwright.firefox.launch(headless=self.headless)
             elif self.browser_type == 'webkit':
                 self._browser = await self._playwright.webkit.launch(headless=self.headless)
             else:
                 self._browser = await self._playwright.chromium.launch(headless=self.headless)
-        
-        # Create default context
-        storage_state_path = self.storage_state_path
-        if storage_state_path and not os.path.exists(storage_state_path):
-            logger.warning(
-                "storage_state_path does not exist; starting this context without cached auth: %s",
-                storage_state_path,
-            )
-            storage_state_path = None
 
+        # Create default context
         if self._shared_session is not None:
             self._context = await self._shared_session.new_context(
-                storage_state_path=storage_state_path,
+                storage_state_path=self.storage_state_path,
             )
         else:
             context_kwargs = {}
+            storage_state_path = existing_storage_state(self.storage_state_path)
             if storage_state_path:
                 context_kwargs["storage_state"] = storage_state_path
             self._context = await self._browser.new_context(**context_kwargs)
         self._context.set_default_timeout(self.timeout)
-        
+
         # Create default page for convenience
-        self._page: Optional[Page] = await self._context.new_page()
-    
+        self._page = await self._context.new_page()
+
+    async def _close_partial(self) -> None:
+        try:
+            await self.close()
+        except Exception as exc:
+            logger.warning("cleanup after a failed connect also failed: %s", type(exc).__name__)
+
     async def new_page(self) -> Page:
         """
         Create a new page in the default context.
@@ -233,24 +237,38 @@ class PlaywrightClient:
         return context
     
     async def close(self):
-        """Close all connections and cleanup resources."""
-        if self._page:
-            await self._page.close()
-            self._page = None
-        
-        if self._context:
-            await self._context.close()
-            self._context = None
-        
-        if self._browser and self._owns_browser:
-            await self._browser.close()
-        self._browser = None
-        
-        if self._playwright and self._owns_browser:
-            await self._playwright.stop()
-        self._playwright = None
+        """Close all connections and cleanup resources.
+
+        Every step runs even if an earlier one fails: a context left open in the shared
+        browser would live for the rest of the session.
+        """
+        page, self._page = self._page, None
+        context, self._context = self._context, None
+        browser, self._browser = self._browser, None
+        playwright, self._playwright = self._playwright, None
+        private, self._private_session = self._private_session, None
+        owns_browser = self._owns_browser
         self._shared_session = None
-    
+        try:
+            if page is not None:
+                try:
+                    await page.close()
+                except Exception as exc:
+                    # The context close below closes the page anyway.
+                    logger.debug("page close failed: %s", type(exc).__name__)
+            if context is not None:
+                await context.close()
+        finally:
+            if private is not None:
+                await private.stop()
+            elif owns_browser:
+                try:
+                    if browser is not None:
+                        await browser.close()
+                finally:
+                    if playwright is not None:
+                        await playwright.stop()
+
     @property
     def browser(self) -> Browser:
         """Get the browser instance."""

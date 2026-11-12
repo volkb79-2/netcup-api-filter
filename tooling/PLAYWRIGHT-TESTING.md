@@ -41,8 +41,12 @@ endpoint is set. At session start the harness:
 2. Starts one Playwright driver and connects once with a finite timeout.
 3. Retries only HTTP 503 ("all browser slots are in use") with bounded exponential backoff.
 4. Creates a fresh context/page per test and checks browser liveness between tests.
-5. Reconnects exactly once if the shared browser died; otherwise the session fails clearly.
-6. Prints `pwmcp connects=<n> contexts=<n>` in the terminal summary.
+5. Between tests, replaces a dead browser with one bounded reconnect (at most
+   `E2E_PWMCP_MAX_RECONNECTS` per session) and renews the lease when less than
+   `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` is left. A failed replacement is latched: every later test
+   fails immediately with the same reason, without connecting again.
+6. Prints `pwmcp connects=<n> reconnects=<n> contexts=<n>` in the terminal summary, plus the
+   reconnect causes or the latched failure when there are any.
 
 The gateway allows two estate-wide clients. Two concurrent worktrees can therefore run; a third sees
 503 until a slot frees. The browser is idle-recycled only when no websocket session is open. An open
@@ -121,13 +125,15 @@ service, set `PLAYWRIGHT_SERVER_WS` as a repo secret/env and remove the
 | Variable | Default | Purpose |
 |---|---|---|
 | `PLAYWRIGHT_SERVER_WS` | _(unset)_ | WebSocket URL of remote `run-server`; empty = in-process |
-| `PWMCP_LEASE_SECONDS` | rendered by runner (`1800`) | Requested gateway lease, capped by `/contract` |
+| `PWMCP_LEASE_SECONDS` | rendered by runner (`7200`) | Requested gateway lease, capped by `/contract` `max_lease_seconds` |
 | `PWMCP_SESSION_LABEL` | rendered by runner | Gateway admin/log session label |
 | `E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS` | `10` | `/contract` fetch timeout |
 | `E2E_PWMCP_CONNECT_TIMEOUT_SECONDS` | `30` | Per connect-attempt timeout |
 | `E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS` | `120` | Total deadline for HTTP 503 retry |
 | `E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS` | `1` | First 503 backoff |
 | `E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS` | `8` | Maximum 503 backoff |
+| `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` | `300` | Renew the lease between tests when less is left |
+| `E2E_PWMCP_MAX_RECONNECTS` | `3` | Dead-browser replacements per session before the session latches as failed |
 | `PLAYWRIGHT_HEADLESS` | `true` | Headless mode for in-process launch (ignored for remote) |
 | `NAF_E2E_ADVERTISE_HOST` | _(set by tooling/test-runner)_ | Runner container name; the browser reaches the per-session app at `http://<it>:<port>` |
 | `SCREENSHOT_DIR` | `E2E_SCREENSHOT_DIR` (`tmp/e2e-screenshots`) | Screenshot output directory |

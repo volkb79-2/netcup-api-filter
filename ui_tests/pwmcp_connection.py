@@ -42,6 +42,8 @@ class ConnectionOptions:
     retry_initial_seconds: float
     retry_max_seconds: float
     contract_timeout_seconds: float
+    lease_renew_margin_seconds: float
+    max_reconnects: int
     browser_type: str = "chromium"
 
 
@@ -79,6 +81,17 @@ def _positive_float(
     return value
 
 
+def _non_negative_int(
+    key: str,
+    env: Mapping[str, str] | None,
+    default_lookup: Callable[[str], str] | None,
+) -> int:
+    raw = _config_value(key, env, default_lookup)
+    if not re.fullmatch(r"[0-9]+", raw):
+        raise RuntimeError(f"{key} must be a non-negative integer, got {raw!r}")
+    return int(raw)
+
+
 def load_connection_options(
     env: Mapping[str, str] | None = None,
     *,
@@ -91,6 +104,8 @@ def load_connection_options(
     maximum = _positive_float("E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS", env, default_lookup)
     connect_timeout = _positive_float("E2E_PWMCP_CONNECT_TIMEOUT_SECONDS", env, default_lookup)
     contract_timeout = _positive_float("E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS", env, default_lookup)
+    renew_margin = _positive_float("E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS", env, default_lookup)
+    max_reconnects = _non_negative_int("E2E_PWMCP_MAX_RECONNECTS", env, default_lookup)
     if initial > maximum:
         raise RuntimeError("E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS exceeds the maximum backoff")
     return ConnectionOptions(
@@ -100,6 +115,8 @@ def load_connection_options(
         retry_initial_seconds=initial,
         retry_max_seconds=maximum,
         contract_timeout_seconds=contract_timeout,
+        lease_renew_margin_seconds=renew_margin,
+        max_reconnects=max_reconnects,
     )
 
 
@@ -251,6 +268,24 @@ def lease_headers(env: Mapping[str, str], contract: Mapping[str, Any]) -> dict[s
     return {"X-PWMCP-Lease-Seconds": str(lease), "X-PWMCP-Session-Label": label[:128]}
 
 
+def existing_storage_state(path: str | os.PathLike[str] | None) -> str | None:
+    """Return ``path`` only when the file exists, so Playwright never reads a missing file.
+
+    Role files are written after the first successful login of the session. Until then a
+    context for that role starts empty and the login helpers (``ensure_*_dashboard``) log in
+    and write the file.
+    """
+    if not path:
+        return None
+    if Path(path).is_file():
+        return str(path)
+    logger.warning(
+        "role storage state does not exist yet; starting this context without cached auth: %s",
+        path,
+    )
+    return None
+
+
 def context_storage_state(
     role: str,
     path_for_role: Callable[[str], Path | None],
@@ -287,7 +322,13 @@ class SharedPwmcpSession:
         self._playwright: Any = None
         self.browser: Any = None
         self.connects = 0
+        self.reconnects = 0
         self.contexts = 0
+        self.reconnect_causes: list[str] = []
+        self._recoveries = 0
+        self._fatal_reason: str | None = None
+        self._lease_seconds: int | None = None
+        self._lease_started_at: float | None = None
 
     @property
     def remote(self) -> bool:
@@ -311,10 +352,21 @@ class SharedPwmcpSession:
         if self.contract is None:
             raise PwmcpContractError("remote pwmcp mode has no validated gateway contract")
         headers = lease_headers(self.env, self.contract)
+        lease = int(headers["X-PWMCP-Lease-Seconds"])
+        if self.options.lease_renew_margin_seconds >= lease:
+            raise RuntimeError(
+                "E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS "
+                f"({self.options.lease_renew_margin_seconds:g}) must be smaller than the granted "
+                f"pwmcp lease ({lease}s); otherwise every test would reconnect"
+            )
         browser_type = getattr(self._playwright, self.options.browser_type, self._playwright.chromium)
+        attempt_started: list[float] = []
 
         async def connect_once(remaining_seconds: float) -> Any:
             timeout_ms = max(1, int(min(self.options.connect_timeout_seconds, remaining_seconds) * 1000))
+            # The gateway starts the lease when it accepts the upgrade; the attempt start is
+            # the conservative (earlier) bound for it.
+            attempt_started.append(self._clock())
             return await browser_type.connect(
                 self.options.ws_url,
                 headers=headers,
@@ -329,6 +381,8 @@ class SharedPwmcpSession:
             clock=self._clock,
             sleep=self._sleep,
         )
+        self._lease_seconds = lease
+        self._lease_started_at = attempt_started[-1] if attempt_started else self._clock()
         self.connects += 1
 
     async def _launch_local(self) -> Any:
@@ -346,10 +400,56 @@ class SharedPwmcpSession:
         except Exception:
             return False
 
+    def lease_remaining_seconds(self) -> float | None:
+        """Seconds left on the granted gateway lease (None in local-launch mode)."""
+        if not self.remote or self._lease_seconds is None or self._lease_started_at is None:
+            return None
+        return self._lease_seconds - (self._clock() - self._lease_started_at)
+
+    def _open_context_count(self) -> int:
+        try:
+            return len(self.browser.contexts)
+        except Exception:
+            return 0
+
+    def _lease_renewal_due(self) -> bool:
+        remaining = self.lease_remaining_seconds()
+        if remaining is None or remaining >= self.options.lease_renew_margin_seconds:
+            return False
+        # Renew only between tests: a test that holds several contexts (ParallelSessionManager)
+        # must not lose the earlier ones when it opens the next.
+        return self._open_context_count() == 0
+
+    def _latch(self, reason: str) -> PwmcpConnectionClosed:
+        self._fatal_reason = reason
+        logger.error("pwmcp session connection is unusable for the rest of the session: %s", reason)
+        return PwmcpConnectionClosed(reason)
+
     async def ensure_connected(self) -> Any:
-        """Reconnect once when a recycle killed the shared browser between tests."""
+        """Return the shared browser, replacing it between tests when needed.
+
+        * A failed replacement is latched: every later call re-raises the same reason at once
+          and never connects again, so a dead gateway fails the rest of the session fast
+          instead of costing a full connect/retry budget per test.
+        * A browser found dead is replaced at most ``max_reconnects`` times per session.
+        * A live browser whose lease has less than ``lease_renew_margin_seconds`` left is
+          replaced proactively when no context is open (between tests).
+        """
+        if self._fatal_reason is not None:
+            raise PwmcpConnectionClosed(self._fatal_reason)
         if self.connected():
-            return self.browser
+            if not self._lease_renewal_due():
+                return self.browser
+            cause = f"lease-renewal ({self.lease_remaining_seconds():.0f}s of {self._lease_seconds}s left)"
+        else:
+            if self._recoveries >= self.options.max_reconnects:
+                raise self._latch(
+                    "the shared pwmcp browser died again after "
+                    f"{self._recoveries} reconnect(s); E2E_PWMCP_MAX_RECONNECTS="
+                    f"{self.options.max_reconnects} is exhausted (unstable gateway?)"
+                )
+            self._recoveries += 1
+            cause = "browser-disconnected"
         old_browser = self.browser
         self.browser = None
         if old_browser is not None:
@@ -360,21 +460,20 @@ class SharedPwmcpSession:
         try:
             await self._connect_browser()
         except Exception as exc:
-            raise PwmcpConnectionClosed(f"shared pwmcp browser was dead and reconnect failed: {exc}") from exc
+            raise self._latch(f"shared pwmcp browser reconnect after {cause} failed: {exc}") from exc
         if not self.connected():
-            raise PwmcpConnectionClosed("shared pwmcp browser remained disconnected after one reconnect")
+            raise self._latch(f"shared pwmcp browser remained disconnected after the {cause} reconnect")
+        self.reconnects += 1
+        self.reconnect_causes.append(cause)
+        logger.warning("pwmcp reconnected: %s (reconnects=%d)", cause, self.reconnects)
         return self.browser
 
     async def new_context(self, *, storage_state_path: str | None = None, **kwargs: Any) -> Any:
         browser = await self.ensure_connected()
         context_kwargs = dict(kwargs)
-        if storage_state_path and Path(storage_state_path).is_file():
-            context_kwargs["storage_state"] = storage_state_path
-        elif storage_state_path:
-            logger.warning(
-                "role storage state does not exist yet; starting this context without cached auth: %s",
-                storage_state_path,
-            )
+        existing = existing_storage_state(storage_state_path)
+        if existing:
+            context_kwargs["storage_state"] = existing
         context = await browser.new_context(**context_kwargs)
         self.contexts += 1
         return context
@@ -396,11 +495,21 @@ class SharedPwmcpSession:
                 self._playwright = None
 
     def summary(self) -> str:
-        return f"pwmcp connects={self.connects} contexts={self.contexts}"
+        return f"pwmcp connects={self.connects} reconnects={self.reconnects} contexts={self.contexts}"
+
+    def summary_details(self) -> list[str]:
+        """Extra terminal-summary lines: why the session reconnected or gave up."""
+        lines = []
+        if self.reconnect_causes:
+            lines.append("pwmcp reconnect causes: " + "; ".join(self.reconnect_causes))
+        if self._fatal_reason is not None:
+            lines.append(f"pwmcp connection latched as failed: {self._fatal_reason}")
+        return lines
 
 
 _current_session: SharedPwmcpSession | None = None
-_last_summary = "pwmcp connects=0 contexts=0"
+_last_summary = "pwmcp connects=0 reconnects=0 contexts=0"
+_last_details: list[str] = []
 
 
 def install_shared_session(session: SharedPwmcpSession) -> None:
@@ -413,11 +522,16 @@ def current_shared_session() -> SharedPwmcpSession | None:
 
 
 def uninstall_shared_session(session: SharedPwmcpSession) -> None:
-    global _current_session, _last_summary
+    global _current_session, _last_summary, _last_details
     if _current_session is session:
         _current_session = None
     _last_summary = session.summary()
+    _last_details = session.summary_details()
 
 
 def last_session_summary() -> str:
     return _last_summary
+
+
+def last_session_summary_details() -> list[str]:
+    return list(_last_details)
