@@ -154,11 +154,11 @@ def test_ciu_identity_helper_uses_resolve_and_fails_closed():
         "tooling/mailpit",
         "--service",
         "mailpit",
+        "--json",
         "--profile",
         "full",
         "--root-folder",
         "/repo",
-        "--json",
     ]
 
     def failed(command, **kwargs):

@@ -522,7 +522,7 @@ def _load_app_local_hook():
 def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatch, tmp_path):
     """`.env.services` and the app-local hook must consume the same ciu identities."""
     configured = _source_env_services({
-        "PATH": "/usr/bin:/bin",
+        "PATH": os.environ["PATH"],
     })
     definition_files = {
         path.relative_to(REPO)

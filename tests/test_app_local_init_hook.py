@@ -140,7 +140,8 @@ def test_run_outside_the_engine_refuses(monkeypatch):
         hook.run(CONFIG, ctx, runner=_runner("{}")[0])
 
 
-def test_missing_config_names_the_key():
+def test_missing_config_names_the_key(monkeypatch):
+    monkeypatch.setattr(hook, "container_for", lambda _ctx, _stack, _service: "naf-inst42-app")
     broken = {**CONFIG, "app_local": {**CONFIG["app_local"], "mail": {**CONFIG["app_local"]["mail"], "smtp_port": ""}}}
     with pytest.raises(ValueError, match="app_local.mail.smtp_port"):
         hook.build_init_argv(broken, _ctx()[0])
