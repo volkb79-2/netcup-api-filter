@@ -74,6 +74,16 @@ items:
   - {id: B070, title: "Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B071, title: "Exercise Telegram and configured GeoIP in the hermetic tier with mocks", type: feature, component: ui-tests, context_estimate: medium, folds_into: F017}
   - {id: B072, title: "Audit all login outcomes and emit numeric rate-limit retries", type: bugfix, component: security, context_estimate: small}
+  - {id: B073, title: "`account.disable_2fa` asks for a 2FA code the handler never verifies", type: bugfix, component: security, context_estimate: small}
+  - {id: B074, title: "`/account/settings`: delete-account, disable-TOTP and unlink-Telegram forms do nothing", type: bugfix, component: security, context_estimate: small}
+  - {id: B075, title: "Admin token detail page never shows IP restrictions", type: bugfix, component: admin-ui, context_estimate: small}
+  - {id: B076, title: "Portal token regenerate always fails with 'Token name already exists'", type: bugfix, component: account, context_estimate: small}
+  - {id: B077, title: "Login 'Remember me' checkbox has no effect", type: bugfix, component: account, context_estimate: small}
+  - {id: B078, title: "Admin email 2FA code is compared with `==`", type: bugfix, component: security, context_estimate: small}
+  - {id: B079, title: "Failed admin logins create one Settings row per submitted username and log the raw username", type: bugfix, component: security, context_estimate: small}
+  - {id: B080, title: "ActivityLog `user_agent` is stored untruncated", type: bugfix, component: security, context_estimate: small}
+  - {id: B081, title: "`/admin/settings` SMTP quick form omits fields the handler overwrites", type: bugfix, component: admin-ui, context_estimate: small}
+  - {id: B082, title: "netcup config page: 'Test connection' posts a field the handler ignores", type: bugfix, component: admin-ui, context_estimate: small}
 ---
 
 # Backlog
@@ -412,7 +422,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
 ## B-SECURITY (added 2026-11-12 from the sweeps1 defects)
 
 - **B072 — Audit all login outcomes and emit numeric rate-limit retries. Status: done**
-  (implemented on `defects1-audit-retry`; pending merge). The portal 2FA verifier returned its
+  (implemented and merged 2026-11-12). The portal 2FA verifier returned its
   active-lock rejection before writing `ActivityLog`; the admin login flow wrote no persistent
   `login` outcome for wrong passwords, lock-rejected attempts, successful logins, or invalid and
   lock-rejected second factors; and Flask-Limiter 429s carried `Retry-After: None`, which also
@@ -420,3 +430,36 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   already-resolved admin (NULL `account_id` for unknown and non-admin usernames), never stores
   submitted credentials or codes in the reason, and derives a positive retry delay from the
   limiter's reset or the configured window.
+
+## B-FOLLOWUPS (found by the sweeps/guard reviews 2026-11-12)
+
+- **B073 — `account.disable_2fa` asks for a 2FA code the handler never verifies. Status: open**
+  The security-page form marks a 2FA code `required` (templates/account/security.html, the `disable_2fa` form) but `api/account.py` `disable_2fa` checks only the password. A control shown in the UI that does nothing; decide whether to verify the code (needs a product decision for email-only accounts) or remove the field. The B059 form-route guard waives it with a reference to this id; delete the waiver when fixed.
+
+- **B074 — `/account/settings`: delete-account, disable-TOTP and unlink-Telegram forms do nothing. Status: open**
+  templates/account/settings.html posts `action=delete_account`, `disable_totp` and `unlink_telegram`; the `settings` handler in api/account.py handles only `update_profile` and `change_password`, so the three actions re-render the page with no flash and no change. A user who unlinks Telegram keeps receiving 2FA codes there; a user who deletes the account keeps it. Wire the actions (with audit and CSRF tests) or remove the buttons. The B059 guard cannot express multi-action handlers: cover it per hidden `action`.
+
+- **B075 — Admin token detail page never shows IP restrictions. Status: open**
+  templates/admin/token_detail.html reads `token.ip_whitelist`, which does not exist; use `token.get_allowed_ip_ranges()`. An admin auditing a token restricted through the (now working, B057) form sees no allow-list.
+
+- **B076 — Portal token regenerate always fails with "Token name already exists". Status: open**
+  `regenerate_token` in api/account.py calls `create_token(token_name=old_token.token_name)` before revoking the old token and trips `uq_realm_token_name`; delegate to `realm_token_service.regenerate_token`, which renames. Related: B028, B064.
+
+- **B077 — Login "Remember me" checkbox has no effect. Status: open**
+  The control is rendered by templates/account/login.html and the handler ignores `remember`; either implement persistent sessions (a security decision: cookie lifetime, rotation) or remove the control. Waived in the B059 guard with this id.
+
+- **B078 — Admin email 2FA code is compared with `==`. Status: open**
+  api/admin.py (email 2FA verification, around the `==` on the submitted code) must use `hmac.compare_digest` like the portal flow (AGENTS.md convention 4).
+
+- **B079 — Failed admin logins create one Settings row per submitted username and log the raw username. Status: open**
+  `_track_failed_login` creates a `failed_login_user_<username>` Settings row per distinct submitted username, so spraying unknown usernames grows the table without bound; application log lines echo the raw username (CR/LF log injection, api/admin.py around the failed-password and lock branches). Bound or hash the key, expire rows, sanitise the logged value.
+
+- **B080 — ActivityLog `user_agent` is stored untruncated. Status: open**
+  models.py `ActivityLog.user_agent` is `Text` and every writer stores the header verbatim; truncate in one place (codebase-wide). Server header limits and the per-IP rate limit bound it in practice.
+
+- **B081 — `/admin/settings` SMTP quick form omits fields the handler overwrites. Status: open**
+  The quick form on /admin/settings posts to `admin.config_email` without reply-to, admin email and the notification flags; the handler overwrites them on every save, so saving that form clears them and turns notifications off. Found by the B059 guard (waived with this id; delete the waiver when the template carries the fields or the handler ignores absent ones).
+
+- **B082 — netcup config page: "Test connection" posts a field the handler ignores. Status: open**
+  templates/admin/config_netcup.html JS posts `test_only=true`; `config_netcup` ignores it, saves the configuration and returns HTML where the script expects JSON. Add a test-only branch that validates without saving.
+
