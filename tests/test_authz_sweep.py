@@ -7,6 +7,7 @@ from collections import Counter
 from datetime import datetime
 
 from http_helpers import login_portal, mint_csrf
+from netcup_api_filter.api import admin as admin_mod
 from netcup_api_filter.models import (
     AccountSession,
     BackendProvider,
@@ -232,7 +233,10 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
             assert database_snapshot(db) == before, f"{method} {path} mutated the database for a foreign owner"
 
 
-def test_portal_user_is_refused_by_every_admin_rule(app, db, make_account, make_realm, make_token):
+def test_portal_user_is_refused_by_every_admin_rule(
+    app, db, make_account, make_realm, make_token, monkeypatch,
+):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
     owner, resources, markers = _create_foreign_resources(make_account, make_realm, make_token, db)
     portal_user = make_account("sweep-portal-admin-probe", password="Portal-Sweep-Pass-9!")
     client = app.test_client()
@@ -276,8 +280,9 @@ def test_portal_user_is_refused_by_every_admin_rule(app, db, make_account, make_
 
 
 def test_anonymous_account_and_admin_rules_redirect_or_match_public_allowlist(
-    app, db, make_account, make_realm, make_token,
+    app, db, make_account, make_realm, make_token, monkeypatch,
 ):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
     _owner, resources, markers = _create_foreign_resources(make_account, make_realm, make_token, db)
     rules = [
         rule for rule in app.url_map.iter_rules()

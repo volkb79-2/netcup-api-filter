@@ -3,9 +3,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from flask_wtf.csrf import CSRFError
+
 from http_helpers import login_admin, login_portal, mint_csrf
 from netcup_api_filter.models import Account, AccountSession
 from sweep_helpers import build_rule_path, database_snapshot, rule_methods, sweep_form, sweep_ip
+
+
+CSRF_REJECTION_BODY = "csrf-rejection-sentinel"
 
 
 # app.py exempts these mutation routes because their credentials are not browser
@@ -47,12 +52,13 @@ def test_cookie_mutations_reject_missing_and_forged_csrf_without_mutation(app, d
     # explicitly for this module so an altered shared test config cannot disable it.
     app.config["WTF_CSRF_ENABLED"] = True
     assert app.config["WTF_CSRF_ENABLED"] is True
+    app.register_error_handler(CSRFError, lambda _error: (CSRF_REJECTION_BODY, 400))
 
     mutating = [
         (rule, method)
         for rule in app.url_map.iter_rules()
         for method in rule_methods(rule)
-        if method in {"POST", "PUT", "DELETE"}
+        if method in {"POST", "PUT", "PATCH", "DELETE"}
     ]
     discovered = {(rule.endpoint, method, rule.rule) for rule, method in mutating}
 
@@ -120,6 +126,9 @@ def test_cookie_mutations_reject_missing_and_forged_csrf_without_mutation(app, d
             )
             request_number += 1
             assert response.status_code == 400, f"{token_kind} CSRF passed for {method} {path}"
+            assert response.get_data(as_text=True) == CSRF_REJECTION_BODY, (
+                f"{token_kind} {method} {path} returned a view-level 400, not a CSRF rejection"
+            )
             assert database_snapshot(db) == before, f"{token_kind} CSRF mutated data for {method} {path}"
 
     assert cookie_routes

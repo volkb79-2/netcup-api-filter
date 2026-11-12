@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 
-HTTP_SWEEP_METHODS = ("GET", "POST", "PUT", "DELETE")
+HTTP_SWEEP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 
 def rule_methods(rule):

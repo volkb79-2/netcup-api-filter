@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 
 import pytest
@@ -32,19 +33,20 @@ def app(monkeypatch, tmp_path):
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("TRUSTED_PROXY_HOPS", "0")
 
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            "CREATE TABLE settings ("
-            "id INTEGER PRIMARY KEY, key VARCHAR(100) NOT NULL UNIQUE, "
-            "value TEXT, updated_at DATETIME NOT NULL)"
-        )
-        connection.executemany(
-            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
-            [
-                (key, json.dumps(value), datetime(2030, 1, 1).isoformat())
-                for key, value in LIMITS.items()
-            ],
-        )
+    with closing(sqlite3.connect(db_path)) as connection:
+        with connection:
+            connection.execute(
+                "CREATE TABLE settings ("
+                "id INTEGER PRIMARY KEY, key VARCHAR(100) NOT NULL UNIQUE, "
+                "value TEXT, updated_at DATETIME NOT NULL)"
+            )
+            connection.executemany(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+                [
+                    (key, json.dumps(value), datetime(2030, 1, 1).isoformat())
+                    for key, value in LIMITS.items()
+                ],
+            )
 
     application = create_app()
     application.config["TESTING"] = True
@@ -128,6 +130,8 @@ def test_api_rate_limit_returns_numeric_retry_after_header(app):
 
 def test_limits_are_per_client_and_resettable_without_waiting(app):
     limiter = _app_limiter(app)
+    # memory:// is process-local. Each reset below checks same-client storage
+    # clearing explicitly; it is not a simulation of fixed-window expiry.
     cases = (
         ("/admin/login", 200, False),
         ("/account/login", 200, False),
@@ -146,9 +150,5 @@ def test_limits_are_per_client_and_resettable_without_waiting(app):
         else:
             _assert_html_rate_limit(limited_a)
         limiter.reset()
-
-    # memory:// is process-local; the earlier same-client reset checks model
-    # the expiration boundary without sleeping or depending on wall-clock time.
-    limiter.reset()
-    reset_response = _request(app, "/admin/login", "198.51.100.61")
-    assert reset_response.status_code == 200
+        reset_a = _request(app, path, client_a)
+        assert reset_a.status_code == under_limit_status

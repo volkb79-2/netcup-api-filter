@@ -145,6 +145,8 @@ def test_portal_valid_second_factor_is_rejected_until_2fa_lock_expires(
         assert locked_result.success is False
         assert locked_result.error == f"Too many failed 2FA attempts. Account locked for {TFA_LOCKOUT_MINUTES} minutes."
         assert account_auth.is_2fa_locked(account) is True
+        rows_after_lock = _audit_rows(account)
+        assert rows_after_lock[:TFA_MAX_ATTEMPTS] == expected_failed_audits
 
         frozen_clock.now_value += timedelta(minutes=TFA_LOCKOUT_MINUTES, seconds=1)
         password_after_expiry = account_auth.login_step1(account.username, VALID_PASSWORD, IP)
@@ -156,7 +158,7 @@ def test_portal_valid_second_factor_is_rejected_until_2fa_lock_expires(
         assert unlocked_result.account.id == account.id
         assert account_auth.get_2fa_failure_count(account) == 0
 
-    assert _audit_rows(account) == expected_failed_audits + [("success", None)]
+    assert _audit_rows(account) == rows_after_lock + [("success", None)]
 
 
 @pytest.mark.xfail(
@@ -320,8 +322,9 @@ def test_admin_password_lockout_rejects_valid_password_until_frozen_expiry(
     strict=True,
     reason="DEFECT: failed admin password logins update the lockout counter but create no ActivityLog row.",
 )
-def test_failed_admin_password_login_is_audited(app, make_account):
+def test_failed_admin_password_login_is_audited(app, make_account, monkeypatch):
     """Minimal repro for the absent persistent audit row on admin password failure."""
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
     admin = make_account(
         "audit-admin-login-user",
         is_admin=1,
