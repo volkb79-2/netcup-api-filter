@@ -297,3 +297,7 @@ ciu.global.toml.j2
 
 # ciu per-checkout generated identity (never commit)
 ciu.instance.generated.toml
+
+# controller state (never committed)
+plan.yaml
+.controller-state/

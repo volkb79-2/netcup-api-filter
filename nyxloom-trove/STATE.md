@@ -19,7 +19,7 @@ A Flask app that fronts DNS-provider APIs (netcup today; PowerDNS/BYOD in progre
 
 ## Deployed e2e and modern-ciu migration (M9, plan `docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`, F028/F029)
 
-Controller-driven by the migration session of 2026-11-11 (handoff `../docs/plans/naf-controller-handoff-2026-11-11.md`); every change below was authored on one Codex route and
+Controller-driven by the migration session of 2026-11-11 (handoff `.controller-state/HANDOFF.md (gitignored)`); every change below was authored on one Codex route and
 reviewed independently on the other, with gates through `run-gate`.
 
 | Package | State | Evidence |

@@ -83,6 +83,14 @@ Public hostname is auto-detected into `.env.workspace` (`PUBLIC_FQDN`); never ha
 Browser tests use the estate's pwmcp instance (`/srv/pwmcp-instance`): export `PWMCP_NETWORK` (its `network_name`; ciu refuses to render without it) so the runners and `app-local` join it. Mocks and PowerDNS-API are internal-only (no published host ports); external reachability is traefik labels on `ingress_public` via the host `tls-edge`, as `tooling/app-local` does. Third-party image versions: `cmru versions` (age window 7 days, operator decision), `cmru.toml [versions]`.
 `deploy*/` trees are generated and gitignored. Python deps: `requirements-runtime.txt`, `requirements-test.txt`; see [`PYTHON_PACKAGES.md`](PYTHON_PACKAGES.md).
 
+## Long-running controller sessions (plan, handoff, compaction recovery)
+
+A controller that drives agents over many hours follows the vbpub rule (`/workspaces/vbpub/AGENTS.md`, "Long-running controllers: plan, handoff and compaction recovery"). naf's instance of it: gitignored
+`plan.yaml` (root; the machine-checkable state: items, in-flight jobs with thread ids, merge queue, holds, peers, id reservations) and gitignored `.controller-state/` (`HANDOFF.md` standing rules and a "RESUME HERE" section,
+`operator-decisions.md` every operator turn verbatim, `readback-N.md` from `nyxloom-harness extract <session.jsonl> --preset readback --budget-tokens 60000 --agent-comms summary --since <marker>`). None of it is committed
+and none of it holds a credential, token or host address. After a compaction the readback is trusted for intent and decisions only; job, worktree, gate and release state is re-checked against reality (`job-check.sh`, `git worktree list`,
+gate logs whose first line `HEAD=` equals the branch head). Controller jobs use run names with the prefix `naf-`.
+
 ## Docs are part of the change
 
 A change is done only when its docs match the code in the same change: [`docs/FEATURES.md`](docs/FEATURES.md) +
