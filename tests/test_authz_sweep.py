@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import secrets
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from http_helpers import login_portal, mint_csrf
 from netcup_api_filter.models import (
@@ -23,24 +23,24 @@ from sweep_helpers import build_rule_path, database_snapshot, rule_methods, swee
 # Every id-bearing /account route is listed. A new endpoint, path variable, or
 # method fails collection of the sweep until it is classified here.
 ID_ROUTE_CASES = {
-    "account.create_new_token": (frozenset({"realm_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard"),
-    "account.revoke_user_token": (frozenset({"token_id"}), frozenset({"POST"}), 302, "/account/dashboard"),
-    "account.token_activity": (frozenset({"token_id"}), frozenset({"GET"}), 302, "/account/dashboard"),
-    "account.api_realm_tokens": (frozenset({"realm_id"}), frozenset({"GET"}), 403, None),
-    "account.realm_detail": (frozenset({"realm_id"}), frozenset({"GET"}), 302, "/account/dashboard"),
-    "account.ddns_update": (frozenset({"realm_id"}), frozenset({"POST"}), 302, "/account/dashboard"),
-    "account.dns_records": (frozenset({"realm_id"}), frozenset({"GET"}), 302, "/account/dashboard"),
-    "account.dns_record_create": (frozenset({"realm_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard"),
-    "account.dns_record_edit": (frozenset({"realm_id", "record_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard"),
-    "account.dns_record_delete": (frozenset({"realm_id", "record_id"}), frozenset({"POST"}), 302, "/account/dashboard"),
-    "account.regenerate_token": (frozenset({"token_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard"),
-    "account.revoke_session": (frozenset({"session_id"}), frozenset({"POST"}), 302, "/account/security"),
-    "account.token_create": (frozenset({"realm_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard"),
-    "account.backend_detail": (frozenset({"backend_id"}), frozenset({"GET"}), 302, "/account/backends"),
-    "account.backend_edit": (frozenset({"backend_id"}), frozenset({"GET", "POST"}), 302, "/account/backends"),
-    "account.backend_test": (frozenset({"backend_id"}), frozenset({"POST"}), 302, "/account/backends"),
-    "account.backend_zones": (frozenset({"backend_id"}), frozenset({"GET"}), 302, "/account/backends"),
-    "account.backend_delete": (frozenset({"backend_id"}), frozenset({"POST"}), 302, "/account/backends"),
+    "account.create_new_token": (frozenset({"realm_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.revoke_user_token": (frozenset({"token_id"}), frozenset({"POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.token_activity": (frozenset({"token_id"}), frozenset({"GET"}), 302, "/account/dashboard", "Access denied"),
+    "account.api_realm_tokens": (frozenset({"realm_id"}), frozenset({"GET"}), 403, None, None),
+    "account.realm_detail": (frozenset({"realm_id"}), frozenset({"GET"}), 302, "/account/dashboard", "Access denied"),
+    "account.ddns_update": (frozenset({"realm_id"}), frozenset({"POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.dns_records": (frozenset({"realm_id"}), frozenset({"GET"}), 302, "/account/dashboard", "Access denied"),
+    "account.dns_record_create": (frozenset({"realm_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.dns_record_edit": (frozenset({"realm_id", "record_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.dns_record_delete": (frozenset({"realm_id", "record_id"}), frozenset({"POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.regenerate_token": (frozenset({"token_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.revoke_session": (frozenset({"session_id"}), frozenset({"POST"}), 302, "/account/security", "Session not found."),
+    "account.token_create": (frozenset({"realm_id"}), frozenset({"GET", "POST"}), 302, "/account/dashboard", "Access denied"),
+    "account.backend_detail": (frozenset({"backend_id"}), frozenset({"GET"}), 302, "/account/backends", "Access denied"),
+    "account.backend_edit": (frozenset({"backend_id"}), frozenset({"GET", "POST"}), 302, "/account/backends", "Access denied"),
+    "account.backend_test": (frozenset({"backend_id"}), frozenset({"POST"}), 302, "/account/backends", "Access denied"),
+    "account.backend_zones": (frozenset({"backend_id"}), frozenset({"GET"}), 302, "/account/backends", "Access denied"),
+    "account.backend_delete": (frozenset({"backend_id"}), frozenset({"POST"}), 302, "/account/backends", "Access denied"),
 }
 
 # No id-bearing account route is exempt from the ownership check.
@@ -167,6 +167,11 @@ def _assert_no_foreign_markers(response, markers, endpoint):
         assert marker not in body, f"{endpoint} disclosed foreign marker {marker!r}"
 
 
+def _flash_messages(client):
+    with client.session_transaction() as sess:
+        return tuple(tuple(message) for message in sess.get("_flashes", ()))
+
+
 def test_every_id_bearing_account_route_refuses_foreign_owner(
     app, db, make_account, make_realm, make_token,
 ):
@@ -177,7 +182,7 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
     client = app.test_client()
     login_portal(client, other_user)
     other_session = AccountSession.query.filter_by(account_id=other_user.id).one()
-    other_session.last_active = datetime.utcnow() + timedelta(days=1)
+    other_session.last_active = datetime(2100, 1, 1)
     db.session.commit()
     csrf_token = mint_csrf(client, "/account/settings")
 
@@ -197,7 +202,7 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
     request_number = 0
     for rule in sorted(discovered, key=lambda item: (item.endpoint, item.rule)):
         endpoint = rule.endpoint
-        arguments, expected_methods, expected_status, expected_location = ID_ROUTE_CASES.get(
+        arguments, expected_methods, expected_status, expected_location, expected_flash = ID_ROUTE_CASES.get(
             endpoint,
             ID_ROUTE_EXCEPTIONS.get(endpoint),
         )
@@ -206,6 +211,7 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
         path = build_rule_path(rule, resources)
         for method in rule_methods(rule):
             before = database_snapshot(db)
+            flashes_before = _flash_messages(client)
             response = client.open(
                 path,
                 method=method,
@@ -216,6 +222,13 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
             assert response.status_code == expected_status, f"{method} {path} returned {response.status_code}"
             assert response.headers.get("Location") == expected_location, f"unexpected redirect from {method} {path}"
             _assert_no_foreign_markers(response, markers, endpoint)
+            flashes_after = _flash_messages(client)
+            if expected_flash is None:
+                assert flashes_after == flashes_before, f"{method} {path} unexpectedly flashed a message"
+            else:
+                assert flashes_after == flashes_before + (("error", expected_flash),), (
+                    f"{method} {path} did not emit the classified denial"
+                )
             assert database_snapshot(db) == before, f"{method} {path} mutated the database for a foreign owner"
 
 
@@ -225,7 +238,7 @@ def test_portal_user_is_refused_by_every_admin_rule(app, db, make_account, make_
     client = app.test_client()
     login_portal(client, portal_user)
     portal_session = AccountSession.query.filter_by(account_id=portal_user.id).one()
-    portal_session.last_active = datetime.utcnow() + timedelta(days=1)
+    portal_session.last_active = datetime(2100, 1, 1)
     db.session.commit()
     csrf_token = mint_csrf(client, "/account/settings")
 

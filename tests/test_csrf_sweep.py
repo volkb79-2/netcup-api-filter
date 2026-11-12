@@ -1,7 +1,7 @@
 """Dynamic missing/forged-token sweep for every cookie-auth mutation route."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from http_helpers import login_admin, login_portal, mint_csrf
 from netcup_api_filter.models import Account, AccountSession
@@ -88,7 +88,7 @@ def test_cookie_mutations_reject_missing_and_forged_csrf_without_mutation(app, d
         login_func(client, account)
         if role == "account":
             account_session = AccountSession.query.filter_by(account_id=account.id).one()
-            account_session.last_active = datetime.utcnow() + timedelta(days=1)
+            account_session.last_active = datetime(2100, 1, 1)
             db.session.commit()
         clients[role] = client
         mint_csrf(client, csrf_path)
