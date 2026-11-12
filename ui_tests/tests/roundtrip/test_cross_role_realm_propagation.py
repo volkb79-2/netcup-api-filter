@@ -517,7 +517,9 @@ async def test_realm_request_approval_propagates(playwright_client, _demo_userna
     Post-approval: token created + DNS GET succeeds (200).
     """
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         _INVITE_MANAGER["manager"] = manager
         mailpit = _mailpit()
@@ -616,7 +618,9 @@ async def test_realm_rejection_reason_visible_to_user(playwright_client, _demo_u
     we assert via Channel A (DB). The user portal does show the 'Rejected' badge.
     """
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         _INVITE_MANAGER["manager"] = manager
         mailpit = _mailpit()
@@ -692,7 +696,9 @@ async def test_realm_revocation_kills_existing_tokens(playwright_client, _demo_u
     ``realm_not_approved`` (the token_auth layer checks realm.status before serving).
     """
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         _INVITE_MANAGER["manager"] = manager
         mailpit = _mailpit()

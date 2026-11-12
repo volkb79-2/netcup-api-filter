@@ -62,6 +62,7 @@ class ParallelSessionManager:
         base_url: Optional[str] = None,
         viewport: Optional[ViewportSize] = None,
         locale: str = DEFAULT_LOCALE,
+        context_factory=None,
     ):
         """
         Initialize the session manager.
@@ -76,6 +77,9 @@ class ParallelSessionManager:
         self.base_url = base_url
         self.viewport: ViewportSize = viewport or self.DEFAULT_VIEWPORT
         self.locale = locale
+        # The shared connection counts contexts and checks liveness before
+        # every context; direct browser.new_context remains supported.
+        self._context_factory = context_factory or browser.new_context
         self.sessions: Dict[str, SessionHandle] = {}
         self._counter = 0
     
@@ -92,6 +96,7 @@ class ParallelSessionManager:
         role: str,
         session_id: Optional[str] = None,
         viewport: Optional[ViewportSize] = None,
+        storage_state_path: Optional[str] = None,
     ) -> SessionHandle:
         """
         Create a new isolated browser session.
@@ -112,11 +117,14 @@ class ParallelSessionManager:
             raise ValueError(f"Session {session_id} already exists")
         
         vp: ViewportSize = viewport if viewport is not None else self.viewport
-        context = await self.browser.new_context(
-            viewport=vp,
-            locale=self.locale,
-            base_url=self.base_url,
-        )
+        context_kwargs = {
+            "viewport": vp,
+            "locale": self.locale,
+            "base_url": self.base_url,
+        }
+        if storage_state_path:
+            context_kwargs["storage_state"] = storage_state_path
+        context = await self._context_factory(**context_kwargs)
         page = await context.new_page()
         
         handle = SessionHandle(
@@ -165,7 +173,14 @@ class ParallelSessionManager:
             SessionHandle for admin session
         """
         if 'admin' not in self.sessions:
-            handle = await self.create_session('admin', 'admin')
+            from ui_tests.config import settings
+            from ui_tests.pwmcp_connection import context_storage_state
+
+            handle = await self.create_session(
+                'admin',
+                'admin',
+                storage_state_path=context_storage_state("admin", settings.storage_state_path),
+            )
             handle.username = 'admin'
             
             if login:
@@ -193,7 +208,14 @@ class ParallelSessionManager:
         session_id = f"account_{username}"
         
         if session_id not in self.sessions:
-            handle = await self.create_session('account', session_id)
+            from ui_tests.config import settings
+
+            storage_state = None
+            if username == settings.user_username:
+                from ui_tests.pwmcp_connection import context_storage_state
+
+                storage_state = context_storage_state("user", settings.storage_state_path)
+            handle = await self.create_session('account', session_id, storage_state_path=storage_state)
             handle.username = username
             
             if login:
@@ -229,14 +251,15 @@ class ParallelSessionManager:
         """
         from ui_tests.browser import Browser
         from ui_tests.config import settings
-        from ui_tests.workflows import admin_login
+        from ui_tests.workflows import admin_login, ensure_admin_dashboard
 
         if credentials is None:
-            username, password, totp = settings.admin_username, settings.admin_password, settings.admin_totp_secret
+            username = settings.admin_username
+            await ensure_admin_dashboard(Browser(handle.page))
         else:
             username, password = credentials
             totp = None
-        await admin_login(Browser(handle.page), username, password, totp_secret=totp)
+            await admin_login(Browser(handle.page), username, password, totp_secret=totp)
         if '/admin/change-password' in handle.page.url:
             raise AssertionError(f"admin {username} was sent to change-password; use a persona")
 
@@ -256,7 +279,13 @@ class ParallelSessionManager:
             username: Account username
             password: Account password
         """
+        from ui_tests.browser import Browser
         from ui_tests.config import settings
+        from ui_tests.workflows import ensure_user_dashboard
+
+        if username == settings.user_username:
+            await ensure_user_dashboard(Browser(handle.page))
+            return
         
         page = handle.page
         await page.goto(settings.url('/account/login'))

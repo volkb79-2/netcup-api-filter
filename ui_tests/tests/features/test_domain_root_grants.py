@@ -131,7 +131,7 @@ async def test_admin_domain_root_grants_add_and_revoke(active_profile):
     if not active_profile.allow_writes:
         pytest.skip("profile is read-only")
 
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
 
         suffix = secrets.token_hex(4)
@@ -177,10 +177,15 @@ async def test_admin_domain_root_grants_add_and_revoke(active_profile):
 class _AccountBrowserFactory:
     @staticmethod
     async def new(session_manager, session_id: str) -> Browser:
-        handle = await session_manager.create_session(role="account", session_id=session_id)
+        from ui_tests.config import settings
+
+        handle = await session_manager.account_session(
+            settings.user_username,
+            login=True,
+            password=settings.user_password,
+        )
         browser = Browser(handle.page)
         await browser.reset()
-        await workflows.ensure_user_dashboard(browser)
         return browser
 
 

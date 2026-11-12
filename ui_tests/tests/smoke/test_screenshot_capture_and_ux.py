@@ -15,6 +15,7 @@ The approach interweaves testing and screenshots to ensure:
 
 Run with: pytest ui_tests/tests/test_holistic_coverage.py -v --capture=no
 """
+import logging
 import pytest
 import re
 import secrets
@@ -27,6 +28,7 @@ from ui_tests.browser import browser_session, Browser
 from ui_tests.config import settings
 from ui_tests import workflows
 
+logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 
@@ -89,9 +91,9 @@ class ScreenshotCapture:
             issues = await self._validate_ux_compliance()
             if issues:
                 self.ux_issues.extend(issues)
-                print(f"⚠️  UX issues on {name}: {len(issues)}")
+                logger.info(f"⚠️  UX issues on {name}: {len(issues)}")
                 for issue in issues:
-                    print(f"    - {issue['element']}: {issue['issue']}")
+                    logger.info(f"    - {issue['element']}: {issue['issue']}")
         
         return screenshot_path
     
@@ -332,13 +334,13 @@ class TestHolisticAdminCoverage:
         screenshot_dir = Path(os.environ.get("SCREENSHOT_DIR", "/tmp/screenshots"))
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             capture = ScreenshotCapture(browser, screenshot_dir)
             
             # =================================================================
             # Phase 1: Public Pages (Unauthenticated)
             # =================================================================
-            print("\n📸 Phase 1: Public Pages")
+            logger.info("\n📸 Phase 1: Public Pages")
             
             await browser.goto(settings.url("/admin/login"))
             await capture.capture("holistic-01-admin-login", validate_ux=True)
@@ -355,7 +357,7 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 2: Admin Login and Dashboard
             # =================================================================
-            print("\n📸 Phase 2: Admin Authentication")
+            logger.info("\n📸 Phase 2: Admin Authentication")
             
             await workflows.ensure_admin_dashboard(browser)
             await capture.capture("holistic-10-admin-dashboard", validate_ux=True)
@@ -363,14 +365,14 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 3: Account Management with Data
             # =================================================================
-            print("\n📸 Phase 3: Account Management")
+            logger.info("\n📸 Phase 3: Account Management")
             
             # Capture empty/initial accounts list
             await browser.goto(settings.url("/admin/accounts"))
             await capture.capture("holistic-11-accounts-list", validate_ux=True)
             
             # Create test accounts
-            print("   Creating test accounts...")
+            logger.info("   Creating test accounts...")
             account1 = await create_test_account(browser, "holistic-test")
             
             # Capture accounts list with data
@@ -392,7 +394,7 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 4: Realm Management
             # =================================================================
-            print("\n📸 Phase 4: Realm Management")
+            logger.info("\n📸 Phase 4: Realm Management")
             
             await browser.goto(settings.url("/admin/realms"))
             await capture.capture("holistic-20-realms-list", validate_ux=True)
@@ -403,10 +405,10 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 5: Audit Logs with Activity
             # =================================================================
-            print("\n📸 Phase 5: Audit Logs")
+            logger.info("\n📸 Phase 5: Audit Logs")
             
             # Simulate API activity first
-            print("   Simulating API activity...")
+            logger.info("   Simulating API activity...")
             await simulate_api_activity(browser)
             # Brief wait for logs to be written
             await browser.wait_for_timeout(500)
@@ -417,7 +419,7 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 6: Configuration Pages
             # =================================================================
-            print("\n📸 Phase 6: Configuration")
+            logger.info("\n📸 Phase 6: Configuration")
             
             await browser.goto(settings.url("/admin/config/netcup"))
             await capture.capture("holistic-40-config-netcup", validate_ux=True)
@@ -431,7 +433,7 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 7: Password Change
             # =================================================================
-            print("\n📸 Phase 7: Admin Password")
+            logger.info("\n📸 Phase 7: Admin Password")
             
             await browser.goto(settings.url("/admin/change-password"))
             await capture.capture("holistic-50-change-password", validate_ux=True)
@@ -439,7 +441,7 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 8: Error Pages
             # =================================================================
-            print("\n📸 Phase 8: Error Pages")
+            logger.info("\n📸 Phase 8: Error Pages")
             
             await browser.goto(settings.url("/nonexistent-page-404"))
             await capture.capture("holistic-90-error-404", validate_ux=True)
@@ -447,7 +449,7 @@ class TestHolisticAdminCoverage:
             # =================================================================
             # Phase 9: Theme Demo Reference
             # =================================================================
-            print("\n📸 Phase 9: Theme Reference (BS5 Demo)")
+            logger.info("\n📸 Phase 9: Theme Reference (BS5 Demo)")
             
             await browser.goto(settings.url("/component-demo-bs5"))
             await capture.capture("holistic-99-bs5-reference-cobalt2", validate_ux=False)
@@ -462,13 +464,13 @@ class TestHolisticAdminCoverage:
             # Summary
             # =================================================================
             summary = capture.get_summary()
-            print(f"\n✅ Captured {summary['captured_count']} screenshots")
-            print(f"⚠️  Found {summary['ux_issues_count']} UX issues")
+            logger.info(f"\n✅ Captured {summary['captured_count']} screenshots")
+            logger.info(f"⚠️  Found {summary['ux_issues_count']} UX issues")
             
             if summary['ux_issues']:
-                print("\nUX Issues Found:")
+                logger.info("\nUX Issues Found:")
                 for issue in summary['ux_issues']:
-                    print(f"  - {issue['element']}: {issue['issue']}")
+                    logger.info(f"  - {issue['element']}: {issue['issue']}")
             
             # Assert no critical UX issues
             critical_issues = [i for i in summary['ux_issues'] if 'white background' in i['issue'].lower()]
@@ -492,13 +494,13 @@ class TestHolisticAccountPortalCoverage:
         screenshot_dir = Path(os.environ.get("SCREENSHOT_DIR", "/tmp/screenshots"))
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             capture = ScreenshotCapture(browser, screenshot_dir)
             
             # For now, capture public account pages
             # Full journey requires email verification which needs mock SMTP setup
             
-            print("\n📸 Account Portal Public Pages")
+            logger.info("\n📸 Account Portal Public Pages")
             
             await browser.goto(settings.url("/account/login"))
             await capture.capture("holistic-account-01-login", validate_ux=True)
@@ -510,7 +512,7 @@ class TestHolisticAccountPortalCoverage:
             await capture.capture("holistic-account-03-forgot-password", validate_ux=True)
             
             summary = capture.get_summary()
-            print(f"\n✅ Captured {summary['captured_count']} account portal screenshots")
+            logger.info(f"\n✅ Captured {summary['captured_count']} account portal screenshots")
 
 
 class TestThemeComplianceValidation:
@@ -526,7 +528,7 @@ class TestThemeComplianceValidation:
         - Table rows don't have white backgrounds
         - Form controls use themed styling
         """
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # Pages to validate
@@ -551,9 +553,9 @@ class TestThemeComplianceValidation:
                     all_issues.append(issue)
             
             if all_issues:
-                print(f"\n⚠️  Theme compliance issues found ({len(all_issues)}):")
+                logger.info(f"\n⚠️  Theme compliance issues found ({len(all_issues)}):")
                 for issue in all_issues:
-                    print(f"  {issue['page']}: {issue['element']} - {issue['issue']}")
+                    logger.info(f"  {issue['page']}: {issue['element']} - {issue['issue']}")
             
             # Fail if critical issues (white backgrounds)
             white_bg_issues = [i for i in all_issues if 'white' in i['issue'].lower()]
@@ -641,7 +643,7 @@ class TestAPIErrorSimulation:
         
         base_url = settings.base_url
         
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # Simulate error scenarios via API

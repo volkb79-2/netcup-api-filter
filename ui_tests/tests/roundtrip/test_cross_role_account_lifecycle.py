@@ -359,7 +359,9 @@ def _demo_username() -> str:
 
 async def test_admin_disable_account_blocks_api_and_portal(playwright_client, _demo_username):
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         _INVITE_MANAGER["manager"] = manager
         mailpit = _mailpit()
@@ -466,7 +468,9 @@ async def test_admin_disable_account_blocks_api_and_portal(playwright_client, _d
 
 async def test_admin_approval_enables_login(playwright_client, _demo_username):
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         _INVITE_MANAGER["manager"] = manager
         mailpit = _mailpit()
@@ -581,7 +585,9 @@ async def test_admin_approval_enables_login(playwright_client, _demo_username):
 
 async def test_admin_password_reset_forces_change(playwright_client, _demo_username):
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         _INVITE_MANAGER["manager"] = manager
         mailpit = _mailpit()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import logging
 import os
 import re
 import time
@@ -13,6 +14,9 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 from ui_tests.config import settings
 from ui_tests.playwright_client import PlaywrightClient
+from ui_tests.pwmcp_connection import context_storage_state
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -205,9 +209,13 @@ class Browser:
                 time.perf_counter() - start,
                 {"selector": selector, "value_length": len(value)},
             )
-            return {"selector": selector, "value": value}
+            return {"selector": selector, "value_length": len(value)}
         except Exception as exc:
-            raise ToolError(name="fill", payload={"selector": selector, "value": value}, message=str(exc))
+            raise ToolError(
+                name="fill",
+                payload={"selector": selector, "value_length": len(value)},
+                message=f"{type(exc).__name__} while filling the field",
+            )
 
     async def click(self, selector: str, press_enter: bool | None = None) -> Dict[str, Any]:
         """Click element."""
@@ -231,9 +239,13 @@ class Browser:
         try:
             values = [value] if isinstance(value, str) else value
             await self._page.select_option(selector, values)
-            return {"selector": selector, "value": value}
+            return {"selector": selector, "value_length": len(values)}
         except Exception as exc:
-            raise ToolError(name="select", payload={"selector": selector, "value": value}, message=str(exc))
+            raise ToolError(
+                name="select",
+                payload={"selector": selector, "value_length": len(values)},
+                message=f"{type(exc).__name__} while selecting options",
+            )
 
     async def text(self, selector: str) -> str:
         """Get text content of element."""
@@ -306,7 +318,11 @@ class Browser:
         try:
             return await self._page.evaluate(script, arg)
         except Exception as exc:
-            raise ToolError(name="evaluate", payload={"script": script}, message=str(exc))
+            raise ToolError(
+                name="evaluate",
+                payload={"script_length": len(script), "arg_type": type(arg).__name__},
+                message=f"{type(exc).__name__} while evaluating page code",
+            )
 
     async def screenshot(self, name: str, format: str = None, quality: int = None) -> str:
         """Take screenshot in specified format (webp or png).
@@ -479,7 +495,7 @@ class Browser:
 
 
 @asynccontextmanager
-async def browser_session() -> AsyncIterator[Browser]:
+async def browser_session(role: str = "admin") -> AsyncIterator[Browser]:
     """Yield a Browser instance using direct Playwright with global viewport settings.
 
     Debug/profiling env vars:
@@ -489,10 +505,10 @@ async def browser_session() -> AsyncIterator[Browser]:
       - UI_TRACE_DIR=<path>: required if UI_TRACE_ON_SLOW_SECONDS is set; traces
         are written here.
     """
-    storage_state_path = str(settings.storage_state_path())
+    storage_state_path = context_storage_state(role, settings.storage_state_path)
     client = PlaywrightClient(
         headless=settings.playwright_headless,
-        storage_state_path=storage_state_path or None,
+        storage_state_path=storage_state_path,
     )
     await client.connect()
 
@@ -510,7 +526,7 @@ async def browser_session() -> AsyncIterator[Browser]:
         await client.context.tracing.start(screenshots=True, snapshots=True, sources=True)
         trace_active = True
     try:
-        page = await client.new_page()
+        page = client.page
         browser = Browser(page)
         # CRITICAL: Set viewport globally for ALL browser sessions (including auth flow)
         # Config-driven: defaults come from env via Browser.set_viewport().
@@ -560,4 +576,4 @@ def _maybe_emit_step_timing(action: str, duration_s: float, details: Dict[str, A
     if details:
         safe_details = ", ".join(f"{k}={v}" for k, v in details.items())
         detail_str = f" | {safe_details}"
-    print(f"[UI_TIMING] {test_id} {action} {duration_s * 1000:.1f}ms{detail_str}", flush=True)
+    logger.info("[UI_TIMING] %s %s %.1fms%s", test_id, action, duration_s * 1000, detail_str)

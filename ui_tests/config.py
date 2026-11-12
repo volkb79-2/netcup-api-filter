@@ -8,6 +8,7 @@ target value before that binding is a programming error and raises immediately.
 from __future__ import annotations
 
 import os
+import re
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -320,11 +321,21 @@ class UiTestConfig:
     def url(self, path: str) -> str:
         return urljoin(self.base_url.rstrip("/") + "/", path.lstrip("/"))
 
-    def storage_state_path(self, name: str = "admin") -> Path:
-        """Per-session Playwright cookie cache (inside the instance work dir; dies with it)."""
+    def storage_state_path(self, role: str = "admin") -> Path | None:
+        """Per-role Playwright cookie cache inside the session work dir.
+
+        Anonymous contexts deliberately have no persisted state. Named roles
+        (admin, user, and future personas) get separate files, so a user login
+        can never become an implicit admin login.
+        """
         if self.workdir is None:
             raise RuntimeError("settings is not bound to an e2e instance")
-        return self.workdir / f"{name}_auth_state.json"
+        role = role.strip().lower()
+        if role == "anonymous":
+            return None
+        if not re.fullmatch(r"[a-z][a-z0-9_-]*", role):
+            raise ValueError(f"invalid browser role for storage state: {role!r}")
+        return self.workdir / f"{role}_auth_state.json"
 
 
 settings = UiTestConfig()

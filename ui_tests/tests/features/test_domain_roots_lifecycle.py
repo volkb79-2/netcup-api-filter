@@ -47,7 +47,7 @@ async def _pick_backend_service_id(browser) -> str:
 
 
 async def test_admin_domain_roots_lifecycle_journey(active_profile):
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
 
         suffix = secrets.token_hex(4)

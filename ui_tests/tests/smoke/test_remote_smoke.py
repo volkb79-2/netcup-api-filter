@@ -41,9 +41,7 @@ async def test_remote_profile_is_read_only():
 
 @pytest.mark.parametrize("path", PUBLIC_PAGES)
 async def test_public_pages_render(path):
-    async with browser_session() as browser:
-        # Public pages are for visitors: a login left in the shared context redirects them away.
-        await browser._page.context.clear_cookies()
+    async with browser_session("anonymous") as browser:
         await _assert_page_ok(browser, path)
         assert await browser.query_selector("input[type='password']") is not None, (
             f"{path} has no password field"
@@ -51,13 +49,13 @@ async def test_public_pages_render(path):
 
 
 async def test_admin_login_reaches_dashboard():
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         assert "/admin/" in browser._page.url
 
 
 @pytest.mark.parametrize("path", ADMIN_PAGES)
 async def test_admin_pages_render(path):
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await _assert_page_ok(browser, path)

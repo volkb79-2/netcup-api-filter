@@ -24,6 +24,7 @@ Verifications:
 - Approved accounts can login
 """
 
+import logging
 import re
 import secrets
 import string
@@ -33,6 +34,8 @@ from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
 from ui_tests.mailpit_client import MailpitClient
 from ui_tests import workflows
+
+logger = logging.getLogger(__name__)
 
 
 async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
@@ -68,7 +71,7 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
             
             if code_match:
                 code = code_match.group(1)
-                print(f"✓ Extracted 2FA code from email: {code}")
+                logger.info("extracted 2FA code from email (length=%d)", len(code))
                 
                 # Remember current URL to detect navigation
                 # Use _page.url directly to get live URL
@@ -92,23 +95,23 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
                     # Get live URL directly from page
                     new_url = browser._page.url
                     if new_url != url_before and "/2fa" not in new_url:
-                        print(f"✓ 2FA navigation complete: {new_url}")
+                        logger.info(f"✓ 2FA navigation complete: {new_url}")
                         break
                 else:
-                    print(f"⚠️  2FA navigation did not complete, still at: {browser._page.url}")
+                    logger.info(f"⚠️  2FA navigation did not complete, still at: {browser._page.url}")
                 
                 # Clear the used email
                 mailpit.delete_message(msg.id)
                 mailpit.close()
                 return True
             else:
-                print("⚠️  Could not extract code from email")
+                logger.info("⚠️  Could not extract code from email")
         else:
-            print("⚠️  No 2FA email found in Mailpit")
+            logger.info("⚠️  No 2FA email found in Mailpit")
         
         mailpit.close()
     except Exception as e:
-        print(f"⚠️  2FA via Mailpit failed: {e}")
+        logger.info("⚠️  2FA via Mailpit failed (%s)", type(e).__name__)
     
     return False
 
@@ -134,15 +137,16 @@ async def capture(browser: Browser, name: str, journey: str = "J2") -> str:
     screenshot_name = journey_state.next_screenshot_name(journey, name)
     path = await browser.screenshot(screenshot_name)
     journey_state.screenshots.append((screenshot_name, path))
-    print(f"📸 {screenshot_name} → {path}")
+    logger.info(f"📸 {screenshot_name} → {path}")
     return path
 
 
 class TestJourney2AccountLifecycle:
     """Journey 2: Account registration, verification, and approval."""
     
-    async def test_J2_01_registration_page(self, browser: Browser):
+    async def test_J2_01_registration_page(self, anon_browser: Browser):
         """Registration page is accessible and has required fields."""
+        browser = anon_browser
         await browser.goto(settings.url("/account/register"))
         await browser.wait_for_timeout(300)
         
@@ -153,7 +157,7 @@ class TestJourney2AccountLifecycle:
         
         # Registration might be disabled
         if "disabled" in page_text.lower() or "not available" in page_text.lower():
-            print("ℹ️  Registration is disabled - using admin account creation instead")
+            logger.info("ℹ️  Registration is disabled - using admin account creation instead")
             # Use alternative: admin creates account
             await self._admin_creates_account(browser)
             return
@@ -164,7 +168,7 @@ class TestJourney2AccountLifecycle:
         password_field = await browser.query_selector("#password, input[name='password']")
         
         if not all([username_field, email_field, password_field]):
-            print("ℹ️  Registration form incomplete - using admin account creation")
+            logger.info("ℹ️  Registration form incomplete - using admin account creation")
             await self._admin_creates_account(browser)
             return
         
@@ -227,15 +231,16 @@ class TestJourney2AccountLifecycle:
         
         await capture(browser, "account-created-by-admin")
     
-    async def test_J2_02_submit_registration(self, browser: Browser, mailpit: MailpitClient):
+    async def test_J2_02_submit_registration(self, anon_browser: Browser, mailpit: MailpitClient):
         """Submit registration form and check for verification email."""
+        browser = anon_browser
         # Skip if we used admin creation
         if journey_state.test_account_username:
-            print("ℹ️  Skipping - account already created by admin")
+            logger.info("ℹ️  Skipping - account already created by admin")
             return
         
         if not journey_state.get_extra("self_registration_available", False):
-            print("ℹ️  Skipping - self-registration not available")
+            logger.info("ℹ️  Skipping - self-registration not available")
             return
         
         # Clear mailpit
@@ -273,11 +278,11 @@ class TestJourney2AccountLifecycle:
     async def test_J2_03_check_verification_email(self, browser: Browser, mailpit: MailpitClient):
         """Verification email is sent with correct content."""
         if not journey_state.test_account_email:
-            print("ℹ️  Skipping - no test account")
+            logger.info("ℹ️  Skipping - no test account")
             return
         
         if journey_state.test_account_approved:
-            print("ℹ️  Skipping - account already approved (admin-created)")
+            logger.info("ℹ️  Skipping - account already approved (admin-created)")
             return
         
         # Wait for verification email
@@ -291,7 +296,7 @@ class TestJourney2AccountLifecycle:
         )
         
         if msg is None:
-            print("ℹ️  No verification email - may be auto-approved or email disabled")
+            logger.info("ℹ️  No verification email - may be auto-approved or email disabled")
             await capture(browser, "no-verification-email")
             return
         
@@ -308,18 +313,19 @@ class TestJourney2AccountLifecycle:
         journey_state.set_extra("verification_code", _extract_code(email_text))
         journey_state.set_extra("verification_link", _extract_link(email_text))
         
-        print(f"✓ Verification email received for {journey_state.test_account_email}")
-        print(f"  Code: {journey_state.get_extra('verification_code') or 'N/A'}")
-        print(f"  Link: {'Yes' if journey_state.get_extra('verification_link') else 'No'}")
+        logger.info(f"✓ Verification email received for {journey_state.test_account_email}")
+        verification_code = journey_state.get_extra("verification_code")
+        logger.info("verification code present=%s length=%d", bool(verification_code), len(verification_code or ""))
+        logger.info(f"  Link: {'Yes' if journey_state.get_extra('verification_link') else 'No'}")
     
     async def test_J2_04_complete_verification(self, browser: Browser):
         """Complete email verification process."""
         if not journey_state.test_account_email:
-            print("ℹ️  Skipping - no test account")
+            logger.info("ℹ️  Skipping - no test account")
             return
         
         if journey_state.test_account_approved:
-            print("ℹ️  Skipping - account already approved")
+            logger.info("ℹ️  Skipping - account already approved")
             return
         
         verification_code = journey_state.get_extra("verification_code")
@@ -342,7 +348,7 @@ class TestJourney2AccountLifecycle:
                 await browser.click("button[type='submit']")
                 await browser.wait_for_timeout(1000)
         else:
-            print("ℹ️  No verification code/link - may be auto-verified")
+            logger.info("ℹ️  No verification code/link - may be auto-verified")
             return
         
         await capture(browser, "verification-complete")
@@ -350,11 +356,11 @@ class TestJourney2AccountLifecycle:
     async def test_J2_05_admin_sees_pending_account(self, browser: Browser):
         """Admin can see the pending account in the list."""
         if not journey_state.test_account_username:
-            print("ℹ️  Skipping - no test account")
+            logger.info("ℹ️  Skipping - no test account")
             return
         
         if journey_state.test_account_approved:
-            print("ℹ️  Skipping - account already approved")
+            logger.info("ℹ️  Skipping - account already approved")
             # Still capture account list for documentation
             await _login_as_admin(browser)
             await browser.goto(settings.url("/admin/accounts"))
@@ -375,18 +381,18 @@ class TestJourney2AccountLifecycle:
         
         # Verify our test account is in pending list
         if journey_state.test_account_username in page_text:
-            print(f"✓ Found pending account: {journey_state.test_account_username}")
+            logger.info(f"✓ Found pending account: {journey_state.test_account_username}")
         else:
-            print("ℹ️  Account not in pending list - may need approval via different flow")
+            logger.info("ℹ️  Account not in pending list - may need approval via different flow")
     
     async def test_J2_06_approve_account(self, browser: Browser, mailpit: MailpitClient):
         """Admin approves the pending account."""
         if not journey_state.test_account_username:
-            print("ℹ️  Skipping - no test account")
+            logger.info("ℹ️  Skipping - no test account")
             return
         
         if journey_state.test_account_approved:
-            print("ℹ️  Skipping - account already approved")
+            logger.info("ℹ️  Skipping - account already approved")
             return
         
         # Clear mailpit to catch approval email
@@ -412,7 +418,7 @@ class TestJourney2AccountLifecycle:
             approve_btn = await browser.query_selector('button:has-text("Approve")')
         
         if not approve_btn:
-            print("ℹ️  No approve button found - account may auto-approve or use different flow")
+            logger.info("ℹ️  No approve button found - account may auto-approve or use different flow")
             await capture(browser, "no-approve-button")
             return
         
@@ -430,22 +436,22 @@ class TestJourney2AccountLifecycle:
         )
         
         if msg:
-            print(f"✓ Approval email sent to {journey_state.test_account_email}")
+            logger.info(f"✓ Approval email sent to {journey_state.test_account_email}")
             await capture(browser, "approval-email-sent")
     
     async def test_J2_07_user_can_login(self, browser: Browser):
         """Approved user can login successfully."""
         if not journey_state.test_account_username:
-            print("ℹ️  Skipping - no test account")
+            logger.info("ℹ️  Skipping - no test account")
             return
         
         if not journey_state.test_account_approved:
-            print("ℹ️  Skipping - account not approved")
+            logger.info("ℹ️  Skipping - account not approved")
             return
         
         # Skip if invite-based account (no password set - user sets via invite link)
         if journey_state.get_extra("invite_based_account") or not journey_state.test_account_password:
-            print("ℹ️  Skipping - invite-based account (password set via invite link)")
+            logger.info("ℹ️  Skipping - invite-based account (password set via invite link)")
             return
         
         # Logout admin if needed
@@ -470,18 +476,18 @@ class TestJourney2AccountLifecycle:
         current_url = browser.current_url or ""
         assert "/login" not in current_url, f"Login should succeed, still at: {current_url}"
         
-        print(f"✓ User {journey_state.test_account_username} logged in successfully")
+        logger.info(f"✓ User {journey_state.test_account_username} logged in successfully")
     
     async def test_J2_08_summary(self, browser: Browser):
         """Journey 2 complete - summarize account lifecycle."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 2 COMPLETE: Account Lifecycle")
-        print("=" * 60)
-        print(f"  Test account: {journey_state.test_account_username}")
-        print(f"  Email: {journey_state.test_account_email}")
-        print(f"  Approved: {journey_state.test_account_approved}")
-        print(f"  Total screenshots: {len(journey_state.screenshots)}")
-        print("=" * 60 + "\n")
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 2 COMPLETE: Account Lifecycle")
+        logger.info("=" * 60)
+        logger.info(f"  Test account: {journey_state.test_account_username}")
+        logger.info(f"  Email: {journey_state.test_account_email}")
+        logger.info(f"  Approved: {journey_state.test_account_approved}")
+        logger.info(f"  Total screenshots: {len(journey_state.screenshots)}")
+        logger.info("=" * 60 + "\n")
 
 
 async def _login_as_admin(browser: Browser):

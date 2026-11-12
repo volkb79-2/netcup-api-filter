@@ -98,6 +98,63 @@ port is chosen free and retried if gunicorn finds it taken; the fixture stops th
 error. Keep the work
 dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env.defaults`.
 
+### Browser connection and state model
+
+The browser harness is session-scoped, not test-scoped:
+
+```text
+pytest session / xdist worker
+  -> GET /contract, validate schema + Playwright major.minor once
+  -> start one Playwright driver
+  -> make one bounded chromium.connect(), retrying only gateway HTTP 503
+  -> for each test: fresh browser.new_context() [+ page] -> test -> close context
+  -> if the browser is found dead between tests: close it and reconnect exactly once
+  -> session teardown: close the browser connection and stop the Playwright driver
+```
+
+`ui_tests/pwmcp_connection.py` owns this lifecycle; `ui_tests/conftest.py` installs it through the
+autouse `pwmcp_connection` session fixture. The connect and context counters are emitted once at the
+end of the session as `pwmcp connects=<n> contexts=<n>`. There is one driver/websocket per pytest
+process (therefore one per xdist worker); tests get only the cheap fresh-context isolation.
+
+The contract check is fail-fast: `/contract` must publish schema version 1 and a protocol matching
+the installed Playwright major.minor, plus a maximum lease. A missing contract, incompatible
+Playwright, or unavailable gateway exits the session with code 3 and one actionable message. Remote
+connects carry `X-PWMCP-Lease-Seconds` and `X-PWMCP-Session-Label`, have a finite per-attempt timeout,
+and retry HTTP 503 ("all browser slots are in use") with exponential backoff under one total deadline.
+
+An open pwmcp websocket is an active gateway session. The 30-second idle browser recycle runs only
+while there are zero sessions, so the shared connection survives the long installation/app-start test
+without a heartbeat. The configured 30-minute lease is longer than a normal e2e lane; if the gateway
+closes the lease between tests, the harness reconnects once. A lease loss in the middle of a test is
+still a test failure (there is no mid-test retry).
+
+### Per-role browser state
+
+Storage state is explicit and per role:
+
+| Fixture/context | Storage loaded |
+|---|---|
+| `admin_browser`, and the back-compat `browser` alias | `admin_auth_state.json` |
+| `user_browser` | `user_auth_state.json` |
+| `anon_browser` | none |
+| `browser_session("admin"|"user"|"anonymous")` | the named role, or none for anonymous |
+
+State files are created lazily after a successful role login and live under the throwaway session
+work dir, never in the repository. Login is therefore cached once per role per session, while admin
+and user cookies cannot contaminate each other. Public pages, login forms, registration, and
+forgot-password tests use an explicit anonymous context; cookie clearing is a symptom, not the
+isolation mechanism. `ParallelSessionManager` still creates multiple independent contexts on the
+shared browser and selects the admin/user cache only for the matching session persona.
+
+### Browser operation redaction
+
+`Browser.fill`, `Browser.select`, and `Browser.evaluate` never place typed values, selected values, or
+evaluated code in `ToolError.payload`; they record lengths/type and a redacted operation message.
+Tests and workflow helpers use `logging`, never `print`, and do not log passwords, tokens, 2FA or
+verification codes, invite/reset links, or full session cookies. The unit lane enforces both the
+`ToolError` redaction and the no-secret-print rule without starting a browser.
+
 ```bash
 run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runner)
 run-gate e2e --worktree "$PWD"           # full suite, per-session app, estate pwmcp

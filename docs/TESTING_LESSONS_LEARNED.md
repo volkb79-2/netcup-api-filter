@@ -118,7 +118,7 @@ async def _login_as_admin(browser: Browser):
     if "/admin/login" not in current_url and "/login/2fa" not in current_url:
         # Already logged in - redirected to admin area
         if "/admin" in current_url:
-            print("ℹ️  Already logged in as admin (session valid)")
+            logger.info("already logged in as admin (session valid)")
             return
 ```
 
@@ -156,7 +156,7 @@ current_url = browser._page.url
 # If redirected away from login, we're already logged in
 if "/admin/login" not in current_url and "/login/2fa" not in current_url:
     if "/admin" in current_url:
-        print("ℹ️  Already logged in as admin (session valid)")
+        logger.info("already logged in as admin (session valid)")
         return  # Skip login
 
 # No redirect - check if login form exists
@@ -164,7 +164,7 @@ username_field = await browser.query_selector("#username")
 if not username_field:
     # No form but on admin page = logged in
     if "/admin" in current_url:
-        print("ℹ️  Already on admin page (session valid)")
+        logger.info("already on admin page (session valid)")
         return
 
 # Not logged in - proceed with form submission
@@ -204,6 +204,32 @@ outage.
 - Never persist anything a later test depends on. If an assertion needs backend truth, read the
   session DB read-only (`ui_tests/verification.py`).
 
+## 4a. Browser Connection and Role-State Invariants (2026-11-12)
+
+The e2e suite is one browser session with many cheap contexts, not one browser session per test:
+
+- Start one Playwright driver and make one `chromium.connect()` for the pytest session (one per
+  xdist worker). Every test creates and closes only a fresh `BrowserContext` and page.
+- Check pwmcp `/contract` once before connecting. The installed Playwright major.minor must match the
+  gateway protocol; a mismatch fails the whole session loudly with exit 3 instead of producing
+  hundreds of test failures.
+- Bound `connect()` and retry only pwmcp HTTP 503 (all browser slots busy), with exponential backoff
+  under one total deadline. Reconnect exactly once between tests if the shared browser/lease died.
+- An open websocket counts as a pwmcp session, so the 30-second idle browser recycle cannot happen
+  while the suite is connected. No heartbeat is needed.
+- Do not load one shared storage-state file into every context. Use `admin_browser`, `user_browser`,
+  or `anon_browser` (and the equivalent `browser_session(role)` call). Role files live in the session
+  work dir and are written at most once per role; anonymous contexts start with no storage state.
+- Choose anonymous explicitly for login, registration, public docs, forgot-password, auth-redirect,
+  and cookie tests. Clearing cookies after loading the wrong state hides the isolation bug.
+
+Failure output is an exported artifact and must be safe to share:
+
+- Logging replaces debug `print` calls in workflow/test code. Never log a filled password, API token,
+  recovery code, 2FA/verification code, invite/reset link, or full session cookie.
+- `ToolError` records an operation, selector, and value/code length; it never carries the typed value.
+  Redaction is unit-tested without a browser, and a source guard rejects secret-bearing `print` calls.
+
 ---
 
 ## General Testing Principles
@@ -241,10 +267,10 @@ for _ in range(20):
     await asyncio.sleep(0.5)
     new_url = browser._page.url
     if new_url != url_before:
-        print(f"Navigation complete: {new_url}")
+        logger.info("navigation complete: %s", new_url)
         break
 else:
-    print(f"WARN: Navigation timeout, still at: {browser._page.url}")
+    logger.warning("navigation timeout; still at %s", browser._page.url)
 ```
 
 ### C. Log Current URL at Decision Points
@@ -253,12 +279,12 @@ When debugging redirect issues, always log the current URL:
 
 ```python
 current_url = browser._page.url
-print(f"[DEBUG] Current URL: {current_url}")
+logger.debug("current URL: %s", current_url)
 
 if "/2fa" in current_url:
-    print("[DEBUG] Detected 2FA redirect, handling...")
+    logger.debug("detected 2FA redirect; handling it")
 elif "/dashboard" in current_url:
-    print("[DEBUG] Already on dashboard, login succeeded")
+    logger.debug("already on dashboard; login succeeded")
 ```
 
 This makes test failures self-explanatory.
@@ -347,7 +373,8 @@ When updating tests to use these patterns:
 - [ ] Replace `fill() + click()` with `evaluate()` + `form.submit()` for auto-submit forms
 - [ ] Add session detection before login (check for redirect or missing form)
 - [ ] Add navigation polling after form submit (wait for URL change)
-- [ ] Add URL logging at decision points (`print(f"Current URL: {browser._page.url}")`)
+- [ ] Add URL logging at decision points (`logger.debug("current URL: %s", browser._page.url)`)
+- [ ] Redact typed values and authentication codes from assertion/log payloads
 - [ ] Use Mailpit for email interception (not aiosmtpd direct access)
 - [ ] Clean up emails after use (`mailpit.delete_message()`)
 

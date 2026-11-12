@@ -13,9 +13,13 @@ exactly one dedicated test on its own fresh instance (smoke/test_installation_wo
 No credential is changed or persisted here.
 """
 
+import logging
+
 from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
+
+logger = logging.getLogger(__name__)
 
 
 async def capture(browser: Browser, name: str, journey: str = "J1") -> str:
@@ -23,15 +27,16 @@ async def capture(browser: Browser, name: str, journey: str = "J1") -> str:
     screenshot_name = journey_state.next_screenshot_name(journey, name)
     path = await browser.screenshot(screenshot_name)
     journey_state.screenshots.append((screenshot_name, path))
-    print(f"📸 {screenshot_name} → {path}")
+    logger.info(f"📸 {screenshot_name} → {path}")
     return path
 
 
 class TestJourney1FreshDeployment:
     """Journey 1: Admin authentication and system state validation."""
     
-    async def test_J1_01_login_page_accessible(self, browser: Browser):
+    async def test_J1_01_login_page_accessible(self, anon_browser: Browser):
         """System shows login page."""
+        browser = anon_browser
         await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
         await browser.wait_for_timeout(300)
 
@@ -74,10 +79,11 @@ class TestJourney1FreshDeployment:
             f"url={browser._page.url} preview={body_preview!r}"
         )
     
-    async def test_J1_02_admin_persona_authenticates(self, browser: Browser):
+    async def test_J1_02_admin_persona_authenticates(self, anon_browser: Browser):
         """The admin persona logs in through the real form + TOTP and lands on the dashboard."""
         from ui_tests import workflows
 
+        browser = anon_browser
         await browser.goto(settings.url("/admin/logout"), wait_until="domcontentloaded")
         await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
         await capture(browser, "login-page-empty")
@@ -108,7 +114,7 @@ class TestJourney1FreshDeployment:
         # Common stat patterns: "Accounts: 0", "Active Tokens: 0", etc.
         stats_area = await browser.query_selector(".stats, .dashboard-stats, .stat-card, .card")
         if stats_area:
-            print("✓ Stats area found")
+            logger.info("✓ Stats area found")
         
         # Navigation should be present
         nav = await browser.query_selector("nav, .navbar, .sidebar")
@@ -145,16 +151,16 @@ class TestJourney1FreshDeployment:
             
             await capture(browser, screenshot_name)
         
-        print(f"✓ All {len(admin_pages)} admin pages accessible")
+        logger.info(f"✓ All {len(admin_pages)} admin pages accessible")
     
     async def test_J1_06_summary(self, browser: Browser):
         """Journey 1 complete - summarize state."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 1 COMPLETE: Fresh Deployment")
-        print("=" * 60)
-        print(f"  Screenshots: {len(journey_state.screenshots)}")
-        print(f"  State: {journey_state.to_dict()}")
-        print("=" * 60 + "\n")
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 1 COMPLETE: Fresh Deployment")
+        logger.info("=" * 60)
+        logger.info(f"  Screenshots: {len(journey_state.screenshots)}")
+        logger.info(f"  State: {journey_state.to_dict()}")
+        logger.info("=" * 60 + "\n")
         
         # Login and capture final dashboard screenshot
         from ui_tests import workflows

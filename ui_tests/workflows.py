@@ -74,7 +74,7 @@ async def wait_for_input_value(
         if predicate(value or ""):
             return value or ""
         await anyio.sleep(interval)
-    raise AssertionError(f"Timed out waiting for value on {selector}; last value='{last_value}'")
+    raise AssertionError(f"Timed out waiting for value on {selector}; last value length={len(last_value)}")
 
 
 async def wait_for_selector(
@@ -129,7 +129,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
     if "/login/2fa" not in current_url and "/2fa" not in current_url:
         return False
     
-    print("[DEBUG] On 2FA page, attempting to handle...")
+    logger.debug("handling 2FA challenge")
 
     async def _raise_if_2fa_email_send_failed() -> None:
         """Fail fast if the UI indicates the 2FA email could not be sent.
@@ -146,8 +146,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
             return
         lowered = alert_text.lower()
         if "failed to send verification code" in lowered or "limit on the number of allowed outgoing messages" in lowered:
-            suffix = f" (ref_token={ref_token})" if ref_token else ""
-            raise AssertionError(f"2FA email send failed according to UI{suffix}: {alert_text}")
+            raise AssertionError(f"2FA email send failed according to UI: {alert_text}")
 
     # If the UI shows an email reference token, use it to correlate the exact
     # 2FA email we expect (subject contains the token).
@@ -155,7 +154,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
     try:
         ref_token = (await browser.text("#twofa-email-ref")).strip() or None
         if ref_token:
-            print(f"[DEBUG] 2FA page ref token: {ref_token}")
+            logger.debug("2FA email reference present")
     except Exception:
         ref_token = None
 
@@ -188,7 +187,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
         )
         if email_hints:
             redacted = ", ".join(sorted({_redact_email(e) for e in email_hints}))
-            print(f"[DEBUG] 2FA page email hint(s): {redacted}")
+            logger.debug("2FA page email hint(s): %s", redacted)
     except Exception:
         pass
 
@@ -480,38 +479,45 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
 
                 # Only emit safe diagnostics when we couldn't find a code.
                 if not found_any:
-                    print(f"[DEBUG] IMAP poll: no messages returned from mailbox(es)={mailboxes}")
+                    logger.debug("IMAP poll: no messages returned from mailbox(es)=%s", mailboxes)
                 else:
                     # Keep logs readable: always emit a short summary, and emit
                     # per-mailbox stats periodically (or when interesting).
-                    print(
-                        "[DEBUG] IMAP poll: "
-                        f"mailboxes={mailboxes} recent_candidates={found_recent} "
-                        f"subject_matches={found_subject_match} codes_found={found_code}"
+                    logger.debug(
+                        "IMAP poll: mailboxes=%s recent_candidates=%s subject_matches=%s codes_found=%s",
+                        mailboxes,
+                        found_recent,
+                        found_subject_match,
+                        found_code,
                     )
 
                     emit_details = (found_code > 0) or (poll_count <= 2) or (poll_count % 5 == 0)
                     if emit_details:
                         for (mb, mailbox_ids, mailbox_recent, mailbox_subject, mailbox_codes, baseline_uid, mailbox_max_uid) in mailbox_stats:
-                            print(
-                                "[DEBUG] IMAP mailbox stats: "
-                                f"mailbox={mb} ids={mailbox_ids} recent={mailbox_recent} "
-                                f"subject={mailbox_subject} codes={mailbox_codes} "
-                                f"baseline_uid={baseline_uid} max_uid={mailbox_max_uid}"
+                            logger.debug(
+                                "IMAP mailbox stats: mailbox=%s ids=%s recent=%s subject=%s "
+                                "codes=%s baseline_uid=%s max_uid=%s",
+                                mb,
+                                mailbox_ids,
+                                mailbox_recent,
+                                mailbox_subject,
+                                mailbox_codes,
+                                baseline_uid,
+                                mailbox_max_uid,
                             )
 
                         if require_newer_than_seen and mailbox_uid_advanced == 0 and not printed_no_uid_hint:
                             # This strongly suggests the 2FA email is not landing in any polled mailbox.
                             # Common cause: admin 2FA email differs from IMAP_USER.
-                            print(
-                                "[HINT] No new IMAP UIDs observed in any mailbox during polling. "
-                                "This usually means the 2FA email is being sent to a different address/mailbox than IMAP_USER, "
-                                "or SMTP delivery is failing on the remote deployment."
+                            logger.warning(
+                                "no new IMAP UIDs observed in any mailbox during polling; "
+                                "the 2FA email may target a different mailbox than IMAP_USER, "
+                                "or SMTP delivery may be failing"
                             )
                             printed_no_uid_hint = True
                         else:
-                            print(
-                                "[HINT] If 2FA emails land outside INBOX, set IMAP_MAILBOX or IMAP_MAILBOXES (comma-separated)"
+                            logger.info(
+                                "if 2FA emails land outside INBOX, set IMAP_MAILBOX or IMAP_MAILBOXES"
                             )
 
                 conn.logout()
@@ -574,7 +580,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
             if msg:
                 code = _extract_2fa_code((msg.text or "") + "\n" + (msg.html or ""))
                 if code:
-                    print("[DEBUG] Extracted 2FA code from Mailpit email")
+                    logger.debug("extracted 2FA code from Mailpit email")
 
                     url_before = browser._page.url
                     try:
@@ -593,24 +599,24 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                     except Exception as exc:
                         if "Execution context was destroyed" not in str(exc):
                             raise
-                        print("[WARN] 2FA submit raced navigation; continuing")
+                        logger.info("2FA submit raced navigation; continuing")
 
                     for _ in range(nav_steps):
                         await anyio.sleep(0.5)
                         new_url = browser._page.url
                         if new_url != url_before and "/2fa" not in new_url:
-                            print(f"[DEBUG] 2FA navigation complete: {new_url}")
+                            logger.debug("2FA navigation complete: %s", new_url)
                             mailpit.delete_message(msg.id)
                             return True
 
-                    print(f"[WARN] 2FA navigation did not complete, still at: {browser._page.url}")
+                    logger.warning("2FA navigation did not complete; still at %s", browser._page.url)
                 else:
                     preview = _redact_2fa_secrets((msg.text or msg.html or "")[:200])
-                    print(f"[WARN] Could not extract code from Mailpit email: {preview}")
+                    logger.warning("could not extract the 2FA code from the Mailpit email: %s", preview)
             else:
-                print("[WARN] No 2FA email found in Mailpit")
+                logger.warning("no 2FA email found in Mailpit")
         except Exception as e:
-            print(f"[WARN] Could not handle 2FA via Mailpit: {e}")
+            logger.warning("could not handle 2FA via Mailpit: %s", e)
         finally:
             try:
                 if mailpit:
@@ -677,7 +683,7 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
 
     # Fallback: IMAP (useful for live deployments where Mailpit isn't in the path)
     if _imap_configured() and "imap" in channels:
-        print("[DEBUG] Falling back to IMAP for 2FA code...")
+        logger.debug("falling back to IMAP for the 2FA code")
         # First attempt: use the current code that should have been sent on GET.
         # Second attempt: explicitly resend to ensure a fresh code (avoids stale
         # codes from earlier journeys).
@@ -693,20 +699,20 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
 
         for attempt in range(2):
             if attempt == 0 and force_resend:
-                print("[DEBUG] IMAP: force resend enabled; baselining mailbox UIDs before resend...")
+                logger.debug("IMAP: force resend enabled; baselining mailbox UIDs")
                 # Snapshot baseline UIDs once, then resend, then require UID > baseline.
                 await anyio.to_thread.run_sync(_snapshot_imap_max_uids, seen_max_by_mailbox)
-                print("[DEBUG] IMAP: triggering 2FA resend (force mode)...")
+                logger.debug("IMAP: triggering 2FA resend in force mode")
                 clicked = await _trigger_resend_if_available()
                 if not clicked:
-                    print("[WARN] IMAP: force resend requested but resend button not found")
+                    logger.warning("IMAP: force resend requested but the resend button was not found")
                 flow_started_at = datetime.now(timezone.utc)
 
             if attempt == 1:
-                print("[DEBUG] IMAP retry: triggering 2FA resend...")
+                logger.debug("IMAP retry: triggering 2FA resend")
                 clicked = await _trigger_resend_if_available()
                 if not clicked:
-                    print("[WARN] IMAP retry: resend button not found")
+                    logger.warning("IMAP retry: resend button not found")
                 flow_started_at = datetime.now(timezone.utc)
 
             skew = imap_resend_skew_seconds if attempt == 1 else imap_skew_seconds
@@ -721,10 +727,10 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
             if not code:
                 if attempt == 0:
                     continue
-                print("[WARN] IMAP configured, but no 2FA code could be extracted")
+                logger.warning("IMAP is configured, but no 2FA code could be extracted")
                 break
 
-            print("[DEBUG] IMAP retrieved a 2FA code; submitting...")
+            logger.debug("IMAP retrieved a 2FA code; submitting")
 
             url_before = browser._page.url
             try:
@@ -747,24 +753,24 @@ async def handle_2fa_if_present(browser: Browser, timeout: float = 5.0) -> bool:
                 # polling below to confirm success.
                 if "Execution context was destroyed" not in str(exc):
                     raise
-                print("[WARN] 2FA submit raced navigation; continuing")
+                logger.info("2FA submit raced navigation; continuing")
 
             for _ in range(nav_steps):
                 await anyio.sleep(0.5)
                 new_url = browser._page.url
                 if new_url != url_before and "/2fa" not in new_url:
-                    print(f"[DEBUG] 2FA navigation complete (IMAP): {new_url}")
+                    logger.debug("2FA navigation complete via IMAP: %s", new_url)
                     return True
 
             # If we didn't navigate, the code may have been stale/invalid.
-            print(f"[WARN] 2FA navigation did not complete (IMAP), still at: {browser._page.url}")
+            logger.warning("2FA navigation did not complete via IMAP; still at %s", browser._page.url)
 
             try:
                 page_text = await browser.text("body")
                 page_preview = _redact_2fa_secrets(page_text[:500])
                 lowered = page_text.lower()
                 if "invalid" in lowered or "expired" in lowered or "incorrect" in lowered or "try again" in lowered:
-                    print(f"[DEBUG] 2FA page indicates rejection: {page_preview}")
+                    logger.debug("2FA page indicates rejection: %s", page_preview)
             except Exception:
                 pass
     
@@ -780,9 +786,18 @@ def _on_admin_page(url: str) -> bool:
     )
 
 
-async def _save_storage_state(browser: Browser, name: str = "admin") -> None:
-    """Cache this session's cookies for later tests of the SAME e2e session (dies with it)."""
-    await browser._page.context.storage_state(path=str(settings.storage_state_path(name)))
+async def _save_storage_state(
+    browser: Browser,
+    role: str = "admin",
+    *,
+    force: bool = False,
+) -> None:
+    """Cache one role's cookies once for later tests in the same e2e session."""
+    path = settings.storage_state_path(role)
+    if path is None or (path.exists() and not force):
+        return
+    await browser._page.context.storage_state(path=str(path))
+    path.chmod(0o600)
 
 
 async def complete_admin_totp(browser: Browser, totp_secret: str) -> None:
@@ -819,15 +834,17 @@ async def ensure_admin_dashboard(browser: Browser) -> Browser:
     change has exactly one dedicated test (smoke/test_installation_workflow.py) on its own
     fresh instance. A persona that is asked to change its password is a broken environment.
     """
+    logged_in = False
     await browser.goto(settings.url("/admin/"), wait_until="domcontentloaded")
     if not _on_admin_page(browser._page.url):
         await admin_login(
             browser, settings.admin_username, settings.admin_password, totp_secret=settings.admin_totp_secret
         )
+        logged_in = True
     if "/admin/change-password" in browser._page.url:
         raise AssertionError("the admin persona was sent to change-password: the session DB is not as provisioned")
     await browser.wait_for_text("h1", "Dashboard", timeout=10.0)
-    await _save_storage_state(browser, "admin")
+    await _save_storage_state(browser, "admin", force=logged_in)
     return browser
 
 
@@ -835,6 +852,7 @@ async def ensure_user_dashboard(browser: Browser) -> Browser:
     """Land on the account-portal dashboard as the session's user PERSONA (email 2FA via Mailpit)."""
     import re
 
+    logged_in = False
     await browser.goto(settings.url("/account/dashboard"), wait_until="domcontentloaded")
     if "/account/login" not in browser._page.url:
         return browser
@@ -849,13 +867,14 @@ async def ensure_user_dashboard(browser: Browser) -> Browser:
     if "/account/login/2fa" in browser._page.url:
         await handle_2fa_if_present(browser, timeout=20.0)
         await browser._page.wait_for_url(lambda url: "/account/login/2fa" not in url, timeout=10_000)
+    logged_in = True
 
     await browser.goto(settings.url("/account/dashboard"), wait_until="domcontentloaded")
     if "/account/login" in browser._page.url:
         body = (await browser.text("body"))[:300]
         raise AssertionError(f"user persona login did not establish a session: {body!r}")
     await browser.wait_for_text("h1", "Dashboard", timeout=10.0)
-    await _save_storage_state(browser, "admin")  # same cookie jar as browser_session() reuses
+    await _save_storage_state(browser, "user", force=logged_in)
     return browser
 
 
@@ -1103,25 +1122,25 @@ delete_admin_client = delete_admin_account
 
 async def admin_logout_and_prepare_client_login(browser: Browser) -> None:
     """Logout from admin UI and robustly navigate to client login page."""
-    print("[DEBUG] Workflow: Logging out admin to prepare for client login.")
+    logger.debug("logging out admin before client login")
     await admin_logout(browser)
     
     # Add a small delay to allow server-side session to clear completely
-    print("[DEBUG] Workflow: Delaying for 500ms before navigating.")
+    logger.debug("waiting for the server-side session to clear")
     await anyio.sleep(0.5)
     
-    print("[DEBUG] Workflow: Navigating to client login page.")
+    logger.debug("navigating to the client login page")
     await browser.goto(settings.url("/client/login"))
     
     # Add another debug screenshot to see the result of the navigation
     await browser.screenshot("debug-after-client-login-goto")
     
     # Robustly wait for the client login form to be ready
-    print("[DEBUG] Workflow: Waiting for client login form elements.")
+    logger.debug("waiting for client login form elements")
     await wait_for_selector(browser, "#client_id")
     await wait_for_selector(browser, "#secret_key")
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
-    print("[DEBUG] Workflow: Client login page is ready.")
+    logger.debug("client login page is ready")
 
 
 async def admin_logout(
@@ -1151,7 +1170,7 @@ async def _admin_logout_impl(
     clear_session: bool = False,
     clear_persisted_state: bool = False,
 ) -> None:
-    print("[DEBUG] Admin logout: using JavaScript to open dropdown and logout.")
+    logger.debug("admin logout: opening the navigation dropdown with JavaScript")
     # Use JavaScript to reliably open dropdown and click logout
     await browser.evaluate(
         """
@@ -1168,18 +1187,18 @@ async def _admin_logout_impl(
         """
     )
     await anyio.sleep(1.0)
-    print(f"[DEBUG] Admin logout: URL after click is {browser.current_url}")
+    logger.debug("admin logout: URL after click is %s", browser.current_url)
     
     # After logout, we should be on the admin login page.
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")
-    print("[DEBUG] Admin logout: successfully detected admin login page.")
+    logger.debug("admin logout: admin login page detected")
 
     if clear_session:
         # Clear cookies and origin storage to avoid leaking auth between users.
         try:
             await browser._page.context.clear_cookies()
         except Exception as exc:
-            print(f"[WARN] Failed to clear cookies: {exc}")
+            logger.warning("failed to clear cookies: %s", exc)
 
         try:
             await browser.evaluate(
@@ -1191,13 +1210,13 @@ async def _admin_logout_impl(
                 """
             )
         except Exception as exc:
-            print(f"[WARN] Failed to clear local/session storage: {exc}")
+            logger.warning("failed to clear local/session storage: %s", exc)
 
     if clear_persisted_state:
         path = settings.storage_state_path("admin")
-        if path.exists():
+        if path is not None and path.exists():
             path.unlink()
-            print("[DEBUG] Deleted this session's cached Playwright storage state")
+            logger.debug("deleted the session's cached admin storage state")
 
 
 async def admin_logout_and_clear_auth_state(browser: Browser) -> None:
@@ -1502,9 +1521,9 @@ async def client_portal_open_activity(browser: Browser) -> str:
 
 async def test_client_login_with_token(browser: Browser, token: str, should_succeed: bool = True, expected_client_id: str | None = None) -> None:
     """Test client login with a specific token."""
-    print(f"[DEBUG] Client login: Navigating to /client/login. Current URL: {browser.current_url}")
+    logger.debug("client login: navigating to /client/login from %s", browser.current_url)
     await browser.goto(settings.url("/client/login"))
-    print(f"[DEBUG] Client login: URL is now {browser.current_url}")
+    logger.debug("client login: current URL is %s", browser.current_url)
     await wait_for_selector(browser, "#client_id")
     await wait_for_selector(browser, "#secret_key")
     await browser.wait_for_text(".login-container button[type='submit']", "Sign In")

@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.security]
 class TestRecoveryCodesAccountUI:
     async def test_generate_recovery_codes_wrong_password_shows_error(self, active_profile):
         """Wrong password should not generate codes and should show an error."""
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await workflows.ensure_user_dashboard(browser)
 
             await browser.goto(settings.url("/account/settings/recovery-codes"))
@@ -52,7 +52,7 @@ class TestRecoveryCodesAccountUI:
 
         demo_username = settings.user_username
 
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await workflows.ensure_user_dashboard(browser)
 
             # Navigate to recovery codes page.
@@ -158,7 +158,7 @@ class TestRecoveryCodesAccountUI:
             except (_json.JSONDecodeError, TypeError):
                 return []
 
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             # --- Phase 1: generate fresh codes, capture plaintext from the UI ---
             await workflows.ensure_user_dashboard(browser)
             await browser.goto(settings.url("/account/settings/recovery-codes"))

@@ -2,7 +2,11 @@
 
 Run this with: python -m pytest ui_tests/tests/test_mock_api_standalone.py -v
 """
+import logging
+
 import pytest
+
+logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.mock_selftest]
 
@@ -27,13 +31,13 @@ def test_mock_api_basic_operations(mock_netcup_api_server, mock_netcup_credentia
         api_url=mock_netcup_api_server.url
     )
     
-    print(f"\n[Mock API Test] Connecting to {mock_netcup_api_server.url}")
+    logger.info(f"\n[Mock API Test] Connecting to {mock_netcup_api_server.url}")
     
     # Test 1: Login
     session_id = client.login()
     assert session_id
     assert len(session_id) == 32  # Hex string (16 bytes = 32 hex chars)
-    print(f"[Mock API Test] ✓ Login successful, session: {session_id[:8]}...")
+    logger.info("[Mock API Test] ✓ Login successful")
     
     # Test 2: Get DNS zone info
     test_domain = "test.example.com"
@@ -41,17 +45,17 @@ def test_mock_api_basic_operations(mock_netcup_api_server, mock_netcup_credentia
     assert zone_info['name'] == test_domain
     assert 'ttl' in zone_info
     assert 'serial' in zone_info
-    print(f"[Mock API Test] ✓ Zone info retrieved for {test_domain}")
-    print(f"[Mock API Test]   - TTL: {zone_info['ttl']}")
-    print(f"[Mock API Test]   - Serial: {zone_info['serial']}")
+    logger.info(f"[Mock API Test] ✓ Zone info retrieved for {test_domain}")
+    logger.info(f"[Mock API Test]   - TTL: {zone_info['ttl']}")
+    logger.info(f"[Mock API Test]   - Serial: {zone_info['serial']}")
     
     # Test 3: Get DNS records
     records = client.info_dns_records(test_domain)
     assert isinstance(records, list)
     assert len(records) > 0
-    print(f"[Mock API Test] ✓ Retrieved {len(records)} DNS records:")
+    logger.info(f"[Mock API Test] ✓ Retrieved {len(records)} DNS records:")
     for record in records[:3]:  # Show first 3
-        print(f"[Mock API Test]   - {record['hostname']} {record['type']} {record['destination']}")
+        logger.info(f"[Mock API Test]   - {record['hostname']} {record['type']} {record['destination']}")
     
     # Test 4: Update DNS records (add a new one)
     new_record = {
@@ -64,15 +68,15 @@ def test_mock_api_basic_operations(mock_netcup_api_server, mock_netcup_credentia
     
     updated_records = records + [new_record]
     result = client.update_dns_records(test_domain, updated_records)
-    print(f"[Mock API Test] ✓ DNS records updated successfully")
+    logger.info(f"[Mock API Test] ✓ DNS records updated successfully")
     
     # Test 5: Verify the new record was added
     records_after = client.info_dns_records(test_domain)
     assert len(records_after) == len(records) + 1
     assert any(r['destination'] == '192.0.2.123' for r in records_after)
-    print(f"[Mock API Test] ✓ New record verified in subsequent query")
-    print(f"[Mock API Test]   - Record count before: {len(records)}")
-    print(f"[Mock API Test]   - Record count after: {len(records_after)}")
+    logger.info(f"[Mock API Test] ✓ New record verified in subsequent query")
+    logger.info(f"[Mock API Test]   - Record count before: {len(records)}")
+    logger.info(f"[Mock API Test]   - Record count after: {len(records_after)}")
     
     # Test 6: Update an existing record
     record_to_update = records_after[0]
@@ -84,9 +88,9 @@ def test_mock_api_basic_operations(mock_netcup_api_server, mock_netcup_credentia
     
     updated_record = next(r for r in records_final if r['id'] == record_to_update['id'])
     assert updated_record['destination'] == '192.0.2.250'
-    print(f"[Mock API Test] ✓ Existing record updated")
-    print(f"[Mock API Test]   - Old destination: {original_destination}")
-    print(f"[Mock API Test]   - New destination: {updated_record['destination']}")
+    logger.info(f"[Mock API Test] ✓ Existing record updated")
+    logger.info(f"[Mock API Test]   - Old destination: {original_destination}")
+    logger.info(f"[Mock API Test]   - New destination: {updated_record['destination']}")
     
     # Test 7: Delete a record
     record_to_delete = records_final[-1]
@@ -99,14 +103,14 @@ def test_mock_api_basic_operations(mock_netcup_api_server, mock_netcup_credentia
     
     assert len(records_after_delete) == len(records_final) - 1
     assert not any(r['id'] == record_to_delete['id'] for r in records_after_delete)
-    print(f"[Mock API Test] ✓ Record deleted")
-    print(f"[Mock API Test]   - Record count after delete: {len(records_after_delete)}")
+    logger.info(f"[Mock API Test] ✓ Record deleted")
+    logger.info(f"[Mock API Test]   - Record count after delete: {len(records_after_delete)}")
     
     # Test 8: Logout
     client.logout()
     assert client.session_id is None
-    print(f"[Mock API Test] ✓ Logout successful")
-    print(f"[Mock API Test] ✓ Session cleared from client")
+    logger.info(f"[Mock API Test] ✓ Logout successful")
+    logger.info(f"[Mock API Test] ✓ Session cleared from client")
     
     # Note: The netcup_client will automatically re-login if you call methods after logout,
     # so we just verify the session was cleared rather than trying to make requests
@@ -164,9 +168,9 @@ def test_mock_api_multiple_domains(mock_netcup_api_server, mock_netcup_credentia
     assert any(r['hostname'] == 'domain2-specific' for r in records2_after)
     assert not any(r['hostname'] == 'domain1-specific' for r in records2_after)
     
-    print(f"[Mock API Test] ✓ Multiple domains handled independently")
-    print(f"[Mock API Test]   - Domain 1 records: {len(records1_after)}")
-    print(f"[Mock API Test]   - Domain 2 records: {len(records2_after)}")
+    logger.info(f"[Mock API Test] ✓ Multiple domains handled independently")
+    logger.info(f"[Mock API Test]   - Domain 1 records: {len(records1_after)}")
+    logger.info(f"[Mock API Test]   - Domain 2 records: {len(records2_after)}")
     
     client.logout()
 
@@ -194,7 +198,7 @@ def test_mock_api_invalid_credentials(mock_netcup_api_server):
         assert False, "Should have raised error for invalid credentials"
     except NetcupAPIError as e:
         assert "401" in str(e) or "unauthorized" in str(e).lower()
-        print(f"[Mock API Test] ✓ Invalid credentials rejected")
+        logger.info(f"[Mock API Test] ✓ Invalid credentials rejected")
 
 
 def test_mock_api_session_isolation(mock_netcup_api_server, mock_netcup_credentials):
@@ -228,9 +232,7 @@ def test_mock_api_session_isolation(mock_netcup_api_server, mock_netcup_credenti
     session2 = client2.login()
     
     assert session1 != session2
-    print(f"[Mock API Test] ✓ Different sessions created")
-    print(f"[Mock API Test]   - Session 1: {session1[:8]}...")
-    print(f"[Mock API Test]   - Session 2: {session2[:8]}...")
+    logger.info("[Mock API Test] ✓ Different sessions created")
     
     # Both should work independently
     test_domain = "test.example.com"
@@ -238,14 +240,14 @@ def test_mock_api_session_isolation(mock_netcup_api_server, mock_netcup_credenti
     zone2 = client2.info_dns_zone(test_domain)
     
     assert zone1 == zone2
-    print(f"[Mock API Test] ✓ Both sessions work independently")
+    logger.info(f"[Mock API Test] ✓ Both sessions work independently")
     
     # Logout one shouldn't affect the other
     client1.logout()
     
     zone2_after = client2.info_dns_zone(test_domain)
     assert zone2_after == zone2
-    print(f"[Mock API Test] ✓ Session isolation maintained")
+    logger.info(f"[Mock API Test] ✓ Session isolation maintained")
     
     client2.logout()
 

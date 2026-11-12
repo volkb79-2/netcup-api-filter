@@ -26,10 +26,13 @@ async def test_account_totp_enable_then_disable(active_profile, session_manager)
     if not active_profile.allow_writes:
         pytest.skip("profile is read-only")
 
-    handle = await session_manager.create_session(role="account", session_id="acct_totp_disable")
+    handle = await session_manager.account_session(
+        settings.user_username,
+        login=True,
+        password=settings.user_password,
+    )
     browser = Browser(handle.page)
     await browser.reset()
-    await workflows.ensure_user_dashboard(browser)
 
     demo_password = settings.user_password
     demo_username = settings.user_username

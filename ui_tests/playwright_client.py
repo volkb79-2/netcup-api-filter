@@ -38,18 +38,24 @@ Date: 2025-11-22
 """
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
+from ui_tests.pwmcp_connection import SharedPwmcpSession, current_shared_session
+
+logger = logging.getLogger(__name__)
 
 
 def _pwmcp_lease_headers() -> dict:
-    """Lease headers the pwmcp :3000 policy gateway requires (else HTTP 428).
+    """Lease headers sent to the pwmcp :3000 policy gateway.
 
     Both values come from the runner's environment (ciu renders them from
     ``[test_runner.pwmcp]``); there is deliberately no default: a missing value is a
-    configuration error, not something to paper over with a guess.
+    configuration error, not something to paper over with a guess. The gateway
+    treats the headers as optional, but naf always sends an explicit lease so
+    the session lifetime and owner are visible in the gateway's session list.
     """
     lease = os.environ.get("PWMCP_LEASE_SECONDS", "").strip()
     label = os.environ.get("PWMCP_SESSION_LABEL", "").strip()
@@ -98,7 +104,7 @@ class PlaywrightClient:
             headless_str = os.getenv('PLAYWRIGHT_HEADLESS')
             if not headless_str:
                 headless_str = 'true'
-                print("[CONFIG] WARNING: PLAYWRIGHT_HEADLESS not set, using default: true")
+            logger.warning("PLAYWRIGHT_HEADLESS is not set; using the declared default true")
             self.headless = headless_str.lower() == 'true'
         self.timeout = timeout
         self.storage_state_path = storage_state_path
@@ -107,6 +113,8 @@ class PlaywrightClient:
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._shared_session: SharedPwmcpSession | None = None
+        self._owns_browser = False
         
     async def __aenter__(self):
         """Async context manager entry."""
@@ -139,15 +147,28 @@ class PlaywrightClient:
         ``Browser`` object, so ``new_context`` / ``new_page`` / ``page.request``
         work identically downstream.
         """
-        self._playwright = await async_playwright().start()
-
         server_ws = os.environ.get("PLAYWRIGHT_SERVER_WS", "").strip()
-        if server_ws:
+        shared_session = current_shared_session()
+        if shared_session is not None:
+            # The pytest session owns this one driver/browser connection. A
+            # client instance owns only its fresh context and page.
+            self._shared_session = shared_session
+            self._browser = await shared_session.ensure_connected()
+            self._owns_browser = False
+        else:
+            self._playwright = await async_playwright().start()
+            self._owns_browser = True
+
+        if shared_session is None and server_ws:
             # Remote mode: connect to Playwright-as-a-Service container.
             # bt.connect() returns a real Browser with the full Playwright API.
             bt = getattr(self._playwright, self.browser_type, self._playwright.chromium)
-            self._browser = await bt.connect(server_ws, headers=_pwmcp_lease_headers())
-        else:
+            self._browser = await bt.connect(
+                server_ws,
+                headers=_pwmcp_lease_headers(),
+                timeout=int(float(os.getenv("E2E_PWMCP_CONNECT_TIMEOUT_SECONDS", "30")) * 1000),
+            )
+        elif shared_session is None:
             # In-process mode: launch a local browser (requires installed binaries).
             if self.browser_type == 'firefox':
                 self._browser = await self._playwright.firefox.launch(headless=self.headless)
@@ -159,15 +180,21 @@ class PlaywrightClient:
         # Create default context
         storage_state_path = self.storage_state_path
         if storage_state_path and not os.path.exists(storage_state_path):
-            print(
-                f"[CONFIG] WARNING: storage_state_path does not exist, ignoring: {storage_state_path}"
+            logger.warning(
+                "storage_state_path does not exist; starting this context without cached auth: %s",
+                storage_state_path,
             )
             storage_state_path = None
 
-        context_kwargs = {}
-        if storage_state_path:
-            context_kwargs["storage_state"] = storage_state_path
-        self._context = await self._browser.new_context(**context_kwargs)
+        if self._shared_session is not None:
+            self._context = await self._shared_session.new_context(
+                storage_state_path=storage_state_path,
+            )
+        else:
+            context_kwargs = {}
+            if storage_state_path:
+                context_kwargs["storage_state"] = storage_state_path
+            self._context = await self._browser.new_context(**context_kwargs)
         self._context.set_default_timeout(self.timeout)
         
         # Create default page for convenience
@@ -198,7 +225,10 @@ class PlaywrightClient:
         if not self._browser:
             raise RuntimeError("Client not connected. Use 'async with' or call connect()")
         
-        context = await self._browser.new_context(**kwargs)
+        if self._shared_session is not None:
+            context = await self._shared_session.new_context(**kwargs)
+        else:
+            context = await self._browser.new_context(**kwargs)
         context.set_default_timeout(self.timeout)
         return context
     
@@ -212,13 +242,14 @@ class PlaywrightClient:
             await self._context.close()
             self._context = None
         
-        if self._browser:
+        if self._browser and self._owns_browser:
             await self._browser.close()
-            self._browser = None
+        self._browser = None
         
-        if self._playwright:
+        if self._playwright and self._owns_browser:
             await self._playwright.stop()
-            self._playwright = None
+        self._playwright = None
+        self._shared_session = None
     
     @property
     def browser(self) -> Browser:

@@ -30,6 +30,7 @@ Implementation Notes:
 - Token creation via account portal after user login
 """
 
+import logging
 import re
 import secrets
 import string
@@ -48,6 +49,8 @@ from ui_tests.tests.journeys.state_matrix import (
     AccountSpec, RealmSpec, TokenSpec, APITestSpec,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def generate_suffix() -> str:
     """Generate unique suffix for names."""
@@ -59,7 +62,7 @@ async def capture(browser: Browser, name: str, journey: str = "J3") -> str:
     screenshot_name = journey_state.next_screenshot_name(journey, name)
     path = await browser.screenshot(screenshot_name)
     journey_state.screenshots.append((screenshot_name, path))
-    print(f"📸 {screenshot_name}")
+    logger.info(f"📸 {screenshot_name}")
     return path
 
 
@@ -154,7 +157,7 @@ class AccountCreator:
         page_text = await self.browser.text("body")
         
         if "created" not in page_text.lower() and "invitation" not in page_text.lower():
-            print(f"⚠️  Account creation may have failed for {username}")
+            logger.info(f"⚠️  Account creation may have failed for {username}")
             return {}
         
         # Get account ID from URL (redirects to /admin/accounts/{id})
@@ -183,19 +186,23 @@ class AccountCreator:
         if invite_msg:
             email_body = invite_msg.text or ""
             invite_link = self._extract_invite_link(email_body)
-            print(f"  [DEBUG] Invite email for {username}:")
-            print(f"          Subject: {invite_msg.subject}")
-            print(f"          Body excerpt: {email_body[:200]}...")
-            print(f"          Extracted link: {invite_link}")
+            logger.info(f"  [DEBUG] Invite email for {username}:")
+            logger.info(f"          Subject: {invite_msg.subject}")
+            logger.info("invite email body length=%d", len(email_body or ""))
+            logger.info(
+                "          Invite link present=%s length=%d",
+                bool(invite_link),
+                len(invite_link or ""),
+            )
             if invite_link:
                 # Accept the invite
                 await self._accept_invite(invite_link, username, password)
                 account_data["status"] = "active"
-                print(f"✓ Created and activated account: {username}")
+                logger.info(f"✓ Created and activated account: {username}")
             else:
-                print(f"⚠️  No invite link found in email for {username}")
+                logger.info(f"⚠️  No invite link found in email for {username}")
         else:
-            print(f"⚠️  No invite email received for {username}")
+            logger.info(f"⚠️  No invite email received for {username}")
         
         # Handle rejection after creation if needed
         if spec.status == "rejected" and account_id:
@@ -248,9 +255,8 @@ class AccountCreator:
             await capture(browser=self.browser, name=f"invite-error-{username}")
             page_text = await self.browser.text("body")
             current_url = self.browser._page.url
-            print(f"  ⚠️  Invite page not found for {username}")
-            print(f"      URL: {current_url}")
-            print(f"      Page: {page_text[:200]}...")
+            logger.info("  ⚠️  Invite page not found for %s", username)
+            logger.info("      Invite page text length: %d", len(page_text or ""))
             raise Exception(f"Invite page password field not found for {username}")
         
         # Fill password form
@@ -263,9 +269,9 @@ class AccountCreator:
         # Verify success (should redirect to login with success message)
         page_text = await self.browser.text("body")
         if "active" in page_text.lower() or "login" in page_text.lower():
-            print(f"  ✓ Invite accepted for {username}")
+            logger.info(f"  ✓ Invite accepted for {username}")
         else:
-            print(f"  ⚠️  Invite acceptance may have failed for {username}")
+            logger.info(f"  ⚠️  Invite acceptance may have failed for {username}")
         
         # Navigate back to admin login to re-establish admin session
         # The ensure_admin_logged_in will handle the actual login
@@ -277,7 +283,7 @@ class AccountCreator:
         await self.ensure_admin_logged_in()
         await self.browser.goto(settings.url(f"/admin/accounts/{account_id}/approve"))
         await self.browser.wait_for_load_state('domcontentloaded')
-        print(f"  ✓ Approved account: {username}")
+        logger.info(f"  ✓ Approved account: {username}")
     
     async def _reject_account(self, account_id: int, username: str):
         """Reject an account."""
@@ -293,7 +299,7 @@ class AccountCreator:
         if reject_btn:
             await reject_btn.click()
             await self.browser.wait_for_load_state('domcontentloaded')
-            print(f"  ✓ Rejected/disabled account: {username}")
+            logger.info(f"  ✓ Rejected/disabled account: {username}")
 
 
 class RealmCreator:
@@ -316,12 +322,12 @@ class RealmCreator:
         # Get the account this realm belongs to
         account = self.account_creator.created_accounts.get(spec.account_name)
         if not account:
-            print(f"⚠️  Account {spec.account_name} not found for realm {spec.name}")
+            logger.info(f"⚠️  Account {spec.account_name} not found for realm {spec.name}")
             return {}
         
         account_id = account.get("account_id")
         if not account_id:
-            print(f"⚠️  Account {spec.account_name} has no account_id for realm {spec.name}")
+            logger.info(f"⚠️  Account {spec.account_name} has no account_id for realm {spec.name}")
             return {}
         
         # Ensure admin is logged in
@@ -337,7 +343,7 @@ class RealmCreator:
         # Check if form exists
         form = await self.browser.query_selector("form")
         if not form:
-            print(f"⚠️  No realm creation form found for account {account_id}")
+            logger.info(f"⚠️  No realm creation form found for account {account_id}")
             return {}
         
         # Fill realm creation form
@@ -414,13 +420,13 @@ class RealmCreator:
         if spec.status == "pending":
             # For pending, we'd need user to request via account portal
             realm_data["status"] = "approved"  # Admin creates are always approved
-            print("  ℹ️  Note: Admin-created realms are auto-approved, spec wanted 'pending'")
+            logger.info("  ℹ️  Note: Admin-created realms are auto-approved, spec wanted 'pending'")
         
         self.created_realms[spec.name] = realm_data
         if success:
-            print(f"✓ Created realm: {full_domain} ({spec.realm_type}, {realm_data['status']})")
+            logger.info(f"✓ Created realm: {full_domain} ({spec.realm_type}, {realm_data['status']})")
         else:
-            print(f"⚠️  Realm creation may have failed for {full_domain}")
+            logger.info(f"⚠️  Realm creation may have failed for {full_domain}")
         
         return realm_data
 
@@ -450,7 +456,7 @@ class TokenCreator:
         email = account_data.get("email")
         
         if not username or not password:
-            print(f"⚠️  No credentials for account {account_data.get('spec_name')}")
+            logger.info(f"⚠️  No credentials for account {account_data.get('spec_name')}")
             return False
         
         # Check if already logged in as this account
@@ -483,7 +489,7 @@ class TokenCreator:
             # Handle 2FA via email code from Mailpit
             code = await self._get_2fa_code_from_email(email or f"{username}@example.com")
             if not code:
-                print(f"⚠️  Could not get 2FA code from email for {username}")
+                logger.info(f"⚠️  Could not get 2FA code from email for {username}")
                 return False
             
             # Fill 2FA form
@@ -495,25 +501,25 @@ class TokenCreator:
             current_url = self.browser.current_url or ""
             if "/account/dashboard" in current_url or "/account/realms" in current_url or "/account/" in current_url:
                 self._current_account_session = username
-                print(f"  ✓ Logged in as {username} (2FA completed)")
+                logger.info(f"  ✓ Logged in as {username} (2FA completed)")
                 return True
             else:
-                print(f"⚠️  2FA verification failed for {username}")
+                logger.info(f"⚠️  2FA verification failed for {username}")
                 return False
         
         page_text = await self.browser.text("body")
         page_text_lower = page_text.lower()
         if "invalid" in page_text_lower or "error" in page_text_lower:
-            print(f"⚠️  Login failed for {username}")
+            logger.info(f"⚠️  Login failed for {username}")
             return False
 
         # If we didn't land on a logged-in page, treat this as a failed login.
         # (Avoid false positives that can cascade into confusing redirects.)
         if "/account/login" in current_url:
-            print(f"⚠️  Login did not complete for {username} (still on login)")
+            logger.info(f"⚠️  Login did not complete for {username} (still on login)")
             return False
 
-        print(f"⚠️  Login status unclear for {username}; treating as failed")
+        logger.info(f"⚠️  Login status unclear for {username}; treating as failed")
         return False
     
     async def _get_2fa_code_from_email(self, email: str) -> str | None:
@@ -579,7 +585,7 @@ class TokenCreator:
             if fqdn.lower() in page_text.lower():
                 return int(realm_id)
         
-        print(f"⚠️  Could not find realm ID for {fqdn}")
+        logger.info(f"⚠️  Could not find realm ID for {fqdn}")
         return None
     
     async def create_token(self, spec: TokenSpec) -> dict:
@@ -594,18 +600,18 @@ class TokenCreator:
         """
         realm = self.realm_creator.created_realms.get(spec.realm_name)
         if not realm:
-            print(f"⚠️  Realm {spec.realm_name} not found for token {spec.name}")
+            logger.info(f"⚠️  Realm {spec.realm_name} not found for token {spec.name}")
             return {}
         
         if realm.get("status") != "approved":
-            print(f"⚠️  Realm {spec.realm_name} not approved, cannot create token")
+            logger.info(f"⚠️  Realm {spec.realm_name} not approved, cannot create token")
             return {}
         
         # Get account credentials
         account_name = realm.get("account_name", "")
         account = self.account_creator.created_accounts.get(account_name)
         if not account:
-            print(f"⚠️  Account {account_name} not found for token {spec.name}")
+            logger.info(f"⚠️  Account {account_name} not found for token {spec.name}")
             return {}
         
         # Get realm ID (need to find it)
@@ -619,13 +625,13 @@ class TokenCreator:
             self._current_account_session = None
         
         if not realm_id:
-            print(f"⚠️  No realm_id for {spec.realm_name}, cannot create token")
+            logger.info(f"⚠️  No realm_id for {spec.realm_name}, cannot create token")
             return {}
         
         # Login as account owner
         login_success = await self._login_as_account(account)
         if not login_success:
-            print(f"⚠️  Cannot login as {account['username']} to create token")
+            logger.info(f"⚠️  Cannot login as {account['username']} to create token")
             return {}
         
         suffix = generate_suffix()
@@ -638,7 +644,7 @@ class TokenCreator:
         # Check if form exists
         form = await self.browser.query_selector("form")
         if not form:
-            print(f"⚠️  No token creation form found for realm {realm_id}")
+            logger.info(f"⚠️  No token creation form found for realm {realm_id}")
             return {}
         
         # Fill token form
@@ -722,15 +728,15 @@ class TokenCreator:
         
         # Debug output if we couldn't capture
         if not token_value:
-            print(f"  [DEBUG] Token capture failed for {token_name}")
-            print(f"          URL: {current_url}")
+            logger.info(f"  [DEBUG] Token capture failed for {token_name}")
+            logger.info(f"          URL: {current_url}")
             # Check for error messages
             if "error" in page_text.lower() or "invalid" in page_text.lower():
-                print("          Found error on page!")
+                logger.info("          Found error on page!")
             # Check for flash messages in the full page
             page_html = await self.browser.html("body")
             if "alert-danger" in page_html or "invalid-feedback" in page_html:
-                print("          Validation error detected in HTML")
+                logger.info("          Validation error detected in HTML")
             # Take debug screenshot
             await capture(browser=self.browser, name=f"token-error-{token_name}")
         
@@ -752,9 +758,9 @@ class TokenCreator:
                 token_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=spec.expires_in_hours)
         
         if token_value:
-            print(f"✓ Created token: {token_name} for {realm['fqdn']} (value captured)")
+            logger.info(f"✓ Created token: {token_name} for {realm['fqdn']} (value captured)")
         else:
-            print(f"⚠️  Created token: {token_name} but couldn't capture value")
+            logger.info(f"⚠️  Created token: {token_name} but couldn't capture value")
         
         # Handle revoked tokens
         if spec.is_revoked and token_value:
@@ -786,7 +792,7 @@ class TokenCreator:
             if confirm_btn:
                 await confirm_btn.click()
                 await self.browser.wait_for_load_state('domcontentloaded')
-            print(f"  ✓ Revoked token: {token_name}")
+            logger.info(f"  ✓ Revoked token: {token_name}")
 
 
 class APITester:
@@ -800,12 +806,12 @@ class APITester:
         """Run API test based on spec."""
         token_data = self.token_creator.created_tokens.get(spec.token_name)
         if not token_data:
-            print(f"⚠️  Token {spec.token_name} not found for API test")
+            logger.info(f"⚠️  Token {spec.token_name} not found for API test")
             return {"status": "skipped", "reason": "token not found"}
         
         token_value = token_data.get("token_value")
         if not token_value:
-            print(f"⚠️  Token {spec.token_name} has no value for API test")
+            logger.info(f"⚠️  Token {spec.token_name} has no value for API test")
             return {"status": "skipped", "reason": "token has no value"}
         
         # Build API request
@@ -844,16 +850,16 @@ class APITester:
                 }
                 
                 if result["passed"]:
-                    print(f"✓ API test: {spec.description}")
+                    logger.info(f"✓ API test: {spec.description}")
                 else:
-                    print(f"✗ API test: {spec.description} (got {response.status_code}, expected {spec.expected_status})")
+                    logger.info(f"✗ API test: {spec.description} (got {response.status_code}, expected {spec.expected_status})")
                 
                 self.results.append(result)
                 return result
                 
         except Exception as e:
-            print(f"✗ API test error: {spec.description} - {e}")
-            return {"status": "error", "reason": str(e)}
+            logger.info("✗ API test error: %s - %s", spec.description, type(e).__name__)
+            return {"status": "error", "reason": type(e).__name__}
 
 
 class TestJourney3ComprehensiveStates:
@@ -861,9 +867,9 @@ class TestJourney3ComprehensiveStates:
     
     async def test_J3_01_create_accounts(self, browser: Browser):
         """Create accounts in all states."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3: Creating Account States")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3: Creating Account States")
+        logger.info("=" * 60)
         
         creator = AccountCreator(browser)
         
@@ -884,17 +890,17 @@ class TestJourney3ComprehensiveStates:
         await browser.wait_for_timeout(300)
         await capture(browser, "accounts-pending-list")
         
-        print(f"\n✓ Created {len(creator.created_accounts)} accounts")
+        logger.info(f"\n✓ Created {len(creator.created_accounts)} accounts")
     
     async def test_J3_02_create_realms(self, browser: Browser):
         """Create realms in all types and states."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3: Creating Realm States")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3: Creating Realm States")
+        logger.info("=" * 60)
         
         account_creator = journey_state.get_extra("account_creator")
         if not account_creator:
-            print("⚠️  No account creator found, skipping realm creation")
+            logger.info("⚠️  No account creator found, skipping realm creation")
             return
         
         creator = RealmCreator(browser, account_creator)
@@ -916,17 +922,17 @@ class TestJourney3ComprehensiveStates:
         await browser.wait_for_timeout(300)
         await capture(browser, "realms-pending-list")
         
-        print(f"\n✓ Created {len(creator.created_realms)} realms")
+        logger.info(f"\n✓ Created {len(creator.created_realms)} realms")
     
     async def test_J3_03_create_tokens(self, browser: Browser):
         """Create tokens with all permission types."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3: Creating Token States")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3: Creating Token States")
+        logger.info("=" * 60)
         
         realm_creator = journey_state.get_extra("realm_creator")
         if not realm_creator:
-            print("⚠️  No realm creator found, skipping token creation")
+            logger.info("⚠️  No realm creator found, skipping token creation")
             return
 
         # Webhosting/live runs typically cannot complete per-account token creation
@@ -941,7 +947,7 @@ class TestJourney3ComprehensiveStates:
                 "yes",
             }
             if not allow:
-                print(
+                logger.info(
                     "ℹ️  Skipping token creation on webhosting (set UI_J3_CREATE_TOKENS_WEBHOSTING=1 to enable)"
                 )
                 return
@@ -958,17 +964,17 @@ class TestJourney3ComprehensiveStates:
         # This would be per-realm or admin overview
         await capture(browser, "tokens-all-types")
         
-        print(f"\n✓ Created {len(creator.created_tokens)} tokens")
+        logger.info(f"\n✓ Created {len(creator.created_tokens)} tokens")
     
     async def test_J3_04_api_tests(self, browser: Browser):
         """Run API tests against all tokens."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3: API Validation Tests")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3: API Validation Tests")
+        logger.info("=" * 60)
         
         token_creator = journey_state.get_extra("token_creator")
         if not token_creator:
-            print("⚠️  No token creator found, skipping API tests")
+            logger.info("⚠️  No token creator found, skipping API tests")
             return
         
         tester = APITester(token_creator)
@@ -981,13 +987,13 @@ class TestJourney3ComprehensiveStates:
         failed = sum(1 for r in tester.results if not r.get("passed") and r.get("status") != "skipped")
         skipped = sum(1 for r in tester.results if r.get("status") == "skipped")
         
-        print(f"\n✓ API Tests: {passed} passed, {failed} failed, {skipped} skipped")
+        logger.info(f"\n✓ API Tests: {passed} passed, {failed} failed, {skipped} skipped")
     
     async def test_J3_05_ui_validation(self, browser: Browser):
         """Validate UI correctly shows all states."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3: UI State Validation")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3: UI State Validation")
+        logger.info("=" * 60)
         
         # Admin dashboard should show counts
         await browser.goto(settings.url("/admin/"))
@@ -999,20 +1005,20 @@ class TestJourney3ComprehensiveStates:
         await browser.wait_for_timeout(300)
         await capture(browser, "audit-log-populated")
         
-        print("\n✓ UI validation screenshots captured")
+        logger.info("\n✓ UI validation screenshots captured")
     
     async def test_J3_06_summary(self, browser: Browser):
         """Journey 3 complete - summarize created states."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3 COMPLETE: Comprehensive State Population")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3 COMPLETE: Comprehensive State Population")
+        logger.info("=" * 60)
         
         account_creator = journey_state.get_extra("account_creator")
         realm_creator = journey_state.get_extra("realm_creator")
         token_creator = journey_state.get_extra("token_creator")
         
-        print(f"  Accounts: {len(account_creator.created_accounts) if account_creator else 0}")
-        print(f"  Realms: {len(realm_creator.created_realms) if realm_creator else 0}")
-        print(f"  Tokens: {len(token_creator.created_tokens) if token_creator else 0}")
-        print(f"  Screenshots: {len(journey_state.screenshots)}")
-        print("=" * 60 + "\n")
+        logger.info(f"  Accounts: {len(account_creator.created_accounts) if account_creator else 0}")
+        logger.info(f"  Realms: {len(realm_creator.created_realms) if realm_creator else 0}")
+        logger.info(f"  Tokens: {len(token_creator.created_tokens) if token_creator else 0}")
+        logger.info(f"  Screenshots: {len(journey_state.screenshots)}")
+        logger.info("=" * 60 + "\n")

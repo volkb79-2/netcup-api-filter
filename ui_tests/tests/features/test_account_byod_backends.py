@@ -49,7 +49,11 @@ async def test_account_byod_backend_create_edit_delete(active_profile, session_m
     if not active_profile.allow_writes:
         pytest.skip("profile is read-only")
 
-    handle = await session_manager.create_session(role="account", session_id="acct_byod")
+    handle = await session_manager.account_session(
+        settings.user_username,
+        login=True,
+        password=settings.user_password,
+    )
     browser = Browser(handle.page)
     await browser.reset()
     await workflows.ensure_user_dashboard(browser)

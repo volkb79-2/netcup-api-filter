@@ -46,7 +46,7 @@ class TestCSSThemeVariables:
 
     async def test_default_theme_variables_defined(self, active_profile):
         """Default theme defines all required CSS custom properties."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             css_vars: dict = await browser.evaluate(
@@ -71,7 +71,7 @@ class TestCSSThemeVariables:
 
     async def test_table_uses_theme_background(self, active_profile):
         """Table background must not be plain white (respects the active theme)."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/accounts"))
             await browser.verify_status(200)
@@ -101,7 +101,7 @@ class TestThemeSwitcher:
 
     async def test_theme_switcher_changes_html_class(self, active_profile):
         """setTheme('ember') must add 'ember' to <html> classList."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             await browser.evaluate("() => setTheme('ember')")
@@ -115,7 +115,7 @@ class TestThemeSwitcher:
 
     async def test_theme_persists_across_page_navigation(self, active_profile):
         """Theme chosen on dashboard must still be active after navigating away."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             await browser.evaluate("() => setTheme('ember')")
@@ -134,7 +134,7 @@ class TestThemeSwitcher:
 
     async def test_density_switcher_applies_compact_class(self, active_profile):
         """setDensity('compact') must add 'density-compact' to html or body."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             await browser.evaluate("() => setDensity('compact')")
@@ -160,7 +160,7 @@ class TestPasswordWidget:
 
     async def test_password_toggle_reveals_text(self, active_profile):
         """Eye-toggle button switches #new_password from type=password to type=text."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/change-password"))
             await browser.verify_status(200)
@@ -182,7 +182,7 @@ class TestPasswordWidget:
 
     async def test_generate_password_fills_field(self, active_profile):
         """Generate button must fill #new_password with at least 20 characters."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/change-password"))
             await browser.verify_status(200)
@@ -203,7 +203,7 @@ class TestPasswordWidget:
 
     async def test_entropy_meter_updates_on_input(self, active_profile):
         """#entropyBadge text must change between a weak and a strong password."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/change-password"))
             await browser.verify_status(200)
@@ -224,7 +224,7 @@ class TestPasswordWidget:
             )
 
         # Also verify bit counts for the strong password
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/change-password"))
             await browser.verify_status(200)
@@ -243,7 +243,7 @@ class TestPasswordWidget:
 
     async def test_confirm_password_mismatch_warning_visible(self, active_profile):
         """Mismatched confirm-password must make #passwordMismatch visible (no d-none)."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/change-password"))
             await browser.verify_status(200)
@@ -265,7 +265,7 @@ class TestPasswordWidget:
 
     async def test_submit_button_disabled_initially(self, active_profile):
         """Submit button (#submitBtn) must be disabled on page load."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/change-password"))
             await browser.verify_status(200)
@@ -285,7 +285,7 @@ class TestCopyButton:
 
     async def test_copy_to_clipboard_function_defined(self, active_profile):
         """copyToClipboard must be a callable function on every admin page."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             is_callable: bool = await browser.evaluate(
@@ -305,7 +305,7 @@ class TestDropdownModal:
 
     async def test_dropdown_menu_opens_on_click(self, active_profile):
         """Clicking .dropdown-toggle must show a .dropdown-menu.show element."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             dropdown_toggle = await browser.query_selector(".dropdown-toggle")
@@ -322,7 +322,7 @@ class TestDropdownModal:
 
     async def test_geoip_modal_present_on_audit_page(self, active_profile):
         """The GeoIP lookup modal markup must be present on /admin/audit."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             await browser.goto(settings.url("/admin/audit"))
             await browser.verify_status(200)
@@ -341,9 +341,9 @@ class TestDropdownModal:
 class TestLoginPageLinks:
     """Login page links lead to the correct destinations."""
 
-    async def test_account_login_has_register_link(self, browser):
+    async def test_account_login_has_register_link(self, anon_browser):
         """Account login page must expose a link to /account/register."""
-        await browser._page.context.clear_cookies()
+        browser = anon_browser
         await browser.goto(settings.url("/account/login"))
         await browser.wait_for_load_state("networkidle")
 
@@ -360,9 +360,9 @@ class TestLoginPageLinks:
             f"Clicking register link should navigate to /register, got: {current}"
         )
 
-    async def test_account_login_has_forgot_password_link(self, browser):
+    async def test_account_login_has_forgot_password_link(self, anon_browser):
         """Account login page must expose a link to the forgot-password page."""
-        await browser._page.context.clear_cookies()
+        browser = anon_browser
         await browser.goto(settings.url("/account/login"))
         await browser.wait_for_load_state("networkidle")
 
@@ -392,9 +392,8 @@ class TestResponsive:
 
     async def test_submit_button_tap_target_exists(self, active_profile):
         """Login page submit button must be present at mobile viewport."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.set_viewport(MOBILE_VIEWPORT["width"], MOBILE_VIEWPORT["height"])
-            await browser._page.context.clear_cookies()
             await browser.goto(settings.url("/admin/login"))
             await browser.verify_status(200)
 
@@ -407,7 +406,7 @@ class TestResponsive:
 
     async def test_no_horizontal_overflow_on_dashboard(self, active_profile):
         """Admin dashboard must not overflow horizontally at 375 px."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await browser.set_viewport(MOBILE_VIEWPORT["width"], MOBILE_VIEWPORT["height"])
             await workflows.ensure_admin_dashboard(browser)
 
@@ -420,7 +419,7 @@ class TestResponsive:
 
     async def test_navbar_toggler_present_at_mobile(self, active_profile):
         """Navbar hamburger toggler must be rendered at mobile viewport."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await browser.set_viewport(MOBILE_VIEWPORT["width"], MOBILE_VIEWPORT["height"])
             await workflows.ensure_admin_dashboard(browser)
 
@@ -431,7 +430,7 @@ class TestResponsive:
 
     async def test_viewport_meta_tag_present(self, active_profile):
         """Pages must include a viewport meta tag with width=device-width."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await browser.goto(settings.url("/admin/login"))
             content: str | None = await browser.evaluate(
                 "() => document.querySelector('meta[name=\"viewport\"]')?.getAttribute('content') ?? null"

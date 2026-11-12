@@ -37,10 +37,7 @@ class TestAuthenticationSecurity:
         NOTE: This test only checks UI messaging, not actual lockout to avoid
         affecting other tests.
         """
-        async with browser_session() as browser:
-            # Persisted storage-state may already be authenticated.
-            # Clear cookies so we reliably get the login form.
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_selector("#username")
             
@@ -60,8 +57,7 @@ class TestAuthenticationSecurity:
 
     async def test_account_portal_login_invalid_credentials(self, active_profile):
         """Verify account portal rejects invalid credentials."""
-        async with browser_session() as browser:
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/account/login"))
             await browser._page.wait_for_selector("#username")
             
@@ -85,8 +81,7 @@ class TestCSRFProtection:
     
     async def test_login_form_has_csrf_token(self, active_profile):
         """Verify login forms include CSRF tokens."""
-        async with browser_session() as browser:
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_selector("#username")
             
@@ -96,8 +91,7 @@ class TestCSRFProtection:
 
     async def test_account_login_form_has_csrf_token(self, active_profile):
         """Verify account login form includes CSRF token."""
-        async with browser_session() as browser:
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/account/login"))
             await browser._page.wait_for_selector("#username")
             
@@ -115,7 +109,7 @@ class TestErrorPages:
     
     async def test_404_error_page_renders(self, active_profile):
         """Verify 404 error page renders correctly."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             # Navigate to non-existent page
             await browser.goto(settings.url("/nonexistent-page-12345"))
             await anyio.sleep(0.5)
@@ -126,7 +120,7 @@ class TestErrorPages:
 
     async def test_admin_404_error_page(self, active_profile):
         """Verify admin 404 error page renders correctly."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # Navigate to non-existent admin page
@@ -141,7 +135,7 @@ class TestErrorPages:
 
     async def test_error_page_has_navigation(self, active_profile):
         """Verify error pages have navigation back to home."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/nonexistent-page"))
             await anyio.sleep(0.5)
             
@@ -167,10 +161,7 @@ class TestInputValidation:
         when 'registration'/'email' text was absent) would have hidden a broken
         or removed registration form; assert unconditionally instead.
         """
-        async with browser_session() as browser:
-            # A persisted account session would redirect /account/register to the
-            # dashboard; clear cookies so we land on the real registration form.
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/account/register"), wait_until="domcontentloaded")
             assert browser._page.url.rstrip("/").endswith("/account/register"), (
                 f"expected the registration form, landed at {browser._page.url}"
@@ -206,8 +197,7 @@ class TestInputValidation:
         ``or "password" in page_html`` fallback made this assertion impossible
         to fail; assert the policy attributes unconditionally instead.
         """
-        async with browser_session() as browser:
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/account/register"), wait_until="domcontentloaded")
             assert browser._page.url.rstrip("/").endswith("/account/register"), (
                 f"expected the registration form, landed at {browser._page.url}"
@@ -251,7 +241,7 @@ class TestSessionSecurity:
         are Flask-cookie-based (no account_sessions DB row), so the session-revoke
         proof is the enforced redirect, asserted exactly.
         """
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             # Sanity: while logged in, the protected page is reachable.
@@ -278,10 +268,7 @@ class TestSessionSecurity:
 
     async def test_admin_pages_require_authentication(self, active_profile):
         """Verify admin pages require authentication."""
-        async with browser_session() as browser:
-            # Persisted storage-state may already be authenticated.
-            # Clear cookies so this test truly verifies unauthenticated access.
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             # Try to access admin page directly
             await browser.goto(settings.url("/admin/accounts"))
             await anyio.sleep(0.5)
@@ -292,8 +279,7 @@ class TestSessionSecurity:
 
     async def test_account_pages_require_authentication(self, active_profile):
         """Verify account pages require authentication."""
-        async with browser_session() as browser:
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             # Try to access account dashboard directly
             await browser.goto(settings.url("/account/dashboard"))
             await anyio.sleep(0.5)
@@ -310,19 +296,19 @@ class TestSessionSecurity:
 class TestPasswordResetSecurity:
     """Tests for password reset security."""
     
-    async def test_forgot_password_form_accessible(self, active_profile):
+    async def test_forgot_password_form_accessible(self, active_profile, anon_browser):
         """Verify forgot password form is accessible."""
-        async with browser_session() as browser:
-            await browser.goto(settings.url("/account/forgot-password"))
-            await anyio.sleep(0.5)
-            
-            # Should show forgot password form
-            body_html = await browser.html("body")
-            assert "email" in body_html.lower() or "password" in body_html.lower() or "reset" in body_html.lower()
+        browser = anon_browser
+        await browser.goto(settings.url("/account/forgot-password"), wait_until="domcontentloaded")
+
+        await browser._page.wait_for_selector("#email", timeout=10_000)
+        assert await browser.query_selector("#email") is not None, (
+            "an anonymous visit to /account/forgot-password must render the email form"
+        )
 
     async def test_forgot_password_with_invalid_email(self, active_profile):
         """Verify forgot password handles invalid email gracefully."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/account/forgot-password"))
             
             # Try non-existent email
@@ -348,7 +334,7 @@ class TestAPISecurity:
     
     async def test_api_endpoint_requires_auth(self, active_profile):
         """Verify API endpoints require authentication."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             # Try to access API without auth
             await browser.goto(settings.url("/api"))
             await anyio.sleep(0.5)
@@ -360,7 +346,7 @@ class TestAPISecurity:
 
     async def test_admin_api_requires_admin_auth(self, active_profile):
         """Verify admin API endpoints require admin authentication."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             # Try to access admin API without auth
             await browser.goto(settings.url("/admin/api/accounts"))
             await anyio.sleep(0.5)
@@ -380,8 +366,7 @@ class TestSecurityHeaders:
     
     async def test_content_type_is_set(self, active_profile):
         """Verify pages have proper content type."""
-        async with browser_session() as browser:
-            await browser._page.context.clear_cookies()
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_selector("#username")
             
@@ -399,7 +384,7 @@ class TestXSSPrevention:
     
     async def test_search_input_escaped(self, active_profile):
         """Verify search/filter inputs are properly escaped."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # Navigate to a page with search
@@ -421,10 +406,9 @@ class TestXSSPrevention:
 
     async def test_url_params_escaped(self, active_profile):
         """Verify URL parameters are properly escaped."""
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             # Try XSS in URL parameter
             xss_url = "/admin/login?error=<script>alert('xss')</script>"
-            await browser._page.context.clear_cookies()
             await browser.goto(settings.url(xss_url))
             await anyio.sleep(0.5)
 
@@ -438,7 +422,7 @@ class TestXSSPrevention:
 # (merged verbatim from test_security.py — these are the genuinely-unique
 #  checks not covered by the scenarios above: X-Content-Type-Options header,
 #  session-cookie HttpOnly/SameSite flags, and no-debug-mode indicators.
-#  These use the `browser` fixture rather than browser_session() — moved
+#  These use explicit anonymous contexts rather than the admin-backed `browser` fixture.
 #  unchanged to preserve their assertions.)
 # ============================================================================
 
@@ -459,12 +443,11 @@ class TestSecurityResponseHeaders:
         return values
 
     @pytest.mark.asyncio
-    async def test_x_content_type_options(self, browser):
+    async def test_x_content_type_options(self, anon_browser):
         """Verify X-Content-Type-Options header is set."""
         from ui_tests.config import settings
 
-        # Ensure we land on the actual login page (not an authenticated redirect)
-        await browser._page.context.clear_cookies()
+        browser = anon_browser
         response = await browser._page.goto(settings.url("/admin/login"))
 
         xcto = response.headers.get('x-content-type-options', '')
@@ -484,11 +467,11 @@ class TestSessionCookieSecurity:
     """Session cookie flag checks (merged from test_security.py)."""
 
     @pytest.mark.asyncio
-    async def test_session_cookie_httponly(self, browser):
+    async def test_session_cookie_httponly(self, anon_browser):
         """Verify session cookie has HttpOnly flag (when using HTTPS)."""
         from ui_tests.config import settings
 
-        await browser._page.context.clear_cookies()
+        browser = anon_browser
         await browser.goto(settings.url("/admin/login"))
 
         await browser._page.wait_for_selector("#username")
@@ -504,11 +487,11 @@ class TestSessionCookieSecurity:
             pytest.skip("No session cookie found on login page")
 
     @pytest.mark.asyncio
-    async def test_session_cookie_samesite(self, browser):
+    async def test_session_cookie_samesite(self, anon_browser):
         """Verify session cookie has SameSite attribute."""
         from ui_tests.config import settings
 
-        await browser._page.context.clear_cookies()
+        browser = anon_browser
         await browser.goto(settings.url("/admin/login"))
 
         await browser._page.wait_for_selector("#username")
@@ -528,11 +511,11 @@ class TestSecurityMisconfigurationChecks:
     """Debug-mode disclosure check (merged from test_security.py)."""
 
     @pytest.mark.asyncio
-    async def test_no_debug_mode_indicators(self, browser):
+    async def test_no_debug_mode_indicators(self, anon_browser):
         """Verify no debug mode indicators in response."""
         from ui_tests.config import settings
 
-        await browser._page.context.clear_cookies()
+        browser = anon_browser
         await browser.goto(settings.url("/admin/login"))
 
         page_content = await browser._page.content()

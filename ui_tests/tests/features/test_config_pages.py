@@ -14,7 +14,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
 
 async def test_netcup_config_page(active_profile):
     """Netcup Config page loads and exposes all required form fields."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_netcup_config(browser)
 
@@ -31,7 +31,7 @@ async def test_netcup_config_page(active_profile):
 
 async def test_netcup_config_test_connection(active_profile, mock_netcup_api_server, mock_netcup_credentials):
     """Test-connection button on Netcup config triggers a success response (mock server)."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         # The button posts the form: whatever it saves must not outlive this test (the session
         # app is shared; a leftover 127.0.0.1 mock URL turned every later DNS call into a 500).
@@ -82,7 +82,7 @@ async def _test_connection(browser, mock_netcup_api_server, mock_netcup_credenti
 
 async def test_email_config_page(active_profile):
     """Email Config page loads and exposes all required SMTP form fields."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_email_settings(browser)
 
@@ -97,7 +97,7 @@ async def test_email_config_page(active_profile):
 
 async def test_email_config_field_validation(active_profile):
     """Email config form exposes smtp_host and from_email as editable inputs."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_email_settings(browser)
 
@@ -110,7 +110,7 @@ async def test_email_config_field_validation(active_profile):
 
 async def test_system_info_page(active_profile):
     """System Info page loads and contains Python/Flask version information."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_system_info(browser)
 

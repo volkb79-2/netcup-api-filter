@@ -85,6 +85,12 @@ async def admin_session(browser):
     return browser
 
 
+@pytest_asyncio.fixture
+async def registration_browser(anon_browser):
+    """A visitor context with no persisted admin or account state."""
+    return anon_browser
+
+
 # =============================================================================
 # Data Classes (not test classes)
 # =============================================================================
@@ -229,9 +235,10 @@ class TestRegistrationEmails:
         )
 
     async def test_registration_sends_verification_email(
-        self, browser, mailpit: MailpitClient, unique_username, unique_email
+        self, registration_browser, mailpit: MailpitClient, unique_username, unique_email
     ):
         """New registration sends verification email to the registrant."""
+        browser = registration_browser
         mailpit.clear()
 
         await self._ensure_registration_form_visible(browser)
@@ -291,9 +298,10 @@ class TestRegistrationEmails:
         assert len(code) == 6, f"Verification code should be 6 chars: {code}"
 
     async def test_registration_sends_admin_notification(
-        self, browser, mailpit: MailpitClient, unique_username, unique_email
+        self, registration_browser, mailpit: MailpitClient, unique_username, unique_email
     ):
         """Registration sends notification to admin when account pending."""
+        browser = registration_browser
         mailpit.clear()
         
         # Get admin email from config (we need to check what it's set to)
@@ -450,9 +458,10 @@ class TestPasswordResetEmails:
     """Test password reset email flows."""
 
     async def test_password_reset_sends_email(
-        self, browser, mailpit: MailpitClient
+        self, registration_browser, mailpit: MailpitClient
     ):
         """Forgot password sends reset email to correct address."""
+        browser = registration_browser
         mailpit.clear()
         
         # Go to forgot password page
@@ -463,8 +472,7 @@ class TestPasswordResetEmails:
         test_email = "test@example.com"
         
         email_field = await browser.query_selector('#email, input[name="email"]')
-        if not email_field:
-            pytest.skip("Forgot password page not available")
+        assert email_field is not None, "anonymous forgot-password page must render its email field"
         
         await browser.fill('#email, input[name="email"]', test_email)
         await browser.click('button[type="submit"]')
@@ -680,12 +688,13 @@ class TestSecurityAlertEmails:
             )
 
     async def test_failed_login_alert(
-        self, browser, mailpit: MailpitClient
+        self, anon_browser, mailpit: MailpitClient
     ):
         """Failed login attempts may send security alert."""
+        browser = anon_browser
         mailpit.clear()
 
-        # Auth-flow test: must not rely on persisted storage-state.
+        # Auth-flow test: the explicit anonymous context carries no persisted state.
         await self._force_admin_login_form(browser)
         
         for _ in range(3):

@@ -20,7 +20,7 @@ websockets>=15.0  # Ensure WebSocket support to access playwright standalone ser
 playwright==1.64.*  # Client for the pwmcp browser-offload path (e2e gate); MUST equal the server's
 # `playwright.python` in http://pwmcp:3000/contract (1.64.1 on 1.64.1-r2); pinned to the
 # ghcr.io/volkb79-2/pwmcp image's Playwright version. NO browser download (pwmcp owns the
-# engine). The unit gate runs tests/ (never imports playwright).
+# engine). Unit tests may import the client wrapper but never launch a browser.
 
 # Live testing dependencies
 dnspython>=2.4.0  # DNS verification tests

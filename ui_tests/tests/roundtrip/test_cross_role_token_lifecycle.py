@@ -259,7 +259,9 @@ async def _dns_create(token: str, domain: str) -> tuple[int, dict]:
 async def test_admin_token_revocation_immediate(playwright_client, _demo_username):
     """Admin revokes a token; C1 goes 401 instantly; Channel A sees is_active==0."""
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         mailpit = mailpit_client()
         acct = ThrowawayAccount(
@@ -369,7 +371,9 @@ async def test_admin_token_revocation_immediate(playwright_client, _demo_usernam
 async def test_user_token_revocation_blocks_api_and_logs(playwright_client, _demo_username):
     """User self-revokes a token; DNS API immediately blocked; log records action."""
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         mailpit = mailpit_client()
         acct = ThrowawayAccount(
@@ -487,7 +491,9 @@ async def test_readonly_token_scope_enforced(playwright_client, _demo_username):
     Full-scope token on same realm CAN mutate (inverse guard).
     """
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         mailpit = mailpit_client()
         acct = ThrowawayAccount(
