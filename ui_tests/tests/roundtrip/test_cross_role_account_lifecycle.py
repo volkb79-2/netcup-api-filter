@@ -639,31 +639,13 @@ async def test_admin_password_reset_forces_change(playwright_client, _demo_usern
             new_password = _make_password("n")
             reset_browser = await _browser_for(manager, "anonymous", f"reset_{secrets.token_hex(3)}")
             await reset_browser.goto(reset_url, wait_until="domcontentloaded")
-            # NOTE: the reset_password template posts name="password" but the route
-            # reads name="new_password" (an app field-name mismatch). Submit the
-            # value under BOTH names so the real endpoint (with its CSRF token)
-            # completes the documented reset behavior.
             await reset_browser.fill("#password", new_password)
             await reset_browser.fill("#confirm-password", new_password)
-            await reset_browser.evaluate(
-                """
-                (pw) => {
-                    const f = document.getElementById('reset-form');
-                    let h = f.querySelector("input[name='new_password']");
-                    if (!h) {
-                        h = document.createElement('input');
-                        h.type = 'hidden';
-                        h.name = 'new_password';
-                        f.appendChild(h);
-                    }
-                    h.value = pw;
-                    f.submit();
-                }
-                """,
-                new_password,
-            )
+            await reset_browser.click("#submit-btn")
             await reset_browser._page.wait_for_url(
-                re.compile(r".*/account/login(?:\?.*)?$"), timeout=10_000
+                re.compile(r".*/account/login(?:\?.*)?$"),
+                timeout=10_000,
+                wait_until="domcontentloaded",
             )
 
             # Channel A: password hash changed; must_change_password stays 0.

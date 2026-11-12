@@ -39,6 +39,14 @@
   `account_id`, and reasons never contain submitted passwords or codes. API and HTML 429 responses
   now emit a positive integer `Retry-After`, with the HTML countdown rendering that number rather
   than `None`. The delay comes from Flask-Limiter's request reset or the configured limit window.
+- **Portal token restrictions are now real.** The create-token form submits the route's canonical names
+  (`expires`, `ip_ranges`, `description`), accepts comma- or newline-separated IPv4/IPv6 addresses and
+  CIDRs, rejects the whole submission on any invalid entry, and persists the selected expiry and
+  description. The unsupported per-token rate-limit control was removed rather than left as a no-op.
+- **Password reset and invite forms post the handler's password names.** The reset page now submits
+  `new_password`, so a normal browser reset succeeds without injected hidden fields.
+- **Form/route contract guard.** Flask-rendered form fields are compared with each handler's
+  `request.form` reads, covering the portal token/password forms and admin configuration/user forms.
 
 - **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog keeps one unverified hop as the status quo until B044 measures the webhoster chain.
 

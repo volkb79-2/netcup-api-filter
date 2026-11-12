@@ -87,10 +87,10 @@
                         </td>
                     </tr>
                     <tr>
-                        <th class="text-muted">IP Whitelist</th>
+                        <th class="text-muted">IP Allow-list</th>
                         <td>
-                            {% if token.ip_ranges %}
-                            <code>{{ token.ip_ranges }}</code>
+                            {% if token.get_allowed_ip_ranges() %}
+                            <code>{{ token.get_allowed_ip_ranges() | join(', ') }}</code>
                             {% else %}
                             <span class="text-muted">None (all IPs allowed)</span>
                             {% endif %}

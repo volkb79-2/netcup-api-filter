@@ -237,16 +237,14 @@ print(response.json())</code></pre>
                 </div>
                 <div class="card-body">
                     <p>
-                        API requests are rate-limited per token. Default limits depend on your 
-                        token configuration.
+                        API requests are rate-limited by source IP. The administrator configures
+                        one global limit for DNS and DDNS API requests.
                     </p>
-                    
-                    <h6>Rate Limit Headers</h6>
-                    <ul>
-                        <li><code>X-RateLimit-Limit</code> - Maximum requests per window</li>
-                        <li><code>X-RateLimit-Remaining</code> - Requests remaining in current window</li>
-                        <li><code>X-RateLimit-Reset</code> - Unix timestamp when window resets</li>
-                    </ul>
+
+                    <p class="mb-0">
+                        A rejected request returns HTTP 429 with a <code>Retry-After</code>
+                        header indicating when to retry.
+                    </p>
                     
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-1"></i>
