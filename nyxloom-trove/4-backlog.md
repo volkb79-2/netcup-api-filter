@@ -58,6 +58,21 @@ items:
   - {id: B054, title: "Passenger WSGI forwarded-headers probe", type: feature, component: tooling, context_estimate: small, folds_into: F029}
   - {id: B055, title: "On-demand e2e-remote lane against the webhoster", type: feature, component: tests, context_estimate: medium, folds_into: F028}
   - {id: B056, title: "Legacy filter_proxy duplicate blueprint: remove or repair", type: bug, component: api, context_estimate: small, folds_into: F029}
+  - {id: B057, title: "Portal token form: IP allow-list, expiry, rate limit and notes are silently dropped", type: bugfix, component: portal, context_estimate: medium, folds_into: F001}
+  - {id: B058, title: "Reset-password form posts 'password' but the route reads 'new_password'; remove the e2e workaround", type: bugfix, component: password-reset, context_estimate: small, folds_into: F026}
+  - {id: B059, title: "Template-to-route form-field contract guard; journeys submit through the real form", type: feature, component: tests, context_estimate: medium, folds_into: F009}
+  - {id: B060, title: "ui_tests: never print typed values or 2FA codes in failure output", type: bugfix, component: ui-tests, context_estimate: small, folds_into: F022}
+  - {id: B061, title: "Cross-account and cross-role authorization sweep over every id-bearing portal route", type: feature, component: tests, context_estimate: medium, folds_into: F002}
+  - {id: B062, title: "Replace security-tier browser tests that cannot fail; CSRF-rejection sweep; admin cookie replay after logout", type: bugfix, component: tests, context_estimate: medium, folds_into: F009}
+  - {id: B063, title: "Lockout and recovery: a locked account rejects valid credentials; recovery-code lockout and exhaustion", type: feature, component: account-auth, context_estimate: medium, folds_into: F026}
+  - {id: B064, title: "Credential-invalidation controls: alias regeneration, token regenerate, change-email, one-time token display", type: feature, component: tests, context_estimate: medium, folds_into: F004}
+  - {id: B065, title: "Rate limiting has no test at any layer", type: feature, component: rate-limiting, context_estimate: small, folds_into: M3}
+  - {id: B066, title: "ui_tests: per-role storage state, an explicit anonymous context, and the forgot-password journey", type: bugfix, component: ui-tests, context_estimate: small, folds_into: F009}
+  - {id: B067, title: "Honest skips in the e2e lane: hollow param smoke, data-dependent email skips, dead content tests, live deselect, -rs", type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F010}
+  - {id: B068, title: "Per-test browser instrumentation: fail on JS/console/network errors, artifacts on failure, per-test timeout, hermetic CDN", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
+  - {id: B069, title: "pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
+  - {id: B070, title: "Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
+  - {id: B071, title: "Exercise Telegram and configured GeoIP in the hermetic tier with mocks", type: feature, component: ui-tests, context_estimate: medium, folds_into: F017}
 ---
 
 # Backlog
@@ -266,3 +281,129 @@ Opus review); decisions D-008..D-013.
 - **B054 — Passenger probe.** Standalone WSGI app dir in vbpub scripts dumping what Passenger gives the app for a forged header.
 - **B055 — `e2e-remote`.** On-demand remote smoke against the Passenger tarball on the webhoster.
 - **B056 — Legacy `filter_proxy` duplicate blueprint.** Registered a second time in `passenger_wsgi.py` although `dns_api` shadows it; its route body has verified defects (reads `g.token`/`g.realm` while `require_auth` sets `g.auth`; calls `check_permission(token, realm, op)` against the current `(auth, operation, domain, ...)` signature; reads `realm.record_types_list`, which the model does not expose; `log_activity(details=...)`). WP2's test stubs these mismatches. Remove the duplicate registration and the dead module (preferred, see B-DEAD) or repair it; either way delete the stubs in `tests/test_proxy_hops.py`.
+
+## B-E2E-REVIEW (2026-11-12 independent e2e/pwmcp review)
+
+Priority: B057 and B058 first (security product defects; both **in progress 2026-11-12** on
+`fixup3-form-contracts`), then B059, B060, B061, B062, then the rest. Entries marked **(b)** need the
+deployed tier; the review's class-(b) scope remains with B049/B051/B054/B055, and no new item below is
+class (b).
+
+- **B057 — Portal token form: IP allow-list, expiry, rate limit and notes are silently dropped.**
+  **In progress 2026-11-12** (`fixup3-form-contracts`); that branch owns the product fix and visible-form e2e.
+  Evidence: `templates/account/create_token.html:79,96,109,123` submits `expires_in`, `ip_whitelist`,
+  `rate_limit_per_minute`, `notes`; `api/account.py:688-697` reads `expires`, `ip_ranges`, `description` and
+  no handler reads a rate limit. Static evidence was not confirmed by a form request (review §7).
+  Oracle: submit the visible form with `203.0.113.0/24` and 30 days; Channel A must show that CIDR and
+  `expires_at`, and the runner's API call must return 403 `ip_denied`. Current main stores NULLs and returns 200.
+
+- **B058 — Reset-password form posts 'password' but the route reads 'new_password'; remove the e2e workaround.**
+  **In progress 2026-11-12** (`fixup3-form-contracts`).
+  Evidence: `templates/account/reset_password.html:24` posts `password`; `api/account.py:222` reads
+  `new_password`, so a real reset fails with "Passwords do not match". The unit test posts the route's names
+  (`tests/test_password_policy_reset_invite.py:87-131`), while the browser test injects `new_password`
+  (`roundtrip/test_cross_role_account_lifecycle.py:642-663`).
+  Oracle: the reset journey fills only `#password`/`#confirm-password`, clicks `#submit-btn`, then proves the
+  hash changed and the old password is rejected; it fails before the fix.
+
+- **B059 — Template-to-route form-field contract guard; journeys submit through the real form.**
+  Depends on B057 and B058 (both in progress 2026-11-12); the other branch owns the guard.
+  Evidence: both defects share a template/route field-name mismatch masked by handler-shaped unit POSTs and
+  e2e field injection. Add a `tests/` guard over every rendered `<form>` endpoint and its `request.form`
+  reads, with an explicit optional/alias allowlist; forbid input-creating/modifying `evaluate` in real-form
+  journeys.
+  Oracle: the guard reports `account.reset_password` and `account.create_new_token` before B057/B058 and passes
+  after; re-introducing a renamed field turns it red.
+
+- **B060 — ui_tests: never print typed values or 2FA codes in failure output.**
+  Evidence: `browser.py:210` puts `value` in `ToolError.payload` and `browser.py:26-27` prints it; remote
+  smoke uses the operator password (`config.py:173-175`), and `test_2fa_security.py:581` prints a 2FA code.
+  Oracle: call `Browser.fill` for a missing selector with `S3cret-XYZ`; neither `str(exc)` nor `repr(exc)`
+  contains it (record only length), and a grep rejects printing variables named code/password/token.
+
+- **B061 — Cross-account and cross-role authorization sweep over every id-bearing portal route.**
+  Evidence: only `test_ddns_quick_update_http.py:105` checks another account's realm; 18 `/account` rules take
+  an integer id. As user B, request user A's realm/token/backend/DNS/session ids, and as a portal user request
+  every `/admin/*` GET.
+  Oracle: each request redirects/404s without A's data or a DB mutation; deleting the `realm_detail`
+  ownership check (`api/account.py:1209-1211`) or `revoke_user_token` check fails. A new id route without
+  ownership fails automatically.
+
+- **B062 — Replace security-tier browser tests that cannot fail; CSRF-rejection sweep; admin cookie replay after logout.**
+  Evidence: review §3.1 lists tautological `test_security_scenarios.py` checks and hollow/misnamed checks at
+  `test_2fa_security.py:323,351,392,441,471,486`; source-grep tests default `REPO_ROOT` to the main checkout.
+  Move CSRF to `tests/`: every cookie-auth POST without/with a forged token must return 400 and not mutate.
+  Evidence for replay: admin sessions are signed cookies (`api/admin.py:756-760`) and logout only pops the
+  client cookie (`api/admin.py:839-856`); section 7 leaves replay unverified pending cookie-lifetime tracing.
+  Oracle: disabling `CSRFProtect` fails the sweep; replaying the saved admin cookie after logout redirects to
+  `/admin/login`. Fix revocation or use a strict-xfail tied to a recorded SECURITY.md product decision.
+
+- **B063 — Lockout and recovery: a locked account rejects valid credentials; recovery-code lockout and exhaustion.**
+  Dependencies: unlock UX remains B004/F015. Evidence: `test_2fa_security.py:96-233` checks the counter/message,
+  not rejection; recovery-code lockout/exhaustion lack behavioural tests. Tests must reject a correct TOTP,
+  email code, recovery code, and admin password while locked, then accept after an injected clock advance.
+  Oracle: forcing `is_2fa_locked` to False fails unit and e2e; removing the recovery-attempt increment fails
+  recovery lockout.
+
+- **B064 — Credential-invalidation controls: alias regeneration, token regenerate, change-email, one-time token display.**
+  Dependencies: B028's regeneration correction lands under these tests. Evidence: no test covers
+  `/admin/accounts/<id>/regenerate-alias`, `/account/tokens/<id>/regenerate`, admin change-email, or token
+  activity. Use a throwaway account and assert old/new token API outcomes and audit rows; change-email
+  updates, verifies, and notifies; reload/back never re-displays plaintext.
+  Oracle: making `account_regenerate_alias` a no-op leaves an old token at 200 and fails; after token
+  regeneration the old plaintext is 401 and the new one is 200.
+
+- **B065 — Rate limiting has no test at any layer.**
+  Dependencies: B027 owns the fail-closed/shared semantics this test pins. Evidence: no `429` assertion exists
+  in `tests/` or `ui_tests/`. Configure a tiny DB limit, exceed it on admin login, account login, and the DNS
+  API, assert 429 plus `errors/429.html`, then raise the limit and expect success.
+  Oracle: removing the DNS limiter decorator or forcing the ImportError fallback fails; the per-worker caveat
+  is asserted explicitly so B027 changes the expectation deliberately.
+
+- **B066 — ui_tests: per-role storage state, an explicit anonymous context, and the forgot-password journey.**
+  Depends on B058. Evidence: `config.storage_state_path()` has one `"admin"` file and `workflows.py:858`
+  writes the user login there, so `browser`/`browser_session()` start dual-authenticated and defeated the
+  forgot-password checks at `test_email_notifications.py:452` and `test_security_scenarios.py:323`.
+  Oracle: `anon_browser` shows `#email` on `/account/forgot-password`; the user journey follows the mailed link
+  through the real form, proves the hash changed and login succeeds, and goes red if B058 regresses.
+
+- **B067 — Honest skips in the e2e lane: hollow param smoke, data-dependent email skips, dead content tests, live deselect, -rs.**
+  References, rather than duplicates: P06 O2/O3 for skip-downgrades/live skeletons and B006 for token-revoked
+  delivery. Evidence: `test_route_smoke.py:228-270` computes `_PARAM_PATHS` before the DB path fixture, so the
+  detail smoke is empty; email tests skip on fixture-less data (`test_email_notifications.py:366-628`); `TestEmailContent`
+  (`937-985`) always sees an empty mailbox; L765 is an unconditional TODO skip; the lane collects live tests.
+  Oracle: use runtime ids, create keyed pending account/realm data, delete/fold dead content and TODO checks,
+  deselect live, add `-rs`, and fail any unallowlisted runtime skip; the log must show only allowlisted gates.
+
+- **B068 — Per-test browser instrumentation: fail on JS/console/network errors, artifacts on failure, per-test timeout, hermetic CDN.**
+  Evidence: only route smoke/two perf tests collect errors, route smoke filters `net::` (`test_route_smoke.py:107`);
+  failure artifacts and app logs disappear with the work dir; CDN pages load Bootstrap/List.js/Chart.js and floating
+  `alpinejs@3.x.x` (`head_includes.html:3`, `scripts_includes.html:3`, `base.html:110`), so the lane depends on public CDNs.
+  Oracle: a canary `throw new Error()` fails with its message; a deliberate failure leaves screenshot, trace,
+  console log, and app-log tail; blocking `cdn.jsdelivr.net` breaks no test.
+
+- **B069 — pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry.**
+  Evidence: every test starts its own Playwright driver and connection (`playwright_client.py:142-174`,
+  `conftest.py:94-101`, `browser.py:482-534`) with no timeout, retry, or contract check; the documented 428
+  rationale is stale (`playwright_client.py:47-49`). Use one session Playwright/Browser plus a context per test,
+  check `/contract` protocol once, and retry a full-gateway 503 with bounded backoff.
+  Oracle: the gateway records one accepted connection per lane; a forced protocol mismatch exits once with exit
+  3; wall time is recorded before/after.
+
+- **B070 — Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap.**
+  Dependency: concurrent worktree identity is B046. Evidence: global clears at `conftest.py:289,297`,
+  `test_2fa_security.py:103-105`, and `test_journey_master.py:39`; message predicates are mostly subject-only;
+  33 async-loop call sites block in `verification.wait_for`/`MailpitClient.wait_for_message`.
+  Oracle: two concurrent sessions sharing Mailpit both pass; a grep forbids `.clear()` in `ui_tests/tests`;
+  `pytest-xdist -n 2` is evaluated only after isolation and remains within pwmcp's two shared slots.
+
+- **B071 — Exercise Telegram and configured GeoIP in the hermetic tier with mocks.**
+  References B026 for production GeoIP hardening; configured GeoIP is not the deployed-tier work in B049.
+  Evidence: three Telegram tests skip because linking is disabled (`.env.defaults:237`); the GeoIP URL
+  is forwarded but not configured, so `smoke/test_geoip_admin_and_api.py:54-73` tests only "not configured".
+  Oracle: add a Telegram Bot API mock and enable it plus GeoIP in `e2e_env.py`; the three Telegram skips disappear,
+  Telegram-2FA login fails if the mock receives no `sendMessage`, and the audit modal fails if a mock-known IP
+  shows geo country "—".
+
+**Referenced, not re-filed:** the `/account/docs` and `/admin/app-logs` gaps are B007; the assert-free
+J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.

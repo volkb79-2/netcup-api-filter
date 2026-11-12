@@ -32,6 +32,7 @@ reviewed independently on the other, with gates through `run-gate`.
 | WP4b-1/WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | wait for ciu 7.25.0 (identity, deployment type, public stacks, credentials, `e2e-public`) |
 | Final gates | green | release-gate PASS on `43216d0` (unit py311/py314, R1 floors, R3 canaries), e2e PASS on `177bd79`, `cmru versions check naf` matches, pushed to origin (no tags) |
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
+| E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058 in progress on `fixup3-form-contracts` | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
 
 Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
 
