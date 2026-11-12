@@ -11,12 +11,21 @@ from __future__ import annotations
 import json
 import subprocess
 
+# Identities are resolved against the profile that declares EVERY naf stack
+# (`[deploy.profiles.full]` in ciu.global.defaults.toml.j2), never against the
+# caller's selection: a hook of app-local needs PowerDNS's and Mailpit's names even
+# when this checkout selects a narrower profile (`ciu.instance.service_profiles`,
+# CIU_SERVICES_PROFILE, `--profile test`). Without `--profile`, `ciu resolve` uses
+# that narrower default selection and fails closed for a peer outside it.
+# tests/test_ciu_identity_contract.py keeps the profile covering every stack.
+IDENTITY_PROFILE = "full"
+
 
 def resolve_container(
     stack: str,
     service: str,
     *,
-    profiles: tuple[str, ...] = (),
+    profiles: tuple[str, ...] = (IDENTITY_PROFILE,),
     repo_root: str | None = None,
     runner=subprocess.run,
 ) -> str:
@@ -45,10 +54,13 @@ def resolve_container(
 
 
 def container_for(ctx, stack: str, service: str) -> str:
-    """HookContext adapter used by naf's post-compose hooks."""
+    """HookContext adapter used by naf's post-compose hooks.
+
+    Deliberately ignores ``ctx.selected_profiles``: a peer stack's identity does
+    not depend on which stacks this invocation deploys (see IDENTITY_PROFILE).
+    """
     return resolve_container(
         stack,
         service,
-        profiles=tuple(getattr(ctx, "selected_profiles", ()) or ()),
         repo_root=getattr(ctx, "repo_root", None),
     )

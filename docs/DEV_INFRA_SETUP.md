@@ -71,9 +71,24 @@ non-secret per-stack inputs (for example `tooling/mailpit/.env`) directly from t
 canonical checkout in the shell, or copy only non-secret files. Never copy the guard
 hash, generated instance identity, or secret store between checkouts.
 
-`.env.services` asks `ciu resolve --json` for each service's exact container
-identity. There are no `PROJECT_TAG`/`ENV_TAG` name formulas; delete stale shell
-exports of those variables if an old session still has them.
+`.env.services` asks `ciu resolve --json --profile full` for each service's exact
+container identity (it needs the env loaded in the order above: `ciu env print`,
+`PWMCP_NETWORK`, `.env.guard`, then `.env.services`). There are no
+`PROJECT_TAG`/`ENV_TAG` name formulas; delete stale shell exports of those
+variables if an old session still has them.
+
+Every checkout also runs its **own** gate runners: `ciu up --dir tooling/test-runner`
+in the checkout precedes any `run-gate` there (see
+[`tooling/test-runner/README.md`](../tooling/test-runner/README.md); a worktree's
+runner additionally mounts the main checkout's `.git`, the git common dir).
+
+**app-local sits behind the host traefik with zero trusted proxy hops.** Humans
+reach `naf-<INSTANCE_ID>.<PUBLIC_FQDN>` through edge-traefik, but
+`app_local.trusted_proxy_hops` is deliberately `0` until WP4b-2/WP5 measure the hop
+chain (an unmeasured hop is never trusted; `pre_compose_validate.py` enforces it).
+Consequence: every request through traefik shows traefik's address as the client,
+so per-IP rate limits, login lockout, GeoIP checks and the activity log see all
+human clients as one address on this dev instance.
 
 ## 3. DNS records to create UPSTREAM
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import anyio
 import logging
+import os
 import re
 import secrets
 import time
@@ -1360,6 +1361,18 @@ async def admin_save_netcup_config(browser: Browser) -> None:
     await browser.wait_for_text("body", "saved", timeout=10.0)
 
 
+def _mailpit_smtp_host() -> str:
+    """The checkout's Mailpit identity (MAILPIT_HOST from `.env.services`, forwarded by run-gate).
+
+    It must equal what `build_deployment.py --local` wrote into the golden DB, so a
+    test that rewrites the email settings restores the same host. No literal fallback.
+    """
+    host = os.environ.get("MAILPIT_HOST", "").strip()
+    if not host:
+        raise RuntimeError("MAILPIT_HOST is not set: source .env.services before the e2e lane")
+    return host
+
+
 async def admin_email_save_expect_error(browser: Browser) -> None:
     """Test email config page loads and shows form fields.
     
@@ -1390,8 +1403,7 @@ async def admin_email_save_expect_error(browser: Browser) -> None:
 
     # Restore Mailpit config so other tests can send real emails
     # This is important for local E2E tests that rely on Mailpit
-    import os
-    mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
+    mailpit_host = _mailpit_smtp_host()
     await open_admin_email_settings(browser)
     await browser.fill("#smtp_host", mailpit_host)
     await browser.fill("#smtp_port", "1025")
@@ -1426,9 +1438,7 @@ async def admin_email_trigger_test_without_address(browser: Browser) -> None:
     
     if target != "webhosting":
         # Restore Mailpit config so other tests can send real emails
-        import os
-
-        mailpit_host = os.environ.get("SERVICE_MAILPIT", "mailpit")
+        mailpit_host = _mailpit_smtp_host()
         await open_admin_email_settings(browser)
         await browser.fill("#smtp_host", mailpit_host)
         await browser.fill("#smtp_port", "1025")

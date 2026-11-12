@@ -197,7 +197,7 @@ pytest ui_tests/tests/test_ui_functional.py -v
 pytest ui_tests/tests/test_ui_functional.py::TestThemeAndCSS -v
 
 # Remote browser (Playwright-as-a-Service)
-PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/ pytest ui_tests/tests -q
+PLAYWRIGHT_SERVER_WS=ws://pwmcp:3000/ pytest ui_tests/tests -q   # the estate pwmcp on PWMCP_NETWORK
 ```
 
 Screenshots are saved to `SCREENSHOT_DIR` (default: `E2E_SCREENSHOT_DIR` in `.env.defaults`, `tmp/e2e-screenshots`). Every session starts its own app on a copy of the golden DB with random personas; see `docs/TESTING_INFRASTRUCTURE.md`.

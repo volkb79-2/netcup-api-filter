@@ -88,3 +88,35 @@ def test_missing_resolved_identity_fails_instead_of_exporting_empty_urls(tmp_pat
     )
     assert proc.returncode != 0
     assert "could not derive service identities" in proc.stderr
+
+
+def test_partial_document_exports_what_resolves_and_unsets_the_rest(tmp_path):
+    """A narrow resolve (review M5) warns, exports the rest, and clears stale values."""
+    document = json.loads(_resolve_doc())
+    del document["resolved"]["identities"]["tooling/backend-powerdns"]
+    script = (
+        f"set -euo pipefail; cd {REPO_ROOT!s}; "
+        "export POWERDNS_API_URL_INTERNAL=stale-from-an-earlier-shell; "
+        "source .env.services; "
+        'printf "MAILPIT_HOST=[%s]\\n" "${MAILPIT_HOST-<UNBOUND>}"; '
+        'printf "POWERDNS_API_URL_INTERNAL=[%s]\\n" "${POWERDNS_API_URL_INTERNAL-<UNBOUND>}"'
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        env={
+            "PATH": os.environ["PATH"],
+            "NAF_CIU_RESOLVE_JSON": json.dumps(document),
+            "NAF_CIU_GLOBAL_CONFIG": str(tmp_path / "missing-ciu-global.toml"),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "MAILPIT_HOST=[sample-instance-mailpit]" in proc.stdout, proc.stdout
+    assert "POWERDNS_API_URL_INTERNAL=[<UNBOUND>]" in proc.stdout, proc.stdout
+    assert "no ciu identity for tooling/backend-powerdns:powerdns" in proc.stderr
+
+
+def test_env_services_resolves_against_the_full_profile():
+    text = ENV_SERVICES.read_text(encoding="utf-8")
+    assert "ciu resolve --json --profile full" in text

@@ -5,14 +5,15 @@ Mailpit is a modern replacement for MailHog that provides SMTP testing
 with a web UI and comprehensive REST API.
 
 Configuration:
-    Start Mailpit via Docker:
-        cd tooling/mailpit && docker compose up -d
-    
-    Access via container hostname on shared network:
-        - Service name: naf-dev-mailpit (Docker Compose auto-generates container name)
-        - Hostname: naf-dev-mailpit (DNS resolution within Docker network)
-        - API: http://naf-dev-mailpit:8025/mailpit/api/v1
-        - SMTP: mailpit:1025
+    Start Mailpit with ciu (each checkout runs its own instance):
+        ciu up --dir tooling/mailpit
+
+    Access via the checkout's container name on the instance network. The name
+    is per checkout (`naf-<INSTANCE_ID>-mailpit`) and comes from
+    `ciu resolve --json` through `.env.services`, never from a literal here:
+        - MAILPIT_URL:     http://<container>:8025/mailpit
+        - MAILPIT_API_URL: http://<container>:8025/mailpit/api/v1
+        - SMTP:            MAILPIT_HOST:1025
     
     Authentication:
         None. Mailpit is internal-only (no traefik labels, no host ports), so
@@ -159,7 +160,7 @@ class MailpitClient:
     """Synchronous client for Mailpit REST API.
     
     Args:
-        base_url: Mailpit API base URL (default: from env or http://naf-dev-mailpit:8025/mailpit)
+        base_url: Mailpit API base URL (default: MAILPIT_URL from `.env.services`; required)
         timeout: Request timeout in seconds
     
     Usage:
@@ -188,20 +189,20 @@ class MailpitClient:
         )
     """
     
-    # Default base URL (fallback if environment not set)
-    _DEFAULT_BASE_URL_FALLBACK = "http://naf-dev-mailpit:8025/mailpit"
-    
     def __init__(
         self,
         base_url: str | None = None,
         timeout: float = 10.0,
     ):
-        # Read from environment (.env.services) or fall back to static value
-        default_url = os.environ.get("MAILPIT_URL", self._DEFAULT_BASE_URL_FALLBACK)
-        self.base_url = (
-            base_url
-            or default_url
-        ).rstrip("/")
+        # The container name is per checkout (ciu resolve via .env.services); there is
+        # no static fallback, because any literal would name another checkout's Mailpit.
+        url = (base_url or os.environ.get("MAILPIT_URL", "")).strip()
+        if not url:
+            raise RuntimeError(
+                "MAILPIT_URL is not set: source .env.services (ciu-resolved Mailpit "
+                "identity) or pass base_url"
+            )
+        self.base_url = url.rstrip("/")
         self.api_url = f"{self.base_url}/api/v1"
         self.timeout = timeout
         

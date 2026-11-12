@@ -313,24 +313,20 @@ def write_build_metadata(deploy_dir):
 
 
 def _local_service_var(name: str) -> str:
-    """Service value of a LOCAL build: *name* from the environment, else from .env.services.
+    """Service value of a LOCAL build: *name* from this process's environment only.
 
-    .env.services is bash syntax (``${VAR:-default}``), so it is evaluated by bash into a
-    dict; this process's environment is never modified. Missing or empty is an error.
+    The cockpit sources `.env.services` (which asks `ciu resolve --json`) and run-gate
+    forwards the values (`forward_env` in run-gate.toml). This build runs inside the 3.11
+    runner, where `ciu` is not installed, so it never evaluates `.env.services` itself:
+    missing or empty is an error with the instruction to fix it.
     """
     value = os.environ.get(name, "").strip()
-    if value:
-        return value
-    services = Path(".env.services")
-    if not services.is_file():
-        raise RuntimeError(f"{name} is not set and .env.services is missing")
-    result = subprocess.run(
-        ["/bin/bash", "-c", f'set -a && source "{services}" >/dev/null && printf %s "${{{name}:-}}"'],
-        capture_output=True, text=True, check=True,
-    )
-    value = result.stdout.strip()
     if not value:
-        raise RuntimeError(f"{name} is empty after evaluating {services}")
+        raise RuntimeError(
+            f"{name} not forwarded: source .env.services in the cockpit "
+            "(after `eval \"$(ciu env print)\"`, PWMCP_NETWORK and .env.guard) "
+            "before `run-gate local-build`"
+        )
     return value
 
 

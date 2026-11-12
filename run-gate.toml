@@ -106,8 +106,12 @@ clean_tree = false
 budget = "5m"
 
 # --- local app build + e2e ---------------------------------------------------
-# Local flow (all in containers; the cockpit only drives):
-#   set -a; . ./.env.services; set +a            # ciu-resolved service identities for the e2e lane
+# Local flow (all in containers; the cockpit only drives). The env order matters: .env.services runs
+# `ciu resolve`, which renders the global config and so needs the three layers before it.
+#   eval "$(ciu env print)"                     # this checkout's generated ciu facts
+#   export PWMCP_NETWORK=<the estate pwmcp network_name>   # docs/DEV_INFRA_SETUP.md section 2
+#   set -a; . ./.env.guard; . ./.env.services; set +a   # guard env, then ciu-resolved service identities
+#   ciu up --dir tooling/test-runner            # this checkout's OWN runners (precondition of every lane)
 #   ciu up --dir tooling/mailpit; ciu up --dir tooling/geoip-mock; ciu up --dir tooling/netcup-api-mock
 #   run-gate local-build --worktree "$PWD"      # deploy-local/ + its golden netcup_filter.db
 #   run-gate e2e --worktree "$PWD"              # pwmcp is the estate instance, not ours

@@ -266,9 +266,12 @@ Opus review); decisions D-008..D-013.
   subdomain, `ciu resolve --json [--live]` instead of name building in `.env.services` and hooks, `.gitignore` ciu entries,
   `ciu.user_tables`, re-run the CIU-176 repro (fixed in 7.23.0), PowerDNS key as checkout-local `GEN_LOCAL`.
   **Implemented on `wp4b1-identity`:** container/Traefik/frontend names derive from `INSTANCE_ID`; `.env.services` and hooks
-  consume ciu-resolved identities; `.gitignore` covers worktree artifacts; `ciu.user_tables = ["build"]`; app-local sets explicit
-  internal proxy/public-origin facts; and the PowerDNS key is a shared checkout-local `GEN_LOCAL` consumed by backend and app.
-  The branch awaits controller review, main-checkout cutover, and its authoritative gate receipt.
+  consume ciu-resolved identities (against the `full` profile, so a narrow selection cannot hide a peer); `.gitignore` covers
+  worktree artifacts; `ciu.user_tables = ["build"]`; app-local, which sits behind the host traefik, sets an explicit public origin
+  and `trusted_proxy_hops = 0` until WP4b-2/WP5 measure the hop chain (so all human clients appear as the proxy address); and the
+  PowerDNS key is a shared checkout-local `GEN_LOCAL` consumed by backend and app. Every checkout runs its own gate runners; a
+  linked worktree's runner mounts the git common dir (Opus review H1). Review FIX round 1 (H1, H2, M1-M5, L1, L2, L4-L6) is on
+  the branch; release-builder runner readiness moved to WP9 (M4). Awaits re-review, main-checkout cutover and its gate receipt.
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
 - **B048 — Credentials.** Prompt/`ASK_FILE` secrets for SMTP/IMAP/netcup CCP, `.env.live.example`, mounts only into the frontend

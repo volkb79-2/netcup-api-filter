@@ -19,7 +19,7 @@ Connection modes
    remotely.  Address the service by container name on the shared Docker
    network — never "localhost" — e.g.::
 
-       export PLAYWRIGHT_SERVER_WS=ws://naf-dev-playwright:3000/
+       export PLAYWRIGHT_SERVER_WS=ws://pwmcp:3000/   # the estate pwmcp instance
 
    The rest of ``connect()`` (context creation, storage_state, default page)
    runs identically in both modes because ``bt.connect()`` returns a real
@@ -125,7 +125,7 @@ class PlaywrightClient:
         * **Remote** (``PLAYWRIGHT_SERVER_WS`` is set):
           Connects to an external Playwright ``run-server`` endpoint over
           WebSocket.  Use the container name as the host on the shared Docker
-          network, e.g. ``ws://naf-dev-playwright:3000/``.  Never use
+          network, e.g. ``ws://pwmcp:3000/`` (the estate pwmcp).  Never use
           ``localhost`` here — the server lives in a separate container.
           The server controls headless mode; the client ``self.headless``
           flag is silently ignored in this mode.

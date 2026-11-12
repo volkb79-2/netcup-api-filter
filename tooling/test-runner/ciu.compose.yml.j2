@@ -7,8 +7,10 @@
 # run-gate dispatches lanes into these with `docker exec` (run-gate.toml,
 # mode = "exec"); ciu owns build and lifecycle. Each variant is the shipped
 # interpreter (3.11 Passenger, 3.14 OCI), never the devcontainer's. The runners
-# sit on the naf network so suites reach the mocks (naf-mailpit, naf-mock-geoip,
-# naf-mock-netcup-api), pwmcp and a deployed app as peers.
+# sit on the instance network so suites reach the mocks (their container names
+# come from `ciu resolve --json`, via .env.services), pwmcp and a deployed app
+# as peers. Every checkout (main or linked worktree) runs its OWN pair:
+# `ciu up --dir tooling/test-runner` in that checkout precedes any gate there.
 #
 # App DATA lives in the app/service containers — reach it through the service
 # protocol (HTTP/SMTP), never a mount.
@@ -47,6 +49,32 @@ services:
       - type: volume
         source: run-gate-state-{{ v.name }}
         target: {{ test_runner.run_gate.state_root }}
+{% if '/.worktrees/' in ciu.repo_root|string %}
+      # LINKED-WORKTREE INSTANCE ONLY (renders only when repo_root names a
+      # `.worktrees/<name>` checkout): the git COMMON directory, read-write.
+      #
+      # Every checkout runs its own runners (environment_tag = $INSTANCE_ID), and
+      # a worktree's runner mounts only the worktree subtree above. The worktree's
+      # `.git` is a pointer file naming `<main checkout>/.git/worktrees/<name>`, a
+      # path that mount does not carry. Without this block every git call in the
+      # runner exits 128: assay lanes abort with ERROR/GIT_FAILED before any lane
+      # work, and the tracked-file hygiene tests silently fall back to a
+      # filesystem walk (tests/test_powerdns_config_hygiene.py).
+      #
+      # Both halves are DERIVED, never configured: the host path is
+      # PHYSICAL_REPO_ROOT two levels up (naf's layout is `.worktrees/<name>`),
+      # the container path is ciu.repo_root cut at `/.worktrees/`, which is
+      # exactly what the pointer file names.
+      #
+      # rw on purpose: assay lanes with [lanes.*.isolation] snapshot_selection =
+      # "repository" (assay.toml) build their snapshot with `git worktree add`,
+      # which creates `<common dir>/worktrees/<snap>`; `:ro` turns that into a
+      # bare GIT_FAILED. Parity, not a new privilege: the main checkout's runner
+      # mounts the whole checkout, `.git` included, read-write. A lane that
+      # abandons a snapshot leaves an entry `git worktree prune` clears.
+      # Reference consumer: dstdns tools/test-runner/ciu.compose.yml.j2.
+      - ${PHYSICAL_REPO_ROOT:?required host path — source ciu.env}/../../.git:{{ (ciu.repo_root|string).split('/.worktrees/')[0] }}/.git:rw
+{% endif %}
     # The suite opens many SQLite files and sockets in one process; Docker's per-process default of 1024 is
     # too low for it. A need, not a host limit.
     ulimits:

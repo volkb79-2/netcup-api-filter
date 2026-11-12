@@ -54,12 +54,33 @@ Runners are ciu-managed persistent containers, one per Python version
 run-gate `docker exec`s into them. `ciu.compose.yml` is a RENDERED, gitignored
 artifact: edit `ciu.compose.yml.j2`.
 
+**Every checkout runs its own runners.** The main checkout and each linked
+worktree (`.worktrees/<name>`) has its own `INSTANCE_ID`, so run-gate execs into
+`naf-<that checkout's INSTANCE_ID>-test-runner-*`, never into another checkout's
+pair. Bringing them up in the checkout is therefore a **precondition of any gate
+there**; it builds the checkout's own `test-runner:py3xx-<INSTANCE_ID>` images
+(ciu CIU-117 tag suffix):
+
 ```bash
 ciu up --dir tooling/test-runner
 ```
 
 Prerequisites: the checkout's generated ciu env (`eval "$(ciu env print)"`) and
-`PWMCP_NETWORK` (see AGENTS.md).
+`PWMCP_NETWORK` (see AGENTS.md). A gate whose runner is missing fails with
+"no such container" instead of silently using another checkout's runner.
+
+**Why a worktree runner also mounts the main checkout's `.git`.** A linked
+worktree's runner mounts only the worktree, but the worktree's `.git` is a
+pointer file naming `<main checkout>/.git/worktrees/<name>`. Without that
+directory every git call in the runner exits 128: assay lanes abort with
+`ERROR/GIT_FAILED` before any lane work and the tracked-file hygiene tests fall
+back to a filesystem walk. `ciu.compose.yml.j2` therefore adds the git common dir
+for a `.worktrees/` checkout only, read-write (assay's
+`snapshot_selection = "repository"` lanes run `git worktree add`, which writes
+`.git/worktrees/<snap>`). Both paths are derived from ciu facts
+(`PHYSICAL_REPO_ROOT`, `ciu.repo_root`), never configured. This is parity with the
+main checkout's runner, which mounts its whole checkout including `.git`;
+`tests/test_ciu_identity_contract.py` guards the block.
 `ciu up` applies the cgroup/memory/IOPS governance overlay from `[governance]` in
 `ciu.global.defaults.toml.j2`.
 

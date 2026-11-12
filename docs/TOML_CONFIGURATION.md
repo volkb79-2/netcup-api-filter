@@ -239,8 +239,13 @@ config = {
 3. `platform_backends.py` replaces `${...}` with `os.environ.get(...)` at bootstrap time
 
 **Common variables:**
-- `POWERDNS_API_KEY` - PowerDNS authentication delivered from this checkout's ciu
-  `GEN_LOCAL` store; it is not an operator or `.env` value
+- `POWERDNS_API_KEY` - PowerDNS authentication. The `${POWERDNS_API_KEY}`
+  substitution works only where a deployer exports the variable to the app
+  process; no naf stack does that. In the dev stacks the key is the checkout's ciu
+  `GEN_LOCAL:naf/powerdns_api_key` secret: PowerDNS receives it, and the app-local
+  `post_compose` hook (`tooling/app-local/post_compose_seed_domain.py`) seeds the
+  delegated-zone PowerDNS backend directly, passing the key into `docker exec` by
+  environment name. It is not an operator or `.env` value.
 - `POWERDNS_API_URL` - guarded public API URL from `.env.services`
 - `POWERDNS_API_URL_INTERNAL` - container-to-container API URL from `.env.services`
 
@@ -495,10 +500,14 @@ max_hosts_per_user = 5
 
 ### Environment Variable Not Set
 ```
-[WARN] ciu secret powerdns_api_key is not materialized for platform-powerdns.api_key
+[WARN] Environment variable POWERDNS_API_KEY not set for platform-powerdns.api_key
 ```
-**Solution:** Run `ciu up` from the owning checkout so it materializes
-`GEN_LOCAL:naf/powerdns_api_key`, or use an explicit deployment-supplied value.
+(`src/netcup_api_filter/bootstrap/platform_backends.py`.) The backend is created with an
+empty key. **Solution:** export the variable to the app process where this TOML is
+applied (a deployer's job; no naf stack does it). For the dev stacks, do not use this
+path: the app-local `post_compose` hook seeds the PowerDNS backend from the checkout's
+`GEN_LOCAL:naf/powerdns_api_key`, which the first `ciu up` of `tooling/backend-powerdns`
+or `tooling/app-local` in that checkout generates.
 
 ### Service Already Exists
 ```

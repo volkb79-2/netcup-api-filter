@@ -127,6 +127,21 @@ def test_local_build_fails_fast_without_mock_url(monkeypatch, tmp_path):
         build._local_mock_netcup()
 
 
+def test_local_build_never_evaluates_env_services_itself(monkeypatch, tmp_path):
+    """The runner has no `ciu`, so .env.services is the cockpit's job (review M3).
+
+    A present file must not be sourced: the build fails with the instruction instead.
+    """
+    build = _load_build_deployment()
+    monkeypatch.delenv("MOCK_NETCUP_API_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env.services").write_text(
+        f"export MOCK_NETCUP_API_URL={MOCK_URL}\n", encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match=r"not forwarded: source \.env\.services in the cockpit"):
+        build._local_mock_netcup()
+
+
 def _build_db(monkeypatch, tmp_path, *, is_local: bool) -> Path:
     """Run the real ``build_deployment.initialize_database`` on a minimal deploy tree."""
     build = _load_build_deployment()

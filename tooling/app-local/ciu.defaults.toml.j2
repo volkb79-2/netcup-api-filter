@@ -30,8 +30,12 @@ image_tag = "py311"
 # 0.0.0.0:5100; keep these two in sync or the traefik service port points at nothing.
 port = 5100
 
-# Internal topology: the app is reached directly on the instance network. Do not
-# infer proxy trust from the presence of traefik; public-stack trust is WP5 work.
+# Topology: humans reach this app BEHIND the host traefik ([app_local.external] below);
+# peers on the instance network reach it directly. Proxy-hop trust is deliberately 0
+# until the deployment-type and public-stack decisions (WP4b-2/WP5) measure the hop
+# chain: an unmeasured hop is never trusted. Consequence: every request that comes
+# through traefik has traefik's address as remote_addr, so per-IP rate limits, login
+# lockout, GeoIP checks and the activity log see ALL human clients as the proxy.
 trusted_proxy_hops = 0
 
 # Canonical external origin for every generated link. This is a rendered ciu fact,

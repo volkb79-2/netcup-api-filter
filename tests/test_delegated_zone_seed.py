@@ -30,7 +30,7 @@ from netcup_api_filter.models import (
 )
 
 ZONE = "managed.vxxu.de"
-API_URL = "http://naf-dev-powerdns:8081"
+API_URL = "http://naf-instance42-powerdns:8081"  # fixture identity, not a real container
 API_KEY = "test-powerdns-api-key"
 
 

@@ -91,17 +91,19 @@ set -a
 . ./.env.services
 set +a
 
-curl -sf -H "X-API-Key: $POWERDNS_API_KEY" \
-  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" |
+# The key goes in as a header on stdin (`-H @-`), never on the command line,
+# so it does not show up in `ps` or shell history.
+curl -sf -H @- "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" \
+  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)" |
   python3 -m json.tool
 ```
 
 External access adds the traefik basicauth guard:
 
 ```bash
-curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" \
-  -H "X-API-Key: $POWERDNS_API_KEY" \
-  "$POWERDNS_API_URL/api/v1/servers/localhost"
+curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" -H @- \
+  "$POWERDNS_API_URL/api/v1/servers/localhost" \
+  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
 ```
 
 ## Record API examples
@@ -113,7 +115,7 @@ PowerDNS zone identifier ends in a dot.
 ZONE="${NAF_DELEGATED_DNS_ZONE%.}."
 
 curl -X PATCH \
-  -H "X-API-Key: $POWERDNS_API_KEY" \
+  -H @- \
   -H "Content-Type: application/json" \
   -d '{
     "rrsets": [{
@@ -124,7 +126,8 @@ curl -X PATCH \
       "records": [{"content": "192.0.2.1", "disabled": false}]
     }]
   }' \
-  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones/$ZONE"
+  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones/$ZONE" \
+  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
 ```
 
 To remove the record, PATCH the same endpoint with `"changetype": "DELETE"` and omit the

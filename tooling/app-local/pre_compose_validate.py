@@ -23,6 +23,7 @@ def validate_config(config: dict, ctx) -> list:
     external = app.get("external") or {}
     topology = config.get("topology") or {}
     instance = deploy.get("environment_tag")
+    project = deploy.get("project_name")
     public_fqdn = ((topology.get("external") or {}).get("public_fqdn") or "").strip()
     subdomain = (external.get("subdomain") or "").strip()
     public_base_url = (app.get("public_base_url") or "").strip()
@@ -30,10 +31,12 @@ def validate_config(config: dict, ctx) -> list:
 
     if not instance:
         findings.append("deploy.environment_tag is missing")
-    elif subdomain != f"naf-{instance}":
+    if not project:
+        findings.append("deploy.project_name is missing")
+    if instance and project and subdomain != f"{project}-{instance}":
         findings.append(
             "app_local.external.subdomain must be instance-derived "
-            f"(expected 'naf-{instance}', got {subdomain!r})"
+            f"(expected '{project}-{instance}', got {subdomain!r})"
         )
     if not public_fqdn:
         findings.append("topology.external.public_fqdn is required by app-local")
@@ -50,8 +53,8 @@ def validate_config(config: dict, ctx) -> list:
             )
     if hops != 0:
         findings.append(
-            "app_local.trusted_proxy_hops must be 0 for the internal deployment; "
-            "public proxy trust is a WP5 decision"
+            "app_local.trusted_proxy_hops must be 0 until the hop chain is measured "
+            "(WP4b-2/WP5); app-local sits behind host traefik with no trusted hop"
         )
     if "powerdns_api_key" not in (app.get("secrets") or {}):
         findings.append("app_local.secrets.powerdns_api_key is not declared")

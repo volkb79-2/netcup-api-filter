@@ -6,8 +6,8 @@
 
 - **Mock Netcup backend in the local/e2e golden DB**: `build_deployment.py --local` now seeds the
   global `netcup_config` through `init_instance(mock_netcup=MockNetcup(...))`, pointing at the Netcup
-  CCP mock (`MOCK_NETCUP_API_URL` from the environment or `.env.services`; the build fails when it is
-  missing; the mock's public test credentials are the `LOCAL_MOCK_NETCUP_*` keys of `.env.defaults`,
+  CCP mock (`MOCK_NETCUP_API_URL` from the build's environment, forwarded by run-gate after the cockpit
+  sources `.env.services`; the build never evaluates `.env.services` itself and fails when it is missing; the mock's public test credentials are the `LOCAL_MOCK_NETCUP_*` keys of `.env.defaults`,
   guarded against drift by `tests/test_mock_netcup_seed.py`). Without it every DNS read of the
   per-session e2e app was an HTTP 500. The tarball and the OCI first boot never get it. CI
   `e2e-smoke` starts the mock (`flask --app ui_tests.mock_netcup_api`, port 5555) before the build.
@@ -28,8 +28,14 @@
   Traefik routers/services/middlewares and frontend hostnames are checkout-local. The
   app frontend is `naf-<INSTANCE_ID>.<PUBLIC_FQDN>` and PowerDNS is
   `naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>`. Post-compose hooks and `.env.services` read
-  identities from `ciu resolve --json`; they no longer construct
-  `PROJECT_TAG-ENV_TAG-service` names.
+  identities from `ciu resolve --json --profile full` (a narrower selected profile can
+  no longer hide a peer; `.env.services` exports what resolves and unsets the rest);
+  they no longer construct `PROJECT_TAG-ENV_TAG-service` names. Every checkout runs its
+  own gate runners (`ciu up --dir tooling/test-runner` precedes any gate there); a
+  linked worktree's runner also mounts the git common dir so assay lanes and git-backed
+  tests work. `scripts/build_webhosting_tarball.py` stops with an instruction when its
+  checkout's runner is absent or stopped. `ui_tests` read the Mailpit identity from
+  `MAILPIT_URL`/`MAILPIT_HOST` without a literal fallback.
 
 - **PowerDNS configuration has one source per fact**: `POWERDNS_API_URL` and
   `POWERDNS_API_URL_INTERNAL` are defined only by `.env.services`; the app consumes

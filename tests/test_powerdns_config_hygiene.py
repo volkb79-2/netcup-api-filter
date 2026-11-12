@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -511,6 +512,13 @@ def _source_env_services(env: dict[str, str]) -> dict[str, str]:
     return {"public": public_url, "internal": internal_url}
 
 
+def _stack_powerdns_api_port() -> int:
+    stack = tomllib.loads(
+        (REPO / "tooling" / "backend-powerdns" / "ciu.defaults.toml.j2").read_text(encoding="utf-8")
+    )
+    return stack["backend_powerdns"]["ports"]["api"]
+
+
 def _load_app_local_hook():
     spec = importlib.util.spec_from_file_location("naf_powerdns_hygiene_hook", APP_LOCAL_HOOK)
     assert spec is not None and spec.loader is not None
@@ -556,7 +564,9 @@ def test_internal_url_has_one_source_and_matches_the_stack_derivation(monkeypatc
         "topology": {"dns": {"delegated_zone": "example.test"}},
         "deploy": {"project_name": "sample", "environment_tag": "integration"},
         "app_local": {"name": "app"},
-        "backend_powerdns": {"name": "powerdns", "ports": {"api": 8081}},
+        # The stack's declared API port, never a literal: .env.services' port table
+        # is pinned to the same default (test_ciu_identity_contract, review L4).
+        "backend_powerdns": {"name": "powerdns", "ports": {"api": _stack_powerdns_api_port()}},
     }
     secret_file = tmp_path / "powerdns_api_key"
     # The hook only reads through ctx.secret_file; this in-memory value never

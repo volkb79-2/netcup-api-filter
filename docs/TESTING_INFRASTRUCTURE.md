@@ -62,6 +62,16 @@ lanes + trove + R1; `release-gate` adds the R3 canaries. Assay lanes are judged 
 (assay backlog B229); 3.11 is gated by the plain pytest lane `unit-py311`. Browser tests use the estate
 pwmcp instance: the runners and `app-local` join its network (`PWMCP_NETWORK`).
 
+**Every checkout runs its own runners.** The main checkout and each linked worktree have their own ciu
+`INSTANCE_ID`; run-gate execs into `naf-<INSTANCE_ID>-test-runner-py311`/`-py314` of the judged checkout
+(the name comes from that checkout's rendered `ciu.global.toml`). `ciu up --dir tooling/test-runner` in the
+checkout is therefore a precondition of any gate there (it builds `test-runner:py3xx-<INSTANCE_ID>`,
+CIU-117); a missing runner fails as "no such container". A linked worktree's runner mounts the worktree
+plus the main checkout's `.git` (the git common dir its `.git` pointer file names): without it assay lanes
+abort with `ERROR/GIT_FAILED` and git-backed hygiene tests fall back to a filesystem walk. The mount is
+read-write because `snapshot_selection = "repository"` lanes run `git worktree add`; details in
+[`tooling/test-runner/README.md`](../tooling/test-runner/README.md).
+
 ### `ui_tests/` — Playwright E2E (browser required)
 
 **Every e2e session owns its app and database** (credentials/test-setup plan, S1/S3/S4). The suite
@@ -69,8 +79,8 @@ needs no running app, no target URL and no credentials from the cockpit:
 
 1. `run-gate local-build` builds `deploy-local/` and its **golden DB** (`netcup_filter.db`: exactly
    the shipped admin with `must_change_password`, the Mailpit email config and the **mock Netcup
-   backend** as `netcup_config`: URL `MOCK_NETCUP_API_URL` (environment or `.env.services`, the build
-   fails without it), credentials the `LOCAL_MOCK_NETCUP_*` keys of `.env.defaults` = the public test
+   backend** as `netcup_config`: URL `MOCK_NETCUP_API_URL` (forwarded from the cockpit after sourcing
+   `.env.services`; the build fails without it), credentials the `LOCAL_MOCK_NETCUP_*` keys of `.env.defaults` = the public test
    credentials of `ui_tests/mock_netcup_api.py`, checked for drift by `tests/test_mock_netcup_seed.py`.
    Without it every DNS read is an HTTP 500. Tarball and OCI never get it. Tests that rewrite
    `netcup_config` through the admin UI must restore it. Nothing may serve that file.
@@ -99,9 +109,20 @@ error. Keep the work
 dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env.defaults`.
 
 ```bash
+# cockpit env, in this order: .env.services runs `ciu resolve`, which needs the layers before it
+eval "$(ciu env print)"
+export PWMCP_NETWORK="$(sed -n 's/^network_name = "\(.*\)"$/\1/p' /srv/pwmcp-instance/ciu.global.toml)"
+set -a; . ./.env.guard; . ./.env.services; set +a
+ciu up --dir tooling/test-runner          # this checkout's own runners
+ciu up --dir tooling/mailpit; ciu up --dir tooling/geoip-mock; ciu up --dir tooling/netcup-api-mock
 run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runner)
 run-gate e2e --worktree "$PWD"           # full suite, per-session app, estate pwmcp
 ```
+
+`build_deployment.py --local` reads `MAILPIT_HOST` and `MOCK_NETCUP_API_URL` only from its process
+environment (run-gate forwards them from the cockpit, `forward_env` in `run-gate.toml`); it never
+evaluates `.env.services` itself, because `ciu` is not installed in the runner. A missing value fails
+the build with an instruction to source `.env.services` first.
 
 **Remote read-only smoke.** `NAF_E2E_TARGET=remote` (default: local) starts no instance and binds
 `ui_tests.config.settings.bind_remote()` to a deployed host from `NAF_REMOTE_*` env vars (password via

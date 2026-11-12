@@ -170,16 +170,43 @@ def build_one(python_version: str, output: Path) -> None:
     print(f"[INFO] built {output.relative_to(REPO_ROOT)} for Python {python_version}")
 
 
+RUNNER_UP_INSTRUCTION = (
+    "every checkout runs its own test runners, including a cmru release worktree: "
+    "run `ciu up --dir tooling/test-runner` in {root} first (with its ciu env loaded: "
+    "`eval \"$(ciu env print)\"`, PWMCP_NETWORK), then retry"
+)
+
+
 def _runner_container(variant: str) -> str:
     """Resolve the ciu-managed runner for a variant from ciu's rendered facts."""
     sys.path.insert(0, str(REPO_ROOT / "tooling"))
     from ciu_identity import resolve_container
 
-    return resolve_container(
-        "tooling/test-runner",
-        f"test-runner-{variant}",
-        repo_root=str(REPO_ROOT),
+    try:
+        return resolve_container(
+            "tooling/test-runner",
+            f"test-runner-{variant}",
+            repo_root=str(REPO_ROOT),
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"cannot resolve this checkout's test-runner-{variant}: {exc}; "
+            + RUNNER_UP_INSTRUCTION.format(root=REPO_ROOT)
+        ) from exc
+
+
+def _require_running(container: str, *, runner=subprocess.run) -> None:
+    """Fail with the instruction, not a stack trace, when the runner is not up (review M4)."""
+    probe = runner(
+        ["docker", "inspect", "-f", "{{.State.Running}}", container],
+        capture_output=True, text=True, check=False,
     )
+    if probe.returncode != 0 or probe.stdout.strip() != "true":
+        state = "absent" if probe.returncode != 0 else "not running"
+        raise RuntimeError(
+            f"release runner {container} is {state}; "
+            + RUNNER_UP_INSTRUCTION.format(root=REPO_ROOT)
+        )
 
 
 def _docker_out(*args: str) -> str:
@@ -191,6 +218,7 @@ def build_all() -> None:
     for variant, python_version in _target_versions():
         output = DIST_DIR / f"naf-{variant}.tar.xz"
         container = _runner_container(variant)
+        _require_running(container)
         # The runner bind-mounts ONE checkout. Refuse to build a release from a
         # tree other than the one cmru is releasing.
         runner_head = _docker_out(
@@ -221,10 +249,14 @@ def main() -> None:
     one.add_argument("--python-version", required=True)
     one.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    if args.command == "build":
-        build_all()
-    else:
-        build_one(args.python_version, (REPO_ROOT / args.output).resolve())
+    try:
+        if args.command == "build":
+            build_all()
+        else:
+            build_one(args.python_version, (REPO_ROOT / args.output).resolve())
+    except RuntimeError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 if __name__ == "__main__":

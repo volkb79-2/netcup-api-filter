@@ -110,25 +110,26 @@ set -a
 . ./.env.guard
 . ./.env.services
 set +a
-POWERDNS_API_KEY="$(cat .ciu/secrets/naf/powerdns_api_key)"
+# The key is passed as a header on stdin (`-H @-`), never on the command line,
+# so it does not show up in `ps` or shell history.
 
 # Test API connectivity
-curl -sf -H "X-API-Key: $POWERDNS_API_KEY" \
-  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" | python3 -m json.tool
+curl -sf -H @- "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" \
+  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)" | python3 -m json.tool
 
 # The ciu post-compose hook creates the delegated zone when
 # NAF_DELEGATED_DNS_ZONE is set.
 
 # List zones
-curl -s -H "X-API-Key: $POWERDNS_API_KEY" \
-  "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones" | python3 -m json.tool
+curl -s -H @- "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones" \
+  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)" | python3 -m json.tool
 
 # External access through the host traefik route at
 # naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>,
 # behind the same basicauth guard as the app.
-curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" \
-  -H "X-API-Key: $POWERDNS_API_KEY" \
-  "$POWERDNS_API_URL/api/v1/servers/localhost"
+curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" -H @- \
+  "$POWERDNS_API_URL/api/v1/servers/localhost" \
+  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
 ```
 
 **DNS Delegation (at the delegated zone's parent):**
