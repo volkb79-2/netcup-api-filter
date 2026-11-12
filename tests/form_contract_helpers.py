@@ -1,7 +1,7 @@
 """Small HTML form parser shared by the form-contract regression tests."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 
 
@@ -10,6 +10,10 @@ class ParsedField:
     name: str
     field_id: str | None
     field_type: str
+    # Submitted values of a ``<select>``'s ``<option>`` children, in document
+    # order (an option without ``value`` submits its text). Empty for other
+    # field types.
+    options: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,11 @@ class _FormParser(HTMLParser):
         self._method = "get"
         self._fields: list[ParsedField] = []
         self._inside_form = False
+        # Index into ``_fields`` of the named <select> being parsed, its
+        # collected option values, and the text of a value-less <option>.
+        self._select_index: int | None = None
+        self._select_options: list[str] = []
+        self._option_text: list[str] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_map = {key.lower(): value for key, value in attrs}
@@ -41,6 +50,16 @@ class _FormParser(HTMLParser):
             self._action = attrs_map.get("action")
             self._method = (attrs_map.get("method") or "get").lower()
             self._fields = []
+            return
+
+        if tag.lower() == "option":
+            if self._select_index is not None:
+                self._finish_option()
+                value = attrs_map.get("value")
+                if value is None:
+                    self._option_text = []
+                else:
+                    self._select_options.append(value)
             return
 
         if not self._inside_form or tag.lower() not in {"input", "select", "textarea"}:
@@ -61,10 +80,38 @@ class _FormParser(HTMLParser):
                 field_type=field_type,
             )
         )
+        if tag.lower() == "select":
+            self._finish_select()
+            self._select_index = len(self._fields) - 1
+            self._select_options = []
+
+    def handle_data(self, data: str) -> None:
+        if self._option_text is not None:
+            self._option_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "form" and self._inside_form:
+        lowered = tag.lower()
+        if lowered == "option":
+            self._finish_option()
+        elif lowered == "select":
+            self._finish_select()
+        elif lowered == "form" and self._inside_form:
             self._finish_form()
+
+    def _finish_option(self) -> None:
+        if self._option_text is not None:
+            self._select_options.append(" ".join("".join(self._option_text).split()))
+            self._option_text = None
+
+    def _finish_select(self) -> None:
+        self._finish_option()
+        if self._select_index is not None:
+            field = self._fields[self._select_index]
+            self._fields[self._select_index] = replace(
+                field, options=tuple(self._select_options)
+            )
+        self._select_index = None
+        self._select_options = []
 
     def close(self) -> None:
         super().close()
@@ -72,6 +119,7 @@ class _FormParser(HTMLParser):
             self._finish_form()
 
     def _finish_form(self) -> None:
+        self._finish_select()
         self.forms.append(
             ParsedForm(
                 action=self._action,

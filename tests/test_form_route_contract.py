@@ -15,7 +15,7 @@ from netcup_api_filter.models import (
     VisibilityEnum,
 )
 from netcup_api_filter.password_reset import generate_reset_token
-from tests.form_contract_helpers import ParsedForm, parse_forms
+from tests.form_contract_helpers import parse_forms
 from tests.http_helpers import login_admin, login_portal
 
 
@@ -32,44 +32,182 @@ HANDLER_ALIASES = {
 }
 
 
-# Handler reads that are genuinely optional or are compatibility aliases for
-# this rendered form. These are explicit so a future dropped required field
-# cannot hide behind a broad wildcard.
+# Handler reads the rendered form may legitimately omit. Every entry names the
+# reason; a key whose field the template renders unconditionally must NOT be
+# listed here, or a dropped field would silently reset the setting and the
+# guard would stay green (the B057 class). Endpoints with nothing optional are
+# simply absent.
 OPTIONAL_HANDLER_KEYS = {
+    # No UI renders operations/record-type restrictions; the route accepts them
+    # for scripted clients and falls back to the realm's scope.
     "account.create_new_token": {"record_types", "operations"},
-    "admin.account_approve": set(),
-    "admin.account_change_email": set(),
-    "admin.account_disable": set(),
-    "admin.account_regenerate_alias": set(),
-    "admin.account_reset_password": set(),
-    "admin.config_email": {
-        "admin_email",
-        "notify_new_account",
-        "notify_realm_request",
-        "notify_security",
-        "reply_to",
-        "test_only",
-    },
+    # `test_only` is appended by the "Send test email" JS (config_email.html
+    # ~361), never rendered as a field. Every other read is a rendered field.
+    "admin.config_email": {"test_only"},
+    # Legacy aliases read as fallbacks for the canonical customer_id/api_url
+    # (admin.py config_netcup); the template renders only the canonical names.
+    # (The "Test connection" JS appends `test_only`, which this handler does not
+    # read at all, so it needs no entry.)
     "admin.config_netcup": {"api_endpoint", "customer_number"},
-    "admin.config_geoip": set(),
+    # Has a handler default ("Revoked by admin"); no admin form renders it.
     "admin.token_revoke": {"reason"},
-    "admin.update_security_settings": set(),
+    # Rendered only while the admin still needs an email (needs_email_setup).
     "admin.change_password": {"email"},
 }
 
-# Visible controls whose purpose is enforced entirely client-side (or which
-# are intentionally not persisted by the server). They are per-endpoint and
-# documented here rather than silently waived by the comparison.
+# Visible controls the handler never reads. Each one is either a client-side
+# control or a KNOWN DEFECT with a backlog id; a defect entry is removed when
+# its item lands, so the guard then pins the fix.
 TEMPLATE_ONLY_FIELDS = {
     "account.login": {
-        "remember": "HTML-only convenience control; portal sessions are server-managed",
+        "remember": "KNOWN DEFECT B077: the 'Remember me' checkbox is a UI no-op; "
+        "the login handler never reads it. Waived until B077 lands",
     },
     "account.register": {
         "terms": "browser-required acknowledgement; no server-side acceptance field exists",
     },
     "account.disable_2fa": {
-        "totp_code": "optional UI confirmation; the authoritative check is the account password",
+        "totp_code": "KNOWN DEFECT B073: the form requires a 2FA code the handler "
+        "never verifies (it checks only the password); waived until B073 lands",
     },
+}
+
+# Required handler keys a specific page's form is known to omit, keyed by
+# (page path, endpoint). Scoped to one page so the endpoint's own page stays
+# fully guarded. The guard fails if a listed key is no longer missing, so an
+# entry must be deleted when its defect is fixed.
+PAGE_MISSING_WAIVERS = {
+    # KNOWN DEFECT (found by this guard; B081): the SMTP
+    # quick form on /admin/settings posts to admin.config_email without these
+    # fields, and the handler overwrites them on every save, so saving that form
+    # clears the reply-to and admin addresses and turns the notifications off.
+    # /admin/config/email renders all of them and is guarded without a waiver.
+    ("/admin/settings", "admin.config_email"): frozenset(
+        {
+            "admin_email",
+            "notify_new_account",
+            "notify_realm_request",
+            "notify_security",
+            "reply_to",
+        }
+    ),
+}
+
+# POST endpoints whose rendered forms the guard test below must reach and
+# compare. Pinned so coverage cannot shrink silently.
+GUARDED_ENDPOINTS = frozenset(
+    {
+        "account.accept_invite",
+        "account.change_password_page",
+        "account.create_new_token",
+        "account.create_token_select",
+        "account.ddns_update",
+        "account.dns_record_create",
+        "account.disable_2fa",
+        "account.forgot_password",
+        "account.generate_recovery_codes",
+        "account.login",
+        "account.regenerate_token",
+        "account.register",
+        "account.request_realm",
+        "account.reset_password",
+        "account.revoke_all_sessions",
+        "account.telegram_send_test_message",
+        "account.unlink_telegram",
+        "admin.account_change_email",
+        "admin.account_delete",
+        "admin.account_disable",
+        "admin.account_regenerate_alias",
+        "admin.account_reset_password",
+        "admin.change_password",
+        "admin.config_email",
+        "admin.config_geoip",
+        "admin.config_netcup",
+        "admin.update_security_settings",
+    }
+)
+
+_MULTI_ACTION = (
+    "multi-action handler dispatched by a hidden `action` field; the guard's "
+    "union-of-reads model cannot express it"
+)
+_LOGIN_2FA = "needs a pending-2FA login session; not yet covered"
+_NOT_YET = "not yet covered; cheap to add later"
+
+# Every account/admin POST endpoint the guard does NOT pin, with the reason.
+# test_every_post_endpoint_is_guarded_or_listed_uncovered keeps this table
+# honest in both directions: a new POST route must be guarded or listed here,
+# and an entry for a removed route fails.
+UNCOVERED_ENDPOINTS = {
+    # --- account blueprint ---
+    "account.login_2fa": _LOGIN_2FA,
+    "account.verify_2fa_code": _LOGIN_2FA + " (no template posts here; "
+    "login_2fa.html posts to account.login_2fa)",
+    "account.resend_2fa_code": _LOGIN_2FA,
+    "account.verify_email": "needs a registration session (registration_id); " + _NOT_YET,
+    "account.resend_code": "posted from verify_email.html, which needs a registration "
+    "session; " + _NOT_YET,
+    "account.register_realms": _MULTI_ACTION,
+    "account.settings": "KNOWN DEFECT B074 and " + _MULTI_ACTION + "; the "
+    "delete_account, disable_totp and unlink_telegram actions are rendered but "
+    "not handled",
+    "account.setup_totp": "POST needs a TOTP secret pending in the session; " + _NOT_YET,
+    "account.setup_2fa": "alias that delegates to account.setup_totp; no template "
+    "posts to it",
+    "account.token_create": "alias that delegates to account.create_new_token "
+    "(guarded); templates only link to it with GET",
+    "account.request_realm_view": "same handler as account.request_realm (guarded); "
+    "the request form posts to that alias",
+    "account.dns_record_edit": "GET loads the record from the realm's DNS backend; "
+    "needs a backend mock",
+    "account.dns_record_delete": "form action is set by JS (dns_records.html), so "
+    "it cannot be mapped statically",
+    "account.revoke_user_token": "form action is set by JS (realm_detail.html, "
+    "tokens.html), so it cannot be mapped statically",
+    "account.revoke_session": "rendered only for non-current sessions; compared "
+    "when present but not pinned",
+    "account.link_telegram": "link form renders only for an unlinked account; the "
+    "guard's owner is linked so unlink/test are covered",
+    "account.backend_create": "provider config fields are read in "
+    "_build_backend_config_from_form, which the per-handler AST scan does not follow",
+    "account.backend_edit": "provider config fields are read in "
+    "_build_backend_config_from_form, which the per-handler AST scan does not follow",
+    "account.backend_test": "needs a user backend; " + _NOT_YET,
+    "account.backend_delete": "needs a user backend; " + _NOT_YET,
+    # --- admin blueprint ---
+    "admin.login": "tests authenticate through login_admin(); " + _NOT_YET,
+    "admin.login_2fa": _LOGIN_2FA,
+    "admin.resend_2fa": _LOGIN_2FA,
+    "admin.setup_totp": _MULTI_ACTION,
+    "admin.generate_recovery_codes": _MULTI_ACTION,
+    "admin.account_create": _NOT_YET,
+    "admin.account_add_realm": _NOT_YET,
+    "admin.account_approve": "rendered only for unapproved accounts; the guard's "
+    "accounts are all active",
+    "admin.account_reject": "form action is set by JS (accounts_pending.html), so "
+    "it cannot be mapped statically",
+    "admin.realm_approve": "rendered only for pending realms; " + _NOT_YET,
+    "admin.realm_reject": "rendered for pending realms (realm_detail.html) and via "
+    "JS (realms_pending.html); " + _NOT_YET,
+    "admin.realm_revoke": "rendered on the admin realm detail page; " + _NOT_YET,
+    "admin.token_revoke": "rendered only for accounts with active tokens; " + _NOT_YET,
+    "admin.audit_trim": "no template posts to it; " + _NOT_YET,
+    "admin.config_email_test": "legacy endpoint; no template posts to it",
+    "admin.api_accounts_bulk": "JSON API called by fetch(), not a form post",
+    "admin.api_realms_bulk": "JSON API called by fetch(), not a form post",
+    "admin.backend_create": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.backend_edit": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.backend_test": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.backend_enable": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.backend_disable": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.backend_delete": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_create": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_edit": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_enable": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_disable": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_delete": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_grant_add": "domain-root/backend/grant family; " + _NOT_YET,
+    "admin.domain_root_grant_revoke": "domain-root/backend/grant family; " + _NOT_YET,
 }
 
 
@@ -162,6 +300,13 @@ def _assert_form_matches(
             )
         handler_reads = _read_form_keys(module, endpoint)
         dropped, missing = _contract_diff(endpoint, form.names, handler_reads)
+        waived = PAGE_MISSING_WAIVERS.get((urlsplit(page_path).path, endpoint))
+        if waived is not None:
+            assert waived <= missing, (
+                f"{endpoint} on {page_path}: waived keys are no longer missing, "
+                f"delete the PAGE_MISSING_WAIVERS entry: {sorted(waived - missing)}"
+            )
+            missing = missing - waived
         assert not dropped, (
             f"{endpoint}: template fields are not read by the handler: "
             f"{sorted(dropped)} (form={sorted(form.names)}, handler={sorted(handler_reads)})"
@@ -301,34 +446,38 @@ def test_rendered_form_fields_match_route_handlers(
             **kwargs,
         )
 
-    expected_core = {
-        "account.accept_invite",
-        "account.change_password_page",
-        "account.create_new_token",
-        "account.create_token_select",
-        "account.ddns_update",
-        "account.dns_record_create",
-        "account.disable_2fa",
-        "account.forgot_password",
-        "account.generate_recovery_codes",
-        "account.login",
-        "account.register",
-        "account.request_realm",
-        "account.reset_password",
-        "account.telegram_send_test_message",
-        "account.unlink_telegram",
-        "admin.account_change_email",
-        "admin.account_regenerate_alias",
-        "admin.account_reset_password",
-        "admin.change_password",
-        "admin.config_email",
-        "admin.config_geoip",
-        "admin.config_netcup",
-        "admin.update_security_settings",
-    }
-    assert expected_core <= covered, (
-        f"form guard missed core endpoints: {sorted(expected_core - covered)}"
+    assert GUARDED_ENDPOINTS <= covered, (
+        f"form guard missed pinned endpoints: {sorted(GUARDED_ENDPOINTS - covered)}"
     )
+
+
+def _blueprint_post_endpoints(app) -> frozenset[str]:
+    return frozenset(
+        rule.endpoint
+        for rule in app.url_map.iter_rules()
+        if "POST" in (rule.methods or ())
+        and rule.endpoint.split(".", 1)[0] in MODULE_PATHS
+    )
+
+
+def test_every_post_endpoint_is_guarded_or_listed_uncovered(app):
+    """No account/admin POST route may go silently unguarded, and the table cannot rot."""
+    post_endpoints = _blueprint_post_endpoints(app)
+    uncovered = frozenset(UNCOVERED_ENDPOINTS)
+
+    assert not GUARDED_ENDPOINTS & uncovered, (
+        f"endpoints both guarded and listed uncovered: {sorted(GUARDED_ENDPOINTS & uncovered)}"
+    )
+    unaccounted = post_endpoints - GUARDED_ENDPOINTS - uncovered
+    assert not unaccounted, (
+        "POST endpoints neither guarded nor listed in UNCOVERED_ENDPOINTS "
+        f"(cover them or add a reason): {sorted(unaccounted)}"
+    )
+    stale = (GUARDED_ENDPOINTS | uncovered) - post_endpoints
+    assert not stale, (
+        f"guard tables name endpoints that are no longer POST routes: {sorted(stale)}"
+    )
+    assert all(reason.strip() for reason in UNCOVERED_ENDPOINTS.values())
 
 
 def test_contract_diff_rejects_the_old_b057_and_b058_shapes():

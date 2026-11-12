@@ -6,6 +6,7 @@ import re
 
 import pytest
 
+from netcup_api_filter.api.account import TOKEN_EXPIRY_DAYS
 from netcup_api_filter.models import APIToken
 from netcup_api_filter.token_auth import authenticate_token, check_permission
 from tests.form_contract_helpers import csrf_field, field_by_id, parse_forms
@@ -22,7 +23,7 @@ def _token_form(client, realm_id):
     forms = [form for form in parse_forms(html) if form.method == "post"]
     assert len(forms) == 1, f"expected one token POST form, got {forms!r}"
     form = forms[0]
-    assert form.action and form.action.endswith(f"/tokens/new")
+    assert form.action and form.action.endswith("/tokens/new")
     assert form.names == frozenset(FIELD_IDS)
     assert "rate_limit_per_minute" not in html
     return form, csrf_field(html)
@@ -102,6 +103,12 @@ def test_token_form_uses_visible_field_names_and_stores_comma_allow_list(
     )
     assert denied.granted is False
     assert denied.error_code == "ip_denied"
+    # Positive oracle: an address inside the stored CIDR is admitted, so the
+    # denial above is the allow-list at work and not a blanket refusal.
+    allowed = check_permission(
+        auth, "read", "example.com", client_ip="203.0.113.5"
+    )
+    assert allowed.granted is True
 
 
 @pytest.mark.parametrize(
@@ -152,31 +159,54 @@ def test_token_form_rejects_entire_submission_for_any_invalid_entry(
     )
 
 
-@pytest.mark.parametrize(
-    ("expires", "expected_days"),
-    [("never", None), ("1month", 30), ("3months", 90), ("1year", 365)],
-)
-def test_token_form_expiry_options_match_route_contract(
-    app, client, db, token_owner, token_realm, expires, expected_days
-):
-    login_portal(client, token_owner)
-    before = datetime.utcnow()
-    response, _token_plain = _create_token(
-        client,
-        token_realm.id,
-        name=f"expiry-{expires}",
-        expires=expires,
-    )
-    after = datetime.utcnow()
+EXPECTED_EXPIRY_OPTIONS = frozenset({"never", *TOKEN_EXPIRY_DAYS})
 
-    assert response.status_code == 200
-    assert "Token Generated" in response.get_data(as_text=True)
-    token = db.session.query(APIToken).filter_by(token_name=f"expiry-{expires}").one()
-    if expected_days is None:
-        assert token.expires_at is None
-    else:
-        assert before + timedelta(days=expected_days) <= token.expires_at
-        assert token.expires_at <= after + timedelta(days=expected_days)
+
+def _rendered_expiry_options(client, realm_id) -> tuple[str, ...]:
+    form, _csrf = _token_form(client, realm_id)
+    return field_by_id(form, "expires").options
+
+
+def test_token_form_expiry_select_matches_route_constant(
+    app, client, token_owner, token_realm
+):
+    """The rendered #expires values are exactly what the route accepts (B057)."""
+    login_portal(client, token_owner)
+    options = _rendered_expiry_options(client, token_realm.id)
+    assert len(options) == len(set(options)), f"duplicate expiry options: {options!r}"
+    assert frozenset(options) == EXPECTED_EXPIRY_OPTIONS
+
+
+def test_token_form_expiry_options_match_route_contract(
+    app, client, db, token_owner, token_realm
+):
+    """Every rendered expiry option creates a token with the mapped lifetime."""
+    login_portal(client, token_owner)
+    options = _rendered_expiry_options(client, token_realm.id)
+    assert frozenset(options) == EXPECTED_EXPIRY_OPTIONS
+
+    for expires in options:
+        name = f"expiry-{expires}"
+        before = datetime.utcnow()
+        response, _token_plain = _create_token(
+            client,
+            token_realm.id,
+            name=name,
+            expires=expires,
+        )
+        after = datetime.utcnow()
+
+        assert response.status_code == 200, expires
+        assert "Token Generated" in response.get_data(as_text=True), expires
+        token = db.session.query(APIToken).filter_by(token_name=name).one()
+        # The IP field was left empty: the token must stay unrestricted.
+        assert token.get_allowed_ip_ranges() == [], expires
+        if expires == "never":
+            assert token.expires_at is None
+        else:
+            expected_days = TOKEN_EXPIRY_DAYS[expires]
+            assert before + timedelta(days=expected_days) <= token.expires_at, expires
+            assert token.expires_at <= after + timedelta(days=expected_days), expires
 
 
 def test_token_form_rejects_unknown_expiry_without_creating(

@@ -43,10 +43,22 @@
   (`expires`, `ip_ranges`, `description`), accepts comma- or newline-separated IPv4/IPv6 addresses and
   CIDRs, rejects the whole submission on any invalid entry, and persists the selected expiry and
   description. The unsupported per-token rate-limit control was removed rather than left as a no-op.
+  The expiry choices are now never / 30 days / 90 days / 1 year: the old "6 months" option is gone
+  because the route never supported it. An account with several realms now picks the realm first
+  (a "Continue" step) and then fills the token form for that realm.
 - **Password reset and invite forms post the handler's password names.** The reset page now submits
   `new_password`, so a normal browser reset succeeds without injected hidden fields.
 - **Form/route contract guard.** Flask-rendered form fields are compared with each handler's
   `request.form` reads, covering the portal token/password forms and admin configuration/user forms.
+  Every other account/admin POST route is listed with a reason in the guard's uncovered table, and a
+  test fails when a new POST route is neither guarded nor listed. The token form's expiry `<select>`
+  values are pinned to the route's accepted set.
+- **Known issues found by the guard** (open, not fixed here): B073 disable-2FA asks for a 2FA code it
+  never verifies; B074 `/account/settings` delete-account, disable-TOTP and unlink-Telegram forms do
+  nothing; B075 the admin token page never shows IP restrictions; B076 portal token regenerate always
+  fails with "Token name already exists"; B077 the login "Remember me" checkbox has no effect. B081:
+  the `/admin/settings` SMTP quick form omits reply-to, admin email and the notification
+  flags, so saving it clears them.
 
 - **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog keeps one unverified hop as the status quo until B044 measures the webhoster chain.
 

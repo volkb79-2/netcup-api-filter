@@ -80,3 +80,41 @@ def test_invite_password_post_uses_names_from_rendered_template(
     assert response.status_code == 302
     assert response.location.endswith("/account/login")
     _assert_password_changed(db, account, old_hash)
+
+
+def _assert_mismatch_rejected(client, db, account, old_hash, page_path):
+    page = client.get(page_path)
+    assert page.status_code == 200
+    form, password_fields, data = _password_fields(page.get_data(as_text=True))
+    data[password_fields[1].name] = STRONG_PASSWORD + "-different"
+
+    response = client.post(form.action, data=data)
+    assert response.status_code == 200
+    # The mismatch text is static in the template (client-side #match-error), so a body
+    # assertion would be vacuous; the unchanged hash below is the real oracle.
+    db.session.refresh(account)
+    assert account.password_hash == old_hash
+    assert account.verify_password(OLD_PASSWORD) is True
+    assert account.verify_password(STRONG_PASSWORD) is False
+
+
+def test_reset_password_rejects_confirmation_mismatch(client, db, make_account):
+    account = make_account("reset-mismatch-user", password=OLD_PASSWORD)
+    old_hash = account.password_hash
+    token, _expiry = generate_reset_token(
+        account, source_ip=None, token_type="reset"
+    )
+    _assert_mismatch_rejected(
+        client, db, account, old_hash, f"/account/reset-password/{token}"
+    )
+
+
+def test_invite_rejects_confirmation_mismatch(client, db, make_account):
+    account = make_account("invite-mismatch-user", password=OLD_PASSWORD)
+    old_hash = account.password_hash
+    token, _expiry = generate_reset_token(
+        account, source_ip=None, token_type="invite"
+    )
+    _assert_mismatch_rejected(
+        client, db, account, old_hash, f"/account/invite/{token}"
+    )

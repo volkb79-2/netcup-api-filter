@@ -24,7 +24,7 @@ ENVIRONMENT NOTES (pinned to implementation)
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import ipaddress
 import json
 import secrets
@@ -630,8 +630,11 @@ async def test_token_form_persists_ip_allowlist_expiry_and_enforces_denial(
             await user.fill("#ip_ranges", "203.0.113.0/24")
             await user.select("#expires", "1month")
             await user.fill("#description", "Visible-form allow-list and expiry probe")
+            # The app runs in this runner, so its utcnow() and ours share a clock.
+            submitted_before = datetime.utcnow()
             await user.click("#create-token-btn")
             await user.wait_for_text("main h1", "Token Generated", timeout=15.0)
+            submitted_after = datetime.utcnow()
             token_plain = await user.get_attribute("#tokenValue", "value")
             assert token_plain and token_plain.startswith("naf_")
 
@@ -646,7 +649,16 @@ async def test_token_form_persists_ip_allowlist_expiry_and_enforces_denial(
                 "Visible-form allow-list and expiry probe"
             )
             assert row["expires_at"] is not None
-            assert datetime.fromisoformat(row["expires_at"]) > datetime.utcnow()
+            # "1month" is 30 days (TOKEN_EXPIRY_DAYS in api/account.py); 5 s of
+            # slack covers the sqlite round-trip, not a different lifetime.
+            expires_at = datetime.fromisoformat(row["expires_at"])
+            lifetime = timedelta(days=30)
+            assert submitted_before + lifetime <= expires_at, (
+                f"expires_at {expires_at} earlier than submit + 30d ({submitted_before})"
+            )
+            assert expires_at <= submitted_after + lifetime + timedelta(seconds=5), (
+                f"expires_at {expires_at} later than response + 30d ({submitted_after})"
+            )
 
             async with httpx.AsyncClient() as probe:
                 my_ip_response = await probe.get(
