@@ -342,7 +342,7 @@ budget_per_attempt = "20m"
 scope = "S1"
 rigor = ["R0", "R2"]
 enforcement = "advisory"
-argv = ["python", "-m", "pytest", "tests/test_validators_unit.py", "tests/test_validators_property.py", "tests/test_utils_helpers.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
+argv = ["python", "-m", "pytest", "tests/test_validators_unit.py", "tests/test_validators_property.py", "tests/test_utils_helpers.py", "tests/test_utils_parse_client_address.py", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-x"]
 env = {}
 env_passthrough = ["PATH", "HOME", "PYTHONPATH", "PYTHONUNBUFFERED"]
 budget = "8h"
