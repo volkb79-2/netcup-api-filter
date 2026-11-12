@@ -416,7 +416,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   active-lock rejection before writing `ActivityLog`; the admin login flow wrote no persistent
   `login` outcome for wrong passwords, lock-rejected attempts, successful logins, or invalid and
   lock-rejected second factors; and Flask-Limiter 429s carried `Retry-After: None`, which also
-  rendered as a non-numeric HTML countdown. The fix reuses the portal audit helper across the
-  admin flow, records unknown usernames with a null `account_id`, never stores submitted
-  credentials or codes in the reason, and derives a positive retry delay from the limiter's reset
-  or the configured window.
+  rendered as a non-numeric HTML countdown. The fix adds one admin audit helper that takes the
+  already-resolved admin (NULL `account_id` for unknown and non-admin usernames), never stores
+  submitted credentials or codes in the reason, and derives a positive retry delay from the
+  limiter's reset or the configured window.

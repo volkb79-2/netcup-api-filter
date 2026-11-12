@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 from contextlib import closing
 from datetime import datetime
 from types import SimpleNamespace
@@ -22,6 +23,7 @@ LIMITS = {
     "api_rate_limit": "2 per minute",
 }
 RETRY_AFTER_SECONDS = parse(LIMITS["api_rate_limit"]).get_expiry()
+FROZEN_LIMIT_CLOCK = 1000.1
 
 
 @pytest.fixture
@@ -68,6 +70,11 @@ def _request(app, path, ip):
     return client.get(path, environ_overrides={"REMOTE_ADDR": ip})
 
 
+def _freeze_limit_clock(monkeypatch):
+    """Freeze both limits' memory storage and the app's reset arithmetic."""
+    monkeypatch.setattr(time, "time", lambda: FROZEN_LIMIT_CLOCK)
+
+
 def _assert_html_rate_limit(response):
     assert response.status_code == 429
     body = response.get_data(as_text=True)
@@ -79,7 +86,7 @@ def _assert_html_rate_limit(response):
     )
     assert countdown is not None, "the HTML countdown must render a numeric delay"
     seconds = int(countdown.group(1))
-    assert 0 < seconds <= RETRY_AFTER_SECONDS
+    assert seconds == RETRY_AFTER_SECONDS
     assert response.headers["Retry-After"] == str(seconds)
 
 
@@ -92,7 +99,8 @@ def _app_limiter(app):
     return limiter
 
 
-def test_admin_account_and_api_limits_return_429_after_configured_request_count(app):
+def test_admin_account_and_api_limits_return_429_after_configured_request_count(app, monkeypatch):
+    _freeze_limit_clock(monkeypatch)
     limiter = _app_limiter(app)
 
     cases = (
@@ -119,8 +127,9 @@ def test_admin_account_and_api_limits_return_429_after_configured_request_count(
         limiter.reset()
 
 
-def test_api_rate_limit_returns_numeric_retry_after_header(app):
+def test_api_rate_limit_returns_numeric_retry_after_header(app, monkeypatch):
     """API 429s carry a positive integer derived from the configured limit window."""
+    _freeze_limit_clock(monkeypatch)
     limiter = _app_limiter(app)
     path = "/api/dns/example.com/records"
     client_ip = "198.51.100.49"
@@ -131,8 +140,7 @@ def test_api_rate_limit_returns_numeric_retry_after_header(app):
     assert limited.status_code == 429
     retry_after = limited.headers["Retry-After"]
     assert retry_after.isdigit()
-    assert int(retry_after) > 0
-    assert int(retry_after) <= RETRY_AFTER_SECONDS
+    assert int(retry_after) == RETRY_AFTER_SECONDS
     payload = limited.get_json()
     assert float(payload["retry_after"]) == float(retry_after)
     limiter.reset()

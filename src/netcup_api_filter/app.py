@@ -146,8 +146,18 @@ def _rate_limit_retry_after_seconds(error) -> int:
         current_limit = getattr(limiter, "current_limit", None)
         if current_limit is None:
             continue
-        seconds = math.ceil(current_limit.reset_at - time.time())
+        window = getattr(current_limit, "window", None)
+        reset_time = getattr(window, "reset_time", None)
+        if reset_time is None:
+            continue
+        seconds = math.ceil(float(reset_time) - time.time())
         if seconds > 0:
+            limit_item = getattr(current_limit, "limit", None)
+            get_expiry = getattr(limit_item, "get_expiry", None)
+            if callable(get_expiry):
+                expiry_seconds = math.ceil(float(get_expiry()))
+                if expiry_seconds > 0:
+                    return min(seconds, expiry_seconds)
             return seconds
 
     limit_item = getattr(getattr(error, "limit", None), "limit", None)

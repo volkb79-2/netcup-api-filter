@@ -148,6 +148,7 @@ def _log_admin_login_attempt(
     client_ip: str,
     success: bool,
     reason: str,
+    commit: bool = True,
 ) -> None:
     """Persist one admin-login outcome without credential material."""
     db.session.add(ActivityLog(
@@ -158,7 +159,8 @@ def _log_admin_login_attempt(
         status='success' if success else 'denied',
         status_reason=reason[:255],
     ))
-    db.session.commit()
+    if commit:
+        db.session.commit()
 
 
 def _track_failed_login(username: str, client_ip: str) -> tuple[bool, int]:
@@ -464,17 +466,18 @@ def login():
                 # Check if admin has valid email for 2FA
                 if admin.email_2fa_enabled and (not admin.email or admin.email == 'admin@localhost'):
                     # Admin needs to set email first - proceed to password change which handles this
-                    session[SESSION_KEY_ADMIN_ID] = admin.id
-                    session[SESSION_KEY_ADMIN_USERNAME] = admin.username
-                    session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
                     admin.must_change_password = 1  # Force password change to also set email
-                    db.session.commit()
                     _log_admin_login_attempt(
                         admin,
                         client_ip,
                         True,
                         "Admin login via email setup",
+                        commit=False,
                     )
+                    db.session.commit()
+                    session[SESSION_KEY_ADMIN_ID] = admin.id
+                    session[SESSION_KEY_ADMIN_USERNAME] = admin.username
+                    session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
                     logger.info(f"Admin login (no valid email, forcing setup): {username}")
                     return redirect(url_for('admin.change_password'))
                 
@@ -829,19 +832,19 @@ def _complete_admin_login(admin: Account, client_ip: str, via: str = 'email'):
     reset_2fa_failures(admin)
     reset_recovery_code_failures(admin)
     
-    session[SESSION_KEY_ADMIN_ID] = admin.id
-    session[SESSION_KEY_ADMIN_USERNAME] = admin.username
-    session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
-    
     admin.last_login_at = datetime.utcnow()
-    db.session.commit()
-
     _log_admin_login_attempt(
         admin,
         client_ip,
         True,
         f"Admin login via {via}",
+        commit=False,
     )
+    db.session.commit()
+
+    session[SESSION_KEY_ADMIN_ID] = admin.id
+    session[SESSION_KEY_ADMIN_USERNAME] = admin.username
+    session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
     logger.info(f"Admin login complete: {admin.username} from {client_ip} via {via}")
     
     # Check if password change is required

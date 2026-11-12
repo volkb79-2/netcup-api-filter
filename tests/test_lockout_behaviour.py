@@ -1,6 +1,7 @@
 """Lockout and recovery-code behaviours with a frozen authentication clock."""
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 import pyotp
@@ -105,6 +106,42 @@ def _post_admin_login(client, username, password, csrf_token):
         headers={"User-Agent": AUDIT_USER_AGENT},
         environ_overrides={"REMOTE_ADDR": IP},
     )
+
+
+def _post_admin_2fa(client, code, csrf_token, method=None):
+    data = {"code": code, "csrf_token": csrf_token}
+    if method is not None:
+        data["method"] = method
+    return client.post(
+        "/admin/login/2fa",
+        data=data,
+        headers={"User-Agent": AUDIT_USER_AGENT},
+        environ_overrides={"REMOTE_ADDR": IP},
+    )
+
+
+def _normalise_csrf(body):
+    return re.sub(
+        r'(name="csrf_token"[^>]*?value=")[^"]+',
+        r"\1<csrf-token>",
+        body,
+    )
+
+
+def _make_email_setup_admin(make_account, username):
+    """Create an active admin with no email so the setup branch is reachable."""
+    admin = make_account(
+        username,
+        is_admin=1,
+        password=VALID_PASSWORD,
+        email=f"{username}@example.invalid",
+        email_2fa_enabled=1,
+        totp_enabled=0,
+        telegram_enabled=0,
+    )
+    admin.email = ""
+    admin_mod.db.session.commit()
+    return admin
 
 
 def _assert_no_audit_secrets(rows, *secrets):
@@ -340,7 +377,11 @@ def test_admin_password_lockout_rejects_valid_password_until_frozen_expiry(
     assert valid_after_expiry.status_code == 302
     assert valid_after_expiry.headers.get("Location") == "/admin/"
 
-    audit_rows = ActivityLog.query.filter_by(account_id=admin.id, action="login").all()
+    audit_rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
     assert [(row.status, row.status_reason) for row in audit_rows] == [
         ("denied", "Invalid password"),
         ("denied", "Invalid password"),
@@ -361,7 +402,7 @@ def test_admin_password_login_outcomes_are_audited(app, make_account, monkeypatc
         totp_enabled=0,
         telegram_enabled=0,
     )
-    portal_account = make_account("audit-portal-at-admin-login")
+    portal_account = make_account("audit-portal-at-admin-login", password=VALID_PASSWORD)
     unknown_username = "unknown-admin-" + ("x" * 300)
     client = app.test_client()
     csrf_token = mint_csrf(client, "/admin/login")
@@ -371,13 +412,16 @@ def test_admin_password_login_outcomes_are_audited(app, make_account, monkeypatc
     assert wrong.status_code == 200
     assert "Invalid credentials" in wrong.get_data(as_text=True)
 
-    non_admin = _post_admin_login(client, portal_account.username, wrong_password, csrf_token)
+    non_admin = _post_admin_login(client, portal_account.username, VALID_PASSWORD, csrf_token)
     assert non_admin.status_code == 200
     assert "Invalid credentials" in non_admin.get_data(as_text=True)
 
-    unknown = _post_admin_login(client, unknown_username, wrong_password, csrf_token)
+    unknown = _post_admin_login(client, unknown_username, VALID_PASSWORD, csrf_token)
     assert unknown.status_code == 200
     assert "Invalid credentials" in unknown.get_data(as_text=True)
+    assert _normalise_csrf(non_admin.get_data(as_text=True)) == _normalise_csrf(
+        unknown.get_data(as_text=True)
+    )
 
     success = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
     assert success.status_code == 302
@@ -408,6 +452,260 @@ def test_admin_password_login_outcomes_are_audited(app, make_account, monkeypatc
     assert all(row.source_ip == IP and row.user_agent == AUDIT_USER_AGENT for row in audit_rows)
     assert unknown_username not in audit_rows[2].status_reason
     _assert_no_audit_secrets(audit_rows, VALID_PASSWORD, wrong_password)
+
+
+def test_admin_disabled_login_is_audited(app, make_account, monkeypatch):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    admin = make_account(
+        "audit-disabled-admin",
+        is_admin=1,
+        is_active=0,
+        password=VALID_PASSWORD,
+        email_2fa_enabled=0,
+        totp_enabled=0,
+        telegram_enabled=0,
+    )
+    client = app.test_client()
+    csrf_token = mint_csrf(client, "/admin/login")
+
+    response = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
+
+    assert response.status_code == 200
+    assert "Account is disabled" in response.get_data(as_text=True)
+    rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
+    assert [(row.status, row.status_reason) for row in rows] == [
+        ("denied", "Account disabled"),
+    ]
+    assert all(row.source_ip == IP and row.user_agent == AUDIT_USER_AGENT for row in rows)
+    _assert_no_audit_secrets(rows, VALID_PASSWORD)
+
+
+def test_admin_email_setup_login_is_audited(app, make_account, monkeypatch):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    admin = _make_email_setup_admin(make_account, "audit-email-setup-admin")
+    client = app.test_client()
+    csrf_token = mint_csrf(client, "/admin/login")
+
+    response = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
+
+    assert response.status_code == 302
+    assert response.headers.get("Location") == "/admin/change_password"
+    rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
+    assert [(row.status, row.status_reason) for row in rows] == [
+        ("success", "Admin login via email setup"),
+    ]
+    assert all(row.source_ip == IP and row.user_agent == AUDIT_USER_AGENT for row in rows)
+    _assert_no_audit_secrets(rows, VALID_PASSWORD)
+
+
+def test_admin_2fa_lock_rejection_is_audited(
+    app, make_account, frozen_clock, monkeypatch,
+):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    secret = pyotp.random_base32()
+    admin = make_account(
+        "audit-admin-2fa-locked",
+        is_admin=1,
+        password=VALID_PASSWORD,
+        email="audit-locked@example.invalid",
+        email_2fa_enabled=0,
+        totp_enabled=1,
+        totp_secret=secret,
+        telegram_enabled=0,
+    )
+    client = app.test_client()
+    csrf_token = mint_csrf(client, "/admin/login")
+    login_response = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
+    assert login_response.status_code == 302
+    assert login_response.headers.get("Location") == "/admin/login/2fa"
+
+    Settings.set(
+        f"2fa_failures:{admin.id}",
+        {"count": TFA_MAX_ATTEMPTS, "last_failure": frozen_clock.now_value.isoformat()},
+    )
+    submitted_code = _totp_at_frozen_time(secret, frozen_clock)
+    response = _post_admin_2fa(client, submitted_code, csrf_token, method="totp")
+
+    assert response.status_code == 302
+    assert response.headers.get("Location") == "/admin/login"
+    rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
+    assert [(row.status, row.status_reason) for row in rows] == [
+        ("denied", "2FA locked (rate limit)"),
+    ]
+    assert all(row.source_ip == IP and row.user_agent == AUDIT_USER_AGENT for row in rows)
+    _assert_no_audit_secrets(rows, VALID_PASSWORD, submitted_code)
+
+
+def test_admin_invalid_recovery_codes_and_lock_are_audited(
+    app, make_account, frozen_clock, monkeypatch,
+):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    monkeypatch.setattr(notification_service, "send_2fa_email", lambda *args, **kwargs: True)
+    admin = make_account(
+        "audit-admin-recovery-lock",
+        is_admin=1,
+        password=VALID_PASSWORD,
+        email="audit-recovery@example.invalid",
+        email_2fa_enabled=1,
+        totp_enabled=0,
+        telegram_enabled=0,
+    )
+    client = app.test_client()
+    csrf_token = mint_csrf(client, "/admin/login")
+    login_response = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
+    assert login_response.status_code == 302
+    assert login_response.headers.get("Location") == "/admin/login/2fa"
+    with client.session_transaction() as sess:
+        emailed_code = sess[admin_mod.SESSION_KEY_ADMIN_2FA_CODE]
+
+    for _ in range(RECOVERY_CODE_MAX_ATTEMPTS):
+        response = _post_admin_2fa(client, BAD_RECOVERY_CODE, csrf_token)
+        assert response.status_code == 200
+        assert "Invalid recovery code" in response.get_data(as_text=True)
+
+    locked_response = _post_admin_2fa(client, BAD_RECOVERY_CODE, csrf_token)
+    assert locked_response.status_code == 200
+    assert "Too many failed recovery code attempts." in locked_response.get_data(as_text=True)
+
+    rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
+    assert [(row.status, row.status_reason) for row in rows] == (
+        [("denied", "Invalid recovery code")] * RECOVERY_CODE_MAX_ATTEMPTS
+        + [("denied", "Recovery code locked (rate limit)")]
+    )
+    assert all(row.source_ip == IP and row.user_agent == AUDIT_USER_AGENT for row in rows)
+    _assert_no_audit_secrets(
+        rows, VALID_PASSWORD, BAD_RECOVERY_CODE, emailed_code,
+    )
+
+
+@pytest.mark.parametrize("method", ["totp", "email", "recovery_code"])
+def test_admin_successful_second_factor_logins_are_audited(
+    app, make_account, frozen_clock, monkeypatch, method,
+):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    monkeypatch.setattr(notification_service, "send_2fa_email", lambda *args, **kwargs: True)
+    secret = pyotp.random_base32() if method == "totp" else None
+    admin = make_account(
+        f"audit-admin-success-{method}",
+        is_admin=1,
+        password=VALID_PASSWORD,
+        email=f"audit-success-{method}@example.invalid",
+        email_2fa_enabled=int(method != "totp"),
+        totp_enabled=int(method == "totp"),
+        totp_secret=secret,
+        telegram_enabled=0,
+    )
+    recovery_codes = generate_recovery_codes()
+    if method == "recovery_code":
+        assert store_recovery_codes(admin, recovery_codes) is True
+
+    client = app.test_client()
+    csrf_token = mint_csrf(client, "/admin/login")
+    login_response = _post_admin_login(client, admin.username, VALID_PASSWORD, csrf_token)
+    assert login_response.status_code == 302
+    assert login_response.headers.get("Location") == "/admin/login/2fa"
+
+    if method == "totp":
+        submitted_code = _totp_at_frozen_time(secret, frozen_clock)
+        second_factor_response = _post_admin_2fa(
+            client, submitted_code, csrf_token, method="totp",
+        )
+    elif method == "email":
+        with client.session_transaction() as sess:
+            submitted_code = sess[admin_mod.SESSION_KEY_ADMIN_2FA_CODE]
+        second_factor_response = _post_admin_2fa(client, submitted_code, csrf_token)
+    else:
+        submitted_code = recovery_codes[0]
+        second_factor_response = _post_admin_2fa(client, submitted_code, csrf_token)
+
+    assert second_factor_response.status_code == 302
+    assert second_factor_response.headers.get("Location") == "/admin/"
+    with client.session_transaction() as sess:
+        assert sess[admin_mod.SESSION_KEY_ADMIN_ID] == admin.id
+
+    rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
+    assert [(row.status, row.status_reason) for row in rows] == [
+        ("success", f"Admin login via {method}"),
+    ]
+    assert all(row.source_ip == IP and row.user_agent == AUDIT_USER_AGENT for row in rows)
+    _assert_no_audit_secrets(rows, VALID_PASSWORD, submitted_code)
+
+
+def test_admin_2fa_success_commit_failure_does_not_authenticate(
+    app, make_account, monkeypatch,
+):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    admin = make_account(
+        "audit-admin-commit-failure-2fa",
+        is_admin=1,
+        password=VALID_PASSWORD,
+        email="audit-commit-failure@example.invalid",
+        email_2fa_enabled=1,
+        totp_enabled=0,
+        telegram_enabled=0,
+    )
+
+    def fail_commit():
+        raise RuntimeError("simulated audit commit failure")
+
+    with app.test_request_context(headers={"User-Agent": AUDIT_USER_AGENT}):
+        session[admin_mod.SESSION_KEY_ADMIN_2FA_PENDING] = admin.id
+        session[admin_mod.SESSION_KEY_ADMIN_2FA_METHOD] = "email"
+        monkeypatch.setattr(admin_mod.db.session, "commit", fail_commit)
+
+        with pytest.raises(RuntimeError, match="simulated audit commit failure"):
+            admin_mod._complete_admin_login(admin, IP, via="email")
+
+        assert admin_mod.SESSION_KEY_ADMIN_ID not in session
+        assert admin_mod.SESSION_KEY_ADMIN_USERNAME not in session
+        assert admin_mod.SESSION_KEY_ADMIN_SESSION_IP not in session
+
+
+def test_admin_email_setup_commit_failure_does_not_authenticate(
+    app, make_account, monkeypatch,
+):
+    monkeypatch.setattr(admin_mod, "_add_timing_jitter", lambda: None)
+    admin = _make_email_setup_admin(
+        make_account, "audit-admin-commit-failure-email-setup",
+    )
+
+    def fail_commit():
+        raise RuntimeError("simulated audit commit failure")
+
+    with app.test_request_context(
+        "/admin/login",
+        method="POST",
+        data={"username": admin.username, "password": VALID_PASSWORD},
+        headers={"User-Agent": AUDIT_USER_AGENT},
+    ):
+        monkeypatch.setattr(admin_mod.db.session, "commit", fail_commit)
+
+        with pytest.raises(RuntimeError, match="simulated audit commit failure"):
+            admin_mod.login()
+
+        assert admin_mod.SESSION_KEY_ADMIN_ID not in session
+        assert admin_mod.SESSION_KEY_ADMIN_USERNAME not in session
+        assert admin_mod.SESSION_KEY_ADMIN_SESSION_IP not in session
 
 
 @pytest.mark.parametrize("method", ["totp", "email"])
@@ -456,7 +754,11 @@ def test_admin_two_factor_failure_is_audited(
     else:
         assert "Invalid verification code." in body
 
-    audit_rows = ActivityLog.query.filter_by(account_id=admin.id, action="login").all()
+    audit_rows = (
+        ActivityLog.query.filter_by(account_id=admin.id, action="login")
+        .order_by(ActivityLog.id)
+        .all()
+    )
     assert len(audit_rows) == 1
     row = audit_rows[0]
     expected_reason = "Invalid TOTP code" if method == "totp" else "Invalid 2FA code"
