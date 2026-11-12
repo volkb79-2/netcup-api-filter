@@ -33,6 +33,13 @@
 
 ### Security
 
+- **Authentication audit coverage and numeric rate-limit retries:** portal and admin login
+  attempts now persist `ActivityLog` rows for password failures, lock-rejected attempts,
+  successful logins, and invalid or lock-rejected second factors; unknown usernames get a null
+  `account_id`, and reasons never contain submitted passwords or codes. API and HTML 429 responses
+  now emit a positive integer `Retry-After`, with the HTML countdown rendering that number rather
+  than `None`. The delay comes from Flask-Limiter's request reset or the configured limit window.
+
 - **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog keeps one unverified hop as the status quo until B044 measures the webhoster chain.
 
 - **Fixed (review #15):** the OCI image ran gunicorn as root and had no `.dockerignore` (`.env*`

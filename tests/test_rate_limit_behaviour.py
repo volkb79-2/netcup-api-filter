@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import closing
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
+from flask import Flask
+from limits import parse
 
-from netcup_api_filter.app import create_app
+from netcup_api_filter.app import _rate_limit_retry_after_seconds, create_app
 from netcup_api_filter.database import db, get_setting
 
 
@@ -17,6 +21,7 @@ LIMITS = {
     "account_rate_limit": "2 per minute",
     "api_rate_limit": "2 per minute",
 }
+RETRY_AFTER_SECONDS = parse(LIMITS["api_rate_limit"]).get_expiry()
 
 
 @pytest.fixture
@@ -68,6 +73,14 @@ def _assert_html_rate_limit(response):
     body = response.get_data(as_text=True)
     assert "429 - Too Many Requests" in body
     assert "You've exceeded the rate limit." in body
+    countdown = re.search(
+        r'<div class="countdown-value" id="countdown">([0-9]+)</div>',
+        body,
+    )
+    assert countdown is not None, "the HTML countdown must render a numeric delay"
+    seconds = int(countdown.group(1))
+    assert 0 < seconds <= RETRY_AFTER_SECONDS
+    assert response.headers["Retry-After"] == str(seconds)
 
 
 def _app_limiter(app):
@@ -106,12 +119,8 @@ def test_admin_account_and_api_limits_return_429_after_configured_request_count(
         limiter.reset()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECT: API 429 responses emit Retry-After: None instead of a numeric delay.",
-)
 def test_api_rate_limit_returns_numeric_retry_after_header(app):
-    """Minimal repro for the API rate-limit header returning the string None."""
+    """API 429s carry a positive integer derived from the configured limit window."""
     limiter = _app_limiter(app)
     path = "/api/dns/example.com/records"
     client_ip = "198.51.100.49"
@@ -123,9 +132,21 @@ def test_api_rate_limit_returns_numeric_retry_after_header(app):
     retry_after = limited.headers["Retry-After"]
     assert retry_after.isdigit()
     assert int(retry_after) > 0
+    assert int(retry_after) <= RETRY_AFTER_SECONDS
     payload = limited.get_json()
     assert float(payload["retry_after"]) == float(retry_after)
     limiter.reset()
+
+
+def test_retry_after_falls_back_to_the_configured_limit_window():
+    """With no request reset metadata, use the limit string's window length."""
+    limit_item = parse("1 per hour")
+    error = SimpleNamespace(
+        retry_after=None,
+        limit=SimpleNamespace(limit=limit_item),
+    )
+    with Flask(__name__).app_context():
+        assert _rate_limit_retry_after_seconds(error) == limit_item.get_expiry()
 
 
 def test_limits_are_per_client_and_resettable_without_waiting(app):

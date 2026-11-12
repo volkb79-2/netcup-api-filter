@@ -73,6 +73,7 @@ items:
   - {id: B069, title: "pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B070, title: "Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B071, title: "Exercise Telegram and configured GeoIP in the hermetic tier with mocks", type: feature, component: ui-tests, context_estimate: medium, folds_into: F017}
+  - {id: B072, title: "Audit all login outcomes and emit numeric rate-limit retries", type: bugfix, component: security, context_estimate: small}
 ---
 
 # Backlog
@@ -407,3 +408,15 @@ class (b).
 
 **Referenced, not re-filed:** the `/account/docs` and `/admin/app-logs` gaps are B007; the assert-free
 J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
+
+## B-SECURITY (added 2026-11-12 from the sweeps1 defects)
+
+- **B072 — Audit all login outcomes and emit numeric rate-limit retries. Status: done**
+  (implemented on `defects1-audit-retry`; pending merge). The portal 2FA verifier returned its
+  active-lock rejection before writing `ActivityLog`; the admin login flow wrote no persistent
+  `login` outcome for wrong passwords, lock-rejected attempts, successful logins, or invalid and
+  lock-rejected second factors; and Flask-Limiter 429s carried `Retry-After: None`, which also
+  rendered as a non-numeric HTML countdown. The fix reuses the portal audit helper across the
+  admin flow, records unknown usernames with a null `account_id`, never stores submitted
+  credentials or codes in the reason, and derives a positive retry delay from the limiter's reset
+  or the configured window.

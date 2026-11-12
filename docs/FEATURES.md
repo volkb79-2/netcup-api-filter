@@ -41,6 +41,8 @@ UI, and token-authenticated REST/DDNS APIs, and runs on shared webhosting under 
   a method is offered only if it can actually deliver.
 - **Lockout** after repeated failed 2FA/recovery attempts, **with notifications** to the user
   (and optionally an operator) when an account is locked.
+- **Login audit coverage** for portal and admin password/2FA outcomes, including attempts rejected
+  by an active lockout; submitted passwords and verification codes are never stored in the reason.
 - **Telegram linking** via deep-link + bot callback (constant-time secret, one-chat-per-account,
   rate-limited, audited). See [`TELEGRAM_LINKING.md`](TELEGRAM_LINKING.md).
 
