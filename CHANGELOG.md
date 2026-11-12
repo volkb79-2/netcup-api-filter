@@ -107,7 +107,6 @@
   `IntegrityError` can include row values). Initialization now runs under an exclusive lock file
   (`<db>.init.lock`, `NAF_INIT_LOCK_TIMEOUT_SECONDS`) in every process, and a failed start re-raises:
   gunicorn exits non-zero ("Worker failed to boot"); details are logged only.
-||||||| 697f5a0
 - **Activation no longer silently rotates `SECRET_KEY`** (review #18): `scripts/activate.py` now fails
   with an error when a non-empty preserved secret cannot be restored into the new database (it only
   warned before). An absent or empty preserved secret is still a no-op.
