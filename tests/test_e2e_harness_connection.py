@@ -436,6 +436,36 @@ async def test_fill_error_redacts_typed_value_but_keeps_length():
     assert exc.payload == {"selector": "#password", "value_length": len(value)}
 
 
+async def test_tool_errors_do_not_chain_the_unredacted_playwright_error():
+    """pytest prints ``__context__``; the raw Playwright error (call log with the typed value or
+    the full URL) must not ride along behind the redacted ToolError."""
+    import traceback
+
+    from playwright.async_api import TimeoutError as PlaywrightTimeout
+
+    value = "S3cret-XYZ"
+    token = "inviteS3cretTok"
+
+    class Page:
+        url = "about:blank"
+
+        async def fill(self, selector: str, typed_value: str):
+            raise RuntimeError(f'Call log:\n  - fill("{typed_value}")')
+
+        async def goto(self, target, wait_until, timeout):
+            raise PlaywrightTimeout(f'Timeout {timeout}ms exceeded.\nnavigating to "{target}"')
+
+    with pytest.raises(ToolError) as fill_error:
+        await Browser(Page()).fill("#password", value)
+    with pytest.raises(ToolError) as goto_error:
+        await Browser(Page()).goto(f"http://app:8000/account/invite/{token}", wait_until="domcontentloaded")
+
+    for caught, secret in ((fill_error, value), (goto_error, token)):
+        rendered = "".join(traceback.format_exception(caught.value))
+        assert secret not in rendered
+        assert caught.value.__suppress_context__
+
+
 _LOG_LEVELS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "fatal", "log"}
 _LOG_OWNERS = {"logger", "logging", "log", "_logger", "LOGGER", "LOG"}
 _SECRET_WORDS = {"code", "password", "token", "secret", "totp"}

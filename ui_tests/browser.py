@@ -30,6 +30,9 @@ _SECRET_QUERY_RE = re.compile(
 )
 
 
+# Every ToolError that carries redacted text is raised ``from None``: pytest prints the implicit
+# ``__context__`` chain, and Playwright's own message (call log with the filled value, the full URL)
+# would otherwise follow the redacted one into the gate log.
 def redact_url_text(text: Any) -> Any:
     """Mask one-time path tokens and secret-named query values in a URL or message."""
     if not isinstance(text, str):
@@ -126,7 +129,7 @@ class Browser:
                 name="goto",
                 payload={"url": redact_url_text(url), "wait_until": wait_until},
                 message=redact_url_text(str(exc)),
-            )
+            ) from None
 
     async def request_get_text(
         self,
@@ -154,7 +157,7 @@ class Browser:
                 name="request_get_text",
                 payload={"url": redact_url_text(url), "params": _redact_params(params)},
                 message=redact_url_text(str(exc)),
-            )
+            ) from None
 
     async def request_get_json(
         self,
@@ -178,7 +181,7 @@ class Browser:
                 name="request_get_json",
                 payload={"url": redact_url_text(url), "params": _redact_params(params)},
                 message=redact_url_text(str(exc)),
-            )
+            ) from None
 
     async def request_get_bytes(
         self,
@@ -205,7 +208,7 @@ class Browser:
                 name="request_get_bytes",
                 payload={"url": redact_url_text(url), "params": _redact_params(params)},
                 message=redact_url_text(str(exc)),
-            )
+            ) from None
 
     async def request_post_form(
         self,
@@ -229,7 +232,7 @@ class Browser:
                 name="request_post_form",
                 payload={"url": redact_url_text(url), "data_keys": sorted(list(data.keys()))},
                 message=redact_url_text(str(exc)),
-            )
+            ) from None
 
     async def fill(self, selector: str, value: str) -> Dict[str, Any]:
         """Fill input field."""
@@ -247,7 +250,7 @@ class Browser:
                 name="fill",
                 payload={"selector": selector, "value_length": len(value)},
                 message=f"{type(exc).__name__} while filling the field",
-            )
+            ) from None
 
     async def click(self, selector: str, press_enter: bool | None = None) -> Dict[str, Any]:
         """Click element."""
@@ -277,7 +280,7 @@ class Browser:
                 name="select",
                 payload={"selector": selector, "value_length": len(values)},
                 message=f"{type(exc).__name__} while selecting options",
-            )
+            ) from None
 
     async def text(self, selector: str) -> str:
         """Get text content of element."""
@@ -354,7 +357,7 @@ class Browser:
                 name="evaluate",
                 payload={"script_length": len(script), "arg_type": type(arg).__name__},
                 message=f"{type(exc).__name__} while evaluating page code",
-            )
+            ) from None
 
     async def screenshot(self, name: str, format: str = None, quality: int = None) -> str:
         """Take screenshot in specified format (webp or png).
