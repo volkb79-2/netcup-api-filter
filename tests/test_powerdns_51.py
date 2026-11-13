@@ -66,7 +66,10 @@ def test_powerdns_compose_uses_the_image_template_entrypoint_for_config():
 
     assert "- TEMPLATE_FILES={{ backend_powerdns.api.template_name }}" in compose
     assert "- POWERDNS_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}" in compose
-    assert "/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.conf.j2:ro" in compose
+    # startup.py (auth-5.1.5) opens templates.d/<TEMPLATE_FILES entry>.j2; a
+    # `.conf.j2` mount target would leave that file missing and crash the start.
+    assert "/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.j2:ro" in compose
+    assert "{{ backend_powerdns.api.template_name }}.conf.j2" not in compose
     assert "- PDNS_AUTH_API_KEY=${POWERDNS_API_KEY" not in compose
 
 

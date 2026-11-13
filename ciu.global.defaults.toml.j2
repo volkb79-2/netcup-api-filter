@@ -150,8 +150,8 @@ path = "tooling/geoip-mock"
 path = "tooling/netcup-api-mock"
 
 # backend-powerdns: reworked to source its zone from [topology.dns].delegated_zone
-# (D-007) instead of invented SOA defaults; the zone-create hook needs a live `ciu up`
-# to validate the pdnsutil argument shapes.
+# (D-007) instead of invented SOA defaults; the zone-create hook uses the Authoritative
+# HTTP API and needs a live `ciu up` to validate its request shapes (B095).
 [[deploy.phases.phase_0.services]]
 path = "tooling/backend-powerdns"
 

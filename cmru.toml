@@ -152,6 +152,8 @@ tag = "3.11.17-slim-trixie"
 
 [versions.targets."oci.python314"]
 mode = "single"
+# The `-0` upper bound excludes 3.15 prereleases (for example 3.15.0rc1).
+# A plain `<3.15.0` would admit such a pre-3.15 candidate under SemVer.
 constraint = ">=3.14.0,<3.15.0-0"
 
 [versions.targets."oci.python314".oci]

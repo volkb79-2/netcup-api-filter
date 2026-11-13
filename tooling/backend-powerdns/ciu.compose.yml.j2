@@ -141,8 +141,10 @@ services:
       # Persistent database storage (prepared by init container)
       - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/data:/var/lib/powerdns
       # PowerDNS startup renders this template into pdns.d using the
-      # environment above (including the checkout-local API key).
-      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/pdns-auth.conf.j2:/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.conf.j2:ro
+      # environment above (including the checkout-local API key). The image's
+      # startup.py opens templates.d/<TEMPLATE_FILES entry>.j2 and writes
+      # pdns.d/<entry>.conf, so the mount target must be <entry>.j2 (no .conf).
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/pdns-auth.conf.j2:/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.j2:ro
 
     # Run as pdns user (UID {{ backend_powerdns.uid }}) with docker group (GID from host)
     # This allows PowerDNS to access the database owned by {{ backend_powerdns.uid }}:docker
