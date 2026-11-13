@@ -92,8 +92,8 @@ tag = "v{version}"
 
 [versions.targets."oci.mailpit".resolved]
 version = "1.33.0"
-resolved_at = "2026-11-11T09:02:57Z"
-age_cutoff = "2026-11-04T09:02:57Z"
+resolved_at = "2026-11-13T11:52:27Z"
+age_cutoff = "2026-11-06T11:52:27Z"
 
 [versions.targets."oci.mailpit".resolved.sources]
 
@@ -103,8 +103,6 @@ released_at = "2026-10-31T02:30:23Z"
 age_source = "oci-image-created-fallback"
 tag = "v1.33.0"
 
-# B093 partial migration: the target and consumers move first; the controller
-# must regenerate this target's machine-written resolved record and snapshots.
 [versions.targets."oci.powerdns-auth"]
 mode = "single"
 constraint = ">=5.1.0,<5.2.0"
@@ -116,17 +114,17 @@ username_env = "DOCKERHUB_USERNAME"
 password_env = "DOCKERHUB_TOKEN"
 
 [versions.targets."oci.powerdns-auth".resolved]
-version = "4.8.5"
-resolved_at = "2026-11-11T09:02:57Z"
-age_cutoff = "2026-11-04T09:02:57Z"
+version = "5.1.5"
+resolved_at = "2026-11-13T11:52:27Z"
+age_cutoff = "2026-11-06T11:52:27Z"
 
 [versions.targets."oci.powerdns-auth".resolved.sources]
 
 [versions.targets."oci.powerdns-auth".resolved.sources.oci]
-version = "4.8.5"
-released_at = "2025-02-06T16:46:20Z"
+version = "5.1.5"
+released_at = "2026-10-21T08:57:51Z"
 age_source = "oci-image-created-fallback"
-tag = "4.8.5"
+tag = "5.1.5"
 
 [versions.targets."oci.python311"]
 mode = "single"
@@ -141,8 +139,8 @@ password_env = "DOCKERHUB_TOKEN"
 
 [versions.targets."oci.python311".resolved]
 version = "3.11.17"
-resolved_at = "2026-11-11T09:02:57Z"
-age_cutoff = "2026-11-04T09:02:57Z"
+resolved_at = "2026-11-13T11:52:27Z"
+age_cutoff = "2026-11-06T11:52:27Z"
 
 [versions.targets."oci.python311".resolved.sources]
 
@@ -154,8 +152,6 @@ tag = "3.11.17-slim-trixie"
 
 [versions.targets."oci.python314"]
 mode = "single"
-# The `-0` upper bound excludes 3.15 prereleases (for example 3.15.0rc1).
-# A plain `<3.15.0` would admit such a pre-3.15 candidate under SemVer.
 constraint = ">=3.14.0,<3.15.0-0"
 
 [versions.targets."oci.python314".oci]
@@ -167,8 +163,8 @@ password_env = "DOCKERHUB_TOKEN"
 
 [versions.targets."oci.python314".resolved]
 version = "3.14.9"
-resolved_at = "2026-11-11T09:02:57Z"
-age_cutoff = "2026-11-04T09:02:57Z"
+resolved_at = "2026-11-13T11:52:27Z"
+age_cutoff = "2026-11-06T11:52:27Z"
 
 [versions.targets."oci.python314".resolved.sources]
 

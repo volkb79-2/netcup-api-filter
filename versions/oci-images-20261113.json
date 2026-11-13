@@ -1,0 +1,39 @@
+{
+  "generated_by": "cmru versions resolve",
+  "resolved_at": "2026-11-13T11:52:27Z",
+  "schema_version": 1,
+  "targets": {
+    "oci.mailpit": {
+      "age_source": "oci-image-created-fallback",
+      "image": "ghcr.io/axllent/mailpit",
+      "reason": null,
+      "released_at": "2026-10-31T02:30:23Z",
+      "tag": "v1.33.0",
+      "version": "1.33.0"
+    },
+    "oci.powerdns-auth": {
+      "age_source": "oci-image-created-fallback",
+      "image": "docker.io/powerdns/pdns-auth-51",
+      "reason": null,
+      "released_at": "2026-10-21T08:57:51Z",
+      "tag": "5.1.5",
+      "version": "5.1.5"
+    },
+    "oci.python311": {
+      "age_source": "oci-image-created-fallback",
+      "image": "docker.io/library/python",
+      "reason": null,
+      "released_at": "2026-10-22T19:37:39Z",
+      "tag": "3.11.17-slim-trixie",
+      "version": "3.11.17"
+    },
+    "oci.python314": {
+      "age_source": "oci-image-created-fallback",
+      "image": "docker.io/library/python",
+      "reason": null,
+      "released_at": "2026-10-24T06:04:16Z",
+      "tag": "3.14.9-slim-trixie",
+      "version": "3.14.9"
+    }
+  }
+}
