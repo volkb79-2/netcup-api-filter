@@ -39,7 +39,7 @@ class TestAuditExportUI:
 
     async def test_audit_page_has_export_button(self, active_profile):
         """Test that audit logs page has an export button."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # Navigate to audit logs
@@ -58,7 +58,7 @@ class TestAuditExportUI:
 
     async def test_audit_export_button_is_clickable(self, active_profile):
         """Test that the export button can be clicked."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # Navigate to audit logs
@@ -76,7 +76,7 @@ class TestAuditExportUI:
 
     async def test_audit_table_has_expected_columns(self, active_profile):
         """Test that audit table has expected column headers."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             await browser.goto(settings.url("/admin/audit"))
@@ -95,7 +95,7 @@ class TestAuditExportEndpoint:
 
     async def test_export_endpoint_exists(self, active_profile):
         """Test that the export endpoint exists."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             # The export endpoint should be /admin/audit/export
@@ -151,7 +151,7 @@ class TestAuditExportEndpoint:
             message="seed api_call/success row not visible in DB",
         )
 
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             # 2. Export with range=all (no time filter) + the exact action/status.
@@ -181,7 +181,7 @@ class TestAuditStats:
 
     async def test_audit_page_shows_stats_cards(self, active_profile):
         """Test that audit page shows statistics cards."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             await browser.goto(settings.url("/admin/audit"))
@@ -198,7 +198,7 @@ class TestAuditStats:
 
     async def test_audit_page_has_filter_controls(self, active_profile):
         """Test that audit page has filter controls."""
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
             
             await browser.goto(settings.url("/admin/audit"))

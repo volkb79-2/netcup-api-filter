@@ -521,6 +521,12 @@ def verify_2fa(code: str, source_ip: str) -> TwoFactorResult:
     # Check if account is locked due to 2FA failures
     if is_2fa_locked(account):
         lockout_mins = TFA_LOCKOUT_MINUTES
+        log_login_attempt(
+            username=account.username,
+            source_ip=source_ip,
+            success=False,
+            reason="2FA locked (rate limit)"
+        )
         return TwoFactorResult(
             success=False, 
             error=f"Too many failed 2FA attempts. Account locked for {lockout_mins} minutes."

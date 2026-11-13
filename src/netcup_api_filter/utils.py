@@ -49,11 +49,9 @@ def parse_client_address(value: str | None) -> ipaddress.IPv4Address | ipaddress
         return 1 <= port <= 65535
 
     if candidate.startswith("["):
-        closing_bracket = candidate.find("]")
-        if closing_bracket < 0:
+        host, closing_bracket, suffix = candidate[1:].partition("]")
+        if not closing_bracket:
             return None
-        host = candidate[1:closing_bracket]
-        suffix = candidate[closing_bracket + 1:]
         if suffix and (not suffix.startswith(":") or not valid_port(suffix[1:])):
             return None
         try:

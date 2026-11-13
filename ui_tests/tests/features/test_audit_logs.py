@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
 
 async def test_audit_logs_page_accessible(active_profile):
     """Audit logs page loads and shows the expected heading."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
@@ -26,7 +26,7 @@ async def test_audit_logs_page_accessible(active_profile):
 
 async def test_audit_logs_table_columns(active_profile):
     """Audit log table header includes Timestamp, Actor, and Action columns."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
@@ -38,7 +38,7 @@ async def test_audit_logs_table_columns(active_profile):
 
 async def test_audit_logs_not_empty_on_fresh_install(active_profile):
     """Audit log table must contain at least one row after deployment."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
@@ -81,7 +81,7 @@ async def test_audit_logs_record_api_requests(active_profile):
     )
 
     # The audit-log UI must also surface activity (kept as a secondary signal).
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
@@ -91,7 +91,7 @@ async def test_audit_logs_record_api_requests(active_profile):
 
 async def test_audit_logs_has_filter_controls(active_profile):
     """Audit logs page exposes filter form controls."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
@@ -108,7 +108,7 @@ async def test_audit_logs_has_filter_controls(active_profile):
 
 async def test_audit_logs_has_stats_cards(active_profile):
     """Audit logs page shows statistics cards (Today counts, Login counts)."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         await workflows.open_admin_audit_logs(browser)
 
@@ -132,7 +132,7 @@ async def test_audit_logs_has_stats_cards(active_profile):
 
 class TestAdminAuditAjaxEndpoints:
     async def test_admin_audit_data_returns_html_fragment(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             # Ensure the main audit page is reachable first.
@@ -147,7 +147,7 @@ class TestAdminAuditAjaxEndpoints:
             assert "<tr" in body.lower(), "Expected HTML <tr> rows in /admin/audit/data response"
 
     async def test_admin_audit_trim_accepts_csrf_post(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             # Get a CSRF token from any admin form.
@@ -171,7 +171,7 @@ class TestAdminAuditAjaxEndpoints:
 
 class TestAdminSystemLogs:
     async def test_admin_system_logs_returns_json(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             resp = await browser.request_get_json(

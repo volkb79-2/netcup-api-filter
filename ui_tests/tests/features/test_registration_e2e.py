@@ -13,19 +13,19 @@ Requires: Mailpit container running (tooling/mailpit/docker compose up -d)
 Run with: pytest ui_tests/tests/test_registration_e2e.py -v
 """
 import os
-import pytest
-
-
-@pytest.fixture(autouse=True)
-async def _anonymous_visitor(playwright_client):
-    """Registration is for visitors: a login left in the session-wide context by an earlier test
-    would redirect /account/register away from the form."""
-    await playwright_client.context.clear_cookies()
-
 import re
 import time
+import pytest
+import pytest_asyncio
+
 from pathlib import Path
 import sys
+
+
+@pytest_asyncio.fixture
+async def browser(anon_browser):
+    """Registration tests are visitors: use the explicit no-storage context."""
+    return anon_browser
 
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -265,7 +265,7 @@ class TestRegistrationWithMailpit:
         code_match = re.search(r'\b(\d{6})\b', email_text)
         
         if not code_match:
-            pytest.fail(f"Could not find 6-digit code in email: {email_text[:500]}")
+            pytest.fail(f"Could not find 6-digit code in email text of length {len(email_text)}")
         
         verification_code = code_match.group(1)
         

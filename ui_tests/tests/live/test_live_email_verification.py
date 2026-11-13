@@ -423,24 +423,23 @@ if __name__ == '__main__':
     import sys
     
     if not is_imap_configured():
-        print("IMAP not configured!")
-        print("Set: IMAP_HOST, IMAP_USER, IMAP_PASSWORD")
+        logger.info("IMAP not configured!")
+        logger.info("Set: IMAP_HOST, IMAP_USER, IMAP_PASSWORD")
         sys.exit(1)
     
-    print("Connecting to IMAP...")
+    logger.info("Connecting to IMAP...")
     with IMAPClient() as client:
-        print(f"Connected to {get_imap_config()['host']}")
+        logger.info(f"Connected to {get_imap_config()['host']}")
         
-        print("\nSearching for recent emails...")
+        logger.info("\nSearching for recent emails...")
         emails = client.search_emails(limit=5)
         
-        print(f"\nFound {len(emails)} emails:")
+        logger.info(f"\nFound {len(emails)} emails:")
         for e in emails:
-            print(f"  - {e['subject'][:60]}...")
-            print(f"    From: {e['from']}")
-            print(f"    Date: {e['date']}")
+            logger.info(f"  - {e['subject'][:60]}...")
+            logger.info(f"    From: {e['from']}")
+            logger.info(f"    Date: {e['date']}")
             
             code = extract_verification_code(e['body'])
             if code:
-                print(f"    Found code: {code}")
-            print()
+                logger.info("verification code found (length=%d)", len(code))

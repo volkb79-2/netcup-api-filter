@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 
 class TestGeoIPAdminAndAPI:
     async def test_admin_geoip_config_redirect_and_save(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             # GET route should exist and redirect to the unified settings page.
@@ -52,7 +52,7 @@ class TestGeoIPAdminAndAPI:
             assert (rendered_api_url or "").strip() == expected_default_api_url
 
     async def test_admin_geoip_api_returns_not_configured_error(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             await browser.goto(settings.url("/admin/api/geoip/8.8.8.8"), wait_until="domcontentloaded")
@@ -64,7 +64,7 @@ class TestGeoIPAdminAndAPI:
             assert payload.get("ip") == "8.8.8.8"
 
     async def test_public_geoip_api_returns_not_configured_error(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.goto(settings.url("/api/geoip/8.8.8.8"), wait_until="domcontentloaded")
             body = (await browser.text("body")) or ""
             payload = json.loads(body)

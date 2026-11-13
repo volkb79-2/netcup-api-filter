@@ -128,7 +128,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.ci_smoke, pytest.mark.smoke]
 @pytest.mark.parametrize("rule", ADMIN_ROUTES)
 async def test_admin_route_smoke(rule):
     """Admin routes return 200 with no errors in body or console."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
 
         errors, remove = _attach_listener(browser._page)
@@ -154,7 +154,7 @@ async def test_admin_route_smoke(rule):
 @pytest.mark.parametrize("rule", CLIENT_ROUTES)
 async def test_account_route_smoke(rule):
     """Account routes return 200 with no errors in body or console."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
 
         errors, remove = _attach_listener(browser._page)
@@ -180,8 +180,7 @@ async def test_account_route_smoke(rule):
 @pytest.mark.parametrize("rule", PUBLIC_ROUTES)
 async def test_public_route_smoke(rule):
     """Public routes are reachable (200) without authentication."""
-    async with browser_session() as browser:
-        await browser._page.context.clear_cookies()
+    async with browser_session("anonymous") as browser:
         await browser.goto(settings.url(rule))
         body = await browser.text("body")
         _check_body(body, rule)
@@ -212,8 +211,7 @@ _PROTECTED_RULES = sorted(
 @pytest.mark.parametrize("rule", _PROTECTED_RULES)
 async def test_protected_route_redirects_anonymous(rule):
     """Protected routes must redirect unauthenticated visitors to a login page."""
-    async with browser_session() as browser:
-        await browser._page.context.clear_cookies()
+    async with browser_session("anonymous") as browser:
         await browser.goto(settings.url(rule))
         current = browser._page.url
         assert "/login" in current, (
@@ -273,8 +271,9 @@ _PARAM_PATHS = _build_param_paths()
 @pytest.mark.parametrize("path", _PARAM_PATHS)
 async def test_param_route_smoke(path):
     """Detail pages with real IDs load without errors."""
-    async with browser_session() as browser:
-        if path.startswith("/admin/"):
+    role = "admin" if path.startswith("/admin/") else "user"
+    async with browser_session(role) as browser:
+        if role == "admin":
             await workflows.ensure_admin_dashboard(browser)
         else:
             await workflows.ensure_user_dashboard(browser)
@@ -292,7 +291,7 @@ async def test_param_route_smoke(path):
 
 async def test_unknown_route_404():
     """A random non-existent URL should show a 404 response."""
-    async with browser_session() as browser:
+    async with browser_session("anonymous") as browser:
         await browser.goto(settings.url("/this-route-does-not-exist-xyzzy"))
         body = await browser.text("body")
         assert "404" in body or "not found" in body.lower(), (
@@ -311,9 +310,8 @@ async def test_unknown_route_404():
 
 class TestPublicMiscRoutes:
     async def test_root_redirects_to_account_login(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             nav = await browser.goto(settings.url("/"), wait_until="domcontentloaded")
             assert nav.get("status") == 200
@@ -322,9 +320,8 @@ class TestPublicMiscRoutes:
             assert current_path.startswith("/account/login")
 
     async def test_theme_demo2_static_asset_serves(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             # This file exists under src/netcup_api_filter/demos/theme-demo2/.
             resp = await browser.request_get_bytes(settings.url("/theme-demo2/bootstrap.min.css"))
@@ -343,12 +340,8 @@ class TestPublicMiscRoutes:
 
 class TestAccount2FARoutesRequirePendingState:
     async def test_account_login_2fa_redirects_without_pending_state(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            # Merged into the smoke suite: clear the persisted (possibly
-            # authenticated) account session so this truly tests the
-            # no-pending-2FA redirect, matching the admin-login sibling below.
-            await browser._page.context.clear_cookies()
             nav = await browser.goto(settings.url("/account/login/2fa"), wait_until="domcontentloaded")
             assert nav.get("status") == 200
 
@@ -357,9 +350,8 @@ class TestAccount2FARoutesRequirePendingState:
             assert current_url.startswith("/account/login")
 
     async def test_account_2fa_verify_redirects_without_pending_state(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             # Get a CSRF token from the login page (shared session token).
             await browser.goto(settings.url("/account/login"), wait_until="domcontentloaded")
@@ -375,9 +367,8 @@ class TestAccount2FARoutesRequirePendingState:
             assert resp["status"] in (200, 302)
 
     async def test_account_2fa_resend_redirects_without_pending_state(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             await browser.goto(settings.url("/account/login"), wait_until="domcontentloaded")
             await browser._page.wait_for_selector('input[name="csrf_token"]', state="attached")
@@ -393,12 +384,8 @@ class TestAccount2FARoutesRequirePendingState:
 
 class TestAccount2FASetupRequiresAuth:
     async def test_account_2fa_setup_requires_login(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            # Merged into the smoke suite: clear the persisted (possibly
-            # authenticated) account session so this truly tests the
-            # requires-login redirect.
-            await browser._page.context.clear_cookies()
             nav = await browser.goto(settings.url("/account/2fa/setup"), wait_until="domcontentloaded")
             assert nav.get("status") == 200
 
@@ -406,9 +393,8 @@ class TestAccount2FASetupRequiresAuth:
             assert current_url.startswith("/account/login")
 
     async def test_account_disable_2fa_requires_login(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             await browser.goto(settings.url("/account/login"), wait_until="domcontentloaded")
             await browser._page.wait_for_selector('input[name="csrf_token"]', state="attached")
@@ -432,9 +418,8 @@ class TestAccount2FASetupRequiresAuth:
 
 class TestAdminLogin2FARoutesRequirePendingState:
     async def test_admin_login_2fa_redirects_without_pending_state(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             nav = await browser.goto(settings.url("/admin/login/2fa"), wait_until="domcontentloaded")
             assert nav.get("status") == 200
@@ -444,9 +429,8 @@ class TestAdminLogin2FARoutesRequirePendingState:
             assert current_path.startswith("/admin/login")
 
     async def test_admin_login_2fa_resend_redirects_without_pending_state(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await browser._page.context.clear_cookies()
 
             # CSRF is generally enforced for POST requests.
             await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")

@@ -143,6 +143,26 @@ def _get_client_ip() -> str:
     return request.remote_addr or 'unknown'
 
 
+def _log_admin_login_attempt(
+    admin: Account | None,
+    client_ip: str,
+    success: bool,
+    reason: str,
+    commit: bool = True,
+) -> None:
+    """Persist one admin-login outcome without credential material."""
+    db.session.add(ActivityLog(
+        account_id=admin.id if admin else None,
+        action='login',
+        source_ip=client_ip,
+        user_agent=request.headers.get('User-Agent'),
+        status='success' if success else 'denied',
+        status_reason=reason[:255],
+    ))
+    if commit:
+        db.session.commit()
+
+
 def _track_failed_login(username: str, client_ip: str) -> tuple[bool, int]:
     """
     Track failed login attempt per username globally.
@@ -397,21 +417,33 @@ def login():
         
         # Add timing jitter to prevent username enumeration
         _add_timing_jitter()
-        
+
+        admin = Account.query.filter_by(username=username, is_admin=1).first()
+
         # Check if account is locked out (per-username tracking)
         is_locked, minutes_remaining = _check_account_lockout(username)
         if is_locked:
+            _log_admin_login_attempt(
+                admin,
+                client_ip,
+                False,
+                "Account locked (login rate limit)",
+            )
             flash(f'Account temporarily locked. Try again in {minutes_remaining} minutes.', 'error')
             logger.warning(f"Login attempt on locked account: {username} from {client_ip}")
             return render_template('admin/login.html')
-        
-        admin = Account.query.filter_by(username=username, is_admin=1).first()
-        
+
         if admin and admin.verify_password(password):
             # Clear failed login tracking on success
             _clear_failed_logins(username)
             
             if not admin.is_active:
+                _log_admin_login_attempt(
+                    admin,
+                    client_ip,
+                    False,
+                    "Account disabled",
+                )
                 flash('Account is disabled', 'error')
             else:
                 # Check for test mode bypass (only in local_test environment)
@@ -434,11 +466,18 @@ def login():
                 # Check if admin has valid email for 2FA
                 if admin.email_2fa_enabled and (not admin.email or admin.email == 'admin@localhost'):
                     # Admin needs to set email first - proceed to password change which handles this
+                    admin.must_change_password = 1  # Force password change to also set email
+                    _log_admin_login_attempt(
+                        admin,
+                        client_ip,
+                        True,
+                        "Admin login via email setup",
+                        commit=False,
+                    )
+                    db.session.commit()
                     session[SESSION_KEY_ADMIN_ID] = admin.id
                     session[SESSION_KEY_ADMIN_USERNAME] = admin.username
                     session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
-                    admin.must_change_password = 1  # Force password change to also set email
-                    db.session.commit()
                     logger.info(f"Admin login (no valid email, forcing setup): {username}")
                     return redirect(url_for('admin.change_password'))
                 
@@ -505,7 +544,13 @@ def login():
                 flash(f'Too many failed attempts. Account locked for {get_login_lockout_minutes()} minutes.', 'error')
             else:
                 flash('Invalid credentials', 'error')
-            
+
+            _log_admin_login_attempt(
+                admin,
+                client_ip,
+                False,
+                "Invalid password" if admin else "Invalid credentials",
+            )
             logger.warning(f"Failed admin login attempt: {username} from {client_ip} (attempt #{failed_count})")
     
     return render_template('admin/login.html')
@@ -530,6 +575,13 @@ def login_2fa():
         TFA_LOCKOUT_MINUTES
     )
     if is_2fa_locked(admin):
+        if request.method == 'POST':
+            _log_admin_login_attempt(
+                admin,
+                _get_client_ip(),
+                False,
+                "2FA locked (rate limit)",
+            )
         flash(
             f'Too many failed 2FA attempts. Account locked for {TFA_LOCKOUT_MINUTES} minutes.',
             'error'
@@ -622,6 +674,12 @@ def login_2fa():
             )
             
             if is_recovery_code_locked(admin):
+                _log_admin_login_attempt(
+                    admin,
+                    client_ip,
+                    False,
+                    "Recovery code locked (rate limit)",
+                )
                 flash(
                     f'Too many failed recovery code attempts. Locked for {RECOVERY_CODE_LOCKOUT_MINUTES} minutes.',
                     'error'
@@ -642,6 +700,12 @@ def login_2fa():
             else:
                 # Invalid recovery code - increment failure counter
                 increment_recovery_code_failures(admin)
+                _log_admin_login_attempt(
+                    admin,
+                    client_ip,
+                    False,
+                    "Invalid recovery code",
+                )
                 logger.warning(
                     f"Invalid admin recovery code attempt for {admin.username} from {client_ip}"
                 )
@@ -671,6 +735,12 @@ def login_2fa():
                     )
                     increment_2fa_failures(admin)
                     attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(admin)
+                    _log_admin_login_attempt(
+                        admin,
+                        client_ip,
+                        False,
+                        "Invalid TOTP code",
+                    )
                     
                     logger.warning(
                         f"Invalid admin TOTP code for {admin.username} from {client_ip}"
@@ -713,6 +783,12 @@ def login_2fa():
                 )
                 increment_2fa_failures(admin)
                 attempts_left = TFA_MAX_ATTEMPTS - get_2fa_failure_count(admin)
+                _log_admin_login_attempt(
+                    admin,
+                    client_ip,
+                    False,
+                    "Invalid 2FA code",
+                )
                 
                 logger.warning(
                     f"Invalid admin 2FA code attempt for {admin.username} from {client_ip}"
@@ -756,13 +832,19 @@ def _complete_admin_login(admin: Account, client_ip: str, via: str = 'email'):
     reset_2fa_failures(admin)
     reset_recovery_code_failures(admin)
     
+    admin.last_login_at = datetime.utcnow()
+    _log_admin_login_attempt(
+        admin,
+        client_ip,
+        True,
+        f"Admin login via {via}",
+        commit=False,
+    )
+    db.session.commit()
+
     session[SESSION_KEY_ADMIN_ID] = admin.id
     session[SESSION_KEY_ADMIN_USERNAME] = admin.username
     session[SESSION_KEY_ADMIN_SESSION_IP] = client_ip
-    
-    admin.last_login_at = datetime.utcnow()
-    db.session.commit()
-    
     logger.info(f"Admin login complete: {admin.username} from {client_ip} via {via}")
     
     # Check if password change is required

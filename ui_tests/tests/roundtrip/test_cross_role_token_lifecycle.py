@@ -24,6 +24,9 @@ ENVIRONMENT NOTES (pinned to implementation)
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+import ipaddress
+import json
 import secrets
 
 import httpx
@@ -194,7 +197,7 @@ async def _user_create_token(
     await user.wait_for_text("main h1", "Token Generated", timeout=15.0)
     token_plain = await user.get_attribute("#tokenValue", "value")
     assert token_plain and token_plain.startswith("naf_"), (
-        f"bad token plaintext: {token_plain!r}"
+        f"bad token plaintext shape (length={len(token_plain or '')})"
     )
 
     verification.wait_for(
@@ -256,7 +259,9 @@ async def _dns_create(token: str, domain: str) -> tuple[int, dict]:
 async def test_admin_token_revocation_immediate(playwright_client, _demo_username):
     """Admin revokes a token; C1 goes 401 instantly; Channel A sees is_active==0."""
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         mailpit = mailpit_client()
         acct = ThrowawayAccount(
@@ -366,7 +371,9 @@ async def test_admin_token_revocation_immediate(playwright_client, _demo_usernam
 async def test_user_token_revocation_blocks_api_and_logs(playwright_client, _demo_username):
     """User self-revokes a token; DNS API immediately blocked; log records action."""
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         mailpit = mailpit_client()
         acct = ThrowawayAccount(
@@ -484,7 +491,9 @@ async def test_readonly_token_scope_enforced(playwright_client, _demo_username):
     Full-scope token on same realm CAN mutate (inverse guard).
     """
     async with ParallelSessionManager(
-        browser=playwright_client.browser, base_url=settings.url("")
+        browser=playwright_client.browser,
+        base_url=settings.url(""),
+        context_factory=playwright_client.new_context,
     ) as manager:
         mailpit = mailpit_client()
         acct = ThrowawayAccount(
@@ -587,4 +596,118 @@ async def test_readonly_token_scope_enforced(playwright_client, _demo_username):
             assert demo_after is not None and demo_before is not None
             assert demo_after["is_active"] == demo_before["is_active"], (
                 "primary demo client is_active changed during Test 9"
+            )
+
+
+# --------------------------------------------------------------------------
+# Test 10 — visible token form persists its restrictions and enforces them
+# --------------------------------------------------------------------------
+
+@pytest.mark.ci_smoke
+async def test_token_form_persists_ip_allowlist_expiry_and_enforces_denial(
+    playwright_client, _demo_username
+):
+    """Create a restricted token through the real form; verify DB and API denial."""
+    async with ParallelSessionManager(
+        browser=playwright_client.browser, base_url=settings.url("")
+    ) as manager:
+        mailpit = mailpit_client()
+        acct = ThrowawayAccount(
+            username=f"xrole-t10-{secrets.token_hex(3)}",
+            email=f"xrole-t10-{secrets.token_hex(3)}@example.test",
+            password=make_password("t10"),
+        )
+        demo_before = verification.get_account(_demo_username)
+        admin = await admin_browser(manager, session_id="admin_t10")
+        allowed_network = ipaddress.ip_network("203.0.113.0/24")
+
+        try:
+            await _admin_create_account_with_realm(admin, mailpit, acct, manager)
+
+            user = await browser_for(manager, "account", f"user_{acct.username}")
+            await account_login(user, acct.username, acct.password)
+
+            token_name = f"xrole-tkn-form-{secrets.token_hex(3)}"
+            await user.goto(
+                settings.url(f"/account/realms/{acct.realm_id}/tokens/new")
+            )
+            await user.wait_for_text("main h2", "Create API Token", timeout=10.0)
+            await user.fill("#token_name", token_name)
+            await user.fill("#ip_ranges", "203.0.113.0/24")
+            await user.select("#expires", "1month")
+            await user.fill("#description", "Visible-form allow-list and expiry probe")
+            # The app runs in this runner, so its utcnow() and ours share a clock.
+            submitted_before = datetime.utcnow()
+            await user.click("#create-token-btn")
+            await user.wait_for_text("main h1", "Token Generated", timeout=15.0)
+            submitted_after = datetime.utcnow()
+            token_plain = await user.get_attribute("#tokenValue", "value")
+            assert token_plain and token_plain.startswith("naf_")
+
+            verification.wait_for(
+                lambda: verification.get_token(token_name=token_name) is not None,
+                timeout=10.0,
+                message=f"token {token_name} not visible in DB",
+            )
+            row = verification.get_token(token_name=token_name)
+            assert json.loads(row["allowed_ip_ranges"]) == ["203.0.113.0/24"]
+            assert row["token_description"] == (
+                "Visible-form allow-list and expiry probe"
+            )
+            assert row["expires_at"] is not None
+            # "1month" is 30 days (TOKEN_EXPIRY_DAYS in api/account.py); 5 s of
+            # slack covers the sqlite round-trip, not a different lifetime.
+            expires_at = datetime.fromisoformat(row["expires_at"])
+            lifetime = timedelta(days=30)
+            assert submitted_before + lifetime <= expires_at, (
+                f"expires_at {expires_at} earlier than submit + 30d ({submitted_before})"
+            )
+            assert expires_at <= submitted_after + lifetime + timedelta(seconds=5), (
+                f"expires_at {expires_at} later than response + 30d ({submitted_after})"
+            )
+
+            async with httpx.AsyncClient() as probe:
+                my_ip_response = await probe.get(
+                    base_url() + "/api/myip", timeout=15.0
+                )
+            runner_ip = my_ip_response.json()["ip"]
+            assert ipaddress.ip_address(runner_ip) not in allowed_network, (
+                f"runner address {runner_ip} unexpectedly falls inside {allowed_network}"
+            )
+
+            watermark = verification.now_utc_watermark()
+            status, body = await _dns_get(token_plain, THROWAWAY_DOMAIN)
+            assert status == 403, f"outside-allow-list DNS GET expected 403, got {status}"
+            assert body.get("error") == "forbidden", (
+                f"expected forbidden denial body, got {body!r}"
+            )
+
+            verification.wait_for(
+                lambda: verification.count_activity(
+                    action="api_call",
+                    status="denied",
+                    account_username=acct.username,
+                    since=watermark,
+                ) >= 1,
+                timeout=10.0,
+                message="no denied api_call row for token outside its IP allow-list",
+            )
+            denied = verification.latest_activity(
+                action="api_call",
+                status="denied",
+                account_username=acct.username,
+                since=watermark,
+                limit=10,
+            )
+            assert denied and denied[0]["error_code"] == "ip_denied", (
+                f"expected ip_denied activity, got {denied!r}"
+            )
+
+        finally:
+            if acct.account_id is not None:
+                await admin_delete_account(admin, acct.account_id, acct.username)
+            demo_after = verification.get_account(_demo_username)
+            assert demo_after is not None and demo_before is not None
+            assert demo_after["is_active"] == demo_before["is_active"], (
+                "primary demo client is_active changed during Test 10"
             )

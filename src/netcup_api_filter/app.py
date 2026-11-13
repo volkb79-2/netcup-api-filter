@@ -7,11 +7,13 @@ This application factory uses:
 - Session-based authentication for UI
 """
 import logging
+import math
 import os
 import threading
+import time
 from urllib.parse import urlsplit, urlunsplit
 
-from flask import Flask, has_request_context, request
+from flask import Flask, current_app, has_request_context, request
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -127,6 +129,45 @@ def _safe_getcwd(fallback: str = None) -> str:
         # Use the location of this file as fallback
         # This file is in src/netcup_api_filter/app.py, so go up 3 levels to get to deploy root
         return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _rate_limit_retry_after_seconds(error) -> int:
+    """Return a positive whole-second retry delay for a limiter rejection."""
+    raw_retry_after = getattr(error, "retry_after", None)
+    if raw_retry_after is not None:
+        try:
+            seconds = math.ceil(float(raw_retry_after))
+        except (TypeError, ValueError):
+            seconds = 0
+        if seconds > 0:
+            return seconds
+
+    for limiter in current_app.extensions.get("limiter", ()):
+        current_limit = getattr(limiter, "current_limit", None)
+        if current_limit is None:
+            continue
+        window = getattr(current_limit, "window", None)
+        reset_time = getattr(window, "reset_time", None)
+        if reset_time is None:
+            continue
+        seconds = math.ceil(float(reset_time) - time.time())
+        if seconds > 0:
+            limit_item = getattr(current_limit, "limit", None)
+            get_expiry = getattr(limit_item, "get_expiry", None)
+            if callable(get_expiry):
+                expiry_seconds = math.ceil(float(get_expiry()))
+                if expiry_seconds > 0:
+                    return min(seconds, expiry_seconds)
+            return seconds
+
+    limit_item = getattr(getattr(error, "limit", None), "limit", None)
+    get_expiry = getattr(limit_item, "get_expiry", None)
+    if callable(get_expiry):
+        seconds = math.ceil(float(get_expiry()))
+        if seconds > 0:
+            return seconds
+
+    raise RuntimeError("rate limit rejection has no usable retry window")
 
 
 def create_app(config_path: str = "config.yaml") -> Flask:
@@ -518,13 +559,14 @@ def create_app(config_path: str = "config.yaml") -> Flask:
     
     @app.errorhandler(429)
     def rate_limited(e):
-        from flask import jsonify, request, render_template
-        retry_after = getattr(e, 'retry_after', 60)
+        from flask import jsonify, make_response, request, render_template
+        retry_after = _rate_limit_retry_after_seconds(e)
         if request.path.startswith('/api/'):
             response = jsonify({'error': 'rate_limited', 'message': 'Too many requests', 'retry_after': retry_after})
-            response.headers['Retry-After'] = str(retry_after)
-            return response, 429
-        return render_template('errors/429.html', retry_after=retry_after), 429
+        else:
+            response = make_response(render_template('errors/429.html', retry_after=retry_after))
+        response.headers['Retry-After'] = str(retry_after)
+        return response, 429
     
     @app.errorhandler(500)
     def internal_error(e):

@@ -70,7 +70,7 @@ async def test_dns_api_crud_success_path_with_mock_backend(active_profile):
             "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
 
         # Capture the deployment's current Netcup config so we can restore it in
@@ -196,7 +196,7 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
             "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         prior_config = await workflows.read_current_netcup_config(browser)
 
@@ -261,13 +261,14 @@ async def test_api_create_visible_in_portal_and_backend(active_profile):
                 # strict scope filter in the portal view (only exact-apex hostnames
                 # are shown), so we verify the page renders without error rather
                 # than checking for the specific hostname text.
-                await workflows.ensure_user_dashboard(browser)
                 # Realm id 1 is the user persona realm (the first realm provisioned per session).
-                await browser.goto(
-                    settings.url("/account/realms/1/dns"),
-                    wait_until="domcontentloaded",
-                )
-                current_url = browser._page.url
+                async with browser_session("user") as portal_browser:
+                    await workflows.ensure_user_dashboard(portal_browser)
+                    await portal_browser.goto(
+                        settings.url("/account/realms/1/dns"),
+                        wait_until="domcontentloaded",
+                    )
+                    current_url = portal_browser._page.url
                 assert "/account/login" not in current_url, (
                     "Portal: DNS page redirected to login — session was lost"
                 )
@@ -434,7 +435,7 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
             "run the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-gate e2e)"
         )
 
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         prior_config = await workflows.read_current_netcup_config(browser)
 
@@ -466,25 +467,26 @@ async def test_portal_dns_create_roundtrip_to_backend(active_profile):
             _seed_mock_domain_with_priority(mock_base, domain)
 
             # --- Step 1: Create via portal form ---
-            await workflows.ensure_user_dashboard(browser)
-            await browser.goto(
-                settings.url("/account/realms/1/dns/create"),
-                wait_until="domcontentloaded",
-            )
-            # The hostname input is readonly for 'host' realm — do NOT fill it.
-            # Just set the type and destination, then submit.
-            await browser.select('select[name="type"]', "A")
-            await browser.fill('input[name="destination"]', destination)
-            await browser.click('button[type="submit"]')
-            # Wait for the form to be submitted and the page to settle.
-            # The deployed app's dns_record_create route may redirect on success
-            # OR stay on the form with a flash error (depending on deployed code).
-            # We do not assert on the URL here — the C2 check below is the
-            # authoritative assertion.
-            try:
-                await browser._page.wait_for_load_state("networkidle", timeout=10_000)
-            except Exception:
-                pass
+            async with browser_session("user") as portal_browser:
+                await workflows.ensure_user_dashboard(portal_browser)
+                await portal_browser.goto(
+                    settings.url("/account/realms/1/dns/create"),
+                    wait_until="domcontentloaded",
+                )
+                # The hostname input is readonly for 'host' realm — do NOT fill it.
+                # Just set the type and destination, then submit.
+                await portal_browser.select('select[name="type"]', "A")
+                await portal_browser.fill('input[name="destination"]', destination)
+                await portal_browser.click('button[type="submit"]')
+                # Wait for the form to be submitted and the page to settle.
+                # The deployed app's dns_record_create route may redirect on success
+                # OR stay on the form with a flash error (depending on deployed code).
+                # We do not assert on the URL here — the C2 check below is the
+                # authoritative assertion.
+                try:
+                    await portal_browser._page.wait_for_load_state("networkidle", timeout=10_000)
+                except Exception:
+                    pass
 
             # --- Step 2: C2 — record present in mock backend ---
             # The hostname stored is '' (empty string) since realm_value=''.

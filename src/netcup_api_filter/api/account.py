@@ -13,8 +13,10 @@ Routes:
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from flask import (
     Blueprint, flash, g, jsonify, redirect, render_template,
@@ -668,6 +670,36 @@ def request_realm_view():
 # Token Management
 # ============================================================================
 
+TOKEN_EXPIRY_DAYS = {
+    '1month': 30,
+    '3months': 90,
+    '1year': 365,
+}
+
+
+def _parse_token_ip_ranges(raw_value: str) -> tuple[list[str] | None, str | None]:
+    """Parse the token form's comma/newline-separated IP allow-list.
+
+    Every non-empty entry must be a single IP address or CIDR. Returning an
+    error rejects the whole submission so a typo cannot silently create a
+    token with fewer restrictions than the user requested.
+    """
+    entries = [entry.strip() for entry in re.split(r'[,\n]+', raw_value) if entry.strip()]
+    if not entries:
+        return None, None
+
+    normalized: list[str] = []
+    for entry in entries:
+        try:
+            if '/' in entry:
+                normalized.append(str(ipaddress.ip_network(entry, strict=False)))
+            else:
+                normalized.append(str(ipaddress.ip_address(entry)))
+        except ValueError:
+            return None, f'Invalid IP address or CIDR: {entry}'
+    return normalized, None
+
+
 @account_bp.route('/realms/<int:realm_id>/tokens/new', methods=['GET', 'POST'])
 @require_account_auth
 def create_new_token(realm_id):
@@ -689,25 +721,22 @@ def create_new_token(realm_id):
         description = request.form.get('description', '').strip() or None
         record_types = request.form.getlist('record_types') or None
         operations = request.form.getlist('operations') or None
-        ip_ranges_str = request.form.get('ip_ranges', '').strip()
-        ip_ranges = [ip.strip() for ip in ip_ranges_str.split('\n') if ip.strip()] or None
-        
+        ip_ranges, ip_error = _parse_token_ip_ranges(
+            request.form.get('ip_ranges', '').strip()
+        )
+        if ip_error:
+            flash(ip_error, 'error')
+            return render_template('account/create_token.html', realm=realm)
+
         expires_option = request.form.get('expires', 'never')
         expires_at = None
-        if expires_option == '1month':
-            expires_at = datetime.utcnow() + timedelta(days=30)
-        elif expires_option == '3months':
-            expires_at = datetime.utcnow() + timedelta(days=90)
-        elif expires_option == '1year':
-            expires_at = datetime.utcnow() + timedelta(days=365)
-        elif expires_option == 'custom':
-            custom_date = request.form.get('expires_custom', '')
-            if custom_date:
-                try:
-                    expires_at = datetime.strptime(custom_date, '%Y-%m-%d')
-                except ValueError:
-                    flash('Invalid date format', 'error')
-                    return render_template('account/create_token.html', realm=realm)
+        if expires_option in TOKEN_EXPIRY_DAYS:
+            expires_at = datetime.utcnow() + timedelta(
+                days=TOKEN_EXPIRY_DAYS[expires_option]
+            )
+        elif expires_option != 'never':
+            flash('Invalid expiration option', 'error')
+            return render_template('account/create_token.html', realm=realm)
         
         result = create_token(
             realm=realm,
@@ -906,7 +935,10 @@ def tokens():
 def create_token_select():
     """Create token - select realm first if not specified."""
     account = g.account
-    realm_id = request.args.get('realm_id', type=int)
+    if request.method == 'POST':
+        realm_id = request.form.get('realm_id', type=int)
+    else:
+        realm_id = request.args.get('realm_id', type=int)
     
     if realm_id:
         # Redirect to realm-specific token creation
@@ -1799,7 +1831,7 @@ def regenerate_token(token_id):
             description=old_token.token_description,
             record_types=old_token.get_allowed_record_types() if old_token.allowed_record_types else None,
             operations=old_token.get_allowed_operations() if old_token.allowed_operations else None,
-            ip_ranges=old_token.get_ip_ranges() if old_token.ip_ranges else None,
+            ip_ranges=old_token.get_allowed_ip_ranges() or None,
             expires_at=old_token.expires_at
         )
         

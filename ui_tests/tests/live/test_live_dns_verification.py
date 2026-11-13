@@ -667,20 +667,20 @@ if __name__ == '__main__':
     """Run manual DNS test."""
     import sys
     
-    print("DNS Verification Utility")
-    print("=" * 40)
+    logger.info("DNS Verification Utility")
+    logger.info("=" * 40)
     
     config = get_dns_config()
-    print(f"Test subdomain prefix: {config['test_subdomain_prefix']}")
-    print(f"DNS servers: {config['check_servers']}")
-    print(f"Propagation timeout: {config['propagation_timeout']}s")
+    logger.info(f"Test subdomain prefix: {config['test_subdomain_prefix']}")
+    logger.info(f"DNS servers: {config['check_servers']}")
+    logger.info(f"Propagation timeout: {config['propagation_timeout']}s")
     
     # Test query
     hostname = sys.argv[1] if len(sys.argv) > 1 else 'dns.google'
     record_type = sys.argv[2] if len(sys.argv) > 2 else 'A'
     
-    print(f"\nQuerying {hostname} ({record_type})...")
+    logger.info(f"\nQuerying {hostname} ({record_type})...")
     
     for ns in config['check_servers']:
         records = query_dns(hostname, record_type, nameserver=ns)
-        print(f"  {ns}: {records or 'NXDOMAIN'}")
+        logger.info(f"  {ns}: {records or 'NXDOMAIN'}")

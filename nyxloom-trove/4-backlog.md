@@ -70,9 +70,21 @@ items:
   - {id: B066, title: "ui_tests: per-role storage state, an explicit anonymous context, and the forgot-password journey", type: bugfix, component: ui-tests, context_estimate: small, folds_into: F009}
   - {id: B067, title: "Honest skips in the e2e lane: hollow param smoke, data-dependent email skips, dead content tests, live deselect, -rs", type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F010}
   - {id: B068, title: "Per-test browser instrumentation: fail on JS/console/network errors, artifacts on failure, per-test timeout, hermetic CDN", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
-  - {id: B069, title: "pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
+  - {id: B069, title: "pwmcp connection model: short recycle window, contract check, bounded connect and 503 retry", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B070, title: "Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B071, title: "Exercise Telegram and configured GeoIP in the hermetic tier with mocks", type: feature, component: ui-tests, context_estimate: medium, folds_into: F017}
+  - {id: B072, title: "Audit all login outcomes and emit numeric rate-limit retries", type: bugfix, component: security, context_estimate: small}
+  - {id: B073, title: "`account.disable_2fa` asks for a 2FA code the handler never verifies", type: bugfix, component: security, context_estimate: small}
+  - {id: B074, title: "`/account/settings`: delete-account, disable-TOTP and unlink-Telegram forms do nothing", type: bugfix, component: security, context_estimate: small}
+  - {id: B075, title: "Admin token detail page never shows IP restrictions", type: bugfix, component: admin-ui, context_estimate: small}
+  - {id: B076, title: "Portal token regenerate always fails with 'Token name already exists'", type: bugfix, component: account, context_estimate: small}
+  - {id: B077, title: "Login 'Remember me' checkbox has no effect", type: bugfix, component: account, context_estimate: small}
+  - {id: B078, title: "Admin email 2FA code is compared with `==`", type: bugfix, component: security, context_estimate: small}
+  - {id: B079, title: "Failed admin logins create one Settings row per submitted username and log the raw username", type: bugfix, component: security, context_estimate: small}
+  - {id: B080, title: "ActivityLog `user_agent` is stored untruncated", type: bugfix, component: security, context_estimate: small}
+  - {id: B081, title: "`/admin/settings` SMTP quick form omits fields the handler overwrites", type: bugfix, component: admin-ui, context_estimate: small}
+  - {id: B082, title: "netcup config page: 'Test connection' posts a field the handler ignores", type: bugfix, component: admin-ui, context_estimate: small}
+  - {id: B083, title: "pwmcp planned recycle can lose the released slot before reconnect", type: bugfix, component: test-infra, context_estimate: small}
 ---
 
 # Backlog
@@ -322,11 +334,14 @@ class (b).
   Oracle: the guard reports `account.reset_password` and `account.create_new_token` before B057/B058 and passes
   after; re-introducing a renamed field turns it red.
 
-- **B060 — ui_tests: never print typed values or 2FA codes in failure output.**
+- **B060 — ui_tests: never print typed values or 2FA codes in failure output. Status: complete**
+  (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`).
   Evidence: `browser.py:210` puts `value` in `ToolError.payload` and `browser.py:26-27` prints it; remote
   smoke uses the operator password (`config.py:173-175`), and `test_2fa_security.py:581` prints a 2FA code.
-  Oracle: call `Browser.fill` for a missing selector with `S3cret-XYZ`; neither `str(exc)` nor `repr(exc)`
-  contains it (record only length), and a grep rejects printing variables named code/password/token.
+  Implemented: fill/select/evaluate errors retain only safe operation metadata; timeout and other
+  navigation failures redact one-time URL tokens and secret-named query values; the AST guard checks
+  print/logging calls and f-string raise/assert/pytest.fail messages. Unit tests cover typed values,
+  navigation failures, and the diagnostic guard.
 
 - **B061 — Cross-account and cross-role authorization sweep over every id-bearing portal route.**
   Evidence: only `test_ddns_quick_update_http.py:105` checks another account's realm; 18 `/account` rules take
@@ -368,11 +383,12 @@ class (b).
   is asserted explicitly so B027 changes the expectation deliberately.
 
 - **B066 — ui_tests: per-role storage state, an explicit anonymous context, and the forgot-password journey.**
-  Depends on B058. Evidence: `config.storage_state_path()` has one `"admin"` file and `workflows.py:858`
-  writes the user login there, so `browser`/`browser_session()` start dual-authenticated and defeated the
-  forgot-password checks at `test_email_notifications.py:452` and `test_security_scenarios.py:323`.
-  Oracle: `anon_browser` shows `#email` on `/account/forgot-password`; the user journey follows the mailed link
-  through the real form, proves the hash changed and login succeeds, and goes red if B058 regresses.
+  **Status: partial** (harness1 delivers the per-role files and explicit empty anonymous context; the full reset
+  journey remains open). Depends on B058. The former shared state let admin and user cookies contaminate each
+  other and defeated forgot-password checks at `test_email_notifications.py:452` and
+  `test_security_scenarios.py:323`. The harness now selects admin/user state by role, does not pass a missing
+  file to Playwright, and leaves anonymous contexts empty. Remaining oracle: follow a mailed reset link through
+  the real form, prove the password hash changed, and log in with the new password.
 
 - **B067 — Honest skips in the e2e lane: hollow param smoke, data-dependent email skips, dead content tests, live deselect, -rs.**
   References, rather than duplicates: P06 O2/O3 for skip-downgrades/live skeletons and B006 for token-revoked
@@ -389,13 +405,15 @@ class (b).
   Oracle: a canary `throw new Error()` fails with its message; a deliberate failure leaves screenshot, trace,
   console log, and app-log tail; blocking `cdn.jsdelivr.net` breaks no test.
 
-- **B069 — pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry.**
-  Evidence: every test starts its own Playwright driver and connection (`playwright_client.py:142-174`,
-  `conftest.py:94-101`, `browser.py:482-534`) with no timeout, retry, or contract check; the documented 428
-  rationale is stale (`playwright_client.py:47-49`). Use one session Playwright/Browser plus a context per test,
-  check `/contract` protocol once, and retry a full-gateway 503 with bounded backoff.
-  Oracle: the gateway records one accepted connection per lane; a forced protocol mismatch exits once with exit
-  3; wall time is recorded before/after.
+- **B069 — pwmcp connection model: short recycle-window connection, contract check, bounded connect and 503 retry.**
+  **Status: complete** (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`). The harness starts one
+  Playwright driver, then recycles the gateway browser at each test-file boundary or after the configured
+  interval, whichever comes first. It checks `/contract` once, uses the contract's lease cap, requests an
+  interval-plus-margin lease, retries 503 for a bounded interval, and labels the holder
+  `naf-e2e:<lane>:<pid-or-xdist-worker>`. A failed replacement is latched, and the session closes on teardown
+  and bounded SIGTERM/SIGINT cleanup. Planned recycle disposes and counts leaked contexts. Oracle: exact fake-clock
+  file/time recycle counts, bounded retry and busy-label message; final e2e evidence records connects/reconnects/
+  recycles/contexts/leaked_contexts and duration.
 
 - **B070 — Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap.**
   Dependency: concurrent worktree identity is B046. Evidence: global clears at `conftest.py:289,297`,
@@ -414,3 +432,54 @@ class (b).
 
 **Referenced, not re-filed:** the `/account/docs` and `/admin/app-logs` gaps are B007; the assert-free
 J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
+
+## B-SECURITY (added 2026-11-12 from the sweeps1 defects)
+
+- **B072 — Audit all login outcomes and emit numeric rate-limit retries. Status: done**
+  (implemented and merged 2026-11-12). The portal 2FA verifier returned its
+  active-lock rejection before writing `ActivityLog`; the admin login flow wrote no persistent
+  `login` outcome for wrong passwords, lock-rejected attempts, successful logins, or invalid and
+  lock-rejected second factors; and Flask-Limiter 429s carried `Retry-After: None`, which also
+  rendered as a non-numeric HTML countdown. The fix adds one admin audit helper that takes the
+  already-resolved admin (NULL `account_id` for unknown and non-admin usernames), never stores
+  submitted credentials or codes in the reason, and derives a positive retry delay from the
+  limiter's reset or the configured window.
+
+## B-FOLLOWUPS (found by the sweeps/guard reviews 2026-11-12)
+
+- **B073 — `account.disable_2fa` asks for a 2FA code the handler never verifies. Status: open**
+  The security-page form marks a 2FA code `required` (templates/account/security.html, the `disable_2fa` form) but `api/account.py` `disable_2fa` checks only the password. A control shown in the UI that does nothing; decide whether to verify the code (needs a product decision for email-only accounts) or remove the field. The B059 form-route guard waives it with a reference to this id; delete the waiver when fixed.
+
+- **B074 — `/account/settings`: delete-account, disable-TOTP and unlink-Telegram forms do nothing. Status: open**
+  templates/account/settings.html posts `action=delete_account`, `disable_totp` and `unlink_telegram`; the `settings` handler in api/account.py handles only `update_profile` and `change_password`, so the three actions re-render the page with no flash and no change. A user who unlinks Telegram keeps receiving 2FA codes there; a user who deletes the account keeps it. Wire the actions (with audit and CSRF tests) or remove the buttons. The B059 guard cannot express multi-action handlers: cover it per hidden `action`.
+
+- **B075 — Admin token detail page never shows IP restrictions. Status: open**
+  templates/admin/token_detail.html reads `token.ip_whitelist`, which does not exist; use `token.get_allowed_ip_ranges()`. An admin auditing a token restricted through the (now working, B057) form sees no allow-list.
+
+- **B076 — Portal token regenerate always fails with "Token name already exists". Status: open**
+  `regenerate_token` in api/account.py calls `create_token(token_name=old_token.token_name)` before revoking the old token and trips `uq_realm_token_name`; delegate to `realm_token_service.regenerate_token`, which renames. Related: B028, B064.
+
+- **B077 — Login "Remember me" checkbox has no effect. Status: open**
+  The control is rendered by templates/account/login.html and the handler ignores `remember`; either implement persistent sessions (a security decision: cookie lifetime, rotation) or remove the control. Waived in the B059 guard with this id.
+
+- **B078 — Admin email 2FA code is compared with `==`. Status: open**
+  api/admin.py (email 2FA verification, around the `==` on the submitted code) must use `hmac.compare_digest` like the portal flow (AGENTS.md convention 4).
+
+- **B079 — Failed admin logins create one Settings row per submitted username and log the raw username. Status: open**
+  `_track_failed_login` creates a `failed_login_user_<username>` Settings row per distinct submitted username, so spraying unknown usernames grows the table without bound; application log lines echo the raw username (CR/LF log injection, api/admin.py around the failed-password and lock branches). Bound or hash the key, expire rows, sanitise the logged value.
+
+- **B080 — ActivityLog `user_agent` is stored untruncated. Status: open**
+  models.py `ActivityLog.user_agent` is `Text` and every writer stores the header verbatim; truncate in one place (codebase-wide). Server header limits and the per-IP rate limit bound it in practice.
+
+- **B081 — `/admin/settings` SMTP quick form omits fields the handler overwrites. Status: open**
+  The quick form on /admin/settings posts to `admin.config_email` without reply-to, admin email and the notification flags; the handler overwrites them on every save, so saving that form clears them and turns notifications off. Found by the B059 guard (waived with this id; delete the waiver when the template carries the fields or the handler ignores absent ones).
+
+- **B082 — netcup config page: "Test connection" posts a field the handler ignores. Status: open**
+  templates/admin/config_netcup.html JS posts `test_only=true`; `config_netcup` ignores it, saves the configuration and returns HTML where the script expects JSON. Add a test-only branch that validates without saving.
+
+- **B083 — pwmcp planned recycle can lose the released slot before reconnect. Status: open**
+  With two estate-wide slots, another consumer can acquire a slot after this session closes its browser
+  and before the immediate reconnect. If bounded 503 retry exhausts, the current session latches failed.
+  Consider a longer reconnect deadline specifically for planned recycles, or skip a recycle while the
+  slot is contested. Preserve the short initial-connect budget and the prompt slot yield between files.
+

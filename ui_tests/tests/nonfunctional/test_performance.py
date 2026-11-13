@@ -15,6 +15,7 @@ variability in local testing environments.
 """
 import os
 import pytest
+import pytest_asyncio
 from pathlib import Path
 
 # Import from parent ui_tests directory
@@ -22,6 +23,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.nonfunctional, pytest.mark.performance]
+
+
+@pytest_asyncio.fixture
+async def browser(anon_browser):
+    """Performance checks that use ``browser`` inspect the public login page."""
+    return anon_browser
+
 
 # Performance thresholds (configurable via environment)
 FCP_THRESHOLD = float(os.environ.get("PERF_FCP_THRESHOLD", "10.0"))

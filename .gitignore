@@ -282,6 +282,11 @@ ciu.env
 ciu.global.toml
 ciu.global.toml.j2
 ciu.global.instance.toml.j2
+# Per-worktree identity/render inputs written by `ciu worktree create`. Left untracked-but-not-ignored
+# in the committed .gitignore they make assay/run-gate report DIRTY_TREE (assay B017): .git/info/exclude
+# is deliberately not honoured by the judge.
+ciu.worktree-instance.json
+ciu.global.worktree.toml.j2
 **/ciu.toml
 **/ciu.toml.j2
 **/ciu.compose.yml

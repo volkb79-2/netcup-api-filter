@@ -18,6 +18,7 @@ Key WCAG 2.1 AA criteria tested:
 import os
 import re
 import pytest
+import pytest_asyncio
 from pathlib import Path
 
 # Import from parent ui_tests directory
@@ -27,24 +28,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 pytestmark = [pytest.mark.asyncio, pytest.mark.nonfunctional, pytest.mark.accessibility]
 
 
+@pytest_asyncio.fixture
+async def browser(anon_browser):
+    """Accessibility checks that use ``browser`` inspect public login pages."""
+    return anon_browser
+
+
 async def _ensure_admin_login_page(browser) -> None:
     """Ensure the admin login form is actually rendered.
 
-    The Playwright context may reuse persisted auth state. If we're already
-    authenticated, navigating to /admin/login can redirect to the admin UI.
-    Accessibility checks that target the login form must start from a logged-out
-    state.
+    The module-local ``browser`` fixture is an explicit anonymous context, so
+    this is a precondition assertion rather than a cookie-clearing workaround.
     """
     from ui_tests.config import settings
 
     await browser.goto(settings.url("/admin/login"))
     await browser._page.wait_for_load_state("networkidle")
-
-    if "/admin/login" not in browser._page.url:
-        await browser._page.context.clear_cookies()
-        await browser._page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
-        await browser.goto(settings.url("/admin/login"), wait_until="domcontentloaded")
-        await browser._page.wait_for_load_state("networkidle")
 
     if "/admin/login" not in browser._page.url:
         raise AssertionError(f"Expected to be on /admin/login, got {browser._page.url}")

@@ -28,25 +28,10 @@ from ui_tests.workflows import ensure_user_dashboard
 pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 
 
-async def _clear_browser_auth_state(browser) -> None:
-    # The test suite reuses Playwright storage state by default.
-    # Registration route-guard tests must ensure an unauthenticated context.
-    await browser._page.context.clear_cookies()
-    # localStorage/sessionStorage are origin-scoped and may not be accessible on
-    # about:blank; ensure we're on an app origin first.
-    await browser.goto(settings.url("/"), wait_until="domcontentloaded")
-    try:
-        await browser.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
-    except Exception:
-        await browser.goto(settings.url("/"), wait_until="domcontentloaded")
-        await browser.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
-
-
 class TestAccountRegistrationRouteGuards:
     async def test_register_verify_link_invalid_token_redirects_to_register(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await _clear_browser_auth_state(browser)
 
             nav = await browser.goto(
                 settings.url("/account/register/verify/invalid-token-for-coverage"),
@@ -59,9 +44,8 @@ class TestAccountRegistrationRouteGuards:
             assert current_path.startswith("/account/register")
 
     async def test_register_resend_without_registration_session_redirects_to_register(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await browser.reset()
-            await _clear_browser_auth_state(browser)
 
             # CSRF is typically enforced for POST requests; get a token from /account/register.
             await browser.goto(settings.url("/account/register"), wait_until="domcontentloaded")
@@ -114,7 +98,7 @@ class TestAccountAuthenticatedRemainingRoutes:
         assert await browser._page.locator("text=Telegram Linked").is_visible()
 
     async def test_account_api_realms_returns_json(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
 
             resp = await browser.request_get_json(settings.url("/account/api/realms"))
@@ -122,7 +106,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             assert isinstance(resp["json"], list)
 
     async def test_account_api_realm_tokens_route_exists(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
 
             # We don't assume a specific realm exists in all environments. This request is
@@ -131,7 +115,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             assert resp["status"] in (200, 403, 404)
 
     async def test_account_realms_new_page_loads(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
 
             nav = await browser.goto(settings.url("/account/realms/new"), wait_until="domcontentloaded")
@@ -141,7 +125,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             assert current_path.startswith("/account/realms")
 
     async def test_account_activity_export_returns_ods_zip(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
 
             resp = await browser.request_get_bytes(settings.url("/account/activity/export"))
@@ -153,7 +137,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             assert body[:2] == b"PK"
 
     async def test_account_telegram_unlink_post_works_with_csrf(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
 
             # The Telegram link page only renders forms (and so a CSRF token) when linking is
@@ -170,7 +154,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             assert resp["status"] in (200, 302)
 
     async def test_account_telegram_linking_flow_completes_when_configured(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
 
             await self._ensure_telegram_linked(browser)
@@ -180,7 +164,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             assert status["json"]["linked"] is True
 
     async def test_account_telegram_send_test_message_shows_feedback(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
             await self._ensure_telegram_linked(browser)
 
@@ -198,7 +182,7 @@ class TestAccountAuthenticatedRemainingRoutes:
             )
 
     async def test_account_telegram_notification_toggle_persists_and_resets_on_unlink(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("user") as browser:
             await ensure_user_dashboard(browser)
             await self._ensure_telegram_linked(browser)
 

@@ -1,4 +1,6 @@
+import asyncio
 import contextlib
+import logging
 import os
 import sys
 from pathlib import Path
@@ -15,15 +17,84 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ui_tests.browser import Browser
+from ui_tests.browser import Browser, browser_session as open_browser_session
 from ui_tests.config import RemoteConfigError, TARGET_REMOTE, selected_target, settings
 from ui_tests.e2e_env import E2EEnvironmentError, app_instance
 from ui_tests.personas import provision
 from ui_tests.playwright_client import PlaywrightClient
+from ui_tests.pwmcp_connection import (
+    SharedPwmcpSession,
+    context_storage_state,
+    fetch_contract,
+    install_signal_cleanup,
+    install_shared_session,
+    last_session_summary,
+    last_session_summary_details,
+    load_connection_options,
+    uninstall_shared_session,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(scope="session")
+def pwmcp_contract():
+    """Read and validate the gateway contract once, before the app starts."""
+    try:
+        options = load_connection_options()
+        if not options.ws_url:
+            return options, None
+        contract = fetch_contract(
+            options.ws_url,
+            timeout_seconds=options.contract_timeout_seconds,
+        )
+    except Exception as exc:
+        pytest.exit(f"pwmcp contract check failed: {exc}", returncode=3)
+    return options, contract
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
+async def pwmcp_connection(e2e_environment, pwmcp_contract):
+    """Own one driver and recycle its gateway connection between test files/windows."""
+    options, contract = pwmcp_contract
+    connection = SharedPwmcpSession(options, contract=contract)
+    loop = asyncio.get_running_loop()
+    startup = loop.create_task(connection.start())
+    restore_signal_handlers = None
+    try:
+        restore_signal_handlers = install_signal_cleanup(
+            connection,
+            loop,
+            cleanup_timeout_seconds=options.signal_cleanup_timeout_seconds,
+            interrupt_task=startup,
+        )
+        await startup
+    except Exception as exc:
+        if not startup.done():
+            startup.cancel()
+            await asyncio.gather(startup, return_exceptions=True)
+        await connection.stop()
+        if restore_signal_handlers is not None:
+            restore_signal_handlers()
+        pytest.exit(f"pwmcp session connection failed: {exc}", returncode=3)
+    install_shared_session(connection)
+    try:
+        yield connection
+    finally:
+        await connection.stop()
+        if restore_signal_handlers is not None:
+            restore_signal_handlers()
+        uninstall_shared_session(connection)
+
+
+@pytest_asyncio.fixture(scope="function", loop_scope="session", autouse=True)
+async def pwmcp_recycle_window(pwmcp_connection, request):
+    """Recycle at a test-file boundary or elapsed connection window, before contexts open."""
+    await pwmcp_connection.prepare_for_test(request.node.path)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def e2e_environment():
+def e2e_environment(pwmcp_contract):
     """One throwaway app instance + personas for the whole session (ui_tests/e2e_env.py).
 
     S1 "detect, don't flood": if the environment cannot be created (no golden DB, golden DB
@@ -96,13 +167,13 @@ async def playwright_client():
     """Create a Playwright client instance."""
     async with PlaywrightClient(
         headless=settings.playwright_headless,
-        storage_state_path=str(settings.storage_state_path()),
+        storage_state_path=context_storage_state("admin", settings.storage_state_path),
     ) as client:
         yield client
 
 
 @pytest_asyncio.fixture()
-async def browser(playwright_client):
+async def admin_browser(playwright_client):
     """Create a Browser instance with the Playwright page."""
     trace_threshold_s = os.environ.get("UI_TRACE_ON_SLOW_SECONDS")
     trace_dir = os.environ.get("UI_TRACE_DIR")
@@ -144,6 +215,28 @@ async def browser(playwright_client):
                 await playwright_client.context.tracing.stop()
 
 
+@pytest_asyncio.fixture()
+async def browser(admin_browser):
+    """Backwards-compatible alias for the authenticated admin browser fixture."""
+    return admin_browser
+
+
+@pytest_asyncio.fixture()
+async def user_browser():
+    """Browser context carrying only the session user persona's cached state."""
+    async with open_browser_session("user") as browser:
+        await browser.reset()
+        yield browser
+
+
+@pytest_asyncio.fixture()
+async def anon_browser():
+    """Browser context with NO storage state loaded."""
+    async with open_browser_session("anonymous") as browser:
+        await browser.reset()
+        yield browser
+
+
 # ============================================================================
 # Parallel Session Manager fixtures
 # ============================================================================
@@ -166,6 +259,7 @@ async def session_manager(playwright_client):
     async with ParallelSessionManager(
         browser=playwright_client.browser,
         base_url=settings.url(''),
+        context_factory=playwright_client.new_context,
     ) as manager:
         yield manager
 
@@ -247,8 +341,7 @@ def mock_netcup_credentials():
 @pytest.fixture(scope='function')
 async def browser_session():
     """Fixture that provides a browser session (same as browser fixture but with better name)."""
-    async with PlaywrightClient(headless=settings.playwright_headless) as client:
-        browser = Browser(client.page)
+    async with open_browser_session("admin") as browser:
         await browser.reset()
         yield browser
 
@@ -431,6 +524,9 @@ def pytest_runtest_call(item):
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    terminalreporter.write_line(last_session_summary())
+    for line in last_session_summary_details():
+        terminalreporter.write_line(line)
     enabled = _env_flag("PYTEST_PROFILE_ENABLED")
     if not enabled:
         return

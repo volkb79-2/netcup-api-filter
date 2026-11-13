@@ -6,6 +6,7 @@ touched, and nothing is persisted. The forced first-login change of the shipped 
 tested once, in smoke/test_installation_workflow.py.
 """
 import sqlite3
+import logging
 from dataclasses import replace
 
 import bcrypt
@@ -17,6 +18,7 @@ from ui_tests.e2e_env import app_instance
 from ui_tests.personas import new_password, provision_throwaway_admin
 from ui_tests.playwright_client import PlaywrightClient
 
+logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.feature]
 
@@ -74,7 +76,7 @@ async def test_dashboard_components_render_without_error():
     This test checks for template rendering issues that might be hidden
     in production but not caught by navigation tests.
     """
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         from ui_tests import workflows
         
         # Login and navigate to dashboard
@@ -99,7 +101,7 @@ async def test_dashboard_components_render_without_error():
         nav = await browser.query_selector("nav")
         assert nav is not None, "Navigation not found"
         
-        print("✓ Dashboard components render test PASSED")
+        logger.info("✓ Dashboard components render test PASSED")
 
 
 async def test_all_admin_pages_accessible_after_password_change():
@@ -108,7 +110,7 @@ async def test_all_admin_pages_accessible_after_password_change():
     This ensures that session persistence works correctly after
     password change and all routes render without errors.
     """
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         from ui_tests import workflows
 
         await workflows.ensure_admin_dashboard(browser)
@@ -137,6 +139,6 @@ async def test_all_admin_pages_accessible_after_password_change():
             current_url = browser._page.url
             assert "/login" not in current_url, f"Redirected to login from {route}"
             
-            print(f"✓ {page_name} page accessible")
+            logger.info(f"✓ {page_name} page accessible")
         
-        print("✓ All admin pages accessible test PASSED")
+        logger.info("✓ All admin pages accessible test PASSED")

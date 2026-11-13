@@ -13,6 +13,7 @@ These tests verify the security improvements prevent brute-force attacks.
 import re
 import os
 import sqlite3
+import logging
 
 import pytest
 
@@ -23,6 +24,7 @@ from ui_tests.config import settings
 from ui_tests.mailpit_client import MailpitClient
 from ui_tests.workflows import ensure_admin_dashboard
 
+logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.security]
 
@@ -104,7 +106,7 @@ class Test2FAFailureTracking:
             for msg in message_list.messages:
                 mailpit.delete_message(msg.id)
             
-            async with browser_session() as browser:
+            async with browser_session("anonymous") as browser:
                 await _force_fresh_admin_login(browser)
 
                 # Navigate to login
@@ -120,11 +122,11 @@ class Test2FAFailureTracking:
                 
                 # Check if we're on 2FA page
                 current_url = browser._page.url
-                print(f"After login submit, URL: {current_url}")
+                logger.debug("after login submit, URL: %s", current_url)
                 
                 assert "/2fa" in current_url, f"email-2FA admin persona got no 2FA challenge (url={current_url})"
                 
-                print("✓ Successfully reached 2FA page")
+                logger.debug("successfully reached the 2FA page")
                 
                 # Wait for 2FA email to arrive
                 msg = mailpit.wait_for_message(
@@ -199,7 +201,7 @@ class Test2FAFailureTracking:
                         assert str(expected_left) in alert_text_lower, (
                             f"Attempt {attempt}: Expected '{expected_left}' in alert, got: {alert_text!r}"
                         )
-                        print(f"✓ Attempt {attempt}/5: Still on 2FA page")
+                        logger.debug("attempt %s/5 stayed on the 2FA page", attempt)
                     else:
                         # On 5th failure, should see lockout.
                         assert "/2fa" in new_url, f"Attempt {attempt}: Expected to remain on 2FA page, got URL: {new_url}"
@@ -217,7 +219,7 @@ class Test2FAFailureTracking:
                         assert "too many" in alert_text_lower and "locked" in alert_text_lower, (
                             f"Expected lockout message after 5 failures, got: {alert_text!r}"
                         )
-                        print("✓ Account locked after 5 failed attempts")
+                        logger.debug("account locked after 5 failed attempts")
                 
                 # Step 3: Verify we cannot try again (should be locked)
                 new_url = browser._page.url
@@ -226,7 +228,7 @@ class Test2FAFailureTracking:
                 assert "/login" in new_url or "locked" in alert_text_lower, \
                     "Account should be locked and not allow more attempts"
                 
-                print("✓ 2FA lockout test PASSED")
+                logger.debug("2FA lockout check passed")
                 
         finally:
             mailpit.close()
@@ -243,7 +245,7 @@ class Test2FAFailureTracking:
             for msg in message_list.messages:
                 mailpit.delete_message(msg.id)
             
-            async with browser_session() as browser:
+            async with browser_session("anonymous") as browser:
                 await _force_fresh_admin_login(browser)
 
                 # Login to 2FA page
@@ -310,7 +312,7 @@ class Test2FAFailureTracking:
                 alert_text = (await alerts.first.text_content() or "").lower()
                 has_counter = bool(re.search(r"\b(tries|attempt)s?\b.*\b(remaining|left)\b", alert_text))
                 assert has_counter, f"Expected remaining-attempts counter in alert, got: {alert_text!r}"
-                print("✓ Remaining attempts counter displayed")
+                logger.debug("remaining-attempts counter displayed")
                 
         finally:
             mailpit.close()
@@ -327,7 +329,7 @@ class TestRecoveryCodeRateLimiting:
 
         _clear_auth_lockouts_for_username(settings.mail_admin_username)
         
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             from ui_tests import workflows
             
             # Login to dashboard first
@@ -340,7 +342,7 @@ class TestRecoveryCodeRateLimiting:
             h1 = await browser.text("h1")
             assert "Password" in h1 or "Settings" in h1 or "Initial Setup" in h1
             
-            print("✓ Recovery code pages accessible")
+            logger.debug("recovery-code pages accessible")
             # Note: Full recovery code lockout test requires account portal
             # with 2FA enabled and recovery codes generated
 
@@ -383,7 +385,7 @@ class TestRecoveryCodeCount:
         assert "max(1, min(" in content, \
             "Expected RECOVERY_CODE_COUNT to be clamped via max(1, min(count, 20))"
 
-        print("✓ Default recovery code count is 3 (security improvement)")
+        logger.debug("default recovery-code count is 3")
 
 
 class TestSessionRegeneration:
@@ -392,7 +394,7 @@ class TestSessionRegeneration:
     async def test_session_id_changes_after_login(self):
         """Test that session ID is regenerated after successful login."""
         _clear_auth_lockouts_for_username(settings.mail_admin_username)
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             # This is an auth-flow security test: ensure we do NOT reuse any
             # persisted Playwright storage state from previous tests.
             await _force_fresh_admin_login(browser)
@@ -409,7 +411,7 @@ class TestSessionRegeneration:
                     session_before = cookie['value']
                     break
             
-            print(f"Session before login: {session_before[:20] if session_before else 'None'}...")
+            logger.debug("session before login present=%s", bool(session_before))
             
             # Step 2: Login (this will trigger session regeneration)
             await ensure_admin_dashboard(browser)
@@ -424,15 +426,15 @@ class TestSessionRegeneration:
                     session_after = cookie['value']
                     break
             
-            print(f"Session after login: {session_after[:20] if session_after else 'None'}...")
+            logger.debug("session after login present=%s", bool(session_after))
             
             # Verify session changed
             if session_before and session_after:
                 assert session_before != session_after, \
                     "Session ID should change after login (session regeneration)"
-                print("✓ Session ID regenerated after login")
+                logger.debug("session ID regenerated after login")
             else:
-                print("⚠️  Could not verify session regeneration (cookies not captured)")
+                logger.warning("could not verify session regeneration because cookies were not captured")
 
 
 class TestConfigurationDefaults:
@@ -462,7 +464,7 @@ class TestConfigurationDefaults:
             assert setting in content, \
                 f"Security setting {setting} not found in .env.defaults"
         
-        print("✓ All security settings present in .env.defaults")
+        logger.debug("all security settings are present in .env.defaults")
 
 
 class TestAdminAuthentication:
@@ -481,12 +483,12 @@ class TestAdminAuthentication:
             assert re.search(rf"^def\s+{re.escape(fn_name)}\s*\(", content, re.MULTILINE), \
                 f"Expected function {fn_name} in {path}"
         
-        print("✓ Admin authentication uses same security functions")
+        logger.debug("admin authentication uses the same security functions")
 
     async def test_admin_session_regeneration(self):
         """Verify admin login also regenerates session."""
         _clear_auth_lockouts_for_username(settings.mail_admin_username)
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             from ui_tests import workflows
 
             # Login as admin
@@ -496,7 +498,7 @@ class TestAdminAuthentication:
             h1 = await browser.text("h1")
             assert "Dashboard" in h1 or "Password" in h1
 
-            print("✓ Admin login successful (session regeneration applied)")
+            logger.debug("admin login successful")
 
 
 # ============================================================================
@@ -526,27 +528,7 @@ async def test_complete_2fa_flow_with_mailpit():
         for msg in messages.messages:
             mailpit.delete_message(msg.id)
 
-        async with browser_session() as browser:
-            # This is an auth-flow test and must not reuse an existing session.
-            # `browser_session()` loads persisted Playwright storage state by default,
-            # so explicitly clear cookies + origin storage to ensure /admin/login
-            # actually renders the login form.
-            try:
-                await browser._page.context.clear_cookies()
-            except Exception:
-                pass
-            try:
-                await browser.evaluate(
-                    """
-                    () => {
-                        try { window.localStorage?.clear?.(); } catch (e) {}
-                        try { window.sessionStorage?.clear?.(); } catch (e) {}
-                    }
-                    """
-                )
-            except Exception:
-                pass
-
+        async with browser_session("anonymous") as browser:
             # Login with admin credentials
             await browser.goto(settings.url("/admin/login"))
             await browser._page.wait_for_load_state('domcontentloaded')
@@ -570,7 +552,7 @@ async def test_complete_2fa_flow_with_mailpit():
             )
 
             assert msg is not None, "No 2FA email received in Mailpit"
-            print(f"✓ Received 2FA email: {msg.subject}")
+            logger.debug("received 2FA email: %s", msg.subject)
 
             # Extract code from email
             full_msg = mailpit.get_message(msg.id)
@@ -578,7 +560,7 @@ async def test_complete_2fa_flow_with_mailpit():
 
             assert code_match is not None, "Could not extract 6-digit code from email"
             code = code_match.group(1)
-            print(f"✓ Extracted code: {code}")
+            logger.debug("extracted 2FA code length=%d", len(code))
 
             # Submit code via JavaScript (avoid race with auto-submit)
             await browser.evaluate(f"""
@@ -612,7 +594,7 @@ async def test_complete_2fa_flow_with_mailpit():
             # Clean up
             mailpit.delete_message(msg.id)
 
-            print("✓ Complete 2FA flow test PASSED")
+            logger.debug("complete 2FA flow check passed")
 
     finally:
         mailpit.close()
@@ -628,7 +610,7 @@ async def test_complete_2fa_flow_with_mailpit():
 
 class TestAdminTotpPage:
     async def test_admin_totp_setup_page_loads(self, active_profile):
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await workflows.ensure_admin_dashboard(browser)
 
             nav = await browser.goto(settings.url("/admin/security/totp"), wait_until="domcontentloaded")

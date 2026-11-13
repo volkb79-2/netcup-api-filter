@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.smoke]
 
 async def test_admin_backends_list_page_loads(active_profile):
     """Test that the backends list page loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to backends via DNS menu
@@ -38,7 +38,7 @@ async def test_admin_backends_list_page_loads(active_profile):
 
 async def test_admin_backend_providers_page_loads(active_profile):
     """Test that the backend providers page loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to providers via DNS menu
@@ -62,7 +62,7 @@ async def test_admin_backend_providers_page_loads(active_profile):
 
 async def test_admin_backend_create_page_loads(active_profile):
     """Test that the backend create form loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to backend create
@@ -90,7 +90,7 @@ async def test_admin_backend_create_validation(active_profile):
     if not active_profile.allow_writes:
         pytest.skip("profile is read-only")
     
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to backend create
@@ -113,7 +113,7 @@ async def test_admin_backend_create_validation(active_profile):
 
 async def test_admin_domain_roots_list_page_loads(active_profile):
     """Test that the domain roots list page loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to domain roots via DNS menu
@@ -132,7 +132,7 @@ async def test_admin_domain_roots_list_page_loads(active_profile):
 
 async def test_admin_domain_root_create_page_loads(active_profile):
     """Test that the domain root create form loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to domain root create
@@ -161,7 +161,7 @@ async def test_admin_domain_root_create_page_loads(active_profile):
 
 async def test_user_backends_list_page_loads(active_profile):
     """Test that the user's backends list page loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
         
         # Navigate directly (more reliable than clicking responsive navbar)
@@ -183,7 +183,7 @@ async def test_user_backends_list_page_loads(active_profile):
 
 async def test_user_backend_create_page_loads(active_profile):
     """Test that the user backend create form loads successfully."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
         
         # Navigate directly (more reliable than clicking responsive navbar)
@@ -206,7 +206,7 @@ async def test_user_backend_create_page_loads(active_profile):
 
 async def test_user_backends_providers_info(active_profile):
     """Test that supported providers info is displayed."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
         
         # Navigate directly (more reliable than clicking responsive navbar)
@@ -232,7 +232,7 @@ async def test_user_backends_providers_info(active_profile):
 
 async def test_admin_dns_menu_navigation(active_profile):
     """Test all DNS menu items are accessible."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         pages_to_visit = [
@@ -255,7 +255,7 @@ async def test_admin_dns_menu_navigation(active_profile):
 
 async def test_user_backends_navigation(active_profile):
     """Test user can navigate through My Backends section."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
         
         # Navigate directly (more reliable than clicking responsive navbar)
@@ -281,7 +281,7 @@ async def test_user_backends_navigation(active_profile):
 
 async def test_admin_backends_stats_display(active_profile):
     """Test that backend stats cards display correctly."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to backends
@@ -300,7 +300,7 @@ async def test_admin_backends_stats_display(active_profile):
 
 async def test_admin_domain_roots_stats_display(active_profile):
     """Test that domain root stats cards display correctly."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
         
         # Navigate to domain roots
@@ -319,7 +319,7 @@ async def test_admin_domain_roots_stats_display(active_profile):
 
 async def test_user_backends_stats_display(active_profile):
     """Test that user backend stats cards display correctly."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
 
         # Navigate directly (more reliable than clicking responsive navbar)
@@ -346,7 +346,7 @@ async def test_user_backends_stats_display(active_profile):
 
 async def test_backend_detail_shows_test_button(active_profile):
     """Verify backend detail page has test connection button."""
-    async with browser_session() as browser:
+    async with browser_session("admin") as browser:
         await workflows.ensure_admin_dashboard(browser)
 
         # Navigate to backends list
@@ -369,7 +369,7 @@ async def test_backend_detail_shows_test_button(active_profile):
 
 async def test_dns_records_page_accessible_via_realm(active_profile):
     """Verify DNS records page is accessible via realm detail."""
-    async with browser_session() as browser:
+    async with browser_session("user") as browser:
         await workflows.ensure_user_dashboard(browser)
 
         # Navigate to realms

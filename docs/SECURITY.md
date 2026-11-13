@@ -96,8 +96,11 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   defaults and are reloadable. Note the limiter uses in-memory storage, so limits are
   **per worker process**: N gunicorn workers allow N× the configured budget.
 - **GeoIP** location checks (optional) flag logins/requests from unexpected locations.
-- **Audit trail**: `ActivityLog` records authentication outcomes, grant add/revoke, Telegram
-  linking, and scoped API activity; the admin **security dashboard** surfaces attack-flagged events.
+- **Audit trail**: `ActivityLog` records portal and admin login outcomes, including password
+  failures, lock-rejected attempts, successful logins, and invalid or lock-rejected second
+  factors. Unknown usernames are recorded with a null `account_id`; audit reasons never contain
+  submitted passwords or 2FA codes. Grant add/revoke, Telegram linking, and scoped API activity
+  are also audited; the admin **security dashboard** surfaces attack-flagged events.
 
 ### Proxy trust, public URLs, and cookies
 

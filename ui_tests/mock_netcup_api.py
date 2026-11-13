@@ -12,10 +12,13 @@ the same API contract as the real Netcup API.
 """
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from typing import Any, Dict, List
 from flask import Flask, Response, request, jsonify
+
+logger = logging.getLogger(__name__)
 
 # Mock data storage
 SESSIONS: Dict[str, Dict[str, Any]] = {}  # session_id -> {customer_id, api_key, created_at}
@@ -457,6 +460,5 @@ seed_test_domain("test.example.com")
 
 if __name__ == '__main__':
     # For testing the mock server directly
-    print(f"Mock Netcup API server running on http://localhost:5555")
-    print(f"Test credentials: customer_id={MOCK_CUSTOMER_ID}, api_key={MOCK_API_KEY}, api_password={MOCK_API_PASSWORD}")
+    logger.info("Mock Netcup API server starting on http://localhost:5555")
     app.run(host='0.0.0.0', port=5555, debug=True)

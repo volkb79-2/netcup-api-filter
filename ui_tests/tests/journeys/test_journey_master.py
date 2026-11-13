@@ -12,6 +12,7 @@ Or run specific journeys:
 """
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,8 @@ import pytest
 
 from ui_tests.browser import browser_session
 from ui_tests.tests.journeys import journey_state
+
+logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.journey]
 
@@ -48,16 +51,16 @@ class TestJourneyMaster:
     
     async def test_journey_1_fresh_deployment(self):
         """Journey 1: Validate fresh deployment state."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 1: Fresh Deployment")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 1: Fresh Deployment")
+        logger.info("=" * 60)
         
         from ui_tests.tests.journeys.j1_fresh_deployment import TestJourney1FreshDeployment
         
         journey = TestJourney1FreshDeployment()
         
         # Execute journey steps in order using function-scope browser
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await journey.test_J1_01_login_page_accessible(browser)
             await journey.test_J1_02_admin_persona_authenticates(browser)
             await journey.test_J1_04_dashboard_state(browser)
@@ -68,7 +71,7 @@ class TestJourneyMaster:
         assert journey_state.admin_logged_in, "Admin should be logged in after Journey 1"
         assert journey_state.admin_password is not None, "Admin password should be set"
         
-        print(f"\n✓ Journey 1 complete: {len(journey_state.screenshots)} screenshots")
+        logger.info(f"\n✓ Journey 1 complete: {len(journey_state.screenshots)} screenshots")
     
     # =========================================================================
     # Journey 2: Account Lifecycle
@@ -76,16 +79,16 @@ class TestJourneyMaster:
     
     async def test_journey_2_account_lifecycle(self, mailpit_client):
         """Journey 2: Account registration, verification, and approval."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 2: Account Lifecycle")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 2: Account Lifecycle")
+        logger.info("=" * 60)
         
         from ui_tests.tests.journeys.j2_account_lifecycle import TestJourney2AccountLifecycle
         
         journey = TestJourney2AccountLifecycle()
         
         # Execute journey steps in order using function-scope browser
-        async with browser_session() as browser:
+        async with browser_session("anonymous") as browser:
             await journey.test_J2_01_registration_page(browser)
             await journey.test_J2_02_submit_registration(browser, mailpit_client)
             await journey.test_J2_03_check_verification_email(browser, mailpit_client)
@@ -95,7 +98,7 @@ class TestJourneyMaster:
             await journey.test_J2_07_user_can_login(browser)
             await journey.test_J2_08_summary(browser)
         
-        print(f"\n✓ Journey 2 complete: {len(journey_state.screenshots)} screenshots total")
+        logger.info(f"\n✓ Journey 2 complete: {len(journey_state.screenshots)} screenshots total")
     
     # =========================================================================
     # Journey 3: Comprehensive State Population
@@ -103,16 +106,16 @@ class TestJourneyMaster:
     
     async def test_journey_3_comprehensive_states(self):
         """Journey 3: Create ALL account/realm/token states from matrix."""
-        print("\n" + "=" * 60)
-        print("JOURNEY 3: Comprehensive State Population")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("JOURNEY 3: Comprehensive State Population")
+        logger.info("=" * 60)
         
         from ui_tests.tests.journeys.j3_comprehensive_states import TestJourney3ComprehensiveStates
         
         journey = TestJourney3ComprehensiveStates()
         
         # Execute journey steps in order using function-scope browser
-        async with browser_session() as browser:
+        async with browser_session("admin") as browser:
             await journey.test_J3_01_create_accounts(browser)
             await journey.test_J3_02_create_realms(browser)
             await journey.test_J3_03_create_tokens(browser)
@@ -120,7 +123,7 @@ class TestJourneyMaster:
             await journey.test_J3_05_ui_validation(browser)
             await journey.test_J3_06_summary(browser)
         
-        print(f"\n✓ Journey 3 complete: {len(journey_state.screenshots)} screenshots total")
+        logger.info(f"\n✓ Journey 3 complete: {len(journey_state.screenshots)} screenshots total")
     
     # =========================================================================
     # Journey Summary
@@ -128,28 +131,28 @@ class TestJourneyMaster:
     
     async def test_journey_final_summary(self):
         """Generate final summary and save state."""
-        print("\n" + "=" * 60)
-        print("ALL JOURNEYS COMPLETE")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("ALL JOURNEYS COMPLETE")
+        logger.info("=" * 60)
         
         # Print state summary
         state = journey_state.to_dict()
-        print("\nFinal State:")
+        logger.info("\nFinal State:")
         for key, value in state.items():
-            print(f"  {key}: {value}")
+            logger.info(f"  {key}: {value}")
         
         # Print screenshot manifest
-        print(f"\nScreenshots Captured ({len(journey_state.screenshots)}):")
+        logger.info(f"\nScreenshots Captured ({len(journey_state.screenshots)}):")
         for name, path in journey_state.screenshots:
             exists = "✓" if Path(path).exists() else "✗"
-            print(f"  {exists} {name}")
+            logger.info(f"  {exists} {name}")
         
         # Save journey report
         await _save_journey_report()
         
-        print("\n" + "=" * 60)
-        print("Test run complete!")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info("Test run complete!")
+        logger.info("=" * 60)
 
 
 async def _save_journey_report():
@@ -186,7 +189,7 @@ async def _save_journey_report():
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
     
-    print(f"\n📄 Journey report saved to: {report_path}")
+    logger.info(f"\n📄 Journey report saved to: {report_path}")
 
 
 # ============================================================================

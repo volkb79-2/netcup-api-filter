@@ -108,6 +108,103 @@ port is chosen free and retried if gunicorn finds it taken; the fixture stops th
 error. Keep the work
 dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env.defaults`.
 
+### Browser connection and state model
+
+The Playwright driver is session-scoped; its pwmcp browser connection is recycled between test
+files or after the configured recycle window, whichever comes first:
+
+```text
+pytest session / xdist worker
+  -> GET /contract, validate schema + Playwright major.minor once
+  -> start one Playwright driver
+  -> bounded chromium.connect(), retrying only gateway HTTP 503
+  -> before a test's first context, recycle at a test-file boundary or after
+     E2E_PWMCP_RECYCLE_INTERVAL_SECONDS (whichever comes first); reconnect immediately
+  -> for each test: fresh browser.new_context() [+ page] -> test -> close context
+  -> between tests only, replace a dead browser (capped by E2E_PWMCP_MAX_RECONNECTS)
+     or renew a lease that is near expiry
+  -> latch a failed replacement: every later test fails immediately with the original reason
+  -> session teardown and SIGTERM/SIGINT: close the browser connection and stop the driver
+```
+
+`ui_tests/pwmcp_connection.py` owns this lifecycle; `ui_tests/conftest.py` installs it through the
+autouse `pwmcp_connection` session fixture and the `pwmcp_recycle_window` function fixture. The
+counters are emitted once at the end of the session as
+`pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n> leaked_contexts=<n>`.
+`connects` counts successful browser connections including the first, `reconnects` counts successful
+replacements, `recycles` counts the
+intentional file/time/lease replacements, and `contexts` counts successful contexts. A
+`pwmcp reconnect causes: ...` line and a `pwmcp connection latched as failed: ...` line follow when
+applicable. There is one driver per pytest process (therefore one per xdist worker); xdist is not
+enabled by the current e2e lane, and its worker counters are not aggregated by the controller.
+An open context found at a planned file/time recycle is counted as leaked, then disposed by closing
+the old browser so one missed context cleanup does not fail every later file. The lease-renewal path
+still waits for a between-test point with no open contexts.
+
+The contract check is fail-fast: `/contract` must publish schema version 1 and a protocol matching
+the installed Playwright major.minor, plus a maximum lease. A missing contract, incompatible
+Playwright, or unavailable gateway exits the session with code 3 and one actionable message. Remote
+connects carry `X-PWMCP-Lease-Seconds` and `X-PWMCP-Session-Label`, have a finite per-attempt timeout,
+and retry HTTP 503 ("all browser slots are in use") with exponential backoff under one 60-second
+default deadline (three attempts with the default 15-second and 30-second backoffs). Exhaustion says
+the slots are busy and prints the `naf-e2e:<lane>:<pid-or-xdist-worker>` session label shown in the
+pwmcp admin view. The retry interval, connect timeout and backoffs are configurable in `.env.defaults`.
+
+An open pwmcp websocket is an active gateway session. The 30-second idle browser recycle runs only
+while there are zero sessions, so an open connection survives the long installation/app-start test
+without a heartbeat. At each test-file boundary, or after the default 1500-second (25-minute) window,
+the harness closes the old websocket and reconnects immediately. It requests a short 1800-second
+lease by adding the 300-second `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` to the recycle interval; the
+requested value is capped by `/contract` `max_lease_seconds` (7200). If a configured interval reaches
+the gateway cap, the margin triggers an earlier between-test renewal. Closing a websocket releases
+its slot immediately, and a crashed pytest can hold a slot for at most the short lease rather than the
+lane budget. A browser found dead between tests (gateway restart or recycle) is replaced at most
+`E2E_PWMCP_MAX_RECONNECTS` (3) times. A failed replacement is latched: every later test errors
+immediately with the same reason instead of spending a connect/503-retry budget each. A browser lost
+in the middle of a test is still a failure of that test (there is no mid-test retry).
+At a deliberate recycle, another estate consumer can take the released slot before the immediate
+reconnect; if its bounded 503 retry is exhausted, the session latches failed. B083 tracks two options:
+give recycle reconnects a longer deadline, or skip a recycle while the slot is contested.
+SIGTERM/SIGINT cleanup is bounded by `E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS`; a second signal
+forwards immediately. The handler runs only while the asyncio loop is running, so a signal received
+during blocking synchronous work waits until the loop can dispatch it.
+
+### Per-role browser state
+
+Storage state is explicit and per role:
+
+| Fixture/context | Storage loaded |
+|---|---|
+| `admin_browser`, and the back-compat `browser` alias | `admin_auth_state.json` |
+| `user_browser` | `user_auth_state.json` |
+| `anon_browser` | none |
+| `browser_session("admin"|"user"|"anonymous")` | the named role, or none for anonymous |
+
+State files are created after a successful role login and live under the throwaway session work dir,
+never in the repository. A context for a role whose file does not exist yet starts empty (the file is
+never handed to Playwright, which would raise `FileNotFoundError`); the login helpers then log in and
+write it. Every fresh login rewrites the role's file (a test may have invalidated the old session);
+a cached login that is still valid reuses it unchanged. Login is therefore normally done once per role
+per session, while admin and user cookies cannot contaminate each other. Public pages, login forms, registration, and
+forgot-password tests use an explicit anonymous context; cookie clearing is a symptom, not the
+isolation mechanism. `ParallelSessionManager` still creates multiple independent contexts on the
+shared browser and selects the admin/user cache only for the matching session persona.
+
+### Browser operation redaction
+
+`Browser.fill`, `Browser.select`, and `Browser.evaluate` never place typed values, selected values, or
+evaluated code in `ToolError.payload`; they record lengths/type and a redacted operation message.
+`Browser.goto` masks one-time URL tokens on timeout and other navigation errors; the `request_*`
+helpers and `verify_status` mask tokens in errors (the segment after `/verify/`, `/reset/`,
+`/reset-password/`, `/invite/`) and secret-named query values and request params, in both the payload
+and the Playwright message. Tests and workflow helpers use `logging`,
+never `print`, and do not log passwords, tokens, 2FA or verification codes, invite/reset links, or full
+session cookies. The unit lane enforces the `ToolError` redaction and a source guard over `print(...)`
+and logger calls, plus f-string `raise`, `assert`, and `pytest.fail` messages in every `ui_tests/`
+Python file. It flags secret-named variables and attributes such as `settings.admin_password`; only
+length, truthiness, or type metadata may be logged or included in a failure message. The guard runs
+without a browser.
+
 ```bash
 # cockpit env, in this order: .env.services runs `ciu resolve`, which needs the layers before it
 eval "$(ciu env print)"
