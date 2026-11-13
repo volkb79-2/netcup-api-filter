@@ -66,10 +66,12 @@ ciu up --profile full            # mocks + pwmcp + app + gate + PowerDNS
 Each checkout owns a stable ciu `INSTANCE_ID`. Container and Compose names are
 `naf-<INSTANCE_ID>-*`; the app frontend is `naf-<INSTANCE_ID>.<PUBLIC_FQDN>` and the
 PowerDNS API is `naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>`. A linked worktree does not
-share the main checkout's gitignored env files: load the guard environment and the
-non-secret per-stack inputs (for example `tooling/mailpit/.env`) directly from the
-canonical checkout in the shell, or copy only non-secret files. Never copy the guard
-hash, generated instance identity, or secret store between checkouts.
+share the main checkout's gitignored env files: load the guard environment and any
+non-secret per-stack inputs that the stack documents directly from the canonical
+checkout in the shell, or copy only non-secret files. Mailpit's webroot and message
+size are committed stack defaults, so they do not come from `tooling/mailpit/.env`.
+Never copy the guard hash, generated instance identity, or secret store between
+checkouts.
 
 `.env.services` asks `ciu resolve --json --profile full` for each service's exact
 container identity (it needs the env loaded in the order above: `ciu env print`,

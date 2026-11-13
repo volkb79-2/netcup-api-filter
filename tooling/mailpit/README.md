@@ -24,9 +24,12 @@ ciu down --dir tooling/mailpit
 
 ## Access
 
-- **Web UI**: http://localhost:8025
+- **Web UI**: `$MAILPIT_URL/` (from `.env.services`; its path comes from `mailpit.web_root`)
 - **SMTP**: `naf-<INSTANCE_ID>-mailpit:1025` from peers on the checkout network
-- **API**: `http://naf-<INSTANCE_ID>-mailpit:8025/mailpit/api/v1`
+- **API**: `$MAILPIT_API_URL` (from `.env.services`)
+
+Source `.env.services` after the checkout's CIU environment is initialized; it resolves
+these URLs from the container identity and the stack's configured webroot.
 
 ## Authentication
 
@@ -35,15 +38,18 @@ runs without auth and test processes need no credentials. Never publish it.
 
 ## Configuration
 
-Stack-local settings:
+Stack-owned settings in `ciu.defaults.toml.j2`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAILPIT_WEB_PORT` | `8025` | Web UI/API port |
-| `MAILPIT_SMTP_PORT` | `1025` | SMTP port |
-| `DOCKER_NETWORK_INTERNAL` | checkout network | Generated per-checkout ciu network identity |
-| `MAILPIT_MAX_MESSAGE_SIZE` | `10485760` | Max email size (10MB) |
-| `MAILPIT_VERBOSE` | `false` | Enable verbose logging |
+| Config key | Default | Description |
+|------------|---------|-------------|
+| `mailpit.web_port` | `8025` | Internal web UI/API port |
+| `mailpit.smtp_port` | `1025` | Internal SMTP port |
+| `mailpit.web_root` | Set in `ciu.defaults.toml.j2` | UI/API path prefix used by Compose, its healthcheck, and `.env.services` |
+| `mailpit.max_message_size` | `10485760` | Maximum email size in bytes (10 MiB), rendered as `MP_MAX_MESSAGE_SIZE` |
+
+The stack renders `mailpit.web_root` as `MP_WEBROOT`; neither the webroot nor the
+message-size limit needs to be exported by the caller. `MAILPIT_VERBOSE` remains an
+optional Compose environment override and defaults to `false`.
 
 ## Usage Examples
 
@@ -68,14 +74,14 @@ with smtplib.SMTP('localhost', 1025) as smtp:
 ### View via API
 
 ```bash
-# List all messages (with auth)
-curl -u admin:MailpitDev123 http://localhost:8025/api/v1/messages
+# List all messages
+curl "$MAILPIT_API_URL/messages"
 
 # Get specific message
-curl -u admin:MailpitDev123 http://localhost:8025/api/v1/message/{id}
+curl "$MAILPIT_API_URL/message/{id}"
 
 # Delete all messages
-curl -u admin:MailpitDev123 -X DELETE http://localhost:8025/api/v1/messages
+curl -X DELETE "$MAILPIT_API_URL/messages"
 ```
 
 ### Python Client
@@ -83,11 +89,8 @@ curl -u admin:MailpitDev123 -X DELETE http://localhost:8025/api/v1/messages
 ```python
 from ui_tests.mailpit_client import MailpitClient
 
-# Connect with auth
-mailpit = MailpitClient(
-    base_url="http://localhost:8025",
-    auth=("admin", "MailpitDev123")
-)
+# Connect using the URL resolved by `.env.services`
+mailpit = MailpitClient()
 
 # Wait for specific email
 msg = mailpit.wait_for_message(
@@ -133,14 +136,11 @@ docker logs naf-<INSTANCE_ID>-mailpit
 # published host port.
 ```
 
-### Authentication fails
+### Web UI returns 404
 
 ```bash
-# Verify credentials in .env
-cat .env | grep MAILPIT
-
-# Restart after changing credentials
-docker restart naf-<INSTANCE_ID>-mailpit
+# Confirm the configured path is shared by Mailpit and its healthcheck.
+rg -n 'web_root|MP_WEBROOT|healthcheck' tooling/mailpit/ciu.defaults.toml.j2 tooling/mailpit/ciu.compose.yml.j2
 ```
 
 ### SMTP connection refused

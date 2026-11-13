@@ -86,7 +86,7 @@ items:
   - {id: B082, title: "netcup config page: 'Test connection' posts a field the handler ignores", type: bugfix, component: admin-ui, context_estimate: small}
   - {id: B083, title: "pwmcp planned recycle can lose the released slot before reconnect", type: bugfix, component: test-infra, context_estimate: small}
   - {id: B090, title: "app-local seed-domain hook crashes when a delegated zone is set: its config has no backend_powerdns section", type: bugfix, component: infra, context_estimate: small}
-  - {id: B091, title: "mailpit compose needs MAILPIT_MAX_MESSAGE_SIZE and MAILPIT_WEBROOT from the shell; no repo file defines them", type: bugfix, component: infra, context_estimate: small}
+  - {id: B091, title: "Mailpit webroot and message-size defaults come from stack config", type: bugfix, component: infra, context_estimate: small}
   - {id: B092, title: "PROXY-CALIBRATE: measure the proxy chain after extract and set trusted hops (Passenger default 0 first)", type: feature, component: deploy, context_estimate: medium}
   - {id: B093, title: "Switch the PowerDNS backend to the 5.1 series (pdns-auth-51) via cmru versions", type: feature, component: infra, context_estimate: medium}
 ---
@@ -496,15 +496,12 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   and the backend-powerdns stack contract, add a test that runs the hook with a zone set and a fake context,
   and prove it once with the long-lived backend-powerdns stack (WP5).
 
-- **B091 — mailpit compose needs `MAILPIT_MAX_MESSAGE_SIZE` and `MAILPIT_WEBROOT` from the shell. Status: open**
-  `tooling/mailpit/ciu.compose.yml.j2` requires `${MAILPIT_MAX_MESSAGE_SIZE:?...}` and reads
-  `MP_WEBROOT: ${MAILPIT_WEBROOT:-}` (default empty), while the healthcheck, `tooling/ciu_resolve_env.py` and the tests
-  all expect the webroot `/mailpit`; no committed file sets either value (README documents 10485760). They only worked
-  because the old dev shell exported them. At the WP4b-1 cutover a clean shell left Mailpit unhealthy (empty webroot:
-  56 e2e failures from Mailpit 404/405) or unable to start (message size missing). Put both values in
-  `tooling/mailpit/ciu.defaults.toml.j2` (config-driven, convention 1), render them into the compose file, derive the
-  healthcheck URL and the resolve helper's base from the same value, and add a test that fails when the template
-  reintroduces an environment-only input.
+- **B091 — Mailpit webroot and message size are stack-owned. Status: done (`mailpit-config`)**
+  `tooling/mailpit/ciu.defaults.toml.j2` now owns `web_root` and `max_message_size`; Compose renders both values,
+  and its healthcheck uses the same `web_root`. `tooling/ciu_resolve_env.py` reads the configured web port and
+  webroot when deriving `MAILPIT_URL` and `MAILPIT_API_URL`. Static tests reject caller-shell reads, a healthcheck
+  path that differs from `MP_WEBROOT`, and resolver drift from a changed configured webroot. A clean shell no longer
+  needs Mailpit-specific exports for these settings.
 
 - **B092 — PROXY-CALIBRATE. Status: open**
   The webhoster forwarded-header probe (2026-11-13, two hosts) showed no proxy appends `X-Forwarded-For`, the client

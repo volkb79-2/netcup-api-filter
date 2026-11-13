@@ -25,14 +25,17 @@ SERVICES = {
 }
 
 # Container-side ports, equal to each stack's declared default (`ciu resolve`
-# reports no port for these services). tests/test_ciu_identity_contract.py fails
-# when a stack's ciu.defaults.toml.j2 and this table drift apart.
+# reports no port for these services). Mailpit's port and webroot are read
+# together from its stack defaults below.
 PORTS = {
-    "MAILPIT_HOST": 8025,          # tooling/mailpit        mailpit.web_port
     "MOCK_NETCUP_API_HOST": 80,    # tooling/netcup-api-mock netcup_api_mock.port
     "MOCK_GEOIP_HOST": 80,         # tooling/geoip-mock     geoip_mock.port
     "POWERDNS_HOST": 8081,         # tooling/backend-powerdns backend_powerdns.ports.api
 }
+
+MAILPIT_DEFAULTS_PATH = (
+    Path(__file__).resolve().parent / "mailpit" / "ciu.defaults.toml.j2"
+)
 
 # Every variable derived from one identity. A missing identity UNSETS all of them,
 # so a stale export from an earlier shell can never masquerade as current.
@@ -62,6 +65,31 @@ def _container(identities: dict, stack: str, service: str) -> str | None:
     return name if isinstance(name, str) and name else None
 
 
+def _mailpit_web_settings() -> tuple[int, str]:
+    """Read Mailpit's internal HTTP port and URL prefix from its stack config."""
+    try:
+        with MAILPIT_DEFAULTS_PATH.open("rb") as stream:
+            mailpit = tomllib.load(stream)["mailpit"]
+        web_port = mailpit["web_port"]
+        web_root = mailpit["web_root"]
+    except (OSError, KeyError, TypeError, tomllib.TOMLDecodeError) as exc:
+        raise ValueError(
+            f"cannot read mailpit.web_port and mailpit.web_root from {MAILPIT_DEFAULTS_PATH}"
+        ) from exc
+
+    if not isinstance(web_port, int) or web_port < 1:
+        raise ValueError("mailpit.web_port must be a positive integer")
+    if (
+        not isinstance(web_root, str)
+        or (web_root and not web_root.startswith("/"))
+        or web_root.endswith("/")
+    ):
+        raise ValueError(
+            "mailpit.web_root must be empty or an absolute path without a trailing slash"
+        )
+    return web_port, web_root
+
+
 def build_assignments(
     document: dict, global_config: Path
 ) -> tuple[dict[str, str], list[str]]:
@@ -81,7 +109,8 @@ def build_assignments(
             continue
         values[env_name] = host
     if "MAILPIT_HOST" in values:
-        base = f"http://{values['MAILPIT_HOST']}:{PORTS['MAILPIT_HOST']}/mailpit"
+        web_port, web_root = _mailpit_web_settings()
+        base = f"http://{values['MAILPIT_HOST']}:{web_port}{web_root}"
         values["MAILPIT_URL"] = base
         values["MAILPIT_API_URL"] = f"{base}/api/v1"
     if "MOCK_NETCUP_API_HOST" in values:

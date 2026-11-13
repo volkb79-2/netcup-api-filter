@@ -23,6 +23,10 @@
 
 ### Changed
 
+- **Mailpit HTTP defaults are stack-owned (B091):** `mailpit.web_root` and
+  `mailpit.max_message_size` in `tooling/mailpit/ciu.defaults.toml.j2` render into
+  Compose; the healthcheck and `.env.services` URL resolver use the configured
+  webroot. A caller shell no longer supplies Mailpit's webroot or message-size limit.
 - **Dev stacks have a stable per-checkout identity (B046/WP4b-1)**: every checkout
   renders `deploy.environment_tag = "$INSTANCE_ID"`, so containers, Compose projects,
   Traefik routers/services/middlewares and frontend hostnames are checkout-local. The

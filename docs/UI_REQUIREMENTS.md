@@ -2271,7 +2271,8 @@ Templates provide pre-configured realm settings for common use cases.
 
 ### 11.1 Mock SMTP Server (Mailpit)
 
-**Location:** `tooling/mailpit/` (container `naf-<INSTANCE_ID>-mailpit`, SMTP 1025, API `/mailpit/api/v1`);
+**Location:** `tooling/mailpit/` (container `naf-<INSTANCE_ID>-mailpit`, SMTP 1025);
+the API base is `MAILPIT_API_URL` from `.env.services`, using `mailpit.web_root`;
 test client `ui_tests/mailpit_client.py` and the `mailpit` fixture in `ui_tests/conftest.py`.
 
 The in-process `aiosmtpd` server and its self-tests were removed: Mailpit is the single SMTP mock, it
@@ -2380,11 +2381,8 @@ services:
     
   mailpit:  # Modern MailHog alternative
     image: ghcr.io/axllent/mailpit:v1.33.0
-    ports:
-      - "8025:8025"  # Web UI
-      - "1025:1025"  # SMTP
-    environment:
-      - MP_SMTP_AUTH_ACCEPT_ANY=true
+    # Current stack: tooling/mailpit/ciu.compose.yml.j2
+    # No host ports; peers use the CIU-resolved container on their checkout network.
 ```
 
 ---
@@ -3037,7 +3035,7 @@ class TestAPICredentialProtection:
 | Task | Status | Notes |
 |------|--------|-------|
 | **P9.4.1** Mock services docker-compose | ✅ | `tooling/mock-services/docker-compose.yml` |
-| **P9.4.2** Mailpit SMTP testing | ✅ | `http://mailpit:8025`, SMTP on port 1025 |
+| **P9.4.2** Mailpit SMTP testing | ✅ | `MAILPIT_URL` from `.env.services`, SMTP on port 1025 |
 | **P9.4.3** Mailpit pytest fixture | ✅ | `mailpit` fixture in `conftest.py` |
 | **P9.4.4** Mailpit client library | ✅ | `ui_tests/mailpit_client.py` |
 | **P9.4.5** Mock GeoIP server | ✅ | `http://mock-geoip:5556` |
@@ -3118,7 +3116,7 @@ GEOIP_CACHE_SIZE=1000    # Max cached entries
 - Requires email config in admin settings
 
 **Mock testing:**
-- Mailpit available at `http://mailpit:8025` (start with `tooling/mock-services/start.sh`)
+- Mailpit available at the resolved `MAILPIT_URL` (start with `ciu up --dir tooling/mailpit`)
 - `ui_tests/mailpit_client.py` for programmatic access
 - `mailpit` pytest fixture in `conftest.py`
 

@@ -11,8 +11,8 @@ Configuration:
     Access via the checkout's container name on the instance network. The name
     is per checkout (`naf-<INSTANCE_ID>-mailpit`) and comes from
     `ciu resolve --json` through `.env.services`, never from a literal here:
-        - MAILPIT_URL:     http://<container>:8025/mailpit
-        - MAILPIT_API_URL: http://<container>:8025/mailpit/api/v1
+        - MAILPIT_URL:     resolved base URL, including mailpit.web_root
+        - MAILPIT_API_URL: MAILPIT_URL plus /api/v1
         - SMTP:            MAILPIT_HOST:1025
     
     Authentication:
@@ -429,7 +429,7 @@ def test_mailpit_client() -> None:
     """Test the Mailpit client.
     
     Requires Mailpit to be running:
-        cd tooling/mailpit && docker compose up -d
+        ciu up --dir tooling/mailpit
     """
     import smtplib
     from email.mime.multipart import MIMEMultipart
