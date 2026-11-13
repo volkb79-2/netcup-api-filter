@@ -145,7 +145,7 @@ See `tooling/backend-powerdns/README.md` for complete documentation.
 - `docs/README.md` – Overview of the documentation hub.
 - `docs/FEATURES.md` – Canonical capability + roadmap map.
 - `docs/SECURITY.md` – Security posture, and an honest list of known gaps.
-- `docs/CONFIGURATION_GUIDE.md` – How configuration, secrets, and fail-fast policies work.
+- `docs/CONFIGURATION_GUIDE.md` – Environment-file ownership, readers, tracked examples, and runtime configuration behavior.
 - `docs/DEPLOYMENT_WORKFLOW.md` – Day-to-day runbook for building, testing, and deploying.
 - `docs/ADMIN_GUIDE.md` – Admin UI walkthrough (user-oriented doc retained as-is).
 - `CLIENT_TEMPLATES.md` – Realm presets available to client token holders.
@@ -163,7 +163,7 @@ Historical summaries (`ITERATION_SUMMARY.md`, `LOCAL_DEPLOYMENT_SUMMARY.md`, etc
 Client token → Access policies → Netcup API Filter → Netcup DNS API
 ```
 
-The proxy runs as a Flask app (WSGI via Passenger on webhosting, Gunicorn for local validation) with SQLite as the default persistence layer. All configuration flows through environment variables seeded from `.env.defaults` and finalized in the database via the admin UI.
+The proxy runs as a Flask app (WSGI via Passenger on webhosting, Gunicorn for local validation) with SQLite as the default persistence layer. Configuration sources are consumer-specific; see `docs/CONFIGURATION_GUIDE.md` for environment-file ownership and the runtime settings model.
 
 ## Upgrading an Existing Deployment (Database Migrations)
 
@@ -227,7 +227,7 @@ See `docs/TESTING_INFRASTRUCTURE.md` for full suite details and CI job configura
 
 ## Security Expectations
 
-- Everything is config-driven; add new settings only through `.env.defaults` + overrides.
+- Add each setting to the file or database surface that owns it; `.env.defaults` is for repository-wide defaults and build/test fixtures. See `docs/CONFIGURATION_GUIDE.md`.
 - Scripts error out when required variables are missing (fail-fast). Fix the error, export the variable, rerun.
 - The Passenger tarball ships exactly one account: the pre-set admin (documented default in `.env.defaults`, forced to change its password at first login) — no demo data, no test client. The OCI image ships no account at all; its first start needs `NAF_BOOTSTRAP_ADMIN_*` (see `docs/DEPLOYMENT_WORKFLOW.md`). `.env.defaults` itself is never shipped; builds write the runtime-only `app-defaults.env`. Credentials of e2e runs are generated per session in memory; no state file holds a password.
 - Always run behind HTTPS in production; use the bundled TLS proxy workflow for local parity.

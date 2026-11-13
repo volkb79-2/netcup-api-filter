@@ -45,7 +45,7 @@ items:
   - {id: B041, title: "Close R2: survivor files in the lane lists, rerun on the stable commit, triage", type: bugfix, component: tests, context_estimate: small, folds_into: F028}
   - {id: B042, title: "Single source for PowerDNS URLs; PowerDNS API key as a ciu secret", type: bugfix, component: config, context_estimate: medium, folds_into: F028}
   - {id: B043, title: "Trusted-proxy hops setting; no raw X-Forwarded-For reads", type: bugfix, component: api-auth, context_estimate: medium, folds_into: F029}
-  - {id: B044, title: "Webhoster forwarded-headers probe script and runbook", type: feature, component: tooling, context_estimate: small, folds_into: F029}
+  - {id: B044, title: "Webhoster forwarded-headers probe script and runbook (DONE 2026-11-13)", type: feature, component: tooling, context_estimate: small, folds_into: F029}
   - {id: B045, title: "ciu 7.24 spike: profiles, shared infra, shared secrets, ASK_EXTERNAL", type: feature, component: infra, context_estimate: small, folds_into: F028}
   - {id: B046, title: "Identity: INSTANCE_ID in every checkout, derived traefik names, ciu resolve instead of name building", type: feature, component: infra, context_estimate: large, folds_into: F028}
   - {id: B047, title: "Public stacks: OCI release-image frontends, public-dns role, realm-label reaper", type: feature, component: infra, context_estimate: large, folds_into: F028}
@@ -92,6 +92,7 @@ items:
   - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
   - {id: B095, title: "Verify PowerDNS 5.1.5 on a real start: logs, version API, zone and record round trip, health", type: feature, component: infra, context_estimate: small}
   - {id: B097, title: "Handle PowerDNS 5.1 record-content and TTL validation in the app backend", type: bugfix, component: backends, context_estimate: medium}
+  - {id: B096, title: "Resolve catalog-only live-test defaults", type: bugfix, component: config, context_estimate: medium}
 ---
 
 # Backlog
@@ -277,9 +278,11 @@ Opus review); decisions D-008..D-013.
   `POWERDNS_API_KEY` as an empty operator entry. (The key moving to a checkout-local `GEN_LOCAL` secret is B046/B047.)
 - **B043 — Proxy trust (D-013).** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`; ten raw `X-Forwarded-For` reads
   (`api/account.py` 187,356,822,1258,1307,1851,2148,2192; `filter_proxy.py` 505,597); session cookie domain `auto` = `.PUBLIC_FQDN`.
-  `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; tarball keeps 1 until B044/B054.
-- **B044 — Webhoster probe.** Run the existing `test-webspace-php-environment.php` (reports XFF/XFP/REMOTE_ADDR) and the new
-  `test-webspace-forwarded-headers.php` (forged-header verdict) in vbpub scripts; the operator reports the result.
+  `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; the Passenger catalog now inherits the zero-hop source default after B044.
+- **B044 — Webhoster probe. DONE 2026-11-13.** The forwarded-header probe was run plain and with forged markers from two clients
+  against one shared Passenger webhoster. The forged XFF reached the app unchanged as the only chain entry, XFP passed through
+  unchanged while the server reported HTTPS, and REMOTE_ADDR remained the actual client address. This measured deployment
+  supports zero trusted hops; B092 part 1 records the catalog change, while calibration for other hosts remains open.
 - **B045 — ciu spike. DONE 2026-11-11, corrected by the Opus review** (plan section 6).
 - **B046 — Identity.** `environment_tag = "$INSTANCE_ID"` everywhere (CIU-193 open), derived traefik router/service/middleware/
   subdomain, `ciu resolve --json [--live]` instead of name building in `.env.services` and hooks, `.gitignore` ciu entries,
@@ -293,8 +296,10 @@ Opus review); decisions D-008..D-013.
   the branch; release-builder runner readiness moved to WP9 (M4). Awaits re-review, main-checkout cutover and its gate receipt.
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
-- **B048 — Credentials.** Prompt/`ASK_FILE` secrets for SMTP/IMAP/netcup CCP, `.env.live.example`, mounts only into the frontend
-  and a dedicated live runner, applied at first boot only.
+- **B048 — Credentials. Status: part 1 delivered; part 2 remains open.** Part 1 provides the
+  environment-file layout and placeholder `.env.live.example`. Part 2 keeps CIU
+  `ASK_EXTERNAL`/`ASK_FILE` delivery for SMTP/IMAP and netcup CCP credentials open; secrets must be
+  mounted only into the frontend and dedicated live runner, with first-boot behavior verified.
 - **B049 — Deployment-contract suite / `e2e-public`.** Contract suite on the remote target (TLS, cookies, forged headers through
   the edge, https links, guard, app-to-PowerDNS wire, live mail/netcup/DNS), `endpoints.json` manifest, lane preflight with real
   read-only login probes, certificate SAN wait, failure classes, secret scrubbing, per-instance guard credential.
@@ -506,11 +511,13 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   path that differs from `MP_WEBROOT`, and resolver drift from a changed configured webroot. A clean shell no longer
   needs Mailpit-specific exports for these settings.
 
-- **B092 — PROXY-CALIBRATE. Status: open**
-  The webhoster forwarded-header probe (2026-11-13, two hosts) showed no proxy appends `X-Forwarded-For`, the client
-  value arrives unchanged and `X-Forwarded-Proto` is not normalised, so trusted hops = 0 on that host. A release must
-  work on any webhoster: keep the fail-closed default 0 (change the Passenger catalog default from 1 to 0, resolving
-  B044), then add a self-check after extract/activate: the app requests its own public URL with a TEST-NET-3
+- **B092 — PROXY-CALIBRATE. Status: open; part 1 done 2026-11-13**
+  **Part 1 done:** the B044 measurement showed forged `X-Forwarded-For` passed through unchanged and `X-Forwarded-Proto`
+  was not normalised on the measured deployment, supporting zero trusted hops there. The Passenger catalog now inherits
+  `TRUSTED_PROXY_HOPS=0` from `.env.defaults`.
+
+  **Part 2 remains open:** releases must work on other webhosters too, so add a self-check after extract/activate: the app
+  requests its own public URL with a TEST-NET-3
   `X-Forwarded-For` marker and a forged `X-Forwarded-Proto`, reads back what arrives, and proposes hops and scheme
   trust. Auto-apply only an unambiguous positive result, with an audit row and an admin-visible banner; otherwise
   report only; admins can re-run or override in settings. Verify with `/api/myip` plain and forged after the first
@@ -546,3 +553,16 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   Add client-side content normalization/validation or a clear error mapping for those responses, with tests for
   supported record types. **UNVERIFIED:** which exact content/TTL cases return 422 on auth-5.1.5. This follow-up
   does not change the backend in B093.
+
+- **B096 — Resolve catalog-only live-test defaults. Status: open (Low/Medium)**
+  Seventeen `.env.defaults` entries (`DNS_TEST_DOMAIN`, `DNS_TEST_SUBDOMAIN_PREFIX`,
+  `DNS_PROPAGATION_TIMEOUT`, `DNS_PROPAGATION_POLL_INTERVAL`, `DNS_CHECK_SERVERS`, `IMAP_HOST`,
+  `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_USE_TLS`, `IMAP_MAILBOX`, `IMAP_MAILBOXES`,
+  `IMAP_TIMEOUT`, `IMAP_MESSAGE_LOOKBACK`, `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY`, and
+  `MAXMIND_API_URL`) are read directly from `os.environ` by
+  `ui_tests/tests/live/test_live_dns_verification.py`,
+  `ui_tests/tests/live/test_live_email_verification.py`, `ui_tests/workflows.py`, and
+  `src/netcup_api_filter/geoip_service.py` with in-code fallbacks; no catalog loader reads them.
+  Decide whether to remove these catalog entries or migrate the readers to the defaults catalog,
+  then retire the `env-default-overrides` registry and its structural test in
+  `tests/test_env_layout.py`.

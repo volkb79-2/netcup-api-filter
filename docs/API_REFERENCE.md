@@ -268,8 +268,8 @@ Both endpoints support automatic IP detection:
 - Forwarding headers affect the client address only when `TRUSTED_PROXY_HOPS` is set to the measured proxy count (default `0`)
 - Automatically detects IPv4/IPv6 (creates A/AAAA record accordingly)
 
-See [`SECURITY.md`](SECURITY.md) for proxy trust configuration and the Passenger runtime's
-unverified one-hop status quo pending probe B044.
+See [`SECURITY.md`](SECURITY.md) for proxy trust configuration and the Passenger runtime
+catalog's fail-closed default of zero trusted hops.
 
 **Example with IPv6:**
 ```bash
@@ -290,7 +290,11 @@ good 2001:db8::1
 
 **Endpoint:** `GET /api/myip`
 
-**Description:** Returns caller's public IP address (no authentication required).
+**Description:** Returns caller's public IP address (no authentication required). `ip` is the
+middleware-resolved `request.remote_addr`; `headers` echoes the raw, untrusted `X-Forwarded-For` and
+`X-Real-IP` request values for diagnosis. With `TRUSTED_PROXY_HOPS=0` (the default) `ip` is the
+direct peer address and forged forwarding headers never change it. The example below shows a
+deployment with a trusted proxy hop configured.
 
 **Example Request:**
 ```bash

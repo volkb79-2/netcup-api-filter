@@ -32,7 +32,7 @@ current status. Handoffs cite it in `source.ref` as provenance only.
 
 ## Configuration
 
-- [`CONFIGURATION_GUIDE.md`](CONFIGURATION_GUIDE.md) — config layers and the `.env.defaults` → env → DB hierarchy.
+- [`CONFIGURATION_GUIDE.md`](CONFIGURATION_GUIDE.md) — single source of truth for environment-file ownership, tracked examples, readers and runtime configuration behavior.
 - [`TOML_CONFIGURATION.md`](TOML_CONFIGURATION.md) — first-start `app-config.toml` seeding (`[[users]]`, `[[backends]]`, `[[domain_roots]]`).
 - [`CONFIGURATION_SEEDING.md`](CONFIGURATION_SEEDING.md) — the one-time TOML import mental model.
 - [`FAIL_FAST_PRINCIPLE.md`](FAIL_FAST_PRINCIPLE.md) — the no-silent-fallback config convention.

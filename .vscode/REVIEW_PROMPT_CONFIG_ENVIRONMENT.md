@@ -70,8 +70,6 @@ assert lifetime == 7200, "Environment override failed"
 - [ ] **Note**: Deployment generates random password, stored in deployment_state_*.json
 
 #### Test Client Credentials
-- [ ] **DEFAULT_TEST_CLIENT_ID**: Test client ID
-- [ ] **DEFAULT_TEST_CLIENT_TOKEN**: Test client token
 - [ ] **DEFAULT_TEST_CLIENT_REALM_***: Realm configuration
 - [ ] **DEFAULT_TEST_CLIENT_RECORD_TYPES**: Allowed record types
 - [ ] **DEFAULT_TEST_CLIENT_OPERATIONS**: Allowed operations

@@ -71,7 +71,11 @@ def test_database_has_no_mock_backend_or_mail_config(staging):
 def test_tree_ships_runtime_catalog_and_no_env_or_state_files(staging):
     names = {p.name for p in staging.rglob("*") if p.is_file()}
     assert SHIPPED_DEFAULTS_FILENAME in names
-    forbidden = {".env", ".env.defaults", ".env.webhosting", ".env.workspace", ".env.services"}
+    forbidden = {
+        ".env", ".env.defaults", ".env.services", ".env.workspace", "ciu.env",
+        ".env.operator", ".env.webhoster", ".env.live", ".env.guard",
+        ".env.operator.example", ".env.webhoster.example", ".env.live.example", ".env.guard.example",
+    }
     assert not (names & forbidden), names & forbidden
     assert not [n for n in names if n.startswith("deployment_state_")]
     assert (staging / "passenger_wsgi.py").is_file()
@@ -82,3 +86,13 @@ def test_shipped_catalog_has_no_admin_password(staging):
     password = require_default("DEFAULT_ADMIN_PASSWORD")
     assert password not in text
     assert "DEFAULT_ADMIN_" not in text
+
+
+def test_shipped_catalog_trusts_no_forwarding_hops(staging):
+    text = (staging / SHIPPED_DEFAULTS_FILENAME).read_text(encoding="utf-8")
+    shipped_values = [
+        line for line in text.splitlines()
+        if line.startswith("TRUSTED_PROXY_HOPS=")
+    ]
+
+    assert shipped_values == ["TRUSTED_PROXY_HOPS=0"]

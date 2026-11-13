@@ -1,376 +1,95 @@
 # Fail-Fast Configuration Principle
 
-## Philosophy
+Missing or invalid required configuration must stop the operation with an actionable error.
+Defaults are allowed when they express a policy choice that is correct without more information;
+they must not silently replace an authoritative fact that exists elsewhere. Derive a value when
+there is a derivation, read it from its source when one exists, and fail otherwise.
 
-This project enforces a **strict fail-fast policy** for configuration management: **NO DEFAULTS, NO FALLBACKS**. Variables must be explicitly set at the top/root level, and scripts fail immediately with clear error messages if required configuration is missing.
+## Shell consumers
 
-## Core Principle
-
-**Bad (Fallback Pattern ❌):**
-```bash
-PORT="${PORT:-8000}"              # Silently uses 8000 if unset
-NETWORK="${NETWORK:-mynetwork}"   # Hides configuration issues
-DATABASE="${DATABASE:-/tmp/db}"   # May work but not as intended
-```
-
-**Good (Fail-Fast Pattern ✅):**
-```bash
-PORT="${PORT:?PORT must be set (check .env.defaults)}"
-NETWORK="${NETWORK:?NETWORK must be set (source .env.workspace)}"
-DATABASE="${DATABASE:?DATABASE must be set}"
-```
-
-## Why Fail-Fast?
-
-### 1. **Explicit Configuration**
-Variables must be intentionally set, preventing "it worked by accident" scenarios.
-
-### 2. **Clear Error Messages**
-When something is missing, you get an immediate, actionable error:
-```bash
-$ run-gate local-build (see run-gate.toml)
-bash: LOCAL_FLASK_PORT: LOCAL_FLASK_PORT not set - check .env.defaults
-```
-
-### 3. **No Silent Failures**
-Fallback defaults can mask configuration issues until production:
-- ❌ `PORT="${PORT:-8000}"` → Silently uses wrong port
-- ✅ `PORT="${PORT:?PORT not set}"` → Fails immediately with clear message
-
-### 4. **Single Source of Truth**
-Configuration has a clear hierarchy with no hidden defaults:
-1. `.env.defaults` - Project-wide defaults (version-controlled)
-2. `.env.workspace` - Environment-specific (auto-generated)
-3. `.env.services` - Service naming (centralized)
-4. `.env` files in tooling/ - Service-specific config
-
-## Implementation Guide
-
-### Shell Scripts
-
-#### Required Variables
+Use required-value expansion for inputs the operation cannot safely invent:
 
 ```bash
-#!/bin/bash
 set -euo pipefail
-
-# Source configuration first
-source "${REPO_ROOT:?REPO_ROOT not set}/.env.workspace"
-
-# Then validate all required variables
-DOCKER_NETWORK="${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set (source .env.workspace)}"
-FLASK_PORT="${LOCAL_FLASK_PORT:?LOCAL_FLASK_PORT not set (check .env.defaults)}"
-PUBLIC_FQDN="${PUBLIC_FQDN:?PUBLIC_FQDN not set (source .env.workspace or rebuild devcontainer)}"
+: "${PORT:?PORT must be provided by the caller}"
+: "${PHYSICAL_REPO_ROOT:?load the generated CIU host facts}"
 ```
 
-#### Error Message Format
-
-Error messages should provide:
-1. **What** is missing
-2. **Where** to set it
-3. **How** to fix it (optional)
+Avoid fallback syntax for required facts:
 
 ```bash
-# Good error messages
-"${VARIABLE:?VARIABLE not set (source .env.workspace)}"
-"${PORT:?PORT not set (check .env.defaults)}"
-"${TOKEN:?TOKEN not set (run: generate-token.sh)}"
-"${DB_PATH:?DB_PATH must be set}"
-
-# Bad error messages
-"${VARIABLE:?missing}"                    # Not helpful
-"${VARIABLE:?VARIABLE not set}"           # No hint
-"${VARIABLE:?provide VARIABLE}"           # Unclear
+PORT="${PORT:-8000}"
+NETWORK="${NETWORK:-some-network}"
 ```
 
-### Docker Compose Files
+Those forms continue with values that may point at the wrong service or host. If a value is
+optional, make the optional behavior explicit and test it.
 
-Docker Compose also supports fail-fast with `${VAR:?error}`:
+## Error messages
+
+A refusal should state what is missing and where the consumer expects it. Do not prescribe an
+operator to type a value that the repository can derive or read from an authoritative source.
+
+```bash
+: "${PWMCP_NETWORK:?export the network_name reported by the estate pwmcp instance}"
+```
+
+Never print a secret while reporting a configuration error. Print the key name or a safe identifier
+only.
+
+## File ownership
+
+The current environment-file roles, load order, writers and readers are listed in
+[`CONFIGURATION_GUIDE.md`](CONFIGURATION_GUIDE.md#environment-file-layout). Source only the file
+required by the workflow. `.env.defaults` is a tracked defaults catalog; `.env.workspace` and
+`ciu.env` are generated facts; `.env.services` derives checkout service identities; and the
+operator-owned `.env.*` files have separate scopes. Root `.env` is an optional local override for
+`.env.defaults` during default loading and build-time database seeding. It is empty by default and
+does not automatically export variables to a shell.
+
+Do not duplicate derived `POWERDNS_API_URL` values in a defaults or deployment-route file:
+`.env.services` derives them from CIU identities and the public topology. The app's `SECRET_KEY`
+is runtime-injected or created once in the database; it has no tracked default.
+
+## Compose consumers
+
+Compose supports required-value checks at render time:
 
 ```yaml
 services:
   app:
-    image: myapp:latest
     environment:
-      - DOCKER_UID=${DOCKER_UID:?DOCKER_UID must be set}
-      - DOCKER_GID=${DOCKER_GID:?DOCKER_GID must be set}
+      - RUN_UID=${RUN_UID:?source the generated CIU environment}
     volumes:
-      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}:/workspace
-    networks:
-      - ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set}
-
-networks:
-  default:
-    name: ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set}
-    external: true
+      - ${PHYSICAL_REPO_ROOT:?source the generated CIU environment}:/workspace
 ```
 
-### Python Configuration
+The remedy must name the source that actually owns the value. Do not hide a missing path, host
+identity or service endpoint behind a guessed fallback.
+
+## Python consumers
+
+For required environment input, validate at the boundary and identify the key without echoing its
+value:
 
 ```python
 import os
 
-# Fail-fast for required environment variables
-def get_required_env(name: str, hint: str = "") -> str:
-    """Get required environment variable or raise clear error."""
-    value = os.environ.get(name)
+
+def required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
     if not value:
-        hint_msg = f" ({hint})" if hint else ""
-        raise EnvironmentError(f"{name} not set{hint_msg}")
+        raise RuntimeError(f"{name} is required")
     return value
-
-# Usage
-DATABASE_PATH = get_required_env("DATABASE_PATH", "check .env.defaults")
-API_KEY = get_required_env("API_KEY", "set in .env or environment")
 ```
 
-## Configuration Hierarchy
+Use `config_defaults.get_default()` or `require_default()` for keys that intentionally use the
+catalog/shipped-default loader. A direct `os.environ` read does not load `.env` files by itself.
 
-### Level 1: Project Defaults (`.env.defaults`)
+## Review checklist
 
-Version-controlled defaults for all environments:
-
-```bash
-# .env.defaults
-export LOCAL_FLASK_PORT="5100"
-export WEBHOSTING_URL="https://naf.vxxu.de"
-export NETCUP_SSH_USER="hosting218629"
-export NETCUP_SSH_HOST="hosting218629.ae98d.netcup.net"
-```
-
-**Scripts must source this first:**
-```bash
-source "${REPO_ROOT}/.env.defaults"
-```
-
-### Level 2: Workspace Environment (`.env.workspace`)
-
-Auto-generated, environment-specific values:
-
-```bash
-# .env.workspace (generated by post-create.sh)
-export REPO_ROOT="/workspaces/netcup-api-filter"
-export PHYSICAL_REPO_ROOT="/home/vb/volkb79-2/netcup-api-filter"
-export DOCKER_NETWORK_INTERNAL="<checkout-instance-network>"
-export PUBLIC_FQDN="gstammtisch.dchive.de"
-```
-
-**Scripts should source this after .env.defaults:**
-```bash
-source "${REPO_ROOT}/.env.workspace"
-```
-
-### Level 3: Service Names (`.env.services`)
-
-Centralized service identities resolved by ciu:
-
-```bash
-# .env.services derives these from `ciu resolve --json` and mailpit.web_root
-source .env.services
-curl "$MAILPIT_API_URL/messages"
-```
-
-### Level 4: Service-Specific Config
-
-Each service has its own `.env` in `tooling/{service}/`:
-
-```bash
-# Host-edge ingress is configured by ciu templates. Exposed stacks join
-# ingress_public and carry Traefik labels; TLS/certificates are not naf config.
-```
-
-## Migration Checklist
-
-When converting existing code to fail-fast:
-
-- [ ] Identify all `${VAR:-default}` patterns
-- [ ] Determine where variable SHOULD be set (which config file)
-- [ ] Replace with `${VAR:?VAR not set (hint where to set it)}`
-- [ ] Test that script fails gracefully with clear error
-- [ ] Update top-level config file with required variable
-- [ ] Verify fix: script should now work after sourcing config
-- [ ] Document the configuration requirement
-
-## Example Conversion
-
-### Before (Fallback Pattern)
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-# Fallbacks hide configuration issues
-FLASK_PORT="${FLASK_PORT:-5100}"
-DB_PATH="${DB_PATH:-/tmp/default.db}"
-NETWORK="${NETWORK:-mynetwork}"
-
-# Script continues with potentially wrong values
-flask run --port "$FLASK_PORT"
-```
-
-**Problems:**
-- May use wrong port without noticing
-- Database might end up in /tmp instead of proper location
-- Network name might not match other services
-
-### After (Fail-Fast Pattern)
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-# Load configuration hierarchy
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export REPO_ROOT="${REPO_ROOT:?REPO_ROOT not set}"
-
-# Source configuration files
-source "${REPO_ROOT}/.env.defaults"
-source "${REPO_ROOT}/.env.workspace"
-
-# Validate all required variables
-FLASK_PORT="${LOCAL_FLASK_PORT:?LOCAL_FLASK_PORT not set (check .env.defaults)}"
-DB_PATH="${DATABASE_PATH:?DATABASE_PATH not set (check .env.defaults)}"
-NETWORK="${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL not set (source .env.workspace)}"
-
-# Now safe to use - guaranteed to be set correctly
-flask run --port "$FLASK_PORT"
-```
-
-## Testing Fail-Fast Behavior
-
-### Positive Test (Should Succeed)
-
-```bash
-# Ensure all config is loaded
-source .env.defaults
-source .env.workspace
-source .env.services
-
-# Script should work
-run-gate local-build (see run-gate.toml)
-```
-
-### Negative Test (Should Fail with Clear Error)
-
-```bash
-# Unset a required variable
-unset LOCAL_FLASK_PORT
-
-# Script should fail immediately with helpful error
-run-gate local-build (see run-gate.toml)
-# Expected: bash: LOCAL_FLASK_PORT: LOCAL_FLASK_PORT not set - check .env.defaults
-```
-
-## Common Patterns
-
-### Pattern 1: Script Startup
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-# Establish workspace root (only acceptable fallback)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export REPO_ROOT="${SCRIPT_DIR}"
-
-# Load configuration hierarchy (fail if missing)
-if [[ -f "${REPO_ROOT}/.env.defaults" ]]; then
-    source "${REPO_ROOT}/.env.defaults"
-else
-    echo "ERROR: .env.defaults not found" >&2
-    exit 1
-fi
-
-if [[ -f "${REPO_ROOT}/.env.workspace" ]]; then
-    source "${REPO_ROOT}/.env.workspace"
-else
-    echo "ERROR: .env.workspace not found (run post-create.sh)" >&2
-    exit 1
-fi
-
-# Now validate required variables
-REQUIRED_VAR="${REQUIRED_VAR:?REQUIRED_VAR not set (check .env.defaults)}"
-```
-
-### Pattern 2: Docker Compose Service
-
-```yaml
-version: '3.8'
-
-services:
-  app:
-    image: myapp:latest
-    container_name: ${SERVICE_NAME:?SERVICE_NAME must be set (source .env.services)}
-    environment:
-      - DATABASE_PATH=${DATABASE_PATH:?DATABASE_PATH must be set}
-      - API_KEY=${API_KEY:?API_KEY must be set}
-    volumes:
-      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}:/workspace
-    networks:
-      - app-network
-
-networks:
-  app-network:
-    name: ${DOCKER_NETWORK_INTERNAL:?DOCKER_NETWORK_INTERNAL must be set (source .env.workspace)}
-    external: true
-```
-
-### Pattern 3: Function Arguments
-
-```bash
-deploy_to_target() {
-    local target="${1:?target required (local|webhosting)}"
-    local mode="${2:?mode required (mock|live)}"
-    
-    # Function fails immediately if arguments missing
-    echo "Deploying to $target in $mode mode"
-}
-
-# Usage
-deploy_to_target "$DEPLOYMENT_TARGET" "$DEPLOYMENT_MODE"
-```
-
-## Exceptions (Rare)
-
-The ONLY acceptable use of fallback `:-` syntax:
-
-### 1. User-Facing Optional Flags
-
-```bash
-# Optional features that default to off
-SKIP_TESTS="${SKIP_TESTS:-false}"
-VERBOSE="${VERBOSE:-false}"
-DRY_RUN="${DRY_RUN:-false}"
-```
-
-### 2. Backward Compatibility (Temporary)
-
-```bash
-# Legacy support (document removal timeline)
-# TODO: Remove by 2025-12-31
-OLD_VAR="${NEW_VAR:-${OLD_VAR}}"
-```
-
-### 3. Progressive Enhancement
-
-```bash
-# Feature available but not required
-ENABLE_FEATURE_X="${ENABLE_FEATURE_X:-false}"
-```
-
-## Benefits Summary
-
-1. **Configuration errors caught early** - At script start, not deep in execution
-2. **Clear error messages** - Know exactly what's missing and where to fix it
-3. **No silent failures** - Wrong configuration = immediate failure
-4. **Explicit dependencies** - Variables must be intentionally set
-5. **Easier debugging** - No hunting for where defaults come from
-6. **Safer deployments** - Production won't silently use development defaults
-7. **Better documentation** - Error messages document configuration requirements
-
-## See Also
-
-- [Configuration Guide](CONFIGURATION_GUIDE.md) - Complete configuration system
-- [Environment Files](ENV_WORKSPACE.md) - `.env.workspace` documentation  
-- [Deployment Workflow](DEPLOYMENT_WORKFLOW.md) - How config flows through deployment
-- [Service Naming](.env.services) - Centralized service name registry
+- Does absence fail loudly when the value is required?
+- Is the value derived or read from its owner before asking a person to supply it?
+- Does the error point to the real source and avoid exposing the value?
+- Does a test show that a broken or missing value is rejected?
+- Are file ownership and reader claims current in the configuration guide?

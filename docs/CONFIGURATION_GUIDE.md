@@ -1,112 +1,175 @@
 # Configuration Guide
 
-> Core reference for configuration, secrets, and environment preparation. Lives in `/docs` alongside `OPERATIONS_GUIDE.md`, `ADMIN_GUIDE.md`, and `CLIENT_USAGE.md`.
+This guide is the single source of truth for the repository's environment-file layout. It records
+each file's owner, reader, scope and content boundary. Runtime setting precedence remains
+consumer-specific: inspect the named reader instead of assuming a universal environment/database
+order.
 
-## Core Principles
+## Environment-file layout
 
-- **100% config-driven** – No hardcoded defaults anywhere in the codebase. Every runtime decision must originate from `.env.defaults`, an environment override, or data in the database (set via the admin UI).
-- **Fail fast** – Missing configuration stops scripts immediately. We never fall back silently; every required variable must be exported explicitly.
-- **Single source of truth** – `.env.defaults` is version-controlled and documents every supported variable plus sensible defaults for local work. Each environment overrides values via its own `.env.*` file (not committed) or through the admin UI after bootstrap.
+| File | Role | Tracked? | Who writes it | Who reads it | What must never be in it |
+|---|---|---|---|---|---|
+| `.env.defaults` | Policy defaults, local test fixtures and the Passenger build seed | Yes | naf maintainers | `src/netcup_api_filter/config_defaults.py`, `bootstrap/admin.py`, and `build_deployment.py` during database seeding | Operator host facts or real provider credentials |
+| `.env.services` | Shell resolver for service URLs and checkout-local service identities | Yes | naf maintainers | Sourced by shell workflows; calls `ciu resolve --json` and `tooling/ciu_resolve_env.py`; its exports are read by `build_deployment.py`, `bootstrap/platform_backends.py`, `ui_tests/workflows.py`, and `ui_tests/tests/live/test_live_dns_verification.py` | Hand-entered URLs, service names or credential values |
+| `.env.workspace` | Generated devcontainer facts: `ENV_TYPE`, `USER_*`, `DOCKER_GID`, `REPO_ROOT`, `PHYSICAL_REPO_ROOT`, `DOCKER_NETWORK_INTERNAL`, `DEVCONTAINER_NAME` (no `PUBLIC_FQDN`/`PUBLIC_IP`: those are in `ciu.env`) | No | `.devcontainer/finalize.post.d/10-netcup-setup.sh` | `.vscode/ensure-mcp-connection.sh` and the manual `source` steps in `tooling/*/README.md`; CIU does not read it (its render context uses `ciu.env`, see `ciu.global.defaults.toml.j2` `workspace_env_file`) | Credentials or hand-maintained overrides |
+| `ciu.env` | Generated CIU identity and machine facts, including `PUBLIC_IP` and `PUBLIC_FQDN` | No | `ciu env generate` (`ciu env print` only prints it for `eval`) | CIU Compose templates, including `tooling/test-runner/ciu.compose.yml.j2` and `tooling/app-local/ciu.compose.yml.j2` | Hand-edited values or credentials outside CIU's secret mechanism |
+| `.env.operator` | Operator-supplied local infrastructure facts, including the delegated zone | No | Operator | Sourced before CIU; `ciu.global.defaults.toml.j2` consumes `NAF_DELEGATED_DNS_ZONE`, then the PowerDNS/app seed hooks use the rendered fact | `POWERDNS_API_KEY` or guard credentials; CIU generates the PowerDNS key |
+| `.env.webhoster` | Human webhoster URL and SSHFS route | No | Operator | Sourced by the operator; the `sshfs` and `curl` commands below read its keys. `.ciu.hosts.toml` is a separate CIU deployment input | Netcup CCP, mailbox, app or guard credentials |
+| `.env.live` | Inputs for live mailbox/DNS checks and the on-demand deployed-instance smoke | No | Operator / later CIU secret delivery | No current `run-gate` lane consumes it; its live-test keys are read by `ui_tests/tests/live/*`, app settings by `passenger_wsgi.py` / `geoip_service.py`, and remote smoke keys by `ui_tests/config.py` | Credentials copied into tracked files or the webhoster SSH route |
+| `.env.guard` | Local Traefik basic-auth credentials for human access | No | Operator | the operator sources it in the setup sequence documented in `run-gate.toml`; `ciu.global.defaults.toml.j2` and the `app-local` / PowerDNS Compose templates consume the user/hash; documented human `curl` commands use the user/password | Any tracked credential value or live application login |
+| `.env` | Optional local override layer for `.env.defaults`; absent/empty by default | No | Local developer | `src/netcup_api_filter/config_defaults.py` reads it after `.env.defaults`; `build_deployment.py` uses that loader while seeding and removes it from the artifact | Live-tier credentials, deployment route facts or anything intended to ship |
+| `app-defaults.env` | Generated allowlist of runtime defaults in a built tree | No | `config_defaults.write_shipped_defaults()` called by `build_deployment.py` and `scripts/build_webhosting_tarball.py` | `src/netcup_api_filter/config_defaults.py` | Credential-like values or build/test-only settings |
+| `.env.operator.example` | Placeholder-only template for `.env.operator` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read as `.env.operator` above | Real zones, hosts, accounts or credentials |
+| `.env.webhoster.example` | Placeholder-only template for `.env.webhoster` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read by the documented `sshfs` / `curl` commands | Real hosts, account names or credentials |
+| `.env.live.example` | Placeholder-only template for `.env.live` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read by the live tests and app readers above | Real domains, mailbox/provider credentials or IPs |
+| `.env.guard.example` | Placeholder-only template for `.env.guard` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read by CIU / Compose above | Real basic-auth values or hashes |
 
-See `AGENTS.md` for the rationale enforced by the automation agents.
+The real `.env.operator`, `.env.webhoster`, `.env.live`, `.env.guard`, `.env.workspace`, `ciu.env`
+and root `.env` files are gitignored. The four `*.example` files are tracked and contain only
+empty values or obvious placeholders. To use one, copy it to the corresponding real filename, fill
+that local file, then source the real file when the workflow calls for it:
 
-## Configuration Layers
+```bash
+set -a; . ./.env.live; set +a
+```
 
-1. **`.env.defaults`** – Checked into git. Defines the full catalog of variables with safe defaults for dev/local parity (admin credentials, seeded client, session flags, rate limits, etc.). Never edit these values for environment-specific tweaks—create overrides instead.
-2. **Workspace overrides (`.env.workspace`, `.env.local`, etc.)** – Not committed. Load one of these before running any scripts: `source .env.workspace`. Use these files to supply secrets (Netcup credentials, SMTP values) or to change behavior (hostnames, TLS domains).
-3. **Runtime database settings** – After bootstrap, the admin UI writes to the database: admin password rotation, client scopes, rate-limit policies, SMTP credentials, etc. Database entries win over env files at runtime, so always double-check the admin UI when troubleshooting.
+Sourcing a file only exports its keys into the current shell. `run-gate.toml` `forward_env` does not
+forward the `.env.live` keys (`IMAP_*`, `DNS_*`, `DEPLOYMENT_MODE`, `NETCUP_*`, `MAXMIND_*`, or
+`NAF_E2E_TARGET` / `NAF_REMOTE_*`) into the test runners, and no `run-gate` lane runs
+`ui_tests/tests/live/*` or the remote smoke. The on-demand deployed lane and credential delivery
+remain B048 part 2 / B049. Until that supported workflow exists, `.env.live` is a template for
+explicitly selected test processes, not an input consumed by a current gate.
 
-The precedence for any setting is: `env override > database value > .env.defaults`.
+For the local CIU flow, `run-gate.toml` records the setup sequence: load CIU's generated facts,
+provide `PWMCP_NETWORK`, source `.env.guard`, then source `.env.services`. The exact file need
+depends on the workflow; these files are not a universal source chain.
 
-## Required Variables for Tooling
+### Webhoster route
 
-Scripts intentionally abort unless every variable they rely on is exported. Common ones:
+`.env.webhoster` is for manual SSHFS and URL access. CIU deployment uses `.ciu.hosts.toml` and its
+own declared inputs. `ciu up --host webhoster --thin` pushes the checkout minus the inventory's `bundle_excludes`
+(plus CIU's mandatory `.git`, `.ciu`, `ciu.env`), so every private env file is named there;
+`tests/test_env_layout.py` fails when one is missing. After loading the local route file, the human commands consume its keys:
 
-- Release and webhosting deployment follow the `cmru` and `ciu` workflows in [`DEPLOYMENT_WORKFLOW.md`](DEPLOYMENT_WORKFLOW.md); no env file is shipped or copied to the webhoster except the generated `app-defaults.env`.
-- The e2e suite takes no target or credentials from the environment: it starts its own app per session and provisions random personas (`E2E_*` keys in `.env.defaults`; see [`TESTING_INFRASTRUCTURE.md`](TESTING_INFRASTRUCTURE.md)). Only `PLAYWRIGHT_SERVER_WS` and the mock-service URLs are forwarded by `run-gate.toml`; each app explicitly sets `TRUSTED_PROXY_HOPS=0` and clears `PUBLIC_BASE_URL` for its direct HTTP topology.
-- **Shipped defaults catalog**: `.env.defaults` is never shipped (it holds the documented pre-set admin password and test fixtures). Builds write `app-defaults.env` into every shipped tree instead — an **allowlist**: only the keys in `config_defaults.RUNTIME_DEFAULT_KEYS` (the keys the running app resolves through `get_default`/`require_default`/`load_defaults`), and never a credential-like name (`PASSWORD`, `SECRET`, `TOKEN`, `API_KEY`, …). A new `.env.defaults` key does not ship until it is added there; keys the app reads only from the environment never need to ship. There is no `SECRET_KEY` default anywhere. `config_defaults` reads it first, so `require_default()` keeps working in a deployment; environment variables still override every value. `tests/test_shipped_defaults.py` fails when runtime code reads a key the allowlist lacks, or when a non-runtime/credential key would ship.
-- Host-edge settings are operator infrastructure, not naf application settings. Exposed ciu
-  stacks join `ingress_public` and use Traefik labels; TLS and certificates remain owned by
-  the host edge. See [`DEV_INFRA_SETUP.md`](DEV_INFRA_SETUP.md).
+```bash
+sshfs "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_HOST}:${WEBHOSTING_REMOTE_DIR}" "$WEBHOSTING_MOUNT_POINT"
+curl --fail --output /dev/null "${WEBHOSTING_URL}/admin/login"
+```
 
-When unsure, run the script once—its fail-fast message will identify the missing variable and usually suggest the exact file to source.
+`WEBHOSTING_MOUNT_POINT` is supplied by the caller; it is not a key in the env file.
 
-## Session & Security Settings
+### Keys in `.env.live.example`
 
-Session cookie behavior stays config-driven via env vars:
+The live example's DNS and mailbox keys have readers in the live DNS/email tests; its Netcup/GeoIP
+keys have app readers; and its deployed target keys are read by `ui_tests/config.py` when the
+on-demand remote smoke is selected (also documented in `WEBHOSTING_TESTING_GUIDE.md`).
+`POWERDNS_API_URL` and `POWERDNS_API_URL_INTERNAL` belong to `.env.services`, which derives them;
+neither belongs in `.env.defaults` or `.env.webhoster`. The live DNS lifecycle test also needs
+`POWERDNS_API_KEY`, but that key is intentionally absent from `.env.live.example`: CIU generates a
+checkout-local `GEN_LOCAL` value in `tooling/backend-powerdns/ciu.defaults.toml.j2` and supplies it
+to the backend Compose container and seed hook, not to a pytest process. There is no supported
+tracked manual delivery path today; a person could manually export the generated value into a
+selected test process, but the repository has no lane that does so. The CIU-resolved / `ASK_FILE`
+handoff to a live runner remains B048 part 2 / B049. The app's SMTP host and credentials are
+Settings UI/database values, not environment variables.
 
-- `FLASK_SESSION_COOKIE_SECURE=auto` sets Secure cookies outside `FLASK_ENV=local_test`; it does not inspect forwarded scheme headers.
-- `FLASK_SESSION_COOKIE_HTTPONLY`, `FLASK_SESSION_COOKIE_SAMESITE`, and `FLASK_SESSION_LIFETIME` (seconds) control browser session handling.
-- `FLASK_SESSION_COOKIE_DOMAIN` is empty by default, which makes the session cookie host-only. Set a validated DNS domain explicitly only when sibling hosts must share the cookie; `auto` is not accepted.
-- `TRUSTED_PROXY_HOPS` is a non-negative integer. `0` ignores forwarded headers; `N > 0` trusts the rightmost `N` `X-Forwarded-For` and `X-Forwarded-Proto` values. `X-Forwarded-Host` is never trusted. The repository default is `0`; invalid, empty, and negative values fail startup. The generated Passenger `app-defaults.env` deliberately sets `1` to keep the previous behavior until the webhoster chain is measured by the B044 forwarded-header probe.
-- `PUBLIC_BASE_URL` is empty by default. Set it to an HTTP(S) origin such as `https://app.example.invalid` with no path, query, fragment, or credentials to make all externally generated links use that scheme and host. If unset, existing URL generation remains enabled (request-derived for Flask external URLs and UI examples; configured-base behavior for notifications) and startup warns that an untrusted Host can poison reset, verification, and invite links. `tooling/app-local` builds the value from the configured external subdomain and public FQDN; the per-session e2e app explicitly clears it because it connects directly over HTTP.
-- `ADMIN_LOGIN_LOCKOUT_THRESHOLD` (default `5`) and `ADMIN_LOGIN_LOCKOUT_MINUTES` (default `15`) control the admin login brute-force lockout. They are read at call time (environment first, then `.env.defaults`); a non-integer or `< 1` value raises an error instead of silently defaulting.
-- Timeouts, rate limits, and admin/client credentials all follow the same pattern.
+The keys below also appear in the `.env.defaults` catalog. Their readers (live tests, `geoip_service.py`)
+read `os.environ` with their own in-code fallbacks and do not consult the catalog, so the catalog
+values are documentation of the intended defaults, not values that `.env.live` overrides. The
+structural test checks that every name below still exists in `.env.defaults`:
 
-Whenever you add a new security-relevant constant, update `.env.defaults`, document it in this guide, and use `os.environ[...]` (or equivalent) in code.
+```env-default-overrides
+DNS_TEST_DOMAIN
+DNS_TEST_SUBDOMAIN_PREFIX
+DNS_PROPAGATION_TIMEOUT
+DNS_PROPAGATION_POLL_INTERVAL
+DNS_CHECK_SERVERS
+IMAP_HOST
+IMAP_PORT
+IMAP_USER
+IMAP_PASSWORD
+IMAP_USE_TLS
+IMAP_MAILBOX
+IMAP_MAILBOXES
+IMAP_TIMEOUT
+IMAP_MESSAGE_LOOKBACK
+MAXMIND_ACCOUNT_ID
+MAXMIND_LICENSE_KEY
+MAXMIND_API_URL
+```
 
-## Bootstrap admin, first start and SECRET_KEY
+Reader evidence for the example keys:
 
-Every database is initialized by one idempotent function, `bootstrap.instance.init_instance()`:
-schema + lightweight migrations, enum tables and backend providers, default settings (absent keys
-only), the administrator, and (local stacks only) the Mailpit email config. Its callers differ only
-in where the administrator comes from:
+- `DEPLOYMENT_MODE`, `DNS_TEST_*`, `DNS_PROPAGATION_*` and `DNS_CHECK_SERVERS` are read by
+  `ui_tests/tests/live/test_live_dns_verification.py`.
+- `IMAP_*` values are read by `ui_tests/tests/live/test_live_email_verification.py` and
+  `ui_tests/workflows.py`.
+- `NETCUP_CUSTOMER_ID`, `NETCUP_API_KEY` and `NETCUP_API_PASSWORD` are read by
+  `src/netcup_api_filter/passenger_wsgi.py` (with the database Settings values as fallback).
+- `MAXMIND_*` values are read by `src/netcup_api_filter/geoip_service.py` and the GeoIP admin
+  configuration in `src/netcup_api_filter/api/admin.py`.
+- `NAF_E2E_TARGET`, `NAF_REMOTE_BASE_URL`, `NAF_REMOTE_ADMIN_USERNAME`, and both remote admin
+  password/TOTP value-or-file pairs are read by `ui_tests/config.py`; their on-demand remote smoke
+  setup is described in `docs/WEBHOSTING_TESTING_GUIDE.md`.
+- `NAF_DELEGATED_DNS_ZONE` is consumed by `ciu.global.defaults.toml.j2`; `NAF_GUARD_USER` and
+  `NAF_GUARD_HTPASSWD` are consumed by that template and local Compose guard labels. The documented
+  human `curl` commands read `NAF_GUARD_USER` and `NAF_GUARD_PASSWORD`.
+- `WEBHOSTING_*` values are read by the `sshfs` and `curl` commands above.
 
-| Artifact / caller | Administrator | Notes |
+## Configuration behavior
+
+`config_defaults.load_defaults()` reads `app-defaults.env`, then `.env.defaults`, and overlays
+root `.env`; explicit environment values win at the call sites that consult `get_default()` or
+`require_default()`. Settings stored in the database have their own precedence at consumers such
+as the GeoIP and Netcup integrations. `.env` is not automatically exported into arbitrary shell
+commands.
+
+Builds use `.env.defaults` and optional `.env` while creating the Passenger database, then write
+the allowlisted `app-defaults.env` and remove both source files. A `.env` override is therefore a
+build-time input, not a runtime file shipped to the webhoster. `tests/test_release_artifacts.py`
+checks that sensitive env files do not appear in the resulting tree.
+
+`SECRET_KEY` has runtime readers in `app.py` and `passenger_wsgi.py`, with `SECRET_KEY_FILE` as a
+file-backed option. It belongs nowhere in `.env.defaults` or `.env.webhoster`, and it is not a
+`.env.live` input. If neither runtime source is set, the app creates and persists a key in the
+database; `scripts/activate.py` carries the persisted value across greenfield webhosting releases.
+
+## Session and security settings
+
+- `FLASK_SESSION_COOKIE_SECURE=auto` sets Secure cookies outside `FLASK_ENV=local_test`; it does
+  not inspect forwarded scheme headers.
+- `FLASK_SESSION_COOKIE_HTTPONLY`, `FLASK_SESSION_COOKIE_SAMESITE` and `FLASK_SESSION_LIFETIME`
+  control browser session handling.
+- `FLASK_SESSION_COOKIE_DOMAIN` is empty by default, keeping the session cookie host-only. Set a
+  validated DNS domain only when sibling hosts must share a cookie; `auto` is not accepted.
+- `TRUSTED_PROXY_HOPS` is a non-negative integer. `0` ignores forwarded headers; `N > 0` trusts the rightmost `N` `X-Forwarded-For` and `X-Forwarded-Proto` values. `X-Forwarded-Host` is never trusted. The repository and Passenger `app-defaults.env` defaults are `0`; invalid, empty, and negative values fail startup. Deployments behind a real proxy must explicitly set the measured hop count and verify `GET /api/myip` with plain and forged forwarding-header requests; see [`SECURITY.md`](SECURITY.md).
+- `PUBLIC_BASE_URL` is empty by default. Set an HTTP(S) origin with no path, query, fragment or
+  credentials to make externally generated links use that scheme and host. `tooling/app-local`
+  derives it from the configured public topology; the per-session e2e app clears it for its direct
+  HTTP topology.
+- `ADMIN_LOGIN_LOCKOUT_THRESHOLD` and `ADMIN_LOGIN_LOCKOUT_MINUTES` control admin brute-force
+  lockout. They are read at call time; a non-integer or value below `1` raises an error.
+
+## Bootstrap admin and first start
+
+`bootstrap.instance.init_instance()` owns schema setup, lightweight migrations, default settings,
+administrator creation and (local stack only) Mailpit configuration.
+
+| Caller | Administrator source | Result |
 |---|---|---|
-| Passenger tarball (`cmru release`) | the **pre-set admin** `DEFAULT_ADMIN_USERNAME` / `DEFAULT_ADMIN_PASSWORD` / `DEFAULT_ADMIN_EMAIL` from `.env.defaults`, `must_change_password` | the only account in the tarball. The first login must replace the password (and set the 2FA email). No demo data. |
-| Local golden DB (`run-gate local-build`) | same pre-set admin + Mailpit email config | `deploy-local/netcup_filter.db`; never served, the e2e gate copies it per session |
-| OCI image / any fresh container (first start) | **operator-configured**, no default: `NAF_BOOTSTRAP_ADMIN_USERNAME`, `NAF_BOOTSTRAP_ADMIN_EMAIL` and `NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE` (a mounted secret; `NAF_BOOTSTRAP_ADMIN_PASSWORD` also accepted, not both), or an `[[users]]` entry with `is_admin = true` and an explicit password in `app-config.toml` | created only when the DB has no admin yet; `must_change_password` off (the operator chose the password). Without either source the start **fails** with a message naming these keys. |
-| ciu app stack (`tooling/app-local`) | as the OCI image, with the password a ciu `GEN_LOCAL` secret | its `post_compose` hook runs `python -m netcup_api_filter.bootstrap init` inside the container: creates the admin from the secret on first run only (to rotate it: `ciu clean` the volumes, then `up` fresh); mail config for Mailpit (created once; SMTP changes made in the admin UI are kept). The hook never passes `--enforce-admin`, so a re-run changes no state. It prints the secret's store path, never the value. |
+| Passenger tarball | `DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_PASSWORD` and `DEFAULT_ADMIN_EMAIL` from `.env.defaults` | One pre-set admin with `must_change_password`; first login changes the password |
+| Local golden DB (`run-gate local-build`) | Same pre-set admin plus Mailpit values | `deploy-local/netcup_filter.db`; e2e copies it per session |
+| OCI image / fresh container | `NAF_BOOTSTRAP_ADMIN_*` runtime environment or an `app-config.toml` admin entry | First start fails if no admin source exists; no account is reset on later starts |
+| `tooling/app-local` | CIU `GEN_LOCAL` secret passed to the bootstrap hook | Admin is created once; the hook prints the secret store path, never the value |
 
-A configured bootstrap admin is a **first-start input only**: an initialized database never gets a
-second admin from it, and its password is never reset — except through the explicit operator
-command `python -m netcup_api_filter.bootstrap init --enforce-admin` (not used by any hook). Admin usernames are not bound by the portal's
-self-registration rules (the shipped default is the short `admin`).
+First-start initialization is serialized by `<db>.init.lock`; failures are fatal to startup and
+never rendered to clients. Configured bootstrap passwords must satisfy the product password
+policy.
 
-A new bootstrap admin has no 2FA method. For the shipped tarball admin the forced first-login change
-enables email 2FA when an email is entered there. A **configured** bootstrap admin (env/TOML,
-`must_change_password` off) never passes that page: it logs in without 2FA, the admin dashboard shows
-the "no 2FA" warning banner, and the admin must set up TOTP (admin account security page) — email 2FA
-is not switched on automatically, because a broken SMTP configuration would then lock the only admin
-out. A configured password must satisfy the product password policy (`models.validate_password`:
-length, allowed characters, entropy); a weaker one fails the start with the rule that was violated.
+## Adding configuration
 
-**First start is serialized and fatal on error.** Every process that opens the database
-(gunicorn workers — `preload_app` is off —, Passenger processes, the hook's CLI) runs the
-initializer under an exclusive `flock` on `<db>.init.lock` (`bootstrap/init_lock.py`): exactly one
-initializes a fresh database, the others wait (at most `NAF_INIT_LOCK_TIMEOUT_SECONDS`) and then
-find it initialized. If initialization fails (no bootstrap admin configured, unreadable database,
-lock timeout, an `app-config.toml` that cannot be claimed), `passenger_wsgi` re-raises after
-logging the traceback: under gunicorn the worker fails to boot and the master exits non-zero
-("Worker failed to boot"), so a container stops (or restarts) visibly; Passenger shows its own
-generic error page. No error text is ever rendered into an HTTP response.
-
-**SECRET_KEY** (sessions, CSRF): `SECRET_KEY_FILE` (mounted secret) or `SECRET_KEY` (not both,
-at least 16 characters). Unset, the app creates a random key **once** in `settings.secret_key`
-(`INSERT OR IGNORE`, so all gunicorn workers agree) and reuses it; `scripts/activate.py` carries
-that row across greenfield webhosting releases. There is no published default key.
-
-**Local Mailpit config** (local builds and the app stack only): host from
-`MAILPIT_HOST` (`.env.services`, resolved through `ciu resolve --json`),
-`LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, `LOCAL_MAIL_ADMIN_EMAIL`.
-
-**Local mock Netcup backend** (local/e2e builds only, never the tarball or OCI image): URL from
-`MOCK_NETCUP_API_URL` (environment or `.env.services`; the local build fails without it), credentials
-and timeout from `LOCAL_MOCK_NETCUP_CUSTOMER_ID` / `_API_KEY` / `_API_PASSWORD` / `_TIMEOUT`
-(the mock's public test values; `LOCAL_` keys are never shipped). Stored as `netcup_config`.
-
-Test personas (admin, portal user, read-only client) are **not** seeded into any artifact: the e2e
-gate provisions them per session (see `docs/TESTING_INFRASTRUCTURE.md`).
-
-## Adding New Configuration
-
-When a feature requires new settings:
-
-1. **Define the variable** in `.env.defaults` with a sensible example value and comment.
-2. **Document it** in this guide under an appropriate section (Security, Email, Proxy, etc.).
-3. **Consume it** in code using the `os.environ[...]` helpers (or the existing `config` utilities) and avoid fallbacks—require callers to provide it.
-4. **Expose overrides** where relevant (admin UI fields, deployment scripts, tests) so every environment can set it without editing code.
-5. **Test it** via `run-gate local-build` (HTTP) and `run-gate e2e` (Playwright) to ensure defaults and overrides behave as expected.
-
-Following these steps keeps the entire system consistent with the configuration-driven policy and prevents regressions across deployments.
+Put a new key in the file whose scope owns it. Add a `.env.defaults` entry only when the value is
+a repository-wide policy default or a test/build fixture. Keep operator host facts in
+`.env.operator`, human deploy routes in `.env.webhoster`, live credentials in `.env.live` / CIU
+secret delivery, and basic-auth values in `.env.guard`. Document the reader and failure behavior,
+then add a gate-backed guard when the layout or key registry changes.

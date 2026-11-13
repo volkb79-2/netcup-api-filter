@@ -122,16 +122,22 @@ examples use the request origin, and notification emails keep their existing con
 behavior. Startup warns because reset, verification, and invitation links can use an untrusted
 request Host. The app does not reject request Host values.
 
-`tooling/app-local` states one trusted proxy and builds `PUBLIC_BASE_URL` from its configured
+`tooling/app-local` explicitly sets zero trusted proxy hops and builds `PUBLIC_BASE_URL` from its configured
 external subdomain and CIU's public FQDN. The per-session e2e app connects directly over HTTP, so it
 explicitly sets `TRUSTED_PROXY_HOPS=0` and `PUBLIC_BASE_URL` to empty, using its request-derived
 origin regardless of inherited runner environment values.
 
-The source catalog default for `TRUSTED_PROXY_HOPS` is `0`, but the generated Passenger tarball
-runtime catalog deliberately sets it to `1` to preserve the pre-change behavior. That value is
-**unverified**: it remains the status quo until the operator runs the forwarded-header probe B044.
-Do not describe it as measured. After the probe, set the webhoster runtime value to the measured
-proxy count.
+The Passenger webhosting tarball ships `app-defaults.env` with `TRUSTED_PROXY_HOPS=0`, inherited
+from `.env.defaults`, so no forwarding headers affect the request by default. On 2026-11-13,
+probes from two clients against one shared Passenger webhoster showed forged `X-Forwarded-For`
+arriving unchanged as the only chain entry, `X-Forwarded-Proto` passing through unchanged while
+the server reported HTTPS, and `REMOTE_ADDR` remaining the actual client address. A deployment
+behind a real proxy must set `TRUSTED_PROXY_HOPS` explicitly to the measured count and verify
+`GET /api/myip` with both a plain request and one carrying forged `X-Forwarded-For` and
+`X-Forwarded-Proto` values; confirm the returned `ip` is not changed by the forged values. With
+zero trusted hops behind a real proxy, every client appears under the proxy's address, so per-IP
+rate limits, login lockouts, GeoIP checks, the activity log and the admin IP whitelist all see one
+client; that is why the count must be measured and set, not guessed.
 
 ## Deployment posture
 
@@ -145,6 +151,9 @@ Documented honestly so the doc and code stay in sync:
 
 - **Closing the first-login window of the tarball** (setting the pre-set admin's password from an
   operator-held value at activation) is not implemented.
+- **Self-measuring proxy calibration** for other webhosters (B092 part 2): the Passenger catalog
+  ships zero trusted hops and nothing measures or proposes a hop count at activation; operators
+  set `TRUSTED_PROXY_HOPS` by hand.
 - **TOTP secret encryption at rest**, **password-history reuse checks**, and response
   **`Content-Security-Policy` / `Strict-Transport-Security`** headers.
 - **SCRAM-SHA-256 HTTP authentication for scoped DNS API clients** (B040/F027). Machine

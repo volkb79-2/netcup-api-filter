@@ -28,6 +28,14 @@
   `TEMPLATE_FILES` mechanism, and the zone bootstrap now uses the Authoritative HTTP
   API with explicit SOA/API SOA-EDIT fields. The existing gsqlite3 schema was checked
   against upstream 4.8.5 and 5.1.5 and requires no DDL change.
+- **Environment-file layout (B048 part 1):** `docs/CONFIGURATION_GUIDE.md` now defines file ownership,
+  readers and content boundaries; tracked example templates cover operator, webhoster, live and guard
+  inputs, including the on-demand remote smoke settings. The real files remain ignored, and a structural
+  test checks example syntax, placeholders, ignore coverage and the documented key registries. The
+  unused webhoster URL was removed from `.env.defaults`; root `.env` remains an optional local build
+  override. The webhoster push inventory (`.ciu.hosts.toml` `bundle_excludes`) excludes
+  `.env.operator`, `.env.webhoster` and `.env.live`. The generated PowerDNS API key remains out of the
+  live example until B048 part 2 / B049 provides a runner handoff.
 - **Mailpit HTTP defaults are stack-owned (B091):** `mailpit.web_root` and
   `mailpit.max_message_size_mb` in `tooling/mailpit/ciu.defaults.toml.j2` render into
   Compose; the healthcheck and `.env.services` URL resolver use the configured
@@ -97,7 +105,8 @@
   the `/admin/settings` SMTP quick form omits reply-to, admin email and the notification
   flags, so saving it clears them.
 
-- **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog keeps one unverified hop as the status quo until B044 measures the webhoster chain.
+- **Proxy and public-origin trust is operator-configured**: `TRUSTED_PROXY_HOPS` defaults to `0`, so forwarding headers do not affect client IP or scheme; positive values trust the rightmost configured hops for `X-Forwarded-For` and `X-Forwarded-Proto`, while `X-Forwarded-Host` is never trusted. `PUBLIC_BASE_URL` can pin every externally generated link and account-page API example to a validated origin. Automatic DDNS address parsing normalizes unambiguous IPv4/IPv6-with-port values and rejects malformed values. The e2e app explicitly clears proxy and public-origin settings for its direct HTTP topology. Session cookies are host-only by default. Passenger's generated runtime catalog inherits the zero-hop source default.
+- **Passenger forwarding-header trust fails closed by default**: the generated `app-defaults.env` carries `TRUSTED_PROXY_HOPS=0`. The 2026-11-13 probe against one shared Passenger webhoster found client-supplied `X-Forwarded-For` and `X-Forwarded-Proto` were passed through unchanged while `REMOTE_ADDR` remained the actual client address. Deployments behind a real proxy must set the measured hop count explicitly and verify `/api/myip` with plain and forged requests; B092's self-calibration remains separate work.
 
 - **Fixed (review #15):** the OCI image ran gunicorn as root and had no `.dockerignore` (`.env*`
   and `.ciu/secrets` reached the builder context). It now runs as `naf` (uid/gid 10001) with only

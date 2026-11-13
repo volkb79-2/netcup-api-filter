@@ -140,6 +140,8 @@ celerybeat.pid
 .envrc
 .env.workspace
 !.env.defaults
+!.env.services
+!.env.*.example
 .venv
 env/
 venv/
@@ -299,6 +301,10 @@ ciu.worktree-instance.json
 
 # operator-supplied infra facts (delegated DNS zone, ...) — never commit
 .env.operator
+
+# Operator deployment route and live-tier inputs — never commit
+.env.webhoster
+.env.live
 
 # assay / run-gate lane evidence
 .assay/

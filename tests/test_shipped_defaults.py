@@ -109,16 +109,29 @@ def test_shipped_values_equal_the_catalog_values():
         assert f"{key}={catalog[key]}" in rendered
 
 
-def test_shipped_tarball_keeps_one_unverified_proxy_hop_until_probe_b044():
+def test_shipped_proxy_trust_uses_the_catalog_default_after_b044():
     catalog = config_defaults._parse_env_file(CATALOG)
     rendered = render_shipped_defaults(CATALOG, overrides=SHIPPED_RUNTIME_OVERRIDES)
+    shipped_values = [
+        line for line in rendered.splitlines()
+        if line.startswith("TRUSTED_PROXY_HOPS=")
+    ]
 
     assert catalog["TRUSTED_PROXY_HOPS"] == "0"
-    assert "# status quo, unverified, see B044\nTRUSTED_PROXY_HOPS=1\n" in rendered
+    assert shipped_values == ["TRUSTED_PROXY_HOPS=0"]
+
+
+def test_render_shipped_defaults_keeps_artifact_overrides_general():
+    rendered = render_shipped_defaults(
+        CATALOG,
+        overrides={"ADMIN_RATE_LIMIT": ("7 per minute", "test artifact override")},
+    )
+
+    assert "# test artifact override\nADMIN_RATE_LIMIT=7 per minute\n" in rendered
 
 
 def test_shipped_tree_loads_runtime_defaults_without_env_defaults(tmp_path):
-    write_shipped_defaults(CATALOG, tmp_path)
+    write_shipped_defaults(CATALOG, tmp_path, overrides=SHIPPED_RUNTIME_OVERRIDES)
     loaded = config_defaults._parse_env_file(tmp_path / SHIPPED_DEFAULTS_FILENAME)
     assert loaded["ADMIN_LOGIN_LOCKOUT_THRESHOLD"] == config_defaults._parse_env_file(CATALOG)[
         "ADMIN_LOGIN_LOCKOUT_THRESHOLD"]

@@ -6,7 +6,8 @@ delivered and can be read via IMAP. This provides end-to-end verification
 that the email infrastructure is working correctly.
 
 Prerequisites:
-- IMAP credentials configured in .env (IMAP_HOST, IMAP_USER, IMAP_PASSWORD, etc.)
+- IMAP credentials exported into the environment (IMAP_HOST, IMAP_USER, IMAP_PASSWORD, etc.;
+  template: .env.live.example)
 - SMTP configured in the application (via admin UI or config)
 - A test email account that can receive emails
 

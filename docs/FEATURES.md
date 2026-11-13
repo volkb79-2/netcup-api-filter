@@ -69,10 +69,10 @@ UI, and token-authenticated REST/DDNS APIs, and runs on shared webhosting under 
 ### Security
 Constant-time secret comparisons, bcrypt password/token hashing, scoped audit trail, optional
 GeoIP checks, CSRF on cookie routes, and operator-configured reverse-proxy trust. `TRUSTED_PROXY_HOPS`
-defaults to zero in the source catalog; `PUBLIC_BASE_URL` can pin outbound links to a validated
-public origin; session cookies are host-only unless an explicit cookie domain is configured. The
-Passenger runtime catalog preserves one unverified proxy hop until B044 measures the webhoster
-chain. Full posture and known gaps: [`SECURITY.md`](SECURITY.md).
+defaults to zero in both the source catalog and Passenger runtime catalog; deployments behind a
+proxy must explicitly set the measured hop count. `PUBLIC_BASE_URL` can pin outbound links to a
+validated public origin; session cookies are host-only unless an explicit cookie domain is
+configured. Full posture and known gaps: [`SECURITY.md`](SECURITY.md).
 
 ## Roadmap (planned / not yet implemented)
 

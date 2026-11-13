@@ -1153,8 +1153,8 @@ def seed_delegated_zone_domain_root(
         raise RuntimeError(
             f"Cannot seed delegated-zone domain root for '{zone}': "
             "POWERDNS_API_URL_INTERNAL and POWERDNS_API_KEY must both be "
-            "resolvable (explicit args or environment) — see .env.services / "
-            "POWERDNS_API_KEY in .env. Not invented (D-007)."
+            "resolvable (explicit args or environment); the local API key is "
+            "provided by CIU. Not invented (D-007)."
         )
 
     service = BackendService.query.filter_by(
