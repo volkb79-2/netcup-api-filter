@@ -1019,6 +1019,6 @@ class TestJourney3ComprehensiveStates:
         
         logger.info(f"  Accounts: {len(account_creator.created_accounts) if account_creator else 0}")
         logger.info(f"  Realms: {len(realm_creator.created_realms) if realm_creator else 0}")
-        logger.info(f"  Tokens: {len(token_creator.created_tokens) if token_creator else 0}")
+        logger.info(f"  Tokens: {len(token_creator.created_tokens) if bool(token_creator) else 0}")
         logger.info(f"  Screenshots: {len(journey_state.screenshots)}")
         logger.info("=" * 60 + "\n")

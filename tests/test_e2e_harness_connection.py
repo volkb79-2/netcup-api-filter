@@ -656,11 +656,12 @@ def test_secret_guard_covers_logging_calls_and_attribute_names():
     ]
     clean = _secret_output_calls(
         "logger.info('code length %d', len(code))\n"
+        "logger.info('creator present %s', bool(token_creator))\n"
         "logger.debug('status %s', response.status_code)\n"
         "logger.info('token %s', token_name)\n"
         "other.info(password)\n"
     )
-    assert [names for _line, _kind, names in clean] == [[], [], []]
+    assert [names for _line, _kind, names in clean] == [[], [], [], []]
 
 
 def test_secret_guard_covers_f_string_failure_messages():
