@@ -67,7 +67,7 @@ UI, and token-authenticated REST/DDNS APIs, and runs on shared webhosting under 
 - **Greenfield deploys** (see roadmap): each deploy provisions a fresh, freshly-seeded database.
 
 ### Security
-Constant-time secret comparisons, bcrypt password/token hashing, scoped audit trail, optional
+Constant-time secret comparisons (except the admin email 2FA code, B078), bcrypt password/token hashing, scoped audit trail, optional
 GeoIP checks, CSRF on cookie routes, and operator-configured reverse-proxy trust. `TRUSTED_PROXY_HOPS`
 defaults to zero in both the source catalog and Passenger runtime catalog; deployments behind a
 proxy must explicitly set the measured hop count. `PUBLIC_BASE_URL` can pin outbound links to a

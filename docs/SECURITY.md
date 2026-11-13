@@ -53,7 +53,9 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
 ## Secrets handling
 
 - **Secret comparisons are constant-time** (`hmac.compare_digest`) — e.g. the Telegram bot
-  callback secret. Passwords and tokens use bcrypt.
+  callback secret and the portal 2FA and registration codes. Exception: the admin email 2FA
+  code is still compared with `==` (B078, see the known gaps below). Passwords and tokens use
+  bcrypt.
 - **`SECRET_KEY` and all provider credentials come from configuration**, never hardcoded and
   with no published default: `SECRET_KEY_FILE`/`SECRET_KEY`, else a random key created once,
   race-free, in the database (`docs/CONFIGURATION_GUIDE.md`).
@@ -165,5 +167,11 @@ Documented honestly so the doc and code stay in sync:
 - **Notification preferences** — `notify_new_ip` / `notify_failed_auth` /
   `notify_token_expiring` / `notification_email` are stored by the settings UI but no
   sender reads them.
+- **Open account/admin security defects** (tracked in `nyxloom-trove/4-backlog.md`):
+  disabling 2FA asks for a code but checks only the password (B073); the `/account/settings`
+  delete-account, disable-TOTP and unlink-Telegram forms do nothing, so a user who "unlinks"
+  Telegram keeps receiving codes there (B074); the admin email 2FA code is compared with `==`
+  (B078); failed admin logins create one Settings row per submitted username and log the raw
+  username (B079).
 
 Report a vulnerability privately to the maintainer rather than via a public issue.
