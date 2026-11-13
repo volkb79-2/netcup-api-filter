@@ -59,7 +59,6 @@ the local flow in run-gate.toml (mocks via ciu, then run-gate local-build, run-g
 
 # 3. Access the deployment
 echo "Admin UI:    https://${PUBLIC_FQDN}/admin/login"
-echo "Mailpit:     https://${PUBLIC_FQDN}/mailpit/"
 echo "Credentials: admin / admin (fresh deploy; forced password change)"
 
 # 4. Ship webhosting artifacts separately (only when making a release)

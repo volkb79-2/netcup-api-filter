@@ -8,7 +8,7 @@ Tests the complete user registration journey:
 5. Admin approves account
 6. User can login
 
-Requires: Mailpit container running (tooling/mailpit/docker compose up -d)
+Requires: Mailpit container running (`ciu up --dir tooling/mailpit`)
 
 Run with: pytest ui_tests/tests/test_registration_e2e.py -v
 """

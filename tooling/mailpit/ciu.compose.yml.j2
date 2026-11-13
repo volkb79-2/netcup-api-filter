@@ -34,8 +34,8 @@ services:
       # Disable SMTP auth entirely for simple testing
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
 
-      # Max message size
-      MP_MAX_MESSAGE_SIZE: "${MAILPIT_MAX_MESSAGE_SIZE:?MAILPIT_MAX_MESSAGE_SIZE must be set}"
+      # Stack-owned values; callers do not need to export Mailpit settings.
+      MP_MAX_MESSAGE_SIZE: "{{ mailpit.max_message_size_mb }}"
 
       # UI features
       MP_UI_BIND_ADDR: "0.0.0.0:{{ mailpit.web_port }}"
@@ -44,11 +44,11 @@ services:
       # Verbose logging for debugging
       MP_VERBOSE: "${MAILPIT_VERBOSE:-false}"
 
-      # Webroot for reverse proxy (must match nginx location)
-      MP_WEBROOT: "${MAILPIT_WEBROOT:-}"
+      # The API/UI path is also used by the healthcheck and .env.services resolver.
+      MP_WEBROOT: "{{ mailpit.web_root }}"
     healthcheck:
       # Exit code 0 only if the web UI answers HTTP 200.
-      test: ["CMD", "sh", "-c", "wget -q -O /dev/null -S http://localhost:{{ mailpit.web_port }}/mailpit/ 2>&1 | grep -qE 'HTTP/1.1 200'"]
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null -S http://localhost:{{ mailpit.web_port }}{{ mailpit.web_root }}/ 2>&1 | grep -qE 'HTTP/1.1 200'"]
       interval: 30s
       timeout: 10s
       retries: 3

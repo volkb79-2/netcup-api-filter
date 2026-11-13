@@ -407,12 +407,12 @@ def test_env_services_ports_equal_the_stack_defaults():
         )
 
     assert module.PORTS == {
-        "MAILPIT_HOST": stack("mailpit")["mailpit"]["web_port"],
         "MOCK_NETCUP_API_HOST": stack("netcup-api-mock")["netcup_api_mock"]["port"],
         "MOCK_GEOIP_HOST": stack("geoip-mock")["geoip_mock"]["port"],
         "POWERDNS_HOST": stack("backend-powerdns")["backend_powerdns"]["ports"]["api"],
     }
-    assert set(module.PORTS) == set(module.SERVICES) == set(module.DERIVED)
+    assert set(module.PORTS) == set(module.SERVICES) - {"MAILPIT_HOST"}
+    assert set(module.DERIVED) == set(module.SERVICES)
 
 
 def _common_dir_block() -> tuple[str, str]:

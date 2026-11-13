@@ -4,7 +4,7 @@
 
 Mailpit is a modern SMTP testing server with a web UI for viewing captured emails during development and testing. This document covers its local configuration.
 
-**Container Name**: `naf-mailpit` (as of 2024-12-08, prefixed for easy identification)
+**Container name**: resolved per checkout as `naf-<INSTANCE_ID>-mailpit`.
 
 ---
 
@@ -13,15 +13,15 @@ Mailpit is a modern SMTP testing server with a web UI for viewing captured email
 ### 1. Basic Usage (No Authentication)
 
 ```bash
-# Start Mailpit with mock services
-cd tooling/mock-services
-docker compose up -d
+# Start the ciu-managed Mailpit stack
+ciu up --dir tooling/mailpit
 
-# Access web UI
-open http://localhost:8025
+# Resolve its checkout-local URL
+source .env.services
+echo "$MAILPIT_URL"
 
 # SMTP endpoint (for Flask app)
-# Host: naf-mailpit (or localhost from host)
+# Host: naf-<INSTANCE_ID>-mailpit on the checkout network
 # Port: 1025
 ```
 
@@ -30,9 +30,11 @@ open http://localhost:8025
 ## Access model
 
 Mailpit is an internal test service. It has no public host-edge route or TLS material;
-access its UI/API through its configured local port (normally `http://localhost:8025`) or
-by container name (`http://naf-mailpit:8025`) from the project network. The ciu stack in
+access its UI/API through `MAILPIT_URL` and `MAILPIT_API_URL` from `.env.services`, or
+from a peer using the resolved container identity. The ciu stack in
 [`tooling/mailpit/`](../tooling/mailpit/) is the current operational reference.
+Its URL path prefix is configured once as `mailpit.web_root`; `.env.services` derives
+`MAILPIT_URL` and `MAILPIT_API_URL` from that setting and the resolved container identity.
 
 ---
 
@@ -42,9 +44,10 @@ by container name (`http://naf-mailpit:8025`) from the project network. The ciu 
 |----------|---------|-------------|
 | `MP_UI_BIND_ADDR` | `0.0.0.0:8025` | Web UI listen address |
 | `MP_SMTP_BIND_ADDR` | `0.0.0.0:1025` | SMTP listen address |
-| `MP_SMTP_AUTH_ACCEPT_ANY` | `false` | Accept any SMTP auth credentials |
-| `MP_SMTP_AUTH_ALLOW_INSECURE` | `false` | Allow SMTP auth without TLS |
-| `MP_MAX_MESSAGE_SIZE` | `10485760` | Max email size (bytes, default 10MB) |
+| `MP_SMTP_AUTH_ACCEPT_ANY` | `true` | Accept any SMTP auth credentials for this test service |
+| `MP_SMTP_AUTH_ALLOW_INSECURE` | `true` | Allow SMTP auth without TLS on the internal test network |
+| `MP_MAX_MESSAGE_SIZE` | `mailpit.max_message_size_mb` | Max message size in megabytes (0 = unlimited); configured in the stack defaults |
+| `MP_WEBROOT` | `mailpit.web_root` | UI/API path prefix; configured in the stack defaults |
 | `MP_VERBOSE` | `false` | Enable verbose logging |
 
 See [Mailpit Runtime Options](https://mailpit.axllent.org/docs/configuration/runtime-options/) for complete list.
@@ -56,10 +59,11 @@ See [Mailpit Runtime Options](https://mailpit.axllent.org/docs/configuration/run
 The project includes `MailpitClient` for programmatic email access:
 
 ```python
+import os
 from ui_tests.mailpit_client import MailpitClient
 
-# Connect (uses hostname 'naf-mailpit' or localhost)
-mailpit = MailpitClient(base_url="http://naf-mailpit:8025")
+# Connect using the URL resolved by `.env.services`
+mailpit = MailpitClient(base_url=os.environ["MAILPIT_URL"])
 
 # Wait for specific email
 msg = mailpit.wait_for_message(
@@ -160,28 +164,25 @@ await browser.goto(verify_link)
 
 ### Issue: Mailpit Web UI Not Accessible
 
-**Symptoms**: `http://localhost:8025` times out or connection refused
+**Symptoms**: the resolved `$MAILPIT_URL/` is unreachable or returns an error
 
 **Solutions**:
-1. Verify container is running:
+1. Verify this checkout's container is running:
    ```bash
-   docker ps | grep naf-mailpit
+   docker ps --filter label=ciu.instance="$INSTANCE_ID"
    ```
 
-2. Check port binding:
+2. Check the Mailpit logs:
    ```bash
-   docker port naf-mailpit
-   # Should show: 8025/tcp -> 0.0.0.0:8025
+   docker logs "$MAILPIT_HOST"
    ```
 
-3. Check logs:
-   ```bash
-   docker logs naf-mailpit
-   ```
+3. Confirm `MP_WEBROOT` and the healthcheck both use `mailpit.web_root` from
+   `tooling/mailpit/ciu.defaults.toml.j2`.
 
-4. Test from inside devcontainer:
+4. Test from a peer on the checkout network:
    ```bash
-   curl http://naf-mailpit:8025/api/v1/info
+   curl "$MAILPIT_API_URL/info"
    ```
 
 ### Issue: SMTP Connection Refused
@@ -189,21 +190,17 @@ await browser.goto(verify_link)
 **Symptoms**: Flask app logs `Connection refused` to SMTP server
 
 **Solutions**:
-1. Verify SMTP port:
+1. Test SMTP connection from a peer on the checkout network:
    ```bash
-   docker port naf-mailpit
-   # Should show: 1025/tcp -> 0.0.0.0:1025
-   ```
-
-2. Test SMTP connection:
-   ```bash
-   telnet naf-mailpit 1025
+   telnet "$MAILPIT_HOST" 1025
    # Should connect and show Mailpit SMTP banner
    ```
 
-3. Check Flask SMTP config matches container hostname:
+2. Check Flask SMTP config matches the resolved container hostname:
    ```python
-   SMTP_HOST = "naf-mailpit"  # Not "localhost" or "mailpit"
+   import os
+
+   SMTP_HOST = os.environ["MAILPIT_HOST"]
    SMTP_PORT = 1025
    ```
 
@@ -212,17 +209,9 @@ await browser.goto(verify_link)
 **Symptoms**: Web UI shows stale data, requires manual refresh
 
 **Solutions**:
-1. If behind nginx proxy, ensure WebSocket headers are set:
-   ```nginx
-   proxy_set_header Upgrade $http_upgrade;
-   proxy_set_header Connection "upgrade";
-   ```
-
-2. Check browser console for WebSocket errors
-3. Verify proxy is forwarding WebSocket traffic:
-   ```bash
-   docker logs netcup-api-filter-proxy | grep -i upgrade
-   ```
+1. Check browser console for WebSocket errors.
+2. Confirm the UI is reached through the internal Mailpit service URL; this
+   stack has no public proxy route or published host port.
 
 ---
 
@@ -232,30 +221,30 @@ await browser.goto(verify_link)
 
 ```bash
 # Get all messages
-curl http://naf-mailpit:8025/api/v1/messages
+curl "$MAILPIT_API_URL/messages"
 ```
 
 ### Get Message Content
 
 ```bash
 # Get message by ID
-curl http://naf-mailpit:8025/api/v1/message/{id}
+curl "$MAILPIT_API_URL/message/{id}"
 
 # Get HTML part
-curl http://naf-mailpit:8025/api/v1/message/{id}/html
+curl "$MAILPIT_API_URL/message/{id}/html"
 
 # Get plain text part
-curl http://naf-mailpit:8025/api/v1/message/{id}/text
+curl "$MAILPIT_API_URL/message/{id}/text"
 ```
 
 ### Delete Messages
 
 ```bash
 # Delete single message
-curl -X DELETE http://naf-mailpit:8025/api/v1/message/{id}
+curl -X DELETE "$MAILPIT_API_URL/message/{id}"
 
 # Delete all messages
-curl -X DELETE http://naf-mailpit:8025/api/v1/messages
+curl -X DELETE "$MAILPIT_API_URL/messages"
 ```
 
 ---
@@ -280,8 +269,8 @@ curl -X DELETE http://naf-mailpit:8025/api/v1/messages
 ---
 
 **QUICK REFERENCE**:
-- Web UI: `http://localhost:8025` (or `/mailpit/` via TLS proxy)
-- SMTP: `naf-mailpit:1025`
-- API: `http://naf-mailpit:8025/api/v1`
-- Container: `naf-mailpit`
-- Service name: `mailpit` (in `tooling/mock-services/docker-compose.yml`)
+- Web UI: `$MAILPIT_URL/` (internal-only; path comes from `mailpit.web_root`)
+- SMTP: `$MAILPIT_HOST:1025`
+- API: `$MAILPIT_API_URL`
+- Container: `$MAILPIT_HOST`
+- Service name: `mailpit` (in `tooling/mailpit/ciu.compose.yml.j2`)

@@ -165,9 +165,9 @@ source "${REPO_ROOT}/.env.workspace"
 Centralized service identities resolved by ciu:
 
 ```bash
-# .env.services derives these from `ciu resolve --json`
-export MAILPIT_HOST="naf-<INSTANCE_ID>-mailpit"
-export MAILPIT_API_URL="http://${MAILPIT_HOST}:8025/mailpit/api/v1"
+# .env.services derives these from `ciu resolve --json` and mailpit.web_root
+source .env.services
+curl "$MAILPIT_API_URL/messages"
 ```
 
 ### Level 4: Service-Specific Config
