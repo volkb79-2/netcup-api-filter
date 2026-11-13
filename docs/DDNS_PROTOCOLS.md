@@ -194,7 +194,7 @@ Optionally restrict tokens to specific source IPs:
 
 **Note:** Token IP allow-lists compare the middleware-resolved `request.remote_addr`. Forwarding
 headers affect that address only when the operator sets `TRUSTED_PROXY_HOPS` to the measured
-proxy count; the repository default is zero. See [`SECURITY.md`](SECURITY.md).
+proxy count; the repository and Passenger catalog defaults are zero. See [`SECURITY.md`](SECURITY.md).
 
 ### Auto IP Detection
 

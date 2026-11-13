@@ -236,4 +236,6 @@ plan: `docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`, review: `docs/plans/d
   env, mounted only into the frontend and a dedicated live runner; lane preflight proves them with read-only logins; failure classes.
 - **D-012 frontends run the OCI release image** (non-root, data volume only), never the test-runner image with the repo mounted rw.
 - **D-013 proxy trust:** `TRUSTED_PROXY_HOPS` (default 0), `x_host` never trusted, canonical `PUBLIC_BASE_URL` for emailed links,
-  host-only session cookies, `request.remote_addr` only (static guard test); the tarball keeps 1 hop until the webhoster is measured.
+  host-only session cookies, `request.remote_addr` only (static guard test). The 2026-11-13 forwarded-header probe supports zero
+  trusted hops on the measured shared Passenger webhoster; its tarball catalog inherits the source default of 0. B092's
+  self-calibration for other deployments remains open.

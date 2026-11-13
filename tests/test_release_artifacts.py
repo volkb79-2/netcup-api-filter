@@ -82,3 +82,13 @@ def test_shipped_catalog_has_no_admin_password(staging):
     password = require_default("DEFAULT_ADMIN_PASSWORD")
     assert password not in text
     assert "DEFAULT_ADMIN_" not in text
+
+
+def test_shipped_catalog_trusts_no_forwarding_hops(staging):
+    text = (staging / SHIPPED_DEFAULTS_FILENAME).read_text(encoding="utf-8")
+    shipped_values = [
+        line for line in text.splitlines()
+        if line.startswith("TRUSTED_PROXY_HOPS=")
+    ]
+
+    assert shipped_values == ["TRUSTED_PROXY_HOPS=0"]

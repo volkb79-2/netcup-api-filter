@@ -45,7 +45,7 @@ items:
   - {id: B041, title: "Close R2: survivor files in the lane lists, rerun on the stable commit, triage", type: bugfix, component: tests, context_estimate: small, folds_into: F028}
   - {id: B042, title: "Single source for PowerDNS URLs; PowerDNS API key as a ciu secret", type: bugfix, component: config, context_estimate: medium, folds_into: F028}
   - {id: B043, title: "Trusted-proxy hops setting; no raw X-Forwarded-For reads", type: bugfix, component: api-auth, context_estimate: medium, folds_into: F029}
-  - {id: B044, title: "Webhoster forwarded-headers probe script and runbook", type: feature, component: tooling, context_estimate: small, folds_into: F029}
+  - {id: B044, title: "Webhoster forwarded-headers probe script and runbook (DONE 2026-11-13)", type: feature, component: tooling, context_estimate: small, folds_into: F029}
   - {id: B045, title: "ciu 7.24 spike: profiles, shared infra, shared secrets, ASK_EXTERNAL", type: feature, component: infra, context_estimate: small, folds_into: F028}
   - {id: B046, title: "Identity: INSTANCE_ID in every checkout, derived traefik names, ciu resolve instead of name building", type: feature, component: infra, context_estimate: large, folds_into: F028}
   - {id: B047, title: "Public stacks: OCI release-image frontends, public-dns role, realm-label reaper", type: feature, component: infra, context_estimate: large, folds_into: F028}
@@ -274,9 +274,11 @@ Opus review); decisions D-008..D-013.
   `POWERDNS_API_KEY` as an empty operator entry. (The key moving to a checkout-local `GEN_LOCAL` secret is B046/B047.)
 - **B043 — Proxy trust (D-013).** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`; ten raw `X-Forwarded-For` reads
   (`api/account.py` 187,356,822,1258,1307,1851,2148,2192; `filter_proxy.py` 505,597); session cookie domain `auto` = `.PUBLIC_FQDN`.
-  `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; tarball keeps 1 until B044/B054.
-- **B044 — Webhoster probe.** Run the existing `test-webspace-php-environment.php` (reports XFF/XFP/REMOTE_ADDR) and the new
-  `test-webspace-forwarded-headers.php` (forged-header verdict) in vbpub scripts; the operator reports the result.
+  `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; the Passenger catalog now inherits the zero-hop source default after B044.
+- **B044 — Webhoster probe. DONE 2026-11-13.** The forwarded-header probe was run plain and with forged markers from two clients
+  against one shared Passenger webhoster. The forged XFF reached the app unchanged as the only chain entry, XFP passed through
+  unchanged while the server reported HTTPS, and REMOTE_ADDR remained the actual client address. This measured deployment
+  supports zero trusted hops; B092 part 1 records the catalog change, while calibration for other hosts remains open.
 - **B045 — ciu spike. DONE 2026-11-11, corrected by the Opus review** (plan section 6).
 - **B046 — Identity.** `environment_tag = "$INSTANCE_ID"` everywhere (CIU-193 open), derived traefik router/service/middleware/
   subdomain, `ciu resolve --json [--live]` instead of name building in `.env.services` and hooks, `.gitignore` ciu entries,
@@ -506,11 +508,13 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   healthcheck URL and the resolve helper's base from the same value, and add a test that fails when the template
   reintroduces an environment-only input.
 
-- **B092 — PROXY-CALIBRATE. Status: open**
-  The webhoster forwarded-header probe (2026-11-13, two hosts) showed no proxy appends `X-Forwarded-For`, the client
-  value arrives unchanged and `X-Forwarded-Proto` is not normalised, so trusted hops = 0 on that host. A release must
-  work on any webhoster: keep the fail-closed default 0 (change the Passenger catalog default from 1 to 0, resolving
-  B044), then add a self-check after extract/activate: the app requests its own public URL with a TEST-NET-3
+- **B092 — PROXY-CALIBRATE. Status: open; part 1 done 2026-11-13**
+  **Part 1 done:** the B044 measurement showed forged `X-Forwarded-For` passed through unchanged and `X-Forwarded-Proto`
+  was not normalised on the measured deployment, supporting zero trusted hops there. The Passenger catalog now inherits
+  `TRUSTED_PROXY_HOPS=0` from `.env.defaults`.
+
+  **Part 2 remains open:** releases must work on other webhosters too, so add a self-check after extract/activate: the app
+  requests its own public URL with a TEST-NET-3
   `X-Forwarded-For` marker and a forged `X-Forwarded-Proto`, reads back what arrives, and proposes hops and scheme
   trust. Auto-apply only an unambiguous positive result, with an audit row and an admin-visible banner; otherwise
   report only; admins can re-run or override in settings. Verify with `/api/myip` plain and forged after the first
