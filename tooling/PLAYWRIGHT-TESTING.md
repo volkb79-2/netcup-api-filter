@@ -1,7 +1,7 @@
 # Playwright UI Testing Guide
 
 **Project**: netcup-api-filter  
-**Updated**: 2026-11-12
+**Updated**: 2026-11-13
 
 ---
 
@@ -9,12 +9,12 @@
 
 UI tests live in `ui_tests/tests/` and use Playwright via `ui_tests/playwright_client.py`.
 The browser connection is owned by `ui_tests/pwmcp_connection.py`. One pytest session (one xdist
-worker) starts one Playwright driver and makes one browser connection; each test receives only a
-fresh context and page.
+worker) starts one Playwright driver and reuses a gateway connection within a test file or recycle
+window; each test receives a fresh context and page.
 
 | Mode | When | How |
 |------|------|-----|
-| **pwmcp remote** | gate/e2e, shared Docker stacks | Set `PLAYWRIGHT_SERVER_WS`; the session checks `/contract`, then calls `connect(ws_url)` once with bounded retry and lease headers |
+| **pwmcp remote** | gate/e2e, shared Docker stacks | Set `PLAYWRIGHT_SERVER_WS`; the session checks `/contract`, then connects with bounded retry and short lease headers |
 | **In-process** | isolated manual runs when browser binaries are installed | No `PLAYWRIGHT_SERVER_WS`; the session launches one local browser instead |
 
 Both modes expose the identical `Browser` / `Page` / `page.request` API — tests are
@@ -34,24 +34,28 @@ run-gate local-build --worktree "$PWD"
 run-gate e2e --worktree "$PWD"
 ```
 
-The runner renders `PWMCP_LEASE_SECONDS` and `PWMCP_SESSION_LABEL`; both are required when the remote
-endpoint is set. At session start the harness:
+At session start the harness:
 
 1. GETs `/contract` and checks schema and Playwright major.minor compatibility.
-2. Starts one Playwright driver and connects once with a finite timeout.
-3. Retries only HTTP 503 ("all browser slots are in use") with bounded exponential backoff.
-4. Creates a fresh context/page per test and checks browser liveness between tests.
-5. Between tests, replaces a dead browser with one bounded reconnect (at most
-   `E2E_PWMCP_MAX_RECONNECTS` per session) and renews the lease when less than
-   `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` is left. A failed replacement is latched: every later test
-   fails immediately with the same reason, without connecting again.
-6. Prints `pwmcp connects=<n> reconnects=<n> contexts=<n>` in the terminal summary, plus the
-   reconnect causes or the latched failure when there are any.
+2. Starts one Playwright driver and connects with a finite timeout.
+3. Retries only HTTP 503 ("all browser slots are in use") with bounded exponential backoff under a
+   60-second default deadline (three attempts with the default backoffs).
+4. Creates a fresh context/page per test. Before the next test file, or after
+   `E2E_PWMCP_RECYCLE_INTERVAL_SECONDS`, the harness closes the browser connection and reconnects
+   immediately; a per-test fixture runs this before new contexts open.
+5. Between tests, it replaces a dead browser (at most `E2E_PWMCP_MAX_RECONNECTS` times per session)
+   and renews a lease near expiry. A failed replacement is latched: every later test fails
+   immediately with the same reason, without connecting again.
+6. Session teardown and SIGTERM/SIGINT close the browser connection and stop the driver.
+7. Prints `pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n>` once in the terminal summary,
+   plus reconnect causes or the latched failure when present.
 
 The gateway allows two estate-wide clients. Two concurrent worktrees can therefore run; a third sees
-503 until a slot frees. The browser is idle-recycled only when no websocket session is open. An open
-session also prevents the 30-second idle recycle during slow app-start tests, so no heartbeat is
-required.
+503 until a slot frees. On exhaustion, the error says the slots are busy and gives the
+`naf-e2e:<lane>:<pid-or-xdist-worker>` label to find in the pwmcp admin session list. The browser is
+idle-recycled only when no websocket session is open. An open session prevents the 30-second idle
+recycle during slow app-start tests, so no heartbeat is required. The default 25-minute recycle
+interval plus 5-minute margin requests an 1800-second lease; `/contract` caps it at 7200 seconds.
 
 ### Role-specific storage state
 
@@ -64,14 +68,16 @@ Use an explicit fixture or role:
 | `anon_browser` | no cookies or origin storage |
 | `browser_session("admin"|"user"|"anonymous")` | the named cache, or none |
 
-The admin/user cache files are created after a real login and live in the per-session work dir. Never
-put auth state in the repository. Public/login/registration/forgot-password tests use
+The admin/user cache files are created after a real login and live in the per-session work dir. Each
+fresh login rewrites that role's file; a valid cached login reuses it. Never put auth state in the
+repository. Public/login/registration/forgot-password tests use
 `anon_browser`; do not load admin state and clear cookies afterwards.
 
 Assertion and log payloads must remain shareable: `Browser.fill`/`select` record lengths, not values,
-and `Browser.evaluate` records script length and argument type. Workflow/test diagnostics use
-`logging`, never `print`, and omit passwords, tokens, 2FA or verification codes, invite/reset links,
-and session cookies.
+and `Browser.evaluate` records script length and argument type. Navigation and request failures
+redact one-time URL path tokens and secret-named query values from the payload and Playwright error
+message. Workflow/test diagnostics use `logging`, never `print`, and omit passwords, tokens, 2FA or
+verification codes, invite/reset links, and session cookies.
 
 ---
 
@@ -83,13 +89,16 @@ Install browser binaries once:
 python -m playwright install --with-deps chromium
 ```
 
-Run a narrow test in an environment that actually has the app and test dependencies:
+The project-supported local path uses Run-Gate so the declared runner supplies the dependencies and
+service topology:
 
 ```bash
-python -m pytest ui_tests/tests/smoke -q -p no:cacheprovider -o addopts=
+run-gate local-build --worktree "$PWD"
+run-gate e2e --worktree "$PWD"
 ```
 
-No containers required.
+CI's `e2e-smoke` job uses the in-process mode because it installs the matching browser in its own
+runner; local e2e uses pwmcp.
 
 **Key rules**:
 - Address the service by its **container name** on the shared network (never `localhost`).
@@ -125,14 +134,14 @@ service, set `PLAYWRIGHT_SERVER_WS` as a repo secret/env and remove the
 | Variable | Default | Purpose |
 |---|---|---|
 | `PLAYWRIGHT_SERVER_WS` | _(unset)_ | WebSocket URL of remote `run-server`; empty = in-process |
-| `PWMCP_LEASE_SECONDS` | rendered by runner (`7200`) | Requested gateway lease, capped by `/contract` `max_lease_seconds` |
-| `PWMCP_SESSION_LABEL` | rendered by runner | Gateway admin/log session label |
+| `E2E_PWMCP_LANE_NAME` | `e2e` | Lane component of the `naf-e2e:<lane>:<pid-or-xdist-worker>` admin label |
 | `E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS` | `10` | `/contract` fetch timeout |
 | `E2E_PWMCP_CONNECT_TIMEOUT_SECONDS` | `30` | Per connect-attempt timeout |
-| `E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS` | `120` | Total deadline for HTTP 503 retry |
-| `E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS` | `1` | First 503 backoff |
-| `E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS` | `8` | Maximum 503 backoff |
-| `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` | `300` | Renew the lease between tests when less is left |
+| `E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS` | `60` | Total deadline for HTTP 503 retry |
+| `E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS` | `15` | First 503 backoff |
+| `E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS` | `30` | Maximum 503 backoff |
+| `E2E_PWMCP_RECYCLE_INTERVAL_SECONDS` | `1500` | Reconnect after this window or at a test-file boundary, whichever comes first |
+| `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` | `300` | Lease headroom; added to the recycle interval and used for early between-test renewal |
 | `E2E_PWMCP_MAX_RECONNECTS` | `3` | Dead-browser replacements per session before the session latches as failed |
 | `PLAYWRIGHT_HEADLESS` | `true` | Headless mode for in-process launch (ignored for remote) |
 | `NAF_E2E_ADVERTISE_HOST` | _(set by tooling/test-runner)_ | Runner container name; the browser reaches the per-session app at `http://<it>:<port>` |

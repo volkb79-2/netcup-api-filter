@@ -6,11 +6,14 @@ and storage-selection rules without a browser.
 """
 from __future__ import annotations
 
+import asyncio
 import importlib.metadata
 import json
 import logging
+import math
 import os
 import re
+import signal
 import time
 import urllib.error
 import urllib.request
@@ -20,6 +23,12 @@ from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
+_WS_URL_RE = re.compile(r"wss?://[^\s\"'<>]+", re.IGNORECASE)
+_SECRET_QUERY_RE = re.compile(
+    r"([?&;][^=&#\s\"'<>]*(?:token|code|key|secret|password|otp|signature|sig)[^=&#\s\"'<>]*=)"
+    r"[^&#\s\"'<>]+",
+    re.IGNORECASE,
+)
 
 
 class PwmcpContractError(RuntimeError):
@@ -42,6 +51,7 @@ class ConnectionOptions:
     retry_initial_seconds: float
     retry_max_seconds: float
     contract_timeout_seconds: float
+    recycle_interval_seconds: float
     lease_renew_margin_seconds: float
     max_reconnects: int
     browser_type: str = "chromium"
@@ -104,6 +114,7 @@ def load_connection_options(
     maximum = _positive_float("E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS", env, default_lookup)
     connect_timeout = _positive_float("E2E_PWMCP_CONNECT_TIMEOUT_SECONDS", env, default_lookup)
     contract_timeout = _positive_float("E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS", env, default_lookup)
+    recycle_interval = _positive_float("E2E_PWMCP_RECYCLE_INTERVAL_SECONDS", env, default_lookup)
     renew_margin = _positive_float("E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS", env, default_lookup)
     max_reconnects = _non_negative_int("E2E_PWMCP_MAX_RECONNECTS", env, default_lookup)
     if initial > maximum:
@@ -115,6 +126,7 @@ def load_connection_options(
         retry_initial_seconds=initial,
         retry_max_seconds=maximum,
         contract_timeout_seconds=contract_timeout,
+        recycle_interval_seconds=recycle_interval,
         lease_renew_margin_seconds=renew_margin,
         max_reconnects=max_reconnects,
     )
@@ -124,9 +136,38 @@ def contract_url_from_ws(ws_url: str) -> str:
     """Map ``ws[s]://host/`` to the matching gateway ``/contract`` URL."""
     parts = urlsplit(ws_url)
     if parts.scheme not in {"ws", "wss"} or not parts.netloc:
-        raise PwmcpContractError(f"PLAYWRIGHT_SERVER_WS must be an absolute ws(s) URL, got {ws_url!r}")
+        raise PwmcpContractError("PLAYWRIGHT_SERVER_WS must be an absolute ws(s) URL")
+    try:
+        parts.port
+    except ValueError:
+        raise PwmcpContractError("PLAYWRIGHT_SERVER_WS has an invalid port") from None
     scheme = "https" if parts.scheme == "wss" else "http"
-    return urlunsplit((scheme, parts.netloc, "/contract", "", ""))
+    return urlunsplit((scheme, _safe_netloc(parts), "/contract", "", ""))
+
+
+def _safe_netloc(parts: Any) -> str:
+    """Keep the endpoint host for diagnostics while omitting URL credentials."""
+    hostname = parts.hostname
+    if not hostname:
+        return "<invalid-host>"
+    netloc = f"[{hostname}]" if ":" in hostname else hostname
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    return f"{netloc}:{port}" if port is not None else netloc
+
+
+def safe_connection_error(exc: BaseException) -> str:
+    """Keep useful status text while removing endpoint credentials and query values."""
+    message = _WS_URL_RE.sub(lambda match: _safe_ws_url(match.group(0)), str(exc))
+    return _SECRET_QUERY_RE.sub(r"\1<redacted>", message)
+
+
+def _safe_ws_url(value: str) -> str:
+    parts = urlsplit(value)
+    scheme = parts.scheme.lower()
+    return urlunsplit((scheme, _safe_netloc(parts), "/", "", ""))
 
 
 def installed_playwright_protocol(version: str | None = None) -> str:
@@ -163,8 +204,12 @@ def validate_contract(
             f"installed playwright uses {installed_protocol}, gateway uses {gateway_protocol}; "
             f"install {install_hint} or roll the gateway back"
         )
-    limits = contract.get("run_server", {}).get("limits", {})
-    if not isinstance(limits, Mapping) or not limits.get("max_lease_seconds"):
+    run_server = contract.get("run_server")
+    limits = run_server.get("limits") if isinstance(run_server, Mapping) else None
+    if not isinstance(limits, Mapping):
+        raise PwmcpContractError("pwmcp contract is missing run_server.limits.max_lease_seconds")
+    max_lease = limits.get("max_lease_seconds")
+    if isinstance(max_lease, bool) or not isinstance(max_lease, int) or max_lease <= 0:
         raise PwmcpContractError("pwmcp contract is missing run_server.limits.max_lease_seconds")
     return gateway_protocol
 
@@ -210,6 +255,7 @@ async def connect_with_bounded_retry(
     total_timeout_seconds: float,
     initial_backoff_seconds: float,
     max_backoff_seconds: float,
+    session_label: str | None = None,
     is_retryable: Callable[[BaseException], bool] = is_gateway_slots_busy,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] | None = None,
@@ -244,28 +290,53 @@ async def connect_with_bounded_retry(
         delay = min(backoff, max_backoff_seconds, remaining)
         await sleep(delay)
         backoff = min(backoff * 2, max_backoff_seconds)
-    detail = f"last error: {last_error}" if last_error else "deadline expired before the first attempt"
+    detail = f"last error type: {type(last_error).__name__}" if last_error else "deadline expired before the first attempt"
+    label_detail = (
+        f" Session label {session_label!r} identifies this holder in the pwmcp admin session list."
+        if session_label
+        else ""
+    )
     raise GatewaySlotsBusyTimeout(
         "pwmcp connect gave up: the gateway kept returning HTTP 503 "
         f"(all browser slots are in use) for {total_timeout_seconds:g}s; another e2e session "
-        f"or worktree holds a gateway lease ({detail})"
-    ) from last_error
+        f"or worktree holds a gateway lease.{label_detail} ({detail})"
+    ) from None
 
 
-def lease_headers(env: Mapping[str, str], contract: Mapping[str, Any]) -> dict[str, str]:
-    """Build the lease headers carried by the single session connection."""
-    lease_raw = env.get("PWMCP_LEASE_SECONDS", "").strip()
-    label = env.get("PWMCP_SESSION_LABEL", "").strip()
-    if not lease_raw or not label:
-        raise RuntimeError(
-            "PLAYWRIGHT_SERVER_WS is set but PWMCP_LEASE_SECONDS / PWMCP_SESSION_LABEL are not: "
-            "the runner must supply both lease values configured for the pwmcp gateway"
-        )
-    if not re.fullmatch(r"[1-9][0-9]*", lease_raw):
-        raise RuntimeError(f"PWMCP_LEASE_SECONDS must be a positive integer, got {lease_raw!r}")
+def pwmcp_session_label(
+    env: Mapping[str, str],
+    *,
+    process_id: int | None = None,
+) -> str:
+    """Name this e2e connection so an operator can find its lease in pwmcp."""
+    lane = _config_value("E2E_PWMCP_LANE_NAME", env, None)
+    worker = env.get("PYTEST_XDIST_WORKER", "").strip()
+    owner = worker if worker and worker != "master" else str(os.getpid() if process_id is None else process_id)
+    prefix = "naf-e2e:"
+    owner = owner[-(128 - len(prefix) - 2) :]
+    suffix = f":{owner}"
+    lane_width = max(1, 128 - len(prefix) - len(suffix))
+    return f"{prefix}{lane[:lane_width]}{suffix}"
+
+
+def lease_headers(
+    env: Mapping[str, str],
+    contract: Mapping[str, Any],
+    requested_lease_seconds: int,
+) -> dict[str, str]:
+    """Build a short lease and traceable label for the next browser connection."""
+    if (
+        isinstance(requested_lease_seconds, bool)
+        or not isinstance(requested_lease_seconds, int)
+        or requested_lease_seconds <= 0
+    ):
+        raise RuntimeError("requested pwmcp lease must be a positive integer")
     max_lease = int(contract["run_server"]["limits"]["max_lease_seconds"])
-    lease = min(int(lease_raw), max_lease)
-    return {"X-PWMCP-Lease-Seconds": str(lease), "X-PWMCP-Session-Label": label[:128]}
+    lease = min(requested_lease_seconds, max_lease)
+    return {
+        "X-PWMCP-Lease-Seconds": str(lease),
+        "X-PWMCP-Session-Label": pwmcp_session_label(env),
+    }
 
 
 def existing_storage_state(path: str | os.PathLike[str] | None) -> str | None:
@@ -324,11 +395,16 @@ class SharedPwmcpSession:
         self.connects = 0
         self.reconnects = 0
         self.contexts = 0
+        self.recycles = 0
         self.reconnect_causes: list[str] = []
         self._recoveries = 0
         self._fatal_reason: str | None = None
         self._lease_seconds: int | None = None
         self._lease_started_at: float | None = None
+        self._window_started_at: float | None = None
+        self._current_test_file: str | None = None
+        self._stop_lock: asyncio.Lock | None = None
+        self._stopped = False
 
     @property
     def remote(self) -> bool:
@@ -348,10 +424,14 @@ class SharedPwmcpSession:
     async def _connect_browser(self) -> None:
         if not self.remote:
             self.browser = await self._launch_local()
+            self._window_started_at = self._clock()
             return
         if self.contract is None:
             raise PwmcpContractError("remote pwmcp mode has no validated gateway contract")
-        headers = lease_headers(self.env, self.contract)
+        requested_lease = math.ceil(
+            self.options.recycle_interval_seconds + self.options.lease_renew_margin_seconds
+        )
+        headers = lease_headers(self.env, self.contract, requested_lease)
         lease = int(headers["X-PWMCP-Lease-Seconds"])
         if self.options.lease_renew_margin_seconds >= lease:
             raise RuntimeError(
@@ -373,16 +453,25 @@ class SharedPwmcpSession:
                 timeout=timeout_ms,
             )
 
-        self.browser = await connect_with_bounded_retry(
-            connect_once,
-            total_timeout_seconds=self.options.retry_total_seconds,
-            initial_backoff_seconds=self.options.retry_initial_seconds,
-            max_backoff_seconds=self.options.retry_max_seconds,
-            clock=self._clock,
-            sleep=self._sleep,
-        )
+        try:
+            self.browser = await connect_with_bounded_retry(
+                connect_once,
+                total_timeout_seconds=self.options.retry_total_seconds,
+                initial_backoff_seconds=self.options.retry_initial_seconds,
+                max_backoff_seconds=self.options.retry_max_seconds,
+                session_label=headers["X-PWMCP-Session-Label"],
+                clock=self._clock,
+                sleep=self._sleep,
+            )
+        except GatewaySlotsBusyTimeout:
+            raise
+        except Exception as exc:
+            # Initial connection errors go straight to pytest's startup message; reconnect
+            # errors also pass through _replace_browser. Sanitize both paths at the source.
+            raise RuntimeError(safe_connection_error(exc)) from None
         self._lease_seconds = lease
         self._lease_started_at = attempt_started[-1] if attempt_started else self._clock()
+        self._window_started_at = self._clock()
         self.connects += 1
 
     async def _launch_local(self) -> Any:
@@ -420,6 +509,70 @@ class SharedPwmcpSession:
         # must not lose the earlier ones when it opens the next.
         return self._open_context_count() == 0
 
+    def _window_recycle_due(self) -> bool:
+        if self._window_started_at is None:
+            return False
+        return self._clock() - self._window_started_at >= self.options.recycle_interval_seconds
+
+    async def prepare_for_test(self, test_file: str | os.PathLike[str]) -> Any:
+        """Ensure a connection for a test, recycling at file or time boundaries."""
+        if self._fatal_reason is not None:
+            raise PwmcpConnectionClosed(self._fatal_reason)
+        current_file = str(test_file)
+        # Local launch mode has no shared gateway lease to yield; keep its browser for the session.
+        file_boundary = bool(
+            self.remote
+            and self._current_test_file is not None
+            and self._current_test_file != current_file
+        )
+        window_due = self.remote and self._window_recycle_due()
+        if self.connected() and (file_boundary or window_due):
+            reasons = []
+            if file_boundary:
+                reasons.append("test-file-boundary")
+            if window_due:
+                reasons.append("recycle-window-expired")
+            await self.recycle("+".join(reasons))
+        else:
+            await self.ensure_connected()
+        self._current_test_file = current_file
+        return self.browser
+
+    async def _replace_browser(self, cause: str, *, planned_recycle: bool) -> Any:
+        old_browser = self.browser
+        self.browser = None
+        if old_browser is not None:
+            try:
+                await old_browser.close()
+            except Exception as exc:
+                logger.debug("old pwmcp browser close failed: %s", type(exc).__name__)
+        try:
+            await self._connect_browser()
+        except Exception as exc:
+            detail = safe_connection_error(exc)
+            raise self._latch(f"shared pwmcp browser reconnect after {cause} failed: {detail}") from None
+        if not self.connected():
+            raise self._latch(f"shared pwmcp browser remained disconnected after the {cause} reconnect")
+        self.reconnects += 1
+        if planned_recycle:
+            self.recycles += 1
+        self.reconnect_causes.append(cause)
+        logger.warning("pwmcp reconnected: %s (reconnects=%d)", cause, self.reconnects)
+        return self.browser
+
+    async def recycle(self, cause: str) -> Any:
+        """Close and immediately reopen a healthy connection between test contexts."""
+        if self._fatal_reason is not None:
+            raise PwmcpConnectionClosed(self._fatal_reason)
+        if not self.connected():
+            return await self.ensure_connected()
+        open_contexts = self._open_context_count()
+        if open_contexts:
+            raise self._latch(
+                f"cannot recycle pwmcp connection after {cause}: {open_contexts} browser context(s) remain open"
+            )
+        return await self._replace_browser(cause, planned_recycle=True)
+
     def _latch(self, reason: str) -> PwmcpConnectionClosed:
         self._fatal_reason = reason
         logger.error("pwmcp session connection is unusable for the rest of the session: %s", reason)
@@ -438,9 +591,10 @@ class SharedPwmcpSession:
         if self._fatal_reason is not None:
             raise PwmcpConnectionClosed(self._fatal_reason)
         if self.connected():
-            if not self._lease_renewal_due():
-                return self.browser
-            cause = f"lease-renewal ({self.lease_remaining_seconds():.0f}s of {self._lease_seconds}s left)"
+            if self._lease_renewal_due():
+                cause = f"lease-renewal ({self.lease_remaining_seconds():.0f}s of {self._lease_seconds}s left)"
+                return await self.recycle(cause)
+            return self.browser
         else:
             if self._recoveries >= self.options.max_reconnects:
                 raise self._latch(
@@ -450,23 +604,7 @@ class SharedPwmcpSession:
                 )
             self._recoveries += 1
             cause = "browser-disconnected"
-        old_browser = self.browser
-        self.browser = None
-        if old_browser is not None:
-            try:
-                await old_browser.close()
-            except Exception:
-                pass
-        try:
-            await self._connect_browser()
-        except Exception as exc:
-            raise self._latch(f"shared pwmcp browser reconnect after {cause} failed: {exc}") from exc
-        if not self.connected():
-            raise self._latch(f"shared pwmcp browser remained disconnected after the {cause} reconnect")
-        self.reconnects += 1
-        self.reconnect_causes.append(cause)
-        logger.warning("pwmcp reconnected: %s (reconnects=%d)", cause, self.reconnects)
-        return self.browser
+        return await self._replace_browser(cause, planned_recycle=False)
 
     async def new_context(self, *, storage_state_path: str | None = None, **kwargs: Any) -> Any:
         browser = await self.ensure_connected()
@@ -479,23 +617,32 @@ class SharedPwmcpSession:
         return context
 
     async def stop(self) -> None:
-        if self.browser is not None:
-            try:
-                await self.browser.close()
-            except Exception as exc:
-                logger.debug("shared browser close failed during teardown: %s", exc)
-            finally:
-                self.browser = None
-        if self._playwright is not None:
-            try:
-                await self._playwright.stop()
-            except Exception as exc:
-                logger.debug("Playwright driver stop failed during teardown: %s", exc)
-            finally:
-                self._playwright = None
+        if self._stop_lock is None:
+            self._stop_lock = asyncio.Lock()
+        async with self._stop_lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            if self.browser is not None:
+                try:
+                    await self.browser.close()
+                except Exception as exc:
+                    logger.debug("shared browser close failed during teardown: %s", type(exc).__name__)
+                finally:
+                    self.browser = None
+            if self._playwright is not None:
+                try:
+                    await self._playwright.stop()
+                except Exception as exc:
+                    logger.debug("Playwright driver stop failed during teardown: %s", type(exc).__name__)
+                finally:
+                    self._playwright = None
 
     def summary(self) -> str:
-        return f"pwmcp connects={self.connects} reconnects={self.reconnects} contexts={self.contexts}"
+        return (
+            f"pwmcp connects={self.connects} reconnects={self.reconnects} "
+            f"recycles={self.recycles} contexts={self.contexts}"
+        )
 
     def summary_details(self) -> list[str]:
         """Extra terminal-summary lines: why the session reconnected or gave up."""
@@ -508,7 +655,7 @@ class SharedPwmcpSession:
 
 
 _current_session: SharedPwmcpSession | None = None
-_last_summary = "pwmcp connects=0 reconnects=0 contexts=0"
+_last_summary = "pwmcp connects=0 reconnects=0 recycles=0 contexts=0"
 _last_details: list[str] = []
 
 
@@ -535,3 +682,52 @@ def last_session_summary() -> str:
 
 def last_session_summary_details() -> list[str]:
     return list(_last_details)
+
+
+def install_signal_cleanup(
+    session: SharedPwmcpSession,
+    loop: asyncio.AbstractEventLoop,
+    *,
+    interrupt_task: asyncio.Task[Any] | None = None,
+    signal_api: Any = signal,
+    process_api: Any = os,
+) -> Callable[[], None]:
+    """Close the browser lease before forwarding SIGTERM/SIGINT to pytest."""
+    previous: dict[int, Any] = {}
+    restored = False
+    cleanup_task: asyncio.Task[Any] | None = None
+
+    def restore() -> None:
+        nonlocal restored
+        if restored:
+            return
+        restored = True
+        for number, handler in previous.items():
+            loop.remove_signal_handler(number)
+            signal_api.signal(number, handler)
+
+    async def shutdown_then_forward(number: int) -> None:
+        try:
+            if interrupt_task is not None and not interrupt_task.done():
+                interrupt_task.cancel()
+                await asyncio.gather(interrupt_task, return_exceptions=True)
+            await session.stop()
+        except Exception as exc:
+            logger.warning("pwmcp shutdown on signal failed: %s", type(exc).__name__)
+        finally:
+            restore()
+        process_api.kill(process_api.getpid(), number)
+
+    def handle(number: int) -> None:
+        nonlocal cleanup_task
+        if cleanup_task is None or cleanup_task.done():
+            cleanup_task = loop.create_task(shutdown_then_forward(number))
+
+    try:
+        for number in (signal_api.SIGTERM, signal_api.SIGINT):
+            previous[number] = signal_api.getsignal(number)
+            loop.add_signal_handler(number, handle, number)
+    except (NotImplementedError, RuntimeError, ValueError) as exc:
+        restore()
+        raise RuntimeError("cannot install pwmcp SIGTERM/SIGINT cleanup handlers") from exc
+    return restore

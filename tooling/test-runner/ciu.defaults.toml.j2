@@ -42,16 +42,12 @@ post_compose = []
 # e2e gate drives the Playwright-as-a-Service container over PLAYWRIGHT_SERVER_WS.
 # naf speaks the gateway protocol itself (ui_tests/pwmcp_connection.py), without the
 # pwmcp-client wheel: it reads GET /contract once per session (Playwright major.minor and
-# max_lease_seconds), then makes ONE chromium.connect(ws://pwmcp:3000/) per pytest session
-# with the lease headers below. The pwmcp instance is provided by the estate
-# (/srv/pwmcp-instance); see [topology.pwmcp].
-# lease_seconds covers the whole e2e lane budget (run-gate.toml [lanes.e2e] budget = 120m)
-# and equals the gateway's max_lease_seconds (7200; a larger value is capped by /contract).
-# The lease ends when the websocket closes, so a finished or killed lane frees its slot at
-# once; the long lease only matters for a lane that is still running. If a lease still runs
-# short, the harness renews it between tests (E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS).
+# max_lease_seconds), then keeps one driver while recycling the browser connection at test-file
+# boundaries or the configured window (E2E_PWMCP_RECYCLE_INTERVAL_SECONDS), whichever comes first.
+# Each short lease is that interval plus E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS and is capped by
+# /contract. Closing then reconnecting immediately returns the shared slot between files without
+# leaving the gateway idle long enough for idle_recycle_seconds to restart its browser. The pwmcp
+# instance is provided by the estate (/srv/pwmcp-instance); see [topology.pwmcp].
 [test_runner.pwmcp]
 required = false
 ws_url = "ws://pwmcp:3000/"
-lease_seconds = 7200
-session_label = "naf-test-runner"

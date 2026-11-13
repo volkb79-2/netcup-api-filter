@@ -23,6 +23,11 @@
 
 ### Changed
 
+- **E2E browser reuse now yields the shared pwmcp slot between test files.** The harness keeps one
+  Playwright driver, reconnects at file boundaries or after a configurable 25-minute window, and
+  requests a short lease derived from that window. Bounded 503 retries identify the session label in
+  the pwmcp admin view; a failed reconnect is latched for the rest of the suite.
+
 - **PowerDNS configuration has one source per fact**: `POWERDNS_API_URL` and
   `POWERDNS_API_URL_INTERNAL` are defined only by `.env.services`; the app consumes
   `POWERDNS_API_URL_INTERNAL` directly instead of rebuilding a URL from separate

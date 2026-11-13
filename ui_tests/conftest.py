@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import logging
 import os
@@ -25,6 +26,7 @@ from ui_tests.pwmcp_connection import (
     SharedPwmcpSession,
     context_storage_state,
     fetch_contract,
+    install_signal_cleanup,
     install_shared_session,
     last_session_summary,
     last_session_summary_details,
@@ -53,19 +55,37 @@ def pwmcp_contract():
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def pwmcp_connection(e2e_environment, pwmcp_contract):
-    """The single Playwright driver/browser connection for this pytest session."""
+    """Own one driver and recycle its gateway connection between test files/windows."""
     options, contract = pwmcp_contract
     connection = SharedPwmcpSession(options, contract=contract)
+    loop = asyncio.get_running_loop()
+    startup = loop.create_task(connection.start())
+    restore_signal_handlers = None
     try:
-        await connection.start()
+        restore_signal_handlers = install_signal_cleanup(connection, loop, interrupt_task=startup)
+        await startup
     except Exception as exc:
+        if not startup.done():
+            startup.cancel()
+            await asyncio.gather(startup, return_exceptions=True)
+        await connection.stop()
+        if restore_signal_handlers is not None:
+            restore_signal_handlers()
         pytest.exit(f"pwmcp session connection failed: {exc}", returncode=3)
     install_shared_session(connection)
     try:
         yield connection
     finally:
         await connection.stop()
+        if restore_signal_handlers is not None:
+            restore_signal_handlers()
         uninstall_shared_session(connection)
+
+
+@pytest_asyncio.fixture(scope="function", loop_scope="session", autouse=True)
+async def pwmcp_recycle_window(pwmcp_connection, request):
+    """Recycle at a test-file boundary or elapsed connection window, before contexts open."""
+    await pwmcp_connection.prepare_for_test(request.node.path)
 
 
 @pytest.fixture(scope="session", autouse=True)

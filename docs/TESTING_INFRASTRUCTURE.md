@@ -100,47 +100,54 @@ dir for debugging with `NAF_E2E_KEEP_WORKDIR=1`. Settings: `E2E_*` keys in `.env
 
 ### Browser connection and state model
 
-The browser harness is session-scoped, not test-scoped:
+The Playwright driver is session-scoped; its pwmcp browser connection is recycled between test
+files or after the configured recycle window, whichever comes first:
 
 ```text
 pytest session / xdist worker
   -> GET /contract, validate schema + Playwright major.minor once
   -> start one Playwright driver
-  -> make one bounded chromium.connect(), retrying only gateway HTTP 503
+  -> bounded chromium.connect(), retrying only gateway HTTP 503
+  -> before a test's first context, recycle at a test-file boundary or after
+     E2E_PWMCP_RECYCLE_INTERVAL_SECONDS (whichever comes first); reconnect immediately
   -> for each test: fresh browser.new_context() [+ page] -> test -> close context
-  -> before a test's first context, if needed, replace the browser (one bounded connect):
-       browser found dead  -> reconnect, at most E2E_PWMCP_MAX_RECONNECTS times per session
-       lease nearly over   -> close, reconnect with a fresh lease (only while no context is open)
-     a failed replacement is latched: every later test fails at once, no further connects
-  -> session teardown: close the browser connection and stop the Playwright driver
+  -> between tests only, replace a dead browser (capped by E2E_PWMCP_MAX_RECONNECTS)
+     or renew a lease that is near expiry
+  -> latch a failed replacement: every later test fails immediately with the original reason
+  -> session teardown and SIGTERM/SIGINT: close the browser connection and stop the driver
 ```
 
 `ui_tests/pwmcp_connection.py` owns this lifecycle; `ui_tests/conftest.py` installs it through the
-autouse `pwmcp_connection` session fixture. The counters are emitted once at the end of the session
-as `pwmcp connects=<n> reconnects=<n> contexts=<n>` (`connects` includes the first connect), followed
-by a `pwmcp reconnect causes: ...` line when the session reconnected and a `pwmcp connection latched as
-failed: ...` line when it gave up. There is one driver/websocket per pytest process (therefore one per
-xdist worker; under xdist the controller's summary would read `connects=0`); tests get only the cheap
-fresh-context isolation.
+autouse `pwmcp_connection` session fixture and the `pwmcp_recycle_window` function fixture. The
+counters are emitted once at the end of the session as
+`pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n>`: `connects` counts successful browser
+connections including the first, `reconnects` counts successful replacements, `recycles` counts the
+intentional file/time/lease replacements, and `contexts` counts successful contexts. A
+`pwmcp reconnect causes: ...` line and a `pwmcp connection latched as failed: ...` line follow when
+applicable. There is one driver per pytest process (therefore one per xdist worker); xdist is not
+enabled by the current e2e lane, and its worker counters are not aggregated by the controller.
 
 The contract check is fail-fast: `/contract` must publish schema version 1 and a protocol matching
 the installed Playwright major.minor, plus a maximum lease. A missing contract, incompatible
 Playwright, or unavailable gateway exits the session with code 3 and one actionable message. Remote
 connects carry `X-PWMCP-Lease-Seconds` and `X-PWMCP-Session-Label`, have a finite per-attempt timeout,
-and retry HTTP 503 ("all browser slots are in use") with exponential backoff under one total deadline.
+and retry HTTP 503 ("all browser slots are in use") with exponential backoff under one 60-second
+default deadline (three attempts with the default 15-second and 30-second backoffs). Exhaustion says
+the slots are busy and prints the `naf-e2e:<lane>:<pid-or-xdist-worker>` session label shown in the
+pwmcp admin view. The retry interval, connect timeout and backoffs are configurable in `.env.defaults`.
 
 An open pwmcp websocket is an active gateway session. The 30-second idle browser recycle runs only
-while there are zero sessions, so the shared connection survives the long installation/app-start test
-without a heartbeat. The runner requests a 7200-second lease (`tooling/test-runner`
-`[test_runner.pwmcp] lease_seconds`, equal to the e2e lane budget and the gateway's
-`max_lease_seconds`); the gateway ends a lease early when the websocket closes, so a finished lane
-frees its slot at once. The harness records when the lease started and, between tests, renews it
-when less than `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` (300) is left, so a lease never ends inside a
-test that started with at least that margin. A browser found dead between tests (gateway restart or
-recycle) is replaced by one bounded connect, at most `E2E_PWMCP_MAX_RECONNECTS` (3) times per session.
-A failed replacement is latched: every later test errors immediately with the same reason instead of
-spending a connect/503-retry budget each. A browser lost in the middle of a test is still a failure of
-that test (there is no mid-test retry).
+while there are zero sessions, so an open connection survives the long installation/app-start test
+without a heartbeat. At each test-file boundary, or after the default 1500-second (25-minute) window,
+the harness closes the old websocket and reconnects immediately. It requests a short 1800-second
+lease by adding the 300-second `E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS` to the recycle interval; the
+requested value is capped by `/contract` `max_lease_seconds` (7200). If a configured interval reaches
+the gateway cap, the margin triggers an earlier between-test renewal. Closing a websocket releases
+its slot immediately, and a crashed pytest can hold a slot for at most the short lease rather than the
+lane budget. A browser found dead between tests (gateway restart or recycle) is replaced at most
+`E2E_PWMCP_MAX_RECONNECTS` (3) times. A failed replacement is latched: every later test errors
+immediately with the same reason instead of spending a connect/503-retry budget each. A browser lost
+in the middle of a test is still a failure of that test (there is no mid-test retry).
 
 ### Per-role browser state
 

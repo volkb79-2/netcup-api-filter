@@ -70,7 +70,7 @@ items:
   - {id: B066, title: "ui_tests: per-role storage state, an explicit anonymous context, and the forgot-password journey", type: bugfix, component: ui-tests, context_estimate: small, folds_into: F009}
   - {id: B067, title: "Honest skips in the e2e lane: hollow param smoke, data-dependent email skips, dead content tests, live deselect, -rs", type: bugfix, component: ui-tests, context_estimate: medium, folds_into: F010}
   - {id: B068, title: "Per-test browser instrumentation: fail on JS/console/network errors, artifacts on failure, per-test timeout, hermetic CDN", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
-  - {id: B069, title: "pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
+  - {id: B069, title: "pwmcp connection model: short recycle window, contract check, bounded connect and 503 retry", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B070, title: "Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap", type: feature, component: test-infra, context_estimate: medium, folds_into: F009}
   - {id: B071, title: "Exercise Telegram and configured GeoIP in the hermetic tier with mocks", type: feature, component: ui-tests, context_estimate: medium, folds_into: F017}
   - {id: B072, title: "Audit all login outcomes and emit numeric rate-limit retries", type: bugfix, component: security, context_estimate: small}
@@ -326,11 +326,13 @@ class (b).
   Oracle: the guard reports `account.reset_password` and `account.create_new_token` before B057/B058 and passes
   after; re-introducing a renamed field turns it red.
 
-- **B060 — ui_tests: never print typed values or 2FA codes in failure output.**
+- **B060 — ui_tests: never print typed values or 2FA codes in failure output. Status: complete**
+  (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`).
   Evidence: `browser.py:210` puts `value` in `ToolError.payload` and `browser.py:26-27` prints it; remote
   smoke uses the operator password (`config.py:173-175`), and `test_2fa_security.py:581` prints a 2FA code.
-  Oracle: call `Browser.fill` for a missing selector with `S3cret-XYZ`; neither `str(exc)` nor `repr(exc)`
-  contains it (record only length), and a grep rejects printing variables named code/password/token.
+  Implemented: fill/select/evaluate errors retain only safe operation metadata; navigation and request
+  failures redact one-time URL tokens and secret-named query values; the AST guard checks print,
+  logger/logging calls, and attribute names. Unit tests cover a failing fill and redacted URLs.
 
 - **B061 — Cross-account and cross-role authorization sweep over every id-bearing portal route.**
   Evidence: only `test_ddns_quick_update_http.py:105` checks another account's realm; 18 `/account` rules take
@@ -372,11 +374,12 @@ class (b).
   is asserted explicitly so B027 changes the expectation deliberately.
 
 - **B066 — ui_tests: per-role storage state, an explicit anonymous context, and the forgot-password journey.**
-  Depends on B058. Evidence: `config.storage_state_path()` has one `"admin"` file and `workflows.py:858`
-  writes the user login there, so `browser`/`browser_session()` start dual-authenticated and defeated the
-  forgot-password checks at `test_email_notifications.py:452` and `test_security_scenarios.py:323`.
-  Oracle: `anon_browser` shows `#email` on `/account/forgot-password`; the user journey follows the mailed link
-  through the real form, proves the hash changed and login succeeds, and goes red if B058 regresses.
+  **Status: partial** (harness1 delivers the per-role files and explicit empty anonymous context; the full reset
+  journey remains open). Depends on B058. The former shared state let admin and user cookies contaminate each
+  other and defeated forgot-password checks at `test_email_notifications.py:452` and
+  `test_security_scenarios.py:323`. The harness now selects admin/user state by role, does not pass a missing
+  file to Playwright, and leaves anonymous contexts empty. Remaining oracle: follow a mailed reset link through
+  the real form, prove the password hash changed, and log in with the new password.
 
 - **B067 — Honest skips in the e2e lane: hollow param smoke, data-dependent email skips, dead content tests, live deselect, -rs.**
   References, rather than duplicates: P06 O2/O3 for skip-downgrades/live skeletons and B006 for token-revoked
@@ -393,13 +396,14 @@ class (b).
   Oracle: a canary `throw new Error()` fails with its message; a deliberate failure leaves screenshot, trace,
   console log, and app-log tail; blocking `cdn.jsdelivr.net` breaks no test.
 
-- **B069 — pwmcp connection model: one session-scoped connection, contract check, bounded connect, 503 retry.**
-  Evidence: every test starts its own Playwright driver and connection (`playwright_client.py:142-174`,
-  `conftest.py:94-101`, `browser.py:482-534`) with no timeout, retry, or contract check; the documented 428
-  rationale is stale (`playwright_client.py:47-49`). Use one session Playwright/Browser plus a context per test,
-  check `/contract` protocol once, and retry a full-gateway 503 with bounded backoff.
-  Oracle: the gateway records one accepted connection per lane; a forced protocol mismatch exits once with exit
-  3; wall time is recorded before/after.
+- **B069 — pwmcp connection model: short recycle-window connection, contract check, bounded connect and 503 retry.**
+  **Status: complete** (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`). The harness starts one
+  Playwright driver, then recycles the gateway browser at each test-file boundary or after the configured
+  interval, whichever comes first. It checks `/contract` once, uses the contract's lease cap, requests an
+  interval-plus-margin lease, retries 503 for a bounded interval, and labels the holder
+  `naf-e2e:<lane>:<pid-or-xdist-worker>`. A failed replacement is latched, and the session closes on teardown
+  and SIGTERM/SIGINT. Oracle: exact fake-clock file/time recycle counts, bounded retry and busy-label message;
+  final e2e evidence records connects/reconnects/recycles/contexts and duration.
 
 - **B070 — Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap.**
   Dependency: concurrent worktree identity is B046. Evidence: global clears at `conftest.py:289,297`,

@@ -7,8 +7,10 @@ per-test connection and shared-storage behaviour as failures.
 
 from __future__ import annotations
 
+import asyncio
 import ast
 import json
+import signal
 import urllib.error
 from pathlib import Path
 
@@ -31,6 +33,10 @@ from ui_tests.pwmcp_connection import (
     installed_playwright_protocol,
     is_gateway_slots_busy,
     lease_headers,
+    load_connection_options,
+    pwmcp_session_label,
+    install_signal_cleanup,
+    safe_connection_error,
     validate_contract,
 )
 
@@ -52,6 +58,7 @@ def _options(
     *,
     remote: bool = True,
     renew_margin: float = 60,
+    recycle_interval: float = 540,
     max_reconnects: int = 3,
 ) -> ConnectionOptions:
     return ConnectionOptions(
@@ -61,12 +68,13 @@ def _options(
         retry_initial_seconds=1,
         retry_max_seconds=8,
         contract_timeout_seconds=10,
+        recycle_interval_seconds=recycle_interval,
         lease_renew_margin_seconds=renew_margin,
         max_reconnects=max_reconnects,
     )
 
 
-_LEASE_ENV = {"PWMCP_LEASE_SECONDS": "600", "PWMCP_SESSION_LABEL": "unit-harness"}
+_LEASE_ENV = {"E2E_PWMCP_LANE_NAME": "unit"}
 
 
 class _FakePage:
@@ -191,19 +199,23 @@ async def test_gateway_503_retry_is_total_bounded_and_names_the_cause():
     async def always_busy(_timeout_seconds: float):
         nonlocal attempts
         attempts += 1
-        raise RuntimeError("Unexpected server response: 503")
+        raise RuntimeError(
+            "WebSocket error: ws://pwmcp:3000/?token=connectionS3cret "
+            "503 Service Unavailable; all 2 browser slots are in use"
+        )
 
     async def fake_sleep(delay: float) -> None:
         nonlocal now
         delays.append(delay)
         now += delay
 
-    with pytest.raises(GatewaySlotsBusyTimeout, match="all browser slots are in use"):
+    with pytest.raises(GatewaySlotsBusyTimeout) as caught:
         await connect_with_bounded_retry(
             always_busy,
             total_timeout_seconds=3,
             initial_backoff_seconds=1,
             max_backoff_seconds=2,
+            session_label="naf-e2e:e2e:gw0",
             clock=lambda: now,
             sleep=fake_sleep,
         )
@@ -212,6 +224,10 @@ async def test_gateway_503_retry_is_total_bounded_and_names_the_cause():
     assert attempts == 2
     assert delays == [1, 2]
     assert now == 3
+    assert "all browser slots are in use" in str(caught.value)
+    assert "naf-e2e:e2e:gw0" in str(caught.value)
+    assert "connectionS3cret" not in str(caught.value)
+    assert "connectionS3cret" not in repr(caught.value)
 
 
 def test_contract_protocol_mismatch_is_a_clear_fail_fast_error():
@@ -238,11 +254,47 @@ async def test_dead_shared_browser_is_reconnected_once_then_reused():
     assert playwright.chromium.connect_calls == 2
     assert session.connects == 2
     assert session.reconnects == 1
-    assert session.summary() == "pwmcp connects=2 reconnects=1 contexts=0"
+    assert session.summary() == "pwmcp connects=2 reconnects=1 recycles=0 contexts=0"
     assert session.reconnect_causes == ["browser-disconnected"]
 
     assert await session.ensure_connected() is replacement
     assert playwright.chromium.connect_calls == 2
+
+    await session.stop()
+
+
+async def test_connection_recycles_at_file_boundary_and_elapsed_window_with_fake_clock():
+    now = 0.0
+    first, second, third = _FakeBrowser(), _FakeBrowser(), _FakeBrowser()
+    playwright = _FakePlaywright([first, second, third])
+    session = SharedPwmcpSession(
+        _options(renew_margin=300, recycle_interval=1500),
+        contract=_contract(max_lease_seconds=7200),
+        env=_LEASE_ENV,
+        playwright_factory=lambda: _FakePlaywrightStarter(playwright),
+        clock=lambda: now,
+    )
+
+    await session.start()
+    assert await session.prepare_for_test("features/test_one.py") is first
+    now = 100.0
+    assert await session.prepare_for_test("features/test_one.py") is first
+    assert playwright.chromium.connect_calls == 1
+
+    now = 200.0
+    assert await session.prepare_for_test("features/test_two.py") is second
+    assert first.close_calls == 1
+    assert session.recycles == 1
+    assert session.reconnect_causes == ["test-file-boundary"]
+
+    now = 1700.0
+    assert await session.prepare_for_test("features/test_two.py") is third
+    assert second.close_calls == 1
+    assert session.connects == 3
+    assert session.reconnects == 2
+    assert session.recycles == 2
+    assert session.summary() == "pwmcp connects=3 reconnects=2 recycles=2 contexts=0"
+    assert session.reconnect_causes == ["test-file-boundary", "recycle-window-expired"]
 
     await session.stop()
 
@@ -262,6 +314,41 @@ def test_role_storage_paths_are_isolated_and_anonymous_has_none(tmp_path):
     assert context_storage_state("admin", config.storage_state_path) == str(admin_path)
     assert context_storage_state("user", config.storage_state_path) == str(user_path)
     assert context_storage_state("anonymous", config.storage_state_path) is None
+
+
+def test_connection_defaults_match_short_recycle_window_and_bounded_retry_policy():
+    defaults = {
+        "E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS": "60",
+        "E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS": "15",
+        "E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS": "30",
+        "E2E_PWMCP_CONNECT_TIMEOUT_SECONDS": "30",
+        "E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS": "10",
+        "E2E_PWMCP_RECYCLE_INTERVAL_SECONDS": "1500",
+        "E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS": "300",
+        "E2E_PWMCP_MAX_RECONNECTS": "3",
+    }
+    options = load_connection_options(
+        {"PLAYWRIGHT_SERVER_WS": "ws://pwmcp:3000/"},
+        default_lookup=defaults.__getitem__,
+    )
+
+    assert options.retry_total_seconds == 60
+    assert options.retry_initial_seconds == 15
+    assert options.retry_max_seconds == 30
+    assert options.recycle_interval_seconds == 1500
+    assert options.lease_renew_margin_seconds == 300
+
+
+def test_connection_error_redacts_endpoint_credentials_and_secret_query_values():
+    error = RuntimeError(
+        "WebSocket error: ws://user:pass@pwmcp:3000/path?token=connectionS3cret 403 Forbidden"
+    )
+    safe = safe_connection_error(error)
+
+    assert "403 Forbidden" in safe
+    assert "ws://pwmcp:3000/" in safe
+    assert "user:pass" not in safe
+    assert "connectionS3cret" not in safe
 
 
 async def test_anonymous_browser_session_creates_context_without_storage_state(monkeypatch):
@@ -514,14 +601,37 @@ async def test_failed_reconnect_attempt_is_latched_with_its_reason():
 
     await session.start()
     first._connected = False
-    playwright.chromium.errors.append(RuntimeError("WebSocket error: ws://pwmcp:3000/ 403 Forbidden"))
+    playwright.chromium.errors.append(
+        RuntimeError("WebSocket error: ws://user:pass@pwmcp:3000/?token=connectionS3cret 403 Forbidden")
+    )
 
-    with pytest.raises(PwmcpConnectionClosed, match="403 Forbidden"):
+    with pytest.raises(PwmcpConnectionClosed, match="403 Forbidden") as caught:
         await session.ensure_connected()
+    assert "connectionS3cret" not in str(caught.value)
+    assert "user:pass" not in str(caught.value)
     with pytest.raises(PwmcpConnectionClosed, match="403 Forbidden"):
         await session.ensure_connected()
     assert playwright.chromium.connect_calls == 2
 
+    await session.stop()
+
+
+async def test_initial_connect_error_redacts_endpoint_credentials_and_query_values():
+    playwright = _FakePlaywright([_FakeBrowser()])
+    playwright.chromium.errors.append(
+        RuntimeError(
+            "WebSocket error: ws://user:pass@pwmcp:3000/path?token=initialS3cret 403 Forbidden"
+        )
+    )
+    session = _session(playwright)
+
+    with pytest.raises(RuntimeError, match="403 Forbidden") as caught:
+        await session.start()
+
+    assert "user:pass" not in str(caught.value)
+    assert "initialS3cret" not in str(caught.value)
+    assert "ws://pwmcp:3000/" in str(caught.value)
+    assert caught.value.__cause__ is None
     await session.stop()
 
 
@@ -538,9 +648,96 @@ async def test_browser_deaths_beyond_the_reconnect_cap_latch_without_connecting(
     with pytest.raises(PwmcpConnectionClosed, match="E2E_PWMCP_MAX_RECONNECTS=1"):
         await session.ensure_connected()
     assert playwright.chromium.connect_calls == 2
-    assert session.summary() == "pwmcp connects=2 reconnects=1 contexts=0"
+    assert session.summary() == "pwmcp connects=2 reconnects=1 recycles=0 contexts=0"
 
     await session.stop()
+
+
+async def test_session_stop_is_idempotent_and_closes_browser_and_driver():
+    browser = _FakeBrowser()
+    playwright = _FakePlaywright([browser])
+    session = _session(playwright)
+    await session.start()
+
+    await session.stop()
+    await session.stop()
+
+    assert browser.close_calls == 1
+    assert playwright.stop_calls == 1
+    assert session.browser is None
+    assert session._playwright is None
+
+
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+async def test_process_signal_closes_browser_before_forwarding_signal(signum):
+    browser = _FakeBrowser()
+    playwright = _FakePlaywright([browser])
+    session = _session(playwright)
+    await session.start()
+
+    class FakeSignalApi:
+        SIGTERM = signal.SIGTERM
+        SIGINT = signal.SIGINT
+
+        def __init__(self):
+            self.old = {self.SIGTERM: object(), self.SIGINT: object()}
+            self.restored = {}
+
+        def getsignal(self, number):
+            return self.old[number]
+
+        def signal(self, number, handler):
+            self.restored[number] = handler
+
+    class FakeProcessApi:
+        def __init__(self):
+            self.kills = []
+
+        def getpid(self):
+            return 4242
+
+        def kill(self, pid, number):
+            self.kills.append((pid, number))
+
+    class RecordingLoop:
+        def __init__(self, actual_loop):
+            self.actual_loop = actual_loop
+            self.handlers = {}
+            self.tasks = []
+
+        def add_signal_handler(self, number, callback, *args):
+            self.handlers[number] = (callback, args)
+
+        def remove_signal_handler(self, number):
+            self.handlers.pop(number, None)
+            return True
+
+        def create_task(self, coroutine):
+            task = self.actual_loop.create_task(coroutine)
+            self.tasks.append(task)
+            return task
+
+    signal_api = FakeSignalApi()
+    process_api = FakeProcessApi()
+    loop = RecordingLoop(asyncio.get_running_loop())
+    restore = install_signal_cleanup(
+        session,
+        loop,
+        signal_api=signal_api,
+        process_api=process_api,
+    )
+
+    callback, args = loop.handlers[signum]
+    callback(*args)
+    await loop.tasks[0]
+
+    assert browser.close_calls == 1
+    assert playwright.stop_calls == 1
+    assert process_api.kills == [(4242, signum)]
+    assert signal_api.restored == signal_api.old
+    restore()
+    await session.stop()
+    assert browser.close_calls == 1
 
 
 # ---------------------------------------------------------------------------
@@ -554,9 +751,9 @@ async def test_lease_is_renewed_between_tests_when_under_the_margin():
     second = _FakeBrowser()
     playwright = _FakePlaywright([first, second])
     session = SharedPwmcpSession(
-        _options(renew_margin=300),
+        _options(renew_margin=300, recycle_interval=1500),
         contract=_contract(max_lease_seconds=7200),
-        env={"PWMCP_LEASE_SECONDS": "1800", "PWMCP_SESSION_LABEL": "unit-harness"},
+        env=_LEASE_ENV,
         playwright_factory=lambda: _FakePlaywrightStarter(playwright),
         clock=lambda: now,
     )
@@ -588,7 +785,12 @@ async def test_lease_is_renewed_between_tests_when_under_the_margin():
 
 async def test_renew_margin_not_below_the_granted_lease_fails_fast():
     playwright = _FakePlaywright([_FakeBrowser()])
-    session = _session(playwright, renew_margin=600)
+    session = SharedPwmcpSession(
+        _options(renew_margin=600, recycle_interval=100),
+        contract=_contract(max_lease_seconds=500),
+        env=_LEASE_ENV,
+        playwright_factory=lambda: _FakePlaywrightStarter(playwright),
+    )
 
     with pytest.raises(RuntimeError, match="E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS"):
         await session.start()
@@ -766,13 +968,13 @@ async def test_standalone_remote_client_uses_contract_lease_and_configured_timeo
     )
     for key, value in {
         "PLAYWRIGHT_SERVER_WS": "ws://pwmcp:3000/",
-        "PWMCP_LEASE_SECONDS": "1800",
-        "PWMCP_SESSION_LABEL": "unit-standalone",
+        "E2E_PWMCP_LANE_NAME": "e2e",
         "E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS": "4",
         "E2E_PWMCP_CONNECT_TIMEOUT_SECONDS": "7",
         "E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS": "20",
         "E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS": "1",
         "E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS": "2",
+        "E2E_PWMCP_RECYCLE_INTERVAL_SECONDS": "1500",
         "E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS": "60",
         "E2E_PWMCP_MAX_RECONNECTS": "0",
     }.items():
@@ -785,7 +987,10 @@ async def test_standalone_remote_client_uses_contract_lease_and_configured_timeo
     assert playwright.chromium.connect_calls == 1
     kwargs = playwright.chromium.connect_kwargs[0]
     assert kwargs["timeout"] == 7000
-    assert kwargs["headers"] == {"X-PWMCP-Lease-Seconds": "900", "X-PWMCP-Session-Label": "unit-standalone"}
+    assert kwargs["headers"] == {
+        "X-PWMCP-Lease-Seconds": "900",
+        "X-PWMCP-Session-Label": pwmcp_session_label({"E2E_PWMCP_LANE_NAME": "e2e"}),
+    }
 
     await client.close()
     assert browser.contexts[0].close_calls == 1
@@ -859,23 +1064,25 @@ async def test_non_503_connect_errors_are_not_retried():
 
 def test_lease_headers_are_capped_by_the_contract_and_validated():
     contract = _contract(max_lease_seconds=7200)
-    assert lease_headers({"PWMCP_LEASE_SECONDS": "9000", "PWMCP_SESSION_LABEL": "x"}, contract) == {
+    assert lease_headers({"E2E_PWMCP_LANE_NAME": "e2e"}, contract, 9000) == {
         "X-PWMCP-Lease-Seconds": "7200",
-        "X-PWMCP-Session-Label": "x",
+        "X-PWMCP-Session-Label": pwmcp_session_label({"E2E_PWMCP_LANE_NAME": "e2e"}),
     }
-    assert lease_headers({"PWMCP_LEASE_SECONDS": "600", "PWMCP_SESSION_LABEL": "x"}, contract)[
+    assert lease_headers({"E2E_PWMCP_LANE_NAME": "e2e"}, contract, 600)[
         "X-PWMCP-Lease-Seconds"
     ] == "600"
-    long_label = "l" * 200
-    assert lease_headers({"PWMCP_LEASE_SECONDS": "600", "PWMCP_SESSION_LABEL": long_label}, contract)[
-        "X-PWMCP-Session-Label"
-    ] == "l" * 128
-    with pytest.raises(RuntimeError, match="PWMCP_SESSION_LABEL"):
-        lease_headers({"PWMCP_LEASE_SECONDS": "600"}, contract)
+    long_lane_env = {"E2E_PWMCP_LANE_NAME": "e" * 200, "PYTEST_XDIST_WORKER": "gw2"}
+    assert lease_headers(long_lane_env, contract, 600)["X-PWMCP-Session-Label"] == (
+        f"naf-e2e:{'e' * (128 - len('naf-e2e:') - len(':gw2'))}:gw2"
+    )
+    assert pwmcp_session_label({"E2E_PWMCP_LANE_NAME": "e2e"}, process_id=7) == "naf-e2e:e2e:7"
+    assert pwmcp_session_label(
+        {"E2E_PWMCP_LANE_NAME": "e2e", "PYTEST_XDIST_WORKER": "gw3"}, process_id=7
+    ) == "naf-e2e:e2e:gw3"
     with pytest.raises(RuntimeError, match="positive integer"):
-        lease_headers({"PWMCP_LEASE_SECONDS": "0", "PWMCP_SESSION_LABEL": "x"}, contract)
+        lease_headers({"E2E_PWMCP_LANE_NAME": "e2e"}, contract, 0)
     with pytest.raises(RuntimeError, match="positive integer"):
-        lease_headers({"PWMCP_LEASE_SECONDS": "1.5", "PWMCP_SESSION_LABEL": "x"}, contract)
+        lease_headers({"E2E_PWMCP_LANE_NAME": "e2e"}, contract, 1.5)
 
 
 class _Response:
@@ -931,9 +1138,24 @@ def test_fetch_contract_fails_closed(opener, message):
         fetch_contract("ws://pwmcp:3000/", timeout_seconds=5, opener=opener)
 
 
+def test_contract_transport_error_does_not_echo_url_credentials_or_query_secrets():
+    with pytest.raises(PwmcpContractError) as caught:
+        fetch_contract(
+            "ws://user:pass@pwmcp:3000/?token=connectionS3cret",
+            timeout_seconds=5,
+            opener=_opener_raising(OSError("connection refused")),
+        )
+
+    assert "http://pwmcp:3000/contract" in str(caught.value)
+    assert "user:pass" not in str(caught.value)
+    assert "connectionS3cret" not in str(caught.value)
+
+
 def test_fetch_contract_accepts_a_matching_contract_and_rejects_non_ws_urls():
     contract = fetch_contract("ws://pwmcp:3000/", timeout_seconds=5, opener=_opener_returning(_contract_bytes()))
     assert contract["playwright"]["protocol"] == installed_playwright_protocol()
     assert contract_url_from_ws("wss://pwmcp.example:443/x") == "https://pwmcp.example:443/contract"
     with pytest.raises(PwmcpContractError, match="ws\\(s\\) URL"):
         contract_url_from_ws("http://pwmcp:3000/")
+    with pytest.raises(PwmcpContractError, match="invalid port"):
+        contract_url_from_ws("ws://pwmcp:not-a-port/")

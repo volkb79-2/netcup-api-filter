@@ -204,21 +204,30 @@ outage.
 - Never persist anything a later test depends on. If an assertion needs backend truth, read the
   session DB read-only (`ui_tests/verification.py`).
 
-## 4a. Browser Connection and Role-State Invariants (2026-11-12)
+## 4a. Browser Connection and Role-State Invariants (2026-11-13)
 
-The e2e suite is one browser session with many cheap contexts, not one browser session per test:
+Reuse one Playwright driver for the pytest session, while limiting each pwmcp lease to a recycle
+window. This keeps driver startup out of per-test cost and returns the shared gateway slot at each
+test-file boundary:
 
-- Start one Playwright driver and make one `chromium.connect()` for the pytest session (one per
-  xdist worker). Every test creates and closes only a fresh `BrowserContext` and page.
+- Start one Playwright driver per pytest process. Reuse a gateway browser connection only within a
+  test file or until `E2E_PWMCP_RECYCLE_INTERVAL_SECONDS` elapses, whichever comes first. Each test
+  still receives fresh context isolation; a file/time recycle closes the old connection and
+  reconnects immediately between tests.
 - Check pwmcp `/contract` once before connecting. The installed Playwright major.minor must match the
   gateway protocol; a mismatch fails the whole session loudly with exit 3 instead of producing
   hundreds of test failures.
 - Bound `connect()` and retry only pwmcp HTTP 503 (all browser slots busy), with exponential backoff
-  under one total deadline. Between tests, replace a dead browser with one bounded reconnect (capped
-  per session) and renew a lease that is about to end; latch a failed replacement so the rest of the
-  session fails at once instead of retrying per test.
-- An open websocket counts as a pwmcp session, so the 30-second idle browser recycle cannot happen
-  while the suite is connected. No heartbeat is needed.
+  under one total deadline. The default is a 60-second window with three attempts. Between tests,
+  replace a dead browser (capped per session) or renew a lease near expiry; latch a failed
+  replacement so the rest of the session fails at once instead of retrying per test.
+- The default recycle interval is 25 minutes and the lease margin is five minutes, so a connection
+  requests 30 minutes, capped by the contract's maximum. This limits a leaked slot after a crashed
+  runner; an open websocket prevents the 30-second idle recycle during the long app-start test, and
+  immediate reconnect avoids leaving the gateway sessionless between files.
+- Session teardown and SIGTERM/SIGINT close the browser and driver. The terminal summary reports
+  successful `connects`, `reconnects`, intentional `recycles`, and created `contexts`; 503 exhaustion
+  includes the `naf-e2e:<lane>:<pid-or-xdist-worker>` label from the pwmcp admin session list.
 - Do not load one shared storage-state file into every context. Use `admin_browser`, `user_browser`,
   or `anon_browser` (and the equivalent `browser_session(role)` call). Role files live in the session
   work dir, are written after each fresh login of that role and reused while the cached login is
@@ -232,7 +241,9 @@ Failure output is an exported artifact and must be safe to share:
 - Logging replaces debug `print` calls in workflow/test code. Never log a filled password, API token,
   recovery code, 2FA/verification code, invite/reset link, or full session cookie.
 - `ToolError` records an operation, selector, and value/code length; it never carries the typed value.
-  Redaction is unit-tested without a browser, and a source guard rejects secret-bearing `print` calls.
+  Navigation and request errors also redact one-time URL tokens from both the payload and error
+  message. Redaction is unit-tested without a browser, and a source guard checks `print`, `logger`,
+  and `logging` calls for secret-named variables and attributes.
 
 ---
 
