@@ -50,10 +50,17 @@ config already stores `naf-v`. The preflight therefore creates a short-lived `cm
 with only that prefix normalized to `naf`; the declared variant table remains intact. This
 handler mismatch is recorded for vbpub in the B101 canary report.
 
-The local artifact is named `naf-v<version>-<variant>.tar.xz`, matching CMRU's variant publisher
-and generated installer. It includes CMRU's `manifest.json` inside a single top-level `app/`
-directory; the CIU activation adapter strips that directory when extracting into the Passenger
-application root.
+Passenger bundles are built only during tagged `cmru release`; the preflight requires
+`CMRU_RELEASE_TAG`, and an untagged `cmru build` is unsupported. Each build clears stale versioned
+Passenger archives and removes `dist/app` after a successful archive exists. CMRU 7.3.0 currently
+blocks archive creation because its hard-exclude rules reject `app-defaults.env` and vendored
+`certifi/cacert.pem`; B101 stays open until vbpub ships the V1 fix and the controller verifies
+old/new artifact equivalence.
+
+The configured artifact name is `naf-v<version>-<variant>.tar.xz`, matching CMRU's variant
+publisher and generated installer. Once the cmru hard-exclude blocker is fixed, it will include
+`manifest.json` inside one top-level `app/` directory; the CIU activation adapter strips that
+directory when extracting into the Passenger application root.
 
 Each Passenger tarball contains:
 - Vendored dependencies (no pip install needed on server)

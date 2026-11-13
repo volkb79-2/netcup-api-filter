@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+.naf-bundle-cmru-*/
 downloads/
 eggs/
 .eggs/

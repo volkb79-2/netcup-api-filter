@@ -608,11 +608,15 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
 - **B101 — Verify CMRU KI-126 Passenger bundle equivalence canary. Status: open**
   naf has replaced `scripts/build_webhosting_tarball.py` with `bundle.toml` and the CMRU
   `bundle-build` handler. This is the canary for vbpub's KI-126 acceptance; that acceptance stays
-  open until the controller builds the old and new artifacts in the checkout's matching runner
-  and completes the data comparison in `/tmp/naf-ctl/bundle1-report.md`. Compare staged file names,
-  sizes and hashes (excluding the SQLite database and timestamps), then compare the database table
-  list and row counts. The canary also records cmru 7.3.0 findings: its manifest tag currently
-  appends `-v` to naf's already suffixed prefix (handled by an explicit temporary config copy),
-  its runner prefix is shared across all variants, and its archive settings do not expose pip's
-  version-check flag, a flat root, or the prior compression/mode policy. Record the real comparison
-  result and any mismatch before closing this entry.
+  open, and this branch must not merge, until a CMRU release fixes V1: hard excludes must not reject
+  the staged `app-defaults.env` or the vendored `certifi/cacert.pem`. V3 (an untagged version source)
+  and V4 (handler cleanup of its staged tree) are desirable upstream; naf currently requires a
+  tagged `cmru release`, prunes stale archives before the build, and removes `dist/app` after a
+  successful archive exists. Once V1 is released, the controller must build the old and new artifacts
+  in the checkout's matching runner and complete the data comparison in
+  `/tmp/naf-ctl/bundle1-fix1-report.md`: compare sorted file names, sizes and SHA-256 hashes for each
+  non-DB file (excluding timestamps), then compare the SQLite table list and row counts. Keep B101
+  open until the comparison passes and record any mismatch. The canary also records the 7.3.0
+  manifest-tag `-v` duplication (handled by a temporary config copy), one shared runner prefix for
+  all variants, the missing pip version-check flag, archive layout/metadata limits, required
+  `SOURCE_DATE_EPOCH`, and acceptance of a malformed `naf-v-v...` manifest tag.

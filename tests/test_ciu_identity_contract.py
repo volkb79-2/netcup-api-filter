@@ -603,3 +603,26 @@ def test_bundle_build_exports_the_resolved_runner_and_release_version():
         temporary_config = Path(prepared["NAF_BUNDLE_CMRU_CONFIG"])
         temporary_config.unlink(missing_ok=True)
         temporary_config.parent.rmdir()
+
+
+def test_untagged_passenger_build_explains_the_cmru_release_requirement():
+    """Reverting the M2 preflight message hides that only tagged cmru release builds are supported."""
+    builder = _load_bundle_runner()
+    expected = (
+        "Passenger bundle builds are supported only inside `cmru release` after it creates the "
+        "release tag; run `cmru release` to build and publish the tagged bundle."
+    )
+    assert builder.UNTAGGED_BUILD_INSTRUCTION == expected
+    try:
+        builder._release_version({})
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("an untagged Passenger bundle build was accepted")
+    assert message == expected
+    try:
+        builder._release_version({"NAF_VERSION": "1.2.3"})
+    except RuntimeError as exc:
+        assert str(exc) == expected
+    else:
+        raise AssertionError("an untagged version override was accepted")

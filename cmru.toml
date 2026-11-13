@@ -65,12 +65,23 @@ commands = [
 quiet = true
 commands = [
   { label = "naf: build Passenger bundle through cmru (inside this checkout's runner)", argv = ["bash", "-c", '''
-naf_bundle_exports="$(python3 tooling/passenger_bundle_build.py prepare)"
-naf_prepare_status=$?
-if [ "$naf_prepare_status" -ne 0 ]; then exit "$naf_prepare_status"; fi
+unset NAF_BUNDLE_CMRU_CONFIG
+cleanup_bundle_cmru_config() {
+  case "${NAF_BUNDLE_CMRU_CONFIG:-}" in
+    "$PWD"/.naf-bundle-cmru-*/cmru.toml)
+      rm -rf -- "$(dirname -- "$NAF_BUNDLE_CMRU_CONFIG")"
+      ;;
+  esac
+}
+trap cleanup_bundle_cmru_config EXIT
+naf_bundle_exports="$(python3 tooling/passenger_bundle_build.py prepare)" || exit $?
 eval "$naf_bundle_exports" || exit $?
-trap 'rm -rf "$(dirname "$NAF_BUNDLE_CMRU_CONFIG")"' EXIT
-cmru handler bundle-build --bundle-config bundle.toml --cmru-config "$NAF_BUNDLE_CMRU_CONFIG" --name naf --variant all
+rm -f -- dist/naf-v*.tar.xz
+cmru handler bundle-build --bundle-config bundle.toml --cmru-config "$NAF_BUNDLE_CMRU_CONFIG" --name naf --variant all || exit $?
+bundle_archives=(dist/naf-v"${NAF_VERSION}"-*.tar.xz)
+if [ -f "${bundle_archives[0]}" ]; then
+  rm -rf -- dist/app
+fi
 '''], cwd = "." },
 ]
 

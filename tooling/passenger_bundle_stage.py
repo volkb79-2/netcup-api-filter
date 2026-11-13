@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # These are the exact ignore patterns used by the retired copytree calls. cmru's
 # copy step already excludes the first two; keeping the full set here pins the
@@ -109,9 +110,10 @@ def seed_database(bundle_dir: Path) -> None:
                 os.environ[name] = value
 
 
-def ship_runtime_defaults(bundle_dir: Path) -> None:
+def ship_runtime_defaults(bundle_dir: Path, repo_root: Path) -> None:
     """Replace the staged seed input with naf's allowlisted runtime defaults."""
     bundle_dir = bundle_dir.resolve()
+    repo_root = repo_root.resolve()
     (bundle_dir / ".env.defaults").unlink()
     src_dir = str(bundle_dir / "src")
     original_sys_path = list(sys.path)
@@ -123,7 +125,7 @@ def ship_runtime_defaults(bundle_dir: Path) -> None:
         )
 
         write_shipped_defaults(
-            Path.cwd() / ".env.defaults",
+            repo_root / ".env.defaults",
             bundle_dir,
             overrides=SHIPPED_RUNTIME_OVERRIDES,
         )
@@ -135,6 +137,7 @@ def stage_bundle(
     bundle_dir: Path,
     python_version: str,
     *,
+    repo_root: Path = REPO_ROOT,
     seed=seed_database,
     render_defaults=ship_runtime_defaults,
 ) -> None:
@@ -144,7 +147,7 @@ def stage_bundle(
     _prune_legacy_copy_exclusions(bundle_dir)
     _extract_vendor_wheels(bundle_dir / "vendor")
     seed(bundle_dir)
-    render_defaults(bundle_dir)
+    render_defaults(bundle_dir, repo_root)
 
 
 def main() -> None:
@@ -155,7 +158,7 @@ def main() -> None:
     parser.add_argument("python_version")
     args = parser.parse_args()
     try:
-        stage_bundle(args.bundle_dir, args.python_version)
+        stage_bundle(args.bundle_dir, args.python_version, repo_root=REPO_ROOT)
     except Exception as exc:
         logger.error("Passenger bundle stage failed: %s", exc)
         raise SystemExit(1) from None

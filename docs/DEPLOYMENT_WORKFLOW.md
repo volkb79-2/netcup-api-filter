@@ -39,8 +39,9 @@ and the individual tooling READMEs for TLS and service-stack operation.
 cmru release
 ```
 
-CMRU invokes `cmru handler bundle-build` using `bundle.toml`; the `[[project.variants]]` entries
-in `cmru.toml` are the shared build and publish list. Before the handler runs, naf resolves this
+The configured CMRU build step invokes `cmru handler bundle-build` using `bundle.toml`; the
+`[[project.variants]]` entries in `cmru.toml` are the shared build and publish list. Before the
+handler runs, naf resolves this
 checkout's test-runner identity through CIU, verifies that the runner is running and sees the same
 Git `HEAD`, and supplies its root and identity through the environment variables named by
 `[exec].env`. CMRU downloads target-ABI wheels; `tooling/passenger_bundle_stage.py` expands those
@@ -52,18 +53,36 @@ config already uses `naf-v`, so the preflight passes the handler a temporary con
 that value normalized to `naf`; it preserves the variant list and removes the copy when the step
 ends. The canary report records this cmru handler finding for vbpub.
 
-### What the artifacts contain
+The Passenger bundle is supported only inside a tagged `cmru release`: its build preflight requires
+`CMRU_RELEASE_TAG` and rejects `NAF_VERSION` by itself. Use `cmru release` when the tagged Passenger
+artifact is ready; `cmru build` and `cmru publish --build-output` do not produce this project's
+Passenger bundle. The untagged version-source gap is filed with vbpub as V3 in B101.
 
-Neither artifact ships a secret, a demo account or `.env.defaults` (it holds the documented pre-set
-admin password and test fixtures). Both ship `app-defaults.env` instead: only the allowlisted runtime keys
-of `.env.defaults` (`config_defaults.RUNTIME_DEFAULT_KEYS`), rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
+Each build step removes old `dist/naf-v*.tar.xz` files before calling the handler so the publisher
+and activation adapter cannot select multiple release versions. After a successful handler run, it
+removes `dist/app` only when the current version's archive exists. The equivalence procedure compares
+the archives, so it does not need the staged tree afterward.
 
-- **Passenger tarball** (`naf-v<version>-<variant>.tar.xz`): a CMRU bundle with `manifest.json`,
-  the runtime tree, extracted vendored packages, `app-defaults.env`, and a freshly seeded
+**Current canary blocker:** CMRU 7.3.0 hard-excludes both the staged `app-defaults.env` and vendored
+`certifi/cacert.pem`; manifest generation therefore refuses this bundle tree. This branch remains
+parked until a CMRU release fixes V1 and the controller completes B101's old/new data comparison.
+
+### Artifact contents
+
+The Passenger stage replaces `.env.defaults` (which holds the documented pre-set admin password and
+test fixtures) with `app-defaults.env`: only the allowlisted runtime keys of `.env.defaults`
+(`config_defaults.RUNTIME_DEFAULT_KEYS`), rendered by
+`netcup_api_filter.config_defaults.write_shipped_defaults`. The OCI artifact has its own generated
+runtime catalog. Neither release artifact is intended to ship a secret or demo account.
+
+- **Passenger tarball contract (not yet produced by this branch)** (`naf-v<version>-<variant>.tar.xz`):
+  a CMRU bundle with `manifest.json`, the runtime tree, extracted vendored packages, `app-defaults.env`, and a freshly seeded
   `netcup_filter.db` with exactly one account, the pre-set admin
   (`is_admin=1`, `must_change_password=1`). No `secret_key` row (created at first start), no `.env*`,
   no `deployment_state_*.json`. The archive has a single top-level `app/` directory; CIU activation
   strips it into the Passenger application root, as CMRU's generated installer does for its bundles.
+  This is the configured artifact contract; CMRU 7.3.0 currently refuses to archive it for the
+  hard-exclude conflict above, so this branch has not produced a Passenger tarball.
 - **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
   and `VOLUME /data`; no database and no account. It runs as the non-root user `naf`
   (`APP_UID`/`APP_GID` build args, default 10001): `/app` is read-only for it, `/data` (DB, init lock,

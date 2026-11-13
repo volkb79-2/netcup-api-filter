@@ -6,7 +6,9 @@
   (shipped Passenger variants), ciu defaults (runner services), run-gate.toml (exec
   environments + image tags) and docker-bake.hcl (release targets).
 """
+import importlib.util
 import re
+import shlex
 import tomllib
 from pathlib import Path
 
@@ -45,8 +47,8 @@ def test_runner_variants_agree_across_cmru_ciu_run_gate_and_bake():
         assert env["image"].endswith(f"/test-runner:{name}"), env["image"]
 
 
-def test_passenger_bundle_and_publish_use_the_cmru_variant_list():
-    """Reverting to the custom builder or duplicating py311 in config fails this contract."""
+def test_passenger_bundle_and_publish_use_the_cmru_variant_list(monkeypatch):
+    """Reverting the bundle handler, archive cleanup, trap, or declared publisher variants fails."""
     cmru = _toml("cmru.toml")
     bundle = _toml("bundle.toml")
     variants = cmru["project"]["variants"]
@@ -56,32 +58,81 @@ def test_passenger_bundle_and_publish_use_the_cmru_variant_list():
     assert bundle["archive"]["version_env"] == "NAF_VERSION"
     assert bundle["manifest"]["name"] == "manifest.json"
 
-    build = "\n".join(
-        " ".join(command["argv"])
-        for command in cmru["steps"]["build"]["commands"]
+    build_commands = cmru["steps"]["build"]["commands"]
+    assert len(build_commands) == 1
+    build_argv = build_commands[0]["argv"]
+    assert build_argv[:2] == ["bash", "-c"]
+    assert len(build_argv) == 3
+    build_script = build_argv[2]
+    assert "passenger_bundle_build.py prepare" in build_script
+    assert "scripts/build_webhosting_tarball.py" not in build_script
+    assert build_script.index("trap cleanup_bundle_cmru_config EXIT") < build_script.index("eval \"$naf_bundle_exports\"")
+    assert "unset NAF_BUNDLE_CMRU_CONFIG" in build_script
+    assert 'case "${NAF_BUNDLE_CMRU_CONFIG:-}" in' in build_script
+    assert '"$PWD"/.naf-bundle-cmru-*/cmru.toml)' in build_script
+    assert ".naf-bundle-cmru-*/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "rm -f -- dist/naf-v*.tar.xz" in build_script
+    assert build_script.index("rm -f -- dist/naf-v*.tar.xz") < build_script.index(
+        "cmru handler bundle-build"
     )
-    assert "cmru handler bundle-build" in build
-    assert "--variant all" in build
-    assert '--cmru-config "$NAF_BUNDLE_CMRU_CONFIG"' in build
-    assert "passenger_bundle_build.py prepare" in build
-    assert "scripts/build_webhosting_tarball.py" not in build
+    bundle_command = next(
+        line.strip()
+        for line in build_script.splitlines()
+        if line.strip().startswith("cmru handler bundle-build ")
+    )
+    assert shlex.split(bundle_command) == [
+        "cmru", "handler", "bundle-build", "--bundle-config", "bundle.toml",
+        "--cmru-config", "$NAF_BUNDLE_CMRU_CONFIG", "--name", "naf", "--variant",
+        "all", "||", "exit", "$?",
+    ]
+    archive_guard = 'bundle_archives=(dist/naf-v"${NAF_VERSION}"-*.tar.xz)'
+    archive_exists_check = 'if [ -f "${bundle_archives[0]}" ]; then'
+    assert archive_guard in build_script
+    assert archive_exists_check in build_script
+    assert build_script.index(archive_guard) < build_script.index(archive_exists_check)
+    assert build_script.index(archive_exists_check) < build_script.index("rm -rf -- dist/app")
+    assert build_script.index("rm -rf -- dist/app") > build_script.index(
+        "cmru handler bundle-build"
+    )
 
-    publish = "\n".join(
-        " ".join(command["argv"])
+    publish_commands = [
+        command["argv"]
         for command in cmru["steps"]["push"]["commands"]
-        if "passenger_bundle_publish.py" in " ".join(command["argv"])
+        if command["argv"] == ["python3", "tooling/passenger_bundle_publish.py"]
+    ]
+    assert publish_commands == [["python3", "tooling/passenger_bundle_publish.py"]]
+    publisher_spec = importlib.util.spec_from_file_location(
+        "naf_passenger_bundle_publish", ROOT / "tooling/passenger_bundle_publish.py"
     )
-    assert publish
-    publisher = (ROOT / "tooling/passenger_bundle_publish.py").read_text(encoding="utf-8")
-    assert 'project.get("variants", [])' in publisher
-    assert '"--variant", variant' in publisher
-    assert '"--glob", "dist/naf-v*.tar.xz"' in publisher
+    assert publisher_spec is not None and publisher_spec.loader is not None
+    publisher = importlib.util.module_from_spec(publisher_spec)
+    publisher_spec.loader.exec_module(publisher)
+    expected_variants = [f"{variant['name']}={variant['label']}" for variant in variants]
+    assert publisher._variant_specs() == expected_variants
+    published = []
+
+    def fake_run(command, **kwargs):
+        published.append((command, kwargs))
+
+    monkeypatch.setenv("NAF_VERSION", "1.2.3")
+    monkeypatch.delenv("CMRU_RELEASE_TAG", raising=False)
+    monkeypatch.setattr(publisher.subprocess, "run", fake_run)
+    publisher.main()
+    assert len(published) == 1
+    publish_argv, publish_kwargs = published[0]
+    expected_publish_argv = [
+        "cmru", "handler", "tarball-publish", "--prefix", "naf", "--cwd", ".",
+        "--glob", "dist/naf-v*.tar.xz", "--version-env",
+        "NAF_VERSION", "--notes-env", "NAF_RELEASE_NOTES",
+    ]
+    for variant in expected_variants:
+        expected_publish_argv.extend(["--variant", variant])
+    assert publish_argv == expected_publish_argv
+    assert publish_kwargs["cwd"] == ROOT
+    assert publish_kwargs["env"]["NAF_VERSION"] == "1.2.3"
 
     installer = cmru["project"]["installer"]
     assert installer["asset_suffix"] == ".tar.xz"
-    activation = (ROOT / "scripts/activate.py").read_text(encoding="utf-8")
-    assert 'glob(f"naf-v*-{variant}.tar.xz")' in activation
-    assert "top-level bundle directory" in activation
 
     # The prefix values are names of environment variables, not checked-in runner identities.
     assert bundle["exec"]["env"] == {

@@ -1,9 +1,10 @@
-"""Cheap contracts for cmru's Passenger bundle configuration and naf stage helper."""
+"""CMRU Passenger bundle contracts and real release-artifact content checks."""
 from __future__ import annotations
 
 import importlib.util
 import os
 import shutil
+import sqlite3
 import sys
 import tomllib
 import types
@@ -12,6 +13,12 @@ from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
+from netcup_api_filter.config_defaults import (
+    RUNTIME_DEFAULT_KEYS,
+    SECRET_LOOKING_MARKERS,
+    SHIPPED_DEFAULTS_FILENAME,
+    require_default,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -29,6 +36,110 @@ def _load_stage_helper():
 def _bundle_config():
     with (REPO / "bundle.toml").open("rb") as handle:
         return tomllib.load(handle)
+
+
+@pytest.fixture(scope="module")
+def staging(tmp_path_factory) -> Path:
+    """Run the real stage seed/default writers over a temporary copy of the app sources."""
+    stage = _load_stage_helper()
+    root = tmp_path_factory.mktemp("release") / "app"
+    root.mkdir()
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover")
+    shutil.copytree(REPO / "src", root / "src", ignore=ignore)
+    shutil.copytree(REPO / "scripts", root / "scripts", ignore=ignore)
+    shutil.copy2(REPO / ".env.defaults", root / ".env.defaults")
+    shutil.copy2(
+        REPO / "src/netcup_api_filter/passenger_wsgi.py",
+        root / "passenger_wsgi.py",
+    )
+    (root / "vendor").mkdir()
+
+    mp = pytest.MonkeyPatch()
+    mp.chdir(REPO)
+    mp.setenv("DEPLOYMENT_TARGET", "webhosting")
+    mp.setenv("NETCUP_FILTER_DB_PATH", str(root / "netcup_filter.db"))
+    try:
+        stage.seed_database(root)
+        stage.ship_runtime_defaults(root, REPO)
+    finally:
+        mp.undo()
+    return root
+
+
+def _query(staging: Path, sql: str) -> list[tuple]:
+    conn = sqlite3.connect(f"file:{staging / 'netcup_filter.db'}?mode=ro", uri=True)
+    try:
+        return conn.execute(sql).fetchall()
+    finally:
+        conn.close()
+
+
+def test_database_holds_exactly_the_shipped_admin(staging):
+    """Reverting the shipped seed to demo accounts adds rows and fails this oracle."""
+    shipped = require_default("DEFAULT_ADMIN_USERNAME")
+    assert _query(staging, "SELECT username, is_admin, must_change_password FROM accounts") == [(shipped, 1, 1)]
+
+
+def test_database_has_no_demo_or_secret_state(staging):
+    """Reverting to a demo seed or persisted secret state fails these database checks."""
+    assert _query(staging, "SELECT key FROM settings WHERE key = 'secret_key'") == []
+    for table in ("api_tokens", "account_realms", "account_sessions", "activity_log", "managed_domain_roots", "domain_root_grants", "backend_services"):
+        assert _query(staging, f"SELECT COUNT(*) FROM {table}") == [(0,)], table
+
+
+def test_database_has_no_mock_backend_or_mail_config(staging):
+    """Reverting to local mock service seeding persists forbidden settings."""
+    assert _query(staging, "SELECT key FROM settings WHERE key IN ('netcup_config', 'email_config')") == []
+
+
+def test_tree_ships_runtime_catalog_and_no_env_or_state_files(staging):
+    """Leaving the staged .env.defaults file in the artifact fails the file-list oracle."""
+    names = {p.name for p in staging.rglob("*") if p.is_file()}
+    assert SHIPPED_DEFAULTS_FILENAME in names
+    forbidden = {
+        ".env", ".env.defaults", ".env.services", ".env.workspace", "ciu.env",
+        ".env.operator", ".env.webhoster", ".env.live", ".env.guard",
+        ".env.operator.example", ".env.webhoster.example", ".env.live.example", ".env.guard.example",
+    }
+    assert not (names & forbidden), names & forbidden
+    assert not [n for n in names if n.startswith("deployment_state_")]
+    assert (staging / "passenger_wsgi.py").is_file()
+
+
+def test_shipped_catalog_has_no_admin_password(staging):
+    """Reverting the runtime catalog filter to include the admin password fails this check."""
+    text = (staging / SHIPPED_DEFAULTS_FILENAME).read_text(encoding="utf-8")
+    password = require_default("DEFAULT_ADMIN_PASSWORD")
+    assert password not in text
+    assert "DEFAULT_ADMIN_" not in text
+
+
+def test_shipped_catalog_trusts_no_forwarding_hops(staging):
+    """Reverting the Passenger trust default from zero fails this release-content check."""
+    text = (staging / SHIPPED_DEFAULTS_FILENAME).read_text(encoding="utf-8")
+    shipped_values = [
+        line for line in text.splitlines()
+        if line.startswith("TRUSTED_PROXY_HOPS=")
+    ]
+
+    assert shipped_values == ["TRUSTED_PROXY_HOPS=0"]
+
+
+def test_shipped_catalog_contains_only_allowlisted_nonsensitive_keys(staging):
+    """Adding an unallowlisted or credential-like key to the real catalog fails this check."""
+    text = (staging / SHIPPED_DEFAULTS_FILENAME).read_text(encoding="utf-8")
+    keys = {
+        line.split("=", 1)[0]
+        for line in text.splitlines()
+        if line and not line.startswith("#")
+    }
+    assert keys
+    assert keys <= RUNTIME_DEFAULT_KEYS
+    assert not any(
+        marker in key
+        for key in keys
+        for marker in SECRET_LOOKING_MARKERS
+    )
 
 
 def test_bundle_config_uses_cmru_parser_or_structural_contract():
@@ -109,7 +220,7 @@ def test_bundle_copy_paths_and_retired_ignore_patterns_are_pinned_as_data():
 
 
 def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, monkeypatch):
-    """Reverting the old builder's wheel extraction, DB seed, or defaults stage breaks this."""
+    """Reverting wheel extraction, DB seed, defaults rendering, or cwd independence breaks this."""
     stage = _load_stage_helper()
     project_root = tmp_path / "project"
     bundle_dir = project_root / "dist" / "app"
@@ -195,10 +306,12 @@ def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, mo
     monkeypatch.setattr(stage, "_runtime_python_version", lambda: "3.11")
     monkeypatch.setenv("DEPLOYMENT_TARGET", "restore-this-target")
     monkeypatch.setenv("NETCUP_FILTER_DB_PATH", "restore-this-db")
-    monkeypatch.chdir(project_root)
+    outside_cwd = tmp_path / "outside-cwd"
+    outside_cwd.mkdir()
+    monkeypatch.chdir(outside_cwd)
     original_sys_path = list(sys.path)
 
-    stage.stage_bundle(bundle_dir, "3.11")
+    stage.stage_bundle(bundle_dir, "3.11", repo_root=project_root)
 
     assert [event[0] for event in events] == ["flask", "init_app", "create_all", "seed", "defaults"]
     seed_event = next(event for event in events if event[0] == "seed")
@@ -212,7 +325,7 @@ def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, mo
     )
     assert os.environ["DEPLOYMENT_TARGET"] == "restore-this-target"
     assert os.environ["NETCUP_FILTER_DB_PATH"] == "restore-this-db"
-    assert Path.cwd() == project_root
+    assert Path.cwd() == outside_cwd
     assert sys.path == original_sys_path
     assert not wheel_path.exists()
     assert not list(vendor_dir.glob("*.dist-info"))

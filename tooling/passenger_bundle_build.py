@@ -19,6 +19,10 @@ RUNNER_UP_INSTRUCTION = (
     "run `ciu up --dir tooling/test-runner` in {root} first (with its ciu env loaded: "
     "`eval \"$(ciu env print)\"`, PWMCP_NETWORK), then retry"
 )
+UNTAGGED_BUILD_INSTRUCTION = (
+    "Passenger bundle builds are supported only inside `cmru release` after it creates the "
+    "release tag; run `cmru release` to build and publish the tagged bundle."
+)
 
 
 def _project_variants() -> list[dict[str, str]]:
@@ -41,16 +45,15 @@ def _project_variants() -> list[dict[str, str]]:
 
 
 def _release_version(environ: dict[str, str]) -> str:
-    explicit = environ.get("NAF_VERSION", "").strip()
-    if explicit:
-        return explicit
     tag = environ.get("CMRU_RELEASE_TAG", "").strip()
     prefix = "naf-v"
     if not tag.startswith(prefix) or not tag[len(prefix):]:
-        raise RuntimeError(
-            "NAF_VERSION or a CMRU_RELEASE_TAG beginning with naf-v is required"
-        )
-    return tag[len(prefix):]
+        raise RuntimeError(UNTAGGED_BUILD_INSTRUCTION)
+    version = tag[len(prefix):]
+    explicit = environ.get("NAF_VERSION", "").strip()
+    if explicit and explicit != version:
+        raise RuntimeError("NAF_VERSION does not match the CMRU release tag")
+    return version
 
 
 def _write_bundle_cmru_config() -> Path:

@@ -13,8 +13,8 @@ the `run-gate local-build` → `build_deployment.py --local` path.
 
 ## Passenger release path
 
-CMRU owns release versioning, tagging, checksums, and publication. Its project-local build step
-calls `cmru handler bundle-build` using `bundle.toml`; `cmru.toml` is the single variant list for
+CMRU owns release versioning, tagging, checksums, and publication. Its configured project-local
+build step calls `cmru handler bundle-build` using `bundle.toml`; `cmru.toml` is the single variant list for
 both building and publishing. Naf's preflight resolves this checkout's runner identity through
 CIU, confirms the runner is running and sees the same Git `HEAD`, then passes its root and resolved
 identity through the environment names configured in `bundle.toml`. CMRU vendors the wheels for
@@ -26,7 +26,15 @@ CMRU 7.3.0 appends `-v` to the prefix supplied for the manifest tag. Naf's relea
 the variant list is unchanged and the copy is removed after the handler exits. This cmru behavior
 is documented as a vbpub finding in the B101 canary report.
 
-The archive uses CMRU's canonical name, `naf-v<version>-<variant>.tar.xz`, and carries a
+The Passenger bundle is built only in a tagged `cmru release`; the preflight requires
+`CMRU_RELEASE_TAG` and rejects an untagged `NAF_VERSION`. The build removes stale versioned
+Passenger archives before invoking CMRU and removes `dist/app` after success when the current archive
+exists. The controller's equivalence procedure compares the archives, so the staged tree is no
+longer needed after that step. CMRU 7.3.0 currently refuses this bundle because its hard-exclude
+rules reject `app-defaults.env` and the vendored `certifi/cacert.pem`; B101 remains open until V1 is
+fixed upstream and the real comparison passes.
+
+When CMRU can produce the bundle, it uses the canonical name, `naf-v<version>-<variant>.tar.xz`, and carries a
 `manifest.json` under one top-level `app/` directory. The CIU adapter strips that directory while
 extracting; CMRU's generated installer follows the same single-directory bundle contract.
 
