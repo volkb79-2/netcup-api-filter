@@ -54,7 +54,7 @@ Passenger bundles are built only during tagged `cmru release`; the preflight req
 `CMRU_RELEASE_TAG`, and an untagged `cmru build` is unsupported. Each build clears stale versioned
 Passenger archives and removes `dist/app` after a successful archive exists. CMRU 7.3.0 currently
 blocks archive creation because its hard-exclude rules reject `app-defaults.env` and vendored
-`certifi/cacert.pem`; B101 stays open until vbpub ships the V1 fix and the controller verifies
+`certifi/cacert.pem`; B101 stays open until vbpub ships the KI-162 fix and the controller verifies
 old/new artifact equivalence.
 
 The configured artifact name is `naf-v<version>-<variant>.tar.xz`, matching CMRU's variant

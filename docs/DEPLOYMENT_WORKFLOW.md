@@ -56,7 +56,7 @@ ends. The canary report records this cmru handler finding for vbpub.
 The Passenger bundle is supported only inside a tagged `cmru release`: its build preflight requires
 `CMRU_RELEASE_TAG` and rejects `NAF_VERSION` by itself. Use `cmru release` when the tagged Passenger
 artifact is ready; `cmru build` and `cmru publish --build-output` do not produce this project's
-Passenger bundle. The untagged version-source gap is filed with vbpub as V3 in B101.
+Passenger bundle. The untagged version-source gap is filed with vbpub as KI-163 (see B101).
 
 Each build step removes old `dist/naf-v*.tar.xz` files before calling the handler so the publisher
 and activation adapter cannot select multiple release versions. After a successful handler run, it
@@ -65,7 +65,7 @@ the archives, so it does not need the staged tree afterward.
 
 **Current canary blocker:** CMRU 7.3.0 hard-excludes both the staged `app-defaults.env` and vendored
 `certifi/cacert.pem`; manifest generation therefore refuses this bundle tree. This branch remains
-parked until a CMRU release fixes V1 and the controller completes B101's old/new data comparison.
+parked until a CMRU release fixes vbpub KI-162 and the controller completes B101's old/new data comparison.
 
 ### Artifact contents
 

@@ -608,15 +608,20 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
 - **B101 — Verify CMRU KI-126 Passenger bundle equivalence canary. Status: open**
   naf has replaced `scripts/build_webhosting_tarball.py` with `bundle.toml` and the CMRU
   `bundle-build` handler. This is the canary for vbpub's KI-126 acceptance; that acceptance stays
-  open, and this branch must not merge, until a CMRU release fixes V1: hard excludes must not reject
-  the staged `app-defaults.env` or the vendored `certifi/cacert.pem`. V3 (an untagged version source)
-  and V4 (handler cleanup of its staged tree) are desirable upstream; naf currently requires a
-  tagged `cmru release`, prunes stale archives before the build, and removes `dist/app` after a
-  successful archive exists. Once V1 is released, the controller must build the old and new artifacts
-  in the checkout's matching runner and complete the data comparison in
-  `/tmp/naf-ctl/bundle1-fix1-report.md`: compare sorted file names, sizes and SHA-256 hashes for each
-  non-DB file (excluding timestamps), then compare the SQLite table list and row counts. Keep B101
-  open until the comparison passes and record any mismatch. The canary also records the 7.3.0
-  manifest-tag `-v` duplication (handled by a temporary config copy), one shared runner prefix for
-  all variants, the missing pip version-check flag, archive layout/metadata limits, required
-  `SOURCE_DATE_EPOCH`, and acceptance of a malformed `naf-v-v...` manifest tag.
+  open, and this branch must not merge, until a CMRU release (7.3.1 is pending) fixes vbpub KI-162:
+  hard excludes must not reject the staged `app-defaults.env` or the vendored `certifi/cacert.pem`.
+  KI-162's fix direction is an explicit path-exact `[archive] keep` allowlist, so `bundle.toml` will
+  need those two paths added when it lands (keep it path-exact; any other excluded-class file the old
+  archive holds must fail closed and be named). Desirable upstream and tracked in vbpub: KI-163 (an
+  untagged version source, after which the tagged-release-only restriction in
+  `tooling/passenger_bundle_build.py` can be relaxed), KI-164 (handler removes its staged tree; then
+  drop naf's own `dist/app` cleanup) and KI-165 (smaller gaps: manifest tag carrying the prefix twice,
+  which naf works around with a temporary `cmru.toml` copy that must be removed once fixed; one shared
+  runner prefix for all variants; no pip flag hook such as `--disable-pip-version-check`; archive
+  layout/metadata limits; `SOURCE_DATE_EPOCH` required; stale sibling archives, which naf prunes
+  before each build). Once KI-162 is released, build the old and new artifacts back to back in the
+  checkout's matching runner and compare: sorted file names, sizes and SHA-256 of every non-DB file
+  (the new archive has the `app/` root and a `manifest.json`; modes, owner names and timestamps are
+  CMRU policy), the manifest against the tree, and the SQLite table list, row counts, the single
+  shipped admin and the absence of a `secret_key` row. Keep B101 open until the comparison passes and
+  record any mismatch here.

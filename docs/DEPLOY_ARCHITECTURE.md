@@ -31,8 +31,8 @@ The Passenger bundle is built only in a tagged `cmru release`; the preflight req
 Passenger archives before invoking CMRU and removes `dist/app` after success when the current archive
 exists. The controller's equivalence procedure compares the archives, so the staged tree is no
 longer needed after that step. CMRU 7.3.0 currently refuses this bundle because its hard-exclude
-rules reject `app-defaults.env` and the vendored `certifi/cacert.pem`; B101 remains open until V1 is
-fixed upstream and the real comparison passes.
+rules reject `app-defaults.env` and the vendored `certifi/cacert.pem`; B101 remains open until vbpub
+KI-162 is fixed upstream and the real comparison passes.
 
 When CMRU can produce the bundle, it uses the canonical name, `naf-v<version>-<variant>.tar.xz`, and carries a
 `manifest.json` under one top-level `app/` directory. The CIU adapter strips that directory while
