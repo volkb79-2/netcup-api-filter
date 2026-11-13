@@ -144,6 +144,9 @@ def test_powerdns_compose_uses_the_image_template_entrypoint_for_config():
     # startup.py (auth-5.1.5) opens templates.d/<TEMPLATE_FILES entry>.j2; a
     # `.conf.j2` mount target would leave that file missing and crash the start.
     assert "/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.j2:ro" in compose
+    assert "{{ backend_powerdns.api.template_name }}.conf.j2" not in compose
+    assert "- PDNS_AUTH_API_KEY=${POWERDNS_API_KEY" not in compose
+    assert "PDNS_ALLOW_AXFR_IPS" not in compose
 
 
 def test_powerdns_webserver_password_is_its_own_checkout_secret():
@@ -157,9 +160,6 @@ def test_powerdns_webserver_password_is_its_own_checkout_secret():
         'powerdns_webserver_password = { directive = "GEN_LOCAL:naf/powerdns_webserver_password", '
         'expose_env = "POWERDNS_WEBSERVER_PASSWORD" }'
     ) in defaults
-    assert "{{ backend_powerdns.api.template_name }}.conf.j2" not in compose
-    assert "- PDNS_AUTH_API_KEY=${POWERDNS_API_KEY" not in compose
-    assert "PDNS_ALLOW_AXFR_IPS" not in compose
 
 
 def test_zone_create_payload_uses_explicit_soa_and_disabled_dnssec():

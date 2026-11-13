@@ -190,7 +190,7 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
     login_portal(client, other_user)
     own_response = client.get(f"/account/realms/{own_realm.id}")
     assert own_response.status_code == 200
-    assert own_realm.domain in own_response.get_data(as_text=True)
+    assert own_realm.realm_value in own_response.get_data(as_text=True)
     other_session = AccountSession.query.filter_by(account_id=other_user.id).one()
     other_session.last_active = datetime(2100, 1, 1)
     db.session.commit()
