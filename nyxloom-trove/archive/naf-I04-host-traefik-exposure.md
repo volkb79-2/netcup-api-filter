@@ -62,7 +62,7 @@ Verified on this host: `edge-traefik` (traefik v3.7), `edge-dockerproxy` and the
 
 - The whole `tooling/reverse-proxy/` directory — `docker-compose.yml` (`naf-dev-reverse-proxy`,
   nginx:stable-alpine, publishes 443/80, binds host `/etc/letsencrypt:ro`),
-  `nginx.conf.template` (terminates TLS; fronts Flask `/`, Mailpit `/mailpit/`, PowerDNS
+  `nginx.conf.template` (terminates TLS; fronts Flask `/`, Mailpit under its configured webroot, PowerDNS
   the retired path-based PowerDNS route), `_proxy_lib.sh`, `render-nginx-conf.sh`, `certs/`, `proxy.env`.
 - `deploy.sh`: `start_tls_proxy`/`stop_tls_proxy` (`:704-809`), the
   `USE_HTTPS && DEPLOYMENT_TARGET==local` branch (`:831`), the `naf-dev-reverse-proxy` cleanup

@@ -59,7 +59,7 @@ naf-mailpit            Up
 | Service | URL | Status |
 |---------|-----|--------|
 | **HTTPS Admin (via proxy)** | https://gstammtisch.dchive.de/admin/login | ✅ Working |
-| **HTTPS Mailpit UI** | https://gstammtisch.dchive.de/mailpit/ | ✅ Working (auth: admin:MailpitDev123!) |
+| **HTTPS Mailpit UI (retired proxy)** | Historical proxy path followed the Mailpit webroot, now configured by `mailpit.web_root` in `tooling/mailpit/ciu.defaults.toml.j2` | Legacy deployment snapshot; no current HTTPS route |
 | Flask App (HTTP direct) | http://localhost:5100/ | ✅ Responsive |
 | Mailpit API (internal) | http://naf-mailpit:8025/api/v1/messages | ✅ Working |
 | GeoIP Mock | http://naf-mock-geoip:5556/health | ✅ Working |
