@@ -291,8 +291,10 @@ Opus review); decisions D-008..D-013.
   the branch; release-builder runner readiness moved to WP9 (M4). Awaits re-review, main-checkout cutover and its gate receipt.
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
-- **B048 — Credentials.** Prompt/`ASK_FILE` secrets for SMTP/IMAP/netcup CCP, `.env.live.example`, mounts only into the frontend
-  and a dedicated live runner, applied at first boot only.
+- **B048 — Credentials. Status: part 1 delivered; part 2 remains open.** Part 1 provides the
+  environment-file layout and placeholder `.env.live.example`. Part 2 keeps CIU
+  `ASK_EXTERNAL`/`ASK_FILE` delivery for SMTP/IMAP and netcup CCP credentials open; secrets must be
+  mounted only into the frontend and dedicated live runner, with first-boot behavior verified.
 - **B049 — Deployment-contract suite / `e2e-public`.** Contract suite on the remote target (TLS, cookies, forged headers through
   the edge, https links, guard, app-to-PowerDNS wire, live mail/netcup/DNS), `endpoints.json` manifest, lane preflight with real
   read-only login probes, certificate SAN wait, failure classes, secret scrubbing, per-instance guard credential.

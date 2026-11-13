@@ -23,7 +23,7 @@ run-gate local-build (see run-gate.toml)
 `build_deployment.py --local` is the only builder of `deploy-local/`. Live test and coverage
 tooling depend on that directory, so it remains part of the local workflow.
 
-The public FQDN is detected into `.env.workspace` by `.devcontainer/post-create.sh`. Local
+The public FQDN is detected into `.env.workspace` by `.devcontainer/finalize.post.d/10-netcup-setup.sh`. Local
 service names and URLs are defined in `.env.services`; see [FQDN detection](FQDN_DETECTION.md)
 and the individual tooling READMEs for TLS and service-stack operation.
 

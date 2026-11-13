@@ -1,6 +1,6 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-11-11 (deployed-e2e / modern-ciu migration section below; the rest of this file is older and kept as written).** Start here. This dashboard reflects the *current* state of
+**Last synced: 2026-11-13 (B048 part 1 delivered; CIU secret delivery remains open).** Start here. This dashboard reflects the *current* state of
 netcup-api-filter; the direction spine lives in [1-north-star.md](1-north-star.md),
 [2-product-definition.md](2-product-definition.md), [3-roadmap.md](3-roadmap.md), and
 [4-backlog.md](4-backlog.md); decisions live in [decisions.md](decisions.md) (D-###), and
@@ -34,7 +34,7 @@ reviewed independently on the other, with gates through `run-gate`.
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058 in progress on `fixup3-form-contracts` | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
 
-Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
+Open items for the operator: probes on the webhoster, B048 part 2 CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for `.env.live` credentials, delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
 
 ## Release & infra model (current)
 

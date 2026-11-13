@@ -20,20 +20,20 @@ so end-to-end tests exercise the true DNS path over TLS.
   checkout's own generated env loaded (see §2) — the marker sets
   `standalone_root = true`, so ciu refuses to run if `$REPO_ROOT` points at a sibling
   repo.
-- The host's public IP and base FQDN come from `ciu.env` (auto-detected):
-  `PUBLIC_IP` and `PUBLIC_FQDN`. Read them from that environment; they are not
-  committed documentation values.
+- Public edge facts are generated for the checkout. `.env.workspace` and
+  `ciu.env` are local generated inputs; use their owning workflow instead of
+  copying values into documentation or tracked files. See the
+  [configuration guide](CONFIGURATION_GUIDE.md#environment-file-layout) for
+  their exact producers and readers.
 
-## 1. Operator secrets & facts (gitignored env files)
+## 1. Operator facts and local access
 
-Four env files are sourced before every ciu command; none are committed:
-
-| File | Origin | Holds |
-|---|---|---|
-| `ciu.env` | `ciu env generate` (machine facts) | `REPO_ROOT`, `PHYSICAL_REPO_ROOT`, `PUBLIC_IP`, `PUBLIC_FQDN`, network name |
-| `.env` | local operator environment | non-secret local overrides |
-| `.env.operator` | **you create** | `NAF_DELEGATED_DNS_ZONE` — the zone PowerDNS serves |
-| `.env.guard` | generated (bcrypt) | `NAF_GUARD_USER` / `NAF_GUARD_PASSWORD` / `NAF_GUARD_HTPASSWD` — the traefik basicauth credential guarding every exposed route |
+The [configuration guide](CONFIGURATION_GUIDE.md#environment-file-layout) owns
+the tracked status, writers, readers and content boundaries of all environment
+files. This stack needs the generated CIU facts, `.env.operator` for the
+delegated zone, `.env.guard` for human basic-auth and tracked `.env.services`
+for resolved service identities. The PowerDNS API key is CIU-generated; it is
+not an operator entry in `.env.operator`.
 
 **Set the delegated zone** — the single value a sysadmin must supply:
 
@@ -58,7 +58,7 @@ ciu env generate
 eval "$(ciu env print)"
 export PWMCP_NETWORK="$(sed -n 's/^network_name = "\(.*\)"$/\1/p' /srv/pwmcp-instance/ciu.global.toml)"
 test -n "$PWMCP_NETWORK"
-set -a; . ./.env; . ./.env.operator; . ./.env.guard; . ./.env.services; set +a
+set -a; . ./.env.operator; . ./.env.guard; . ./.env.services; set +a
 ciu render                       # sanity: renders only naf's stacks
 ciu up --profile full            # mocks + pwmcp + app + gate + PowerDNS
 ```

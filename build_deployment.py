@@ -62,7 +62,7 @@ def _render_app_config_toml(raw_text: str) -> str:
         raise RuntimeError(
             "app-config.toml contains unresolved placeholders: "
             + ", ".join(sorted(missing))
-            + ". Ensure these are set in your environment (.env.workspace/.env/.env.defaults) before building."
+            + ". Export these values before building; this renderer does not load env files."
         )
 
     return rendered
