@@ -34,8 +34,10 @@ The delegated zone is not configured in this directory. It is the global
 operator environment as `NAF_DELEGATED_DNS_ZONE`. The committed default is empty.
 
 On `ciu up`, `post_compose_zone.py` checks for that zone through the Authoritative HTTP
-API and creates it when the value is non-empty. The image startup wrapper renders the
-mounted `pdns-auth.conf.j2` from `TEMPLATE_FILES`; it uses the checkout-local API key
+API and creates it when the value is non-empty. With `TEMPLATE_FILES=naf-auth`, the image
+opens `/etc/powerdns/templates.d/naf-auth.j2` and renders
+`/etc/powerdns/pdns.d/naf-auth.conf`. Compose mounts the tracked `pdns-auth.conf.j2`
+source file at that exact template path. The template uses the checkout-local API key
 from `POWERDNS_API_KEY`, while the built-in `_api.conf` generation variable is unset.
 The first creation derives all zone-specific records from the zone itself:
 
@@ -45,10 +47,36 @@ SOA  ns1.<zone>.      hostmaster.<zone>. <serial> 10800 3600 604800 3600
 ```
 
 The API request explicitly sets the SOA record, API SOA-EDIT mode, and DNSSEC-disabled
-zone state. An existing zone is left untouched, including its SOA serial. An empty
+zone state. It leaves `api_rectify` unset so PowerDNS uses its
+[`default-api-rectify=yes`](https://doc.powerdns.com/authoritative/settings.html#default-api-rectify)
+default, matching the 4.8 behavior. The first filtered zone lookup retries transport
+failures up to the configured attempt count with the configured delay; both values are
+bounded stack settings. An existing zone is left untouched, including its SOA serial. An empty
 `NAF_DELEGATED_DNS_ZONE` is a no-op. No committed default guesses a zone, nameserver,
 or SOA. PowerDNS 5.1 normalizes API record data on write, so a later readback may use a
 different textual representation.
+
+## Upgrade differences relevant to the app
+
+The [4.8-to-4.9 upgrade notes](https://doc.powerdns.com/authoritative/upgrading.html#4-8-0-to-4-9-0)
+say the HTTP API rejects a `priority` field in record content. The app's PowerDNS backend
+does not send it: `create_record` builds the outgoing RRset from name, type, changetype,
+TTL and records in `src/netcup_api_filter/backends/powerdns.py`; `normalize_record`'s
+returned `priority` value is not part of that request.
+
+The [PowerDNS 5.1 changelog](https://doc.powerdns.com/authoritative/changelog/5.1.html)
+also records stricter record-content validation and TTL checks for RRset updates.
+The app currently passes record destination and TTL through unchanged, so content that
+4.8 accepted (for example unquoted TXT or relative CNAME data) may receive HTTP 422;
+that is an inference from the upstream changes and the current request shape.
+**UNVERIFIED:** whether these exact examples receive 422 on auth-5.1.5; the controller
+checks representative app-generated requests under B095 R8.
+Backlog item B097 tracks client-side normalization/validation or a clear error mapping
+with tests; this stack update does not change the application backend.
+
+The PowerDNS 5.1 changelog also [removes API-key query arguments](https://doc.powerdns.com/authoritative/changelog/5.1.html).
+The app's client sends its key in the `X-API-Key` header, so this change does not affect
+the integration.
 
 ## Start the stack
 

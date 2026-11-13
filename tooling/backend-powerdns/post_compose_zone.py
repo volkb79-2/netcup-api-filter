@@ -29,6 +29,11 @@ from ciu_identity import container_for
 
 logger = logging.getLogger(__name__)
 
+
+class PowerDNSAPITransportError(RuntimeError):
+    """Raised when the in-container PowerDNS API transport cannot complete."""
+
+
 _API_REQUEST_SCRIPT = r"""
 import json
 import os
@@ -104,7 +109,6 @@ def build_zone_payload(zone: str, serial: str, settings: dict[str, Any]) -> dict
         "masters": [],
         "nameservers": [nameserver],
         "dnssec": False,
-        "api_rectify": False,
         "soa_edit_api": _require(
             settings.get("soa_edit_api"), "backend_powerdns.zone_bootstrap.soa_edit_api"
         ),
@@ -146,30 +150,45 @@ def _api_request(
         _require(api_cfg.get("docker_exec_timeout_seconds"), "backend_powerdns.api.docker_exec_timeout_seconds")
     )
     payload_json = json.dumps(payload, separators=(",", ":")) if payload is not None else ""
-    result = _docker_exec(
-        container,
-        "python3",
-        "-c",
-        _API_REQUEST_SCRIPT,
-        str(_require(api_cfg.get("base_url"), "backend_powerdns.api.base_url")),
-        str(_require(ports.get("api"), "backend_powerdns.ports.api")),
-        method,
-        path,
-        str(request_timeout),
-        payload_json,
-        timeout=exec_timeout,
-    )
+    try:
+        result = _docker_exec(
+            container,
+            "python3",
+            "-c",
+            _API_REQUEST_SCRIPT,
+            str(_require(api_cfg.get("base_url"), "backend_powerdns.api.base_url")),
+            str(_require(ports.get("api"), "backend_powerdns.ports.api")),
+            method,
+            path,
+            str(request_timeout),
+            payload_json,
+            timeout=exec_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PowerDNSAPITransportError(
+            "[backend-powerdns post hook] PowerDNS API transport timed out "
+            f"after {exec_timeout:g}s"
+        ) from exc
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
-        raise RuntimeError(f"[backend-powerdns post hook] PowerDNS API transport failed: {detail}")
+        raise PowerDNSAPITransportError(
+            f"[backend-powerdns post hook] PowerDNS API transport failed: {detail}"
+        )
     try:
         response = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
             "[backend-powerdns post hook] PowerDNS API helper returned invalid JSON"
         ) from exc
-    if not isinstance(response, dict) or "status" not in response or "body" not in response:
-        raise RuntimeError("[backend-powerdns post hook] PowerDNS API helper returned an invalid response")
+    if (
+        not isinstance(response, dict)
+        or type(response.get("status")) is not int
+        or not isinstance(response.get("body"), str)
+    ):
+        raise RuntimeError(
+            "[backend-powerdns post hook] PowerDNS API helper returned an invalid response; "
+            "expected an integer status and string body"
+        )
     return response
 
 
@@ -200,6 +219,48 @@ def _zone_exists(container: str, backend_cfg: dict[str, Any], zone: str) -> bool
     return any(isinstance(item, dict) and item.get("name") == expected_name for item in zones)
 
 
+def _zone_exists_with_initial_retries(
+    container: str, backend_cfg: dict[str, Any], zone: str
+) -> bool:
+    """Retry only the first filtered lookup after API transport failures."""
+    api_cfg = backend_cfg.get("api", {})
+    attempts = int(
+        _require(
+            api_cfg.get("first_request_retry_attempts"),
+            "backend_powerdns.api.first_request_retry_attempts",
+        )
+    )
+    delay = float(
+        _require(
+            api_cfg.get("first_request_retry_delay_seconds"),
+            "backend_powerdns.api.first_request_retry_delay_seconds",
+        )
+    )
+    if not 1 <= attempts <= 5:
+        raise ValueError(
+            "[backend-powerdns post hook] first_request_retry_attempts must be between 1 and 5"
+        )
+    if not 0 <= delay <= 5:
+        raise ValueError(
+            "[backend-powerdns post hook] first_request_retry_delay_seconds must be between 0 and 5"
+        )
+
+    for attempt in range(attempts):
+        try:
+            return _zone_exists(container, backend_cfg, zone)
+        except PowerDNSAPITransportError:
+            if attempt + 1 == attempts:
+                raise
+            logger.warning(
+                "PowerDNS initial zone lookup transport failure; retry %d/%d after %.3fs",
+                attempt + 1,
+                attempts,
+                delay,
+            )
+            time.sleep(delay)
+    raise AssertionError("unreachable after a positive retry attempt count")
+
+
 def _wait_until_healthy(container: str, service_name: str, api_cfg: dict[str, Any], ctx) -> None:
     readiness_timeout = float(
         _require(api_cfg.get("readiness_timeout_seconds"), "backend_powerdns.api.readiness_timeout_seconds")
@@ -222,7 +283,13 @@ def _wait_until_healthy(container: str, service_name: str, api_cfg: dict[str, An
     )
     deadline = time.monotonic() + readiness_timeout
     while True:
-        result = _docker_exec(container, "pdns_control", "version", timeout=probe_timeout)
+        try:
+            result = _docker_exec(container, "pdns_control", "version", timeout=probe_timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "[backend-powerdns post hook] PowerDNS health probe timed out "
+                f"after {probe_timeout:g}s"
+            ) from exc
         if result.returncode == 0:
             return
         remaining = deadline - time.monotonic()
@@ -257,7 +324,7 @@ def run(config: dict, ctx) -> dict:
     logger.info("bootstrapping PowerDNS zone %s in %s", zone, container)
 
     _wait_until_healthy(container, service_name, api_cfg, ctx)
-    if _zone_exists(container, backend_cfg, zone):
+    if _zone_exists_with_initial_retries(container, backend_cfg, zone):
         logger.info("PowerDNS zone %s already exists; leaving it untouched", zone)
         return {}
 

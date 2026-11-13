@@ -91,6 +91,7 @@ items:
   - {id: B093, title: "Switch the PowerDNS backend to the 5.1 series (pdns-auth-51) via cmru versions", type: feature, component: infra, context_estimate: medium}
   - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
   - {id: B095, title: "Verify PowerDNS 5.1.5 on a real start: logs, version API, zone and record round trip, health", type: feature, component: infra, context_estimate: small}
+  - {id: B097, title: "Handle PowerDNS 5.1 record-content and TTL validation in the app backend", type: bugfix, component: backends, context_estimate: medium}
 ---
 
 # Backlog
@@ -537,3 +538,11 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   NS, serial, `soa_edit_api`, and a record round trip through `PATCH`/`GET`; confirm the `pdns_control version`
   healthcheck is healthy. **UNVERIFIED:** the 5.1.5 image's acceptance of the per-zone `soa_edit_api` field and
   exact readback normalization must be confirmed on that start.
+
+- **B097 — PowerDNS 5.1 API record validation. Status: open**
+  PowerDNS 5.1 tightened record-content validation and RRset TTL enforcement. The app backend currently sends
+  `record['destination']` and `record.get('ttl', 60)` unchanged in
+  `src/netcup_api_filter/backends/powerdns.py:141-148`; some inputs accepted by 4.8 may now receive HTTP 422.
+  Add client-side content normalization/validation or a clear error mapping for those responses, with tests for
+  supported record types. **UNVERIFIED:** which exact content/TTL cases return 422 on auth-5.1.5. This follow-up
+  does not change the backend in B093.

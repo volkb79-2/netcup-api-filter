@@ -35,7 +35,7 @@ reviewed independently on the other, with gates through `run-gate`.
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058 in progress on `fixup3-form-contracts` | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
 
-Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, and B095 PowerDNS real-start verification.
+Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, B095 PowerDNS real-start verification, and B097 PowerDNS record-content/TTL compatibility follow-up.
 
 ## Release & infra model (current)
 

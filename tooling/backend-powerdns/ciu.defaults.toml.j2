@@ -70,7 +70,6 @@ log_dns_details = "no"
 # zone-bootstrap hook both talk to PowerDNS over the HTTP API — so it
 # stays disabled by default.
 disable_axfr = "yes"
-allow_axfr_ips = ""
 gsqlite3_dnssec = "yes"
 
 [backend_powerdns.api]
@@ -85,6 +84,8 @@ docker_exec_timeout_seconds = 35
 readiness_timeout_seconds = 90
 readiness_probe_timeout_seconds = 5
 readiness_poll_seconds = 2
+first_request_retry_attempts = 3
+first_request_retry_delay_seconds = 0.5
 
 [backend_powerdns.zone_bootstrap]
 # Explicit zone content replaces PowerDNS's generic default SOA at creation.

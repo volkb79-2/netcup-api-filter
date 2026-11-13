@@ -124,7 +124,6 @@ services:
 
       # Security
       - PDNS_DISABLE_AXFR={{ backend_powerdns.pdns.disable_axfr }}
-      - PDNS_ALLOW_AXFR_IPS={{ backend_powerdns.pdns.allow_axfr_ips }}
 
     secrets:
       - powerdns_api_key
