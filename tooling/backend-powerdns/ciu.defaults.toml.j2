@@ -25,7 +25,7 @@
 [backend_powerdns]
 name = "powerdns"
 image = "powerdns/pdns-auth-51"
-image_tag = "5.1.5"   # pending cmru versions resolve; see the B093 handoff report
+image_tag = "5.1.5"   # resolved by cmru versions resolve; see cmru.toml
 
 # UID 953 = the `pdns` user created by the PowerDNS auth-5.1.5 Dockerfile.
 # The GID half of `user:` in compose is the HOST's docker-group GID (DOCKER_GID, a ciu.env
