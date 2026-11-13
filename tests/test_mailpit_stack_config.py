@@ -40,7 +40,7 @@ def test_mailpit_healthcheck_path_matches_the_rendered_webroot():
     compose = COMPOSE_PATH.read_text(encoding="utf-8")
     webroot = re.search(r'^\s*MP_WEBROOT:\s*"([^"]+)"\s*$', compose, re.MULTILINE)
     healthcheck = re.search(
-        r"http://localhost:\{\{ mailpit\.web_port \}\}([^\s\"]+)", compose
+        r"http://localhost:\{\{ mailpit\.web_port \}\}(.+?)\s+2>&1", compose
     )
 
     assert webroot is not None
