@@ -15,7 +15,7 @@ order.
 | `ciu.env` | Generated CIU identity and machine facts, including `PUBLIC_IP` and `PUBLIC_FQDN` | No | `ciu env generate` (`ciu env print` only prints it for `eval`) | CIU Compose templates, including `tooling/test-runner/ciu.compose.yml.j2` and `tooling/app-local/ciu.compose.yml.j2` | Hand-edited values or credentials outside CIU's secret mechanism |
 | `.env.operator` | Operator-supplied local infrastructure facts, including the delegated zone | No | Operator | Sourced before CIU; `ciu.global.defaults.toml.j2` consumes `NAF_DELEGATED_DNS_ZONE`, then the PowerDNS/app seed hooks use the rendered fact | `POWERDNS_API_KEY` or guard credentials; CIU generates the PowerDNS key |
 | `.env.webhoster` | Human webhoster URL and SSHFS route | No | Operator | Sourced by the operator; the `sshfs` and `curl` commands below read its keys. `.ciu.hosts.toml` is a separate CIU deployment input | Netcup CCP, mailbox, app or guard credentials |
-| `.env.live` | On-demand live-check mailbox, provider and DNS-test inputs | No | Operator / later CIU secret delivery | Sourced for `ui_tests/tests/live/*`; app-side `NETCUP_*` and `MAXMIND_*` values are read by `passenger_wsgi.py` and `geoip_service.py` | Credentials copied into tracked files or the webhoster SSH route |
+| `.env.live` | Inputs for live mailbox/DNS checks and the on-demand deployed-instance smoke | No | Operator / later CIU secret delivery | No current `run-gate` lane consumes it; its live-test keys are read by `ui_tests/tests/live/*`, app settings by `passenger_wsgi.py` / `geoip_service.py`, and remote smoke keys by `ui_tests/config.py` | Credentials copied into tracked files or the webhoster SSH route |
 | `.env.guard` | Local Traefik basic-auth credentials for human access | No | Operator | `run-gate.toml`'s local setup sources it; `ciu.global.defaults.toml.j2` and the `app-local` / PowerDNS Compose templates consume the user/hash; documented human `curl` commands use the user/password | Any tracked credential value or live application login |
 | `.env` | Optional local override layer for `.env.defaults`; absent/empty by default | No | Local developer | `src/netcup_api_filter/config_defaults.py` reads it after `.env.defaults`; `build_deployment.py` uses that loader while seeding and removes it from the artifact | Live-tier credentials, deployment route facts or anything intended to ship |
 | `app-defaults.env` | Generated allowlist of runtime defaults in a built tree | No | `config_defaults.write_shipped_defaults()` called by `build_deployment.py` and `scripts/build_webhosting_tarball.py` | `src/netcup_api_filter/config_defaults.py` | Credential-like values or build/test-only settings |
@@ -34,10 +34,11 @@ set -a; . ./.env.live; set +a
 ```
 
 Sourcing a file only exports its keys into the current shell. `run-gate.toml` `forward_env` does not
-forward the `.env.live` keys (`IMAP_*`, `DNS_*`, `DEPLOYMENT_MODE`, `NETCUP_*`, `MAXMIND_*`) into the
-test runners, and no `run-gate` lane runs `ui_tests/tests/live/`; a supported live lane and its
-credential delivery are B048 part 2 / B049. Until then `.env.live` is the template for that
-work, not a loader that any lane consumes.
+forward the `.env.live` keys (`IMAP_*`, `DNS_*`, `DEPLOYMENT_MODE`, `NETCUP_*`, `MAXMIND_*`, or
+`NAF_E2E_TARGET` / `NAF_REMOTE_*`) into the test runners, and no `run-gate` lane runs
+`ui_tests/tests/live/*` or the remote smoke. The on-demand deployed lane and credential delivery
+remain B048 part 2 / B049. Until that supported workflow exists, `.env.live` is a template for
+explicitly selected test processes, not an input consumed by a current gate.
 
 For the local CIU flow, `run-gate.toml` records the setup sequence: load CIU's generated facts,
 provide `PWMCP_NETWORK`, source `.env.guard`, then source `.env.services`. The exact file need
@@ -59,12 +60,18 @@ curl --fail --output /dev/null "${WEBHOSTING_URL}/admin/login"
 
 ### Keys in `.env.live.example`
 
-The live example's keys have readers in the live DNS/email tests and the app's Netcup/GeoIP
-configuration. `POWERDNS_API_URL` and `POWERDNS_API_URL_INTERNAL` belong to `.env.services`, which
-derives them; neither belongs in `.env.defaults` or `.env.webhoster`. `POWERDNS_API_KEY` for local
-stacks is CIU-generated. The app's SMTP host and credentials are Settings UI/database values, not
-environment variables. B048 part 2 still owns CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for the
-on-demand deployed lane.
+The live example's DNS and mailbox keys have readers in the live DNS/email tests; its Netcup/GeoIP
+keys have app readers; and its deployed target keys are read by `ui_tests/config.py` when the
+on-demand remote smoke is selected (also documented in `WEBHOSTING_TESTING_GUIDE.md`).
+`POWERDNS_API_URL` and `POWERDNS_API_URL_INTERNAL` belong to `.env.services`, which derives them;
+neither belongs in `.env.defaults` or `.env.webhoster`. The live DNS lifecycle test also needs
+`POWERDNS_API_KEY`, but that key is intentionally absent from `.env.live.example`: CIU generates a
+checkout-local `GEN_LOCAL` value in `tooling/backend-powerdns/ciu.defaults.toml.j2` and supplies it
+to the backend Compose container and seed hook, not to a pytest process. There is no supported
+tracked manual delivery path today; a person could manually export the generated value into a
+selected test process, but the repository has no lane that does so. The CIU-resolved / `ASK_FILE`
+handoff to a live runner remains B048 part 2 / B049. The app's SMTP host and credentials are
+Settings UI/database values, not environment variables.
 
 The keys below also appear in the `.env.defaults` catalog. Their readers (live tests, `geoip_service.py`)
 read `os.environ` with their own in-code fallbacks and do not consult the catalog, so the catalog
@@ -101,6 +108,9 @@ Reader evidence for the example keys:
   `src/netcup_api_filter/passenger_wsgi.py` (with the database Settings values as fallback).
 - `MAXMIND_*` values are read by `src/netcup_api_filter/geoip_service.py` and the GeoIP admin
   configuration in `src/netcup_api_filter/api/admin.py`.
+- `NAF_E2E_TARGET`, `NAF_REMOTE_BASE_URL`, `NAF_REMOTE_ADMIN_USERNAME`, and both remote admin
+  password/TOTP value-or-file pairs are read by `ui_tests/config.py`; their on-demand remote smoke
+  setup is described in `docs/WEBHOSTING_TESTING_GUIDE.md`.
 - `NAF_DELEGATED_DNS_ZONE` is consumed by `ciu.global.defaults.toml.j2`; `NAF_GUARD_USER` and
   `NAF_GUARD_HTPASSWD` are consumed by that template and local Compose guard labels. The documented
   human `curl` commands read `NAF_GUARD_USER` and `NAF_GUARD_PASSWORD`.

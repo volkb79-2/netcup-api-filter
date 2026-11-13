@@ -1,7 +1,9 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-11-13 (B048 part 1 delivered; CIU secret delivery remains open).** Start here. This dashboard reflects the *current* state of
-netcup-api-filter; the direction spine lives in [1-north-star.md](1-north-star.md),
+**Last synced: 2026-11-13 (B048 part 1 delivered; CIU secret delivery remains open).** Start here.
+For this sync, only this status note and the `Open items for the operator` line below were
+re-synced; the other dashboard sections retain their earlier snapshot and were not checked.
+The direction spine lives in [1-north-star.md](1-north-star.md),
 [2-product-definition.md](2-product-definition.md), [3-roadmap.md](3-roadmap.md), and
 [4-backlog.md](4-backlog.md); decisions live in [decisions.md](decisions.md) (D-###), and
 [handoffs/](handoffs/) holds open carved tasks / [archive/](archive/) completed material. When those disagree with reality, this file is corrected

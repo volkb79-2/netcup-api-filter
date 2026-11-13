@@ -90,6 +90,7 @@ items:
   - {id: B092, title: "PROXY-CALIBRATE: measure the proxy chain after extract and set trusted hops (Passenger default 0 first)", type: feature, component: deploy, context_estimate: medium}
   - {id: B093, title: "Switch the PowerDNS backend to the 5.1 series (pdns-auth-51) via cmru versions", type: feature, component: infra, context_estimate: medium}
   - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
+  - {id: B095, title: "Resolve catalog-only live-test defaults", type: bugfix, component: config, context_estimate: medium}
 ---
 
 # Backlog
@@ -529,3 +530,16 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   `user: ":"`). Host-path handling is inconsistent: app-local uses a bare `PHYSICAL_REPO_ROOT`, Netcup mock and
   PowerDNS require it, and GeoIP mock falls back to its configured workspace path. Make the identity and host-path
   inputs fail fast consistently, retaining a configured fallback only where explicitly intended.
+
+- **B095 — Resolve catalog-only live-test defaults. Status: open (Low/Medium)**
+  Seventeen `.env.defaults` entries (`DNS_TEST_DOMAIN`, `DNS_TEST_SUBDOMAIN_PREFIX`,
+  `DNS_PROPAGATION_TIMEOUT`, `DNS_PROPAGATION_POLL_INTERVAL`, `DNS_CHECK_SERVERS`, `IMAP_HOST`,
+  `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_USE_TLS`, `IMAP_MAILBOX`, `IMAP_MAILBOXES`,
+  `IMAP_TIMEOUT`, `IMAP_MESSAGE_LOOKBACK`, `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY`, and
+  `MAXMIND_API_URL`) are read directly from `os.environ` by
+  `ui_tests/tests/live/test_live_dns_verification.py`,
+  `ui_tests/tests/live/test_live_email_verification.py`, `ui_tests/workflows.py`, and
+  `src/netcup_api_filter/geoip_service.py` with in-code fallbacks; no catalog loader reads them.
+  Decide whether to remove these catalog entries or migrate the readers to the defaults catalog,
+  then retire the `env-default-overrides` registry and its structural test in
+  `tests/test_env_layout.py`.
