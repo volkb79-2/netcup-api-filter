@@ -94,6 +94,7 @@ items:
   - {id: B097, title: "Handle PowerDNS 5.1 record-content and TTL validation in the app backend", type: bugfix, component: backends, context_estimate: medium}
   - {id: B098, title: "The delegated zone has no A record for its own nameserver (ns1) because the bootstrap hook creates only NS and SOA", type: bugfix, component: infra, context_estimate: small}
   - {id: B100, title: "app.py logs nothing at startup when TRUSTED_PROXY_HOPS is above 0", type: bugfix, component: app, context_estimate: small}
+  - {id: B101, title: "Verify CMRU KI-126 Passenger bundle equivalence canary", type: feature, component: release, context_estimate: medium}
   - {id: B096, title: "Resolve catalog-only live-test defaults", type: bugfix, component: config, context_estimate: medium}
 ---
 
@@ -603,3 +604,15 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   nothing, so an operator cannot see from the log that forwarded headers are being trusted. Log one INFO line with the hop
   count and which headers are honoured (never values), and cover it with a test. The separate Passenger-side probe (B054)
   stays open because the PHP path was measured, not the WSGI path.
+
+- **B101 — Verify CMRU KI-126 Passenger bundle equivalence canary. Status: open**
+  naf has replaced `scripts/build_webhosting_tarball.py` with `bundle.toml` and the CMRU
+  `bundle-build` handler. This is the canary for vbpub's KI-126 acceptance; that acceptance stays
+  open until the controller builds the old and new artifacts in the checkout's matching runner
+  and completes the data comparison in `/tmp/naf-ctl/bundle1-report.md`. Compare staged file names,
+  sizes and hashes (excluding the SQLite database and timestamps), then compare the database table
+  list and row counts. The canary also records cmru 7.3.0 findings: its manifest tag currently
+  appends `-v` to naf's already suffixed prefix (handled by an explicit temporary config copy),
+  its runner prefix is shared across all variants, and its archive settings do not expose pip's
+  version-check flag, a flat root, or the prior compression/mode policy. Record the real comparison
+  result and any mismatch before closing this entry.

@@ -37,9 +37,23 @@ ui_tests/requirements.txt (UI test dependencies)
 cmru release
 ```
 
-CMRU calls `scripts/build_webhosting_tarball.py` for each Passenger target (Python 3.11). The builder runs through `docker exec` into the matching ciu runner (`naf-<INSTANCE_ID>-test-runner-py311`) so wheels
-from `requirements-runtime.txt` are downloaded, vendored, and database seeding is performed
-under the matching ABI. It publishes the `py311` tarball.
+CMRU's build step calls `cmru handler bundle-build` with `bundle.toml`; `[[project.variants]]`
+in `cmru.toml` is the variant list used by both build and publish. A naf preflight resolves this
+checkout's test-runner identity through CIU, verifies that it is running and mounted on the same
+Git `HEAD`, then supplies the runner root and identity through the environment variables named
+in `[exec].env`. CMRU downloads ABI-tagged wheels from `requirements-runtime.txt`; its stage
+helper expands them into Passenger's importable `vendor/` layout, seeds the database, and renders
+`app-defaults.env` under the matching interpreter.
+
+CMRU 7.3.0 appends `-v` to `project.prefix` when writing the manifest tag, while naf's release
+config already stores `naf-v`. The preflight therefore creates a short-lived `cmru.toml` copy
+with only that prefix normalized to `naf`; the declared variant table remains intact. This
+handler mismatch is recorded for vbpub in the B101 canary report.
+
+The local artifact is named `naf-v<version>-<variant>.tar.xz`, matching CMRU's variant publisher
+and generated installer. It includes CMRU's `manifest.json` inside a single top-level `app/`
+directory; the CIU activation adapter strips that directory when extracting into the Passenger
+application root.
 
 Each Passenger tarball contains:
 - Vendored dependencies (no pip install needed on server)

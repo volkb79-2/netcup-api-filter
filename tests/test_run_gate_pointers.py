@@ -45,6 +45,52 @@ def test_runner_variants_agree_across_cmru_ciu_run_gate_and_bake():
         assert env["image"].endswith(f"/test-runner:{name}"), env["image"]
 
 
+def test_passenger_bundle_and_publish_use_the_cmru_variant_list():
+    """Reverting to the custom builder or duplicating py311 in config fails this contract."""
+    cmru = _toml("cmru.toml")
+    bundle = _toml("bundle.toml")
+    variants = cmru["project"]["variants"]
+    assert variants
+    assert "variants" not in bundle
+    assert bundle["archive"]["name_template"] == "naf-v{version}-{variant}.tar.xz"
+    assert bundle["archive"]["version_env"] == "NAF_VERSION"
+    assert bundle["manifest"]["name"] == "manifest.json"
+
+    build = "\n".join(
+        " ".join(command["argv"])
+        for command in cmru["steps"]["build"]["commands"]
+    )
+    assert "cmru handler bundle-build" in build
+    assert "--variant all" in build
+    assert '--cmru-config "$NAF_BUNDLE_CMRU_CONFIG"' in build
+    assert "passenger_bundle_build.py prepare" in build
+    assert "scripts/build_webhosting_tarball.py" not in build
+
+    publish = "\n".join(
+        " ".join(command["argv"])
+        for command in cmru["steps"]["push"]["commands"]
+        if "passenger_bundle_publish.py" in " ".join(command["argv"])
+    )
+    assert publish
+    publisher = (ROOT / "tooling/passenger_bundle_publish.py").read_text(encoding="utf-8")
+    assert 'project.get("variants", [])' in publisher
+    assert '"--variant", variant' in publisher
+    assert '"--glob", "dist/naf-v*.tar.xz"' in publisher
+
+    installer = cmru["project"]["installer"]
+    assert installer["asset_suffix"] == ".tar.xz"
+    activation = (ROOT / "scripts/activate.py").read_text(encoding="utf-8")
+    assert 'glob(f"naf-v*-{variant}.tar.xz")' in activation
+    assert "top-level bundle directory" in activation
+
+    # The prefix values are names of environment variables, not checked-in runner identities.
+    assert bundle["exec"]["env"] == {
+        "root": "NAF_BUNDLE_RUNNER_ROOT",
+        "container": "NAF_BUNDLE_RUNNER_CONTAINER",
+    }
+    assert "naf-" not in bundle["exec"]["prefix"][-1]
+
+
 def test_e2e_lane_requires_the_pwmcp_endpoint_and_nothing_cockpit_specific():
     """Review #8: without PLAYWRIGHT_SERVER_WS the runner (no browser engine) errors test by
     test; the per-session design needs no target URL or deployment selector from the cockpit."""

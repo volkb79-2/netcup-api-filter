@@ -1,0 +1,39 @@
+project_root = "."
+dist_dir = "dist"
+bundle_dir = "app"
+
+[wheel]
+enabled = false
+python_bin = "/opt/tester-venv/bin/python"
+
+[archive]
+name_template = "naf-v{version}-{variant}.tar.xz"
+version_env = "NAF_VERSION"
+format = "xztar"
+
+[copy]
+files = [".env.defaults", "src/netcup_api_filter/passenger_wsgi.py"]
+dirs = ["src", "scripts"]
+
+[vendor]
+requirements = ["requirements-runtime.txt"]
+platforms = ["manylinux2014_x86_64", "any"]
+dest = "vendor"
+
+[stage]
+argv = [
+  "/opt/tester-venv/bin/python",
+  "tooling/passenger_bundle_stage.py",
+  "{bundle_dir}",
+  "{python_version}",
+]
+
+[exec]
+prefix = ["docker", "exec", "-e", "SOURCE_DATE_EPOCH", "-w", "{root}", "{container}"]
+
+[exec.env]
+root = "NAF_BUNDLE_RUNNER_ROOT"
+container = "NAF_BUNDLE_RUNNER_CONTAINER"
+
+[manifest]
+name = "manifest.json"

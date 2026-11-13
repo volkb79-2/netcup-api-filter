@@ -39,10 +39,18 @@ and the individual tooling READMEs for TLS and service-stack operation.
 cmru release
 ```
 
-CMRU invokes `scripts/build_webhosting_tarball.py` for the Passenger assets. That builder uses
-`docker exec` into the matching ciu runner (`naf-<INSTANCE_ID>-test-runner-py311`) so dependency vendoring and database
-seeding run under the target interpreter. It is separate from the local
-`build_deployment.py --local` build.
+CMRU invokes `cmru handler bundle-build` using `bundle.toml`; the `[[project.variants]]` entries
+in `cmru.toml` are the shared build and publish list. Before the handler runs, naf resolves this
+checkout's test-runner identity through CIU, verifies that the runner is running and sees the same
+Git `HEAD`, and supplies its root and identity through the environment variables named by
+`[exec].env`. CMRU downloads target-ABI wheels; `tooling/passenger_bundle_stage.py` expands those
+wheels, seeds the database, and renders shipped defaults inside the matching runner. This is
+separate from the local `build_deployment.py --local` build.
+
+CMRU 7.3.0 appends `-v` to the project prefix while generating the manifest tag. Naf's release
+config already uses `naf-v`, so the preflight passes the handler a temporary config copy with only
+that value normalized to `naf`; it preserves the variant list and removes the copy when the step
+ends. The canary report records this cmru handler finding for vbpub.
 
 ### What the artifacts contain
 
@@ -50,11 +58,12 @@ Neither artifact ships a secret, a demo account or `.env.defaults` (it holds the
 admin password and test fixtures). Both ship `app-defaults.env` instead: only the allowlisted runtime keys
 of `.env.defaults` (`config_defaults.RUNTIME_DEFAULT_KEYS`), rendered by `netcup_api_filter.config_defaults.write_shipped_defaults`.
 
-- **Passenger tarball** (`naf-<variant>.tar.xz`): the runtime tree, vendored wheels, `app-defaults.env`
-  and a freshly seeded `netcup_filter.db` with exactly one account, the pre-set admin
+- **Passenger tarball** (`naf-v<version>-<variant>.tar.xz`): a CMRU bundle with `manifest.json`,
+  the runtime tree, extracted vendored packages, `app-defaults.env`, and a freshly seeded
+  `netcup_filter.db` with exactly one account, the pre-set admin
   (`is_admin=1`, `must_change_password=1`). No `secret_key` row (created at first start), no `.env*`,
-  no `deployment_state_*.json`. `tests/test_release_artifacts.py` asserts this on the builder's real
-  staging steps.
+  no `deployment_state_*.json`. The archive has a single top-level `app/` directory; CIU activation
+  strips it into the Passenger application root, as CMRU's generated installer does for its bundles.
 - **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
   and `VOLUME /data`; no database and no account. It runs as the non-root user `naf`
   (`APP_UID`/`APP_GID` build args, default 10001): `/app` is read-only for it, `/data` (DB, init lock,
@@ -83,8 +92,9 @@ ciu up --host webhoster --thin -- --variant py311
 ```
 
 The `webhoster` connection inventory is `.ciu.hosts.toml`; it owns the SSH connection metadata,
-remote directory, and activation command. The selected tarball is transferred to that host and
-`scripts/activate.py` performs the project-specific activation:
+remote directory, and activation command. The selected versioned tarball is transferred to that
+host and `scripts/activate.py` performs the project-specific activation. It strips CMRU's single
+top-level bundle directory before extraction:
 
 1. extract the selected tarball;
 2. retain the existing `SECRET_KEY`;

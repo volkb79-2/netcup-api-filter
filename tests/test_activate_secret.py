@@ -5,6 +5,7 @@ restore has to insert, not only update; otherwise the key silently rotates on ev
 """
 import importlib.util
 import sqlite3
+import tarfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "activate.py"
@@ -80,3 +81,52 @@ def test_restore_failure_with_a_nonempty_secret_fails_loudly(tmp_path):
 def test_restore_with_an_empty_secret_is_a_noop_even_if_db_is_broken(tmp_path):
     activate = _load()
     activate._restore_secret(tmp_path / "missing_dir" / "x.db", "")
+
+
+def test_archive_lookup_uses_the_canonical_versioned_variant_name(tmp_path):
+    """Reverting activation to naf-<variant>.tar.xz misses the CMRU publisher's asset."""
+    activate = _load()
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    artifact = dist / "naf-v1.2.3-py311.tar.xz"
+    artifact.write_bytes(b"fixture")
+    assert activate._archive(tmp_path, "py311") == artifact
+
+
+def test_extract_strips_cmru_top_level_bundle_directory(tmp_path):
+    """Reverting flat extraction leaves Passenger's entrypoint one directory too deep."""
+    import io
+
+    activate = _load()
+    archive_path = tmp_path / "bundle.tar.xz"
+    payload = b"passenger entrypoint"
+    with tarfile.open(archive_path, "w:xz") as archive:
+        member = tarfile.TarInfo("app/passenger_wsgi.py")
+        member.size = len(payload)
+        member.mode = 0o644
+        archive.addfile(member, io.BytesIO(payload))
+    root = tmp_path / "deployment"
+    root.mkdir()
+    with tarfile.open(archive_path, "r:xz") as archive:
+        activate._extract(archive, root)
+    assert (root / "passenger_wsgi.py").read_bytes() == payload
+    assert not (root / "app/passenger_wsgi.py").exists()
+
+
+def test_extract_rejects_traversal_inside_the_bundle_directory(tmp_path):
+    """Reverting the rewritten-member traversal check could escape the deployment root."""
+    import io
+
+    activate = _load()
+    archive_path = tmp_path / "unsafe.tar.xz"
+    with tarfile.open(archive_path, "w:xz") as archive:
+        member = tarfile.TarInfo("app/../../outside.txt")
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"x"))
+    with tarfile.open(archive_path, "r:xz") as archive:
+        try:
+            activate._extract(archive, tmp_path / "deployment")
+        except RuntimeError as exc:
+            assert "unsafe tar member" in str(exc)
+        else:
+            raise AssertionError("bundle traversal was extracted")

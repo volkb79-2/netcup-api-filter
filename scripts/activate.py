@@ -64,27 +64,56 @@ def _health(url: str) -> None:
 
 
 def _archive(root: Path, variant: str) -> Path:
-    matches = sorted((root / "dist").glob(f"naf-{variant}.tar.xz"))
+    matches = sorted((root / "dist").glob(f"naf-v*-{variant}.tar.xz"))
     if len(matches) != 1:
-        raise RuntimeError(f"expected one dist/naf-{variant}.tar.xz under {root}")
+        raise RuntimeError(f"expected one dist/naf-v*-{variant}.tar.xz under {root}")
     return matches[0]
 
 
 def _extract(archive: tarfile.TarFile, root: Path) -> None:
-    """Extract only regular archive members beneath the deployment root.
+    """Strip cmru's one top-level bundle directory and extract beneath the app root.
 
     ``tarfile``'s ``filter=`` API is too new for older Passenger Pythons.  Keep
-    the same traversal protection explicitly so an archive can never escape
-    the configured Passenger app root.
+    the same traversal protection explicitly so an archive can never escape the
+    configured Passenger app root. cmru's generated installer strips this single
+    directory itself; the CIU adapter applies the same layout rule here.
     """
+    from pathlib import PurePosixPath
+
     root = root.resolve()
-    for member in archive.getmembers():
+    members = archive.getmembers()
+    top_levels = {
+        PurePosixPath(member.name).parts[0]
+        for member in members
+        if PurePosixPath(member.name).parts
+    }
+    if top_levels != {"app"}:
+        raise RuntimeError(
+            "refusing Passenger bundle without the expected top-level app directory"
+        )
+    top_level = "app"
+    safe_members = []
+    for member in members:
+        if "\\" in member.name or "\x00" in member.name or member.name.startswith("/"):
+            raise RuntimeError(f"refusing unsafe tar member: {member.name}")
+        parts = PurePosixPath(member.name).parts
+        if not parts or parts[0] != top_level or any(part in {".", ".."} for part in parts):
+            raise RuntimeError(f"refusing unsafe tar member: {member.name}")
+        if len(parts) == 1:
+            if member.isdir():
+                continue
+            raise RuntimeError(f"refusing file outside bundle directory: {member.name}")
+        member.name = str(PurePosixPath(*parts[1:]))
         destination = (root / member.name).resolve()
         if destination != root and root not in destination.parents:
             raise RuntimeError(f"refusing tar member outside deployment root: {member.name}")
-        if member.issym() or member.islnk() or member.isdev():
+        if (
+            member.issym() or member.islnk() or member.isdev()
+            or not (member.isfile() or member.isdir())
+        ):
             raise RuntimeError(f"refusing unsafe tar member: {member.name}")
-    archive.extractall(root)
+        safe_members.append(member)
+    archive.extractall(root, members=safe_members)
 
 
 def main() -> None:
@@ -92,8 +121,8 @@ def main() -> None:
     parser.add_argument("verb", choices=("bootstrap", "apply", "health", "rollback"))
     parser.add_argument("--release-root", type=Path, default=Path.cwd())
     parser.add_argument("--config")       # cmru adapter contract; naf needs no host TOML.
-    parser.add_argument("--manifest")     # cmru adapter contract; tarball has no manifest.
-    parser.add_argument("--variant", choices=("py311",))
+    parser.add_argument("--manifest")     # CMRU adapter contract; the CIU path does not parse it.
+    parser.add_argument("--variant")
     parser.add_argument("--health-url", default=os.environ.get("NAF_HEALTH_URL", "http://127.0.0.1/admin/login"))
     args = parser.parse_args()
     root = args.release_root.resolve()
@@ -108,7 +137,7 @@ def main() -> None:
     if args.verb == "rollback":
         raise RuntimeError("rollback is unavailable: Passenger tarballs are greenfield releases")
     if not args.variant:
-        raise RuntimeError("apply requires an explicit --variant (py311)")
+        raise RuntimeError("apply requires an explicit --variant")
 
     old_secret = _preserved_secret(root / "netcup_filter.db")
     with tarfile.open(_archive(root, args.variant), "r:xz") as archive:

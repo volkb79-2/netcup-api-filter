@@ -108,7 +108,7 @@ def test_concatenation_guard_covers_the_review_scope_and_catches_both_spellings(
         ".env.services",
         "run-gate.toml",
         "build_deployment.py",
-        "scripts/build_webhosting_tarball.py",
+        "tooling/passenger_bundle_build.py",
         "tooling/ciu_identity.py",
         ".devcontainer/devcontainer.json",
         ".devcontainer/finalize.post.d/10-netcup-setup.sh",
@@ -135,14 +135,14 @@ def test_scripts_do_not_rebuild_container_names_from_deploy_tags():
         REPO / ".env.services",
         REPO / "run-gate.toml",
         REPO / "build_deployment.py",
-        REPO / "scripts" / "build_webhosting_tarball.py",
+        TOOLING / "passenger_bundle_build.py",
     ]
     checked += sorted(TOOLING.rglob("*.py"))
     failures = _concatenation_hits(_concatenation_scope())
     assert not failures, "\n".join(failures)
 
     assert "ciu resolve --json" in (REPO / ".env.services").read_text(encoding="utf-8")
-    release_builder = (REPO / "scripts" / "build_webhosting_tarball.py").read_text(
+    release_builder = (TOOLING / "passenger_bundle_build.py").read_text(
         encoding="utf-8"
     )
     assert "resolve_container(" in release_builder
@@ -520,9 +520,9 @@ def test_peer_identities_resolve_against_the_full_profile_not_the_selection(monk
     assert f"ciu resolve --json --profile {module.IDENTITY_PROFILE}" in env_services
 
 
-def _load_release_builder():
+def _load_bundle_runner():
     spec = importlib.util.spec_from_file_location(
-        "naf_build_webhosting_tarball_runner", REPO / "scripts" / "build_webhosting_tarball.py"
+        "naf_passenger_bundle_build", TOOLING / "passenger_bundle_build.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -530,9 +530,9 @@ def _load_release_builder():
     return module
 
 
-def test_release_builder_fails_with_an_instruction_when_its_runner_is_down():
-    """cmru builds in a release worktree whose runner nothing starts (review M4)."""
-    builder = _load_release_builder()
+def test_bundle_build_fails_with_an_instruction_when_its_runner_is_down():
+    """Reverting naf's runner preflight lets bundle-build fail opaquely or use another runner."""
+    builder = _load_bundle_runner()
     seen = []
 
     def probe(stdout: str, returncode: int):
@@ -557,3 +557,49 @@ def test_release_builder_fails_with_an_instruction_when_its_runner_is_down():
         assert f"naf-rel-test-runner-py311 is {state}" in message
         assert "ciu up --dir tooling/test-runner" in message
         assert str(builder.REPO_ROOT) in message
+
+
+def test_bundle_build_refuses_a_runner_mounted_to_another_checkout():
+    """Reverting the host/runner HEAD comparison can build an unrelated release tree."""
+    builder = _load_bundle_runner()
+    seen = []
+    builder._runner_container = lambda variant: seen.append(variant) or "resolved-runner"
+    builder._require_running = lambda container: seen.append(container)
+    builder._host_head = lambda: "a" * 40
+    builder._runner_head = lambda container: "b" * 40
+    try:
+        builder._prepare_environment({"CMRU_RELEASE_TAG": "naf-v1.2.3"})
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("a runner with a different checkout HEAD was accepted")
+    assert "runner mounts a different checkout" in message
+    assert seen == ["py311", "resolved-runner"]
+
+
+def test_bundle_build_exports_the_resolved_runner_and_release_version():
+    """Reverting to direct cmru.toml feeds naf-v to version_to_tag and mis-tags the manifest."""
+    builder = _load_bundle_runner()
+    seen = []
+    builder._runner_container = lambda variant: seen.append(variant) or "ciu-resolved-container"
+    builder._require_running = lambda container: seen.append(container)
+    builder._host_head = lambda: "a" * 40
+    builder._runner_head = lambda container: "a" * 40
+    prepared = builder._prepare_environment({"CMRU_RELEASE_TAG": "naf-v1.2.3"})
+    assert seen == ["py311", "ciu-resolved-container"]
+    try:
+        assert prepared["NAF_BUNDLE_RUNNER_ROOT"] == str(builder.REPO_ROOT)
+        assert prepared["NAF_BUNDLE_RUNNER_CONTAINER"] == "ciu-resolved-container"
+        assert prepared["NAF_VERSION"] == "1.2.3"
+        temporary_config = Path(prepared["NAF_BUNDLE_CMRU_CONFIG"])
+        assert temporary_config.name == "cmru.toml"
+        with temporary_config.open("rb") as handle:
+            bundle_project = tomllib.load(handle)["project"]
+        with (builder.REPO_ROOT / "cmru.toml").open("rb") as handle:
+            source_project = tomllib.load(handle)["project"]
+        assert bundle_project["prefix"] == "naf"
+        assert bundle_project["variants"] == source_project["variants"]
+    finally:
+        temporary_config = Path(prepared["NAF_BUNDLE_CMRU_CONFIG"])
+        temporary_config.unlink(missing_ok=True)
+        temporary_config.parent.rmdir()

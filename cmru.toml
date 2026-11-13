@@ -45,9 +45,10 @@ asset_suffix = ".tar.xz"
 entrypoint = "scripts/activate.py"
 required_commands = ["sh", "tar", "touch"]
 
-# One ABI-specific asset: the build runs inside the matching ciu runner (scripts/build_webhosting_tarball.py).
-# tests/test_run_gate_pointers.py keeps this list, the ciu runner variants, run-gate environments
-# and docker-bake targets in step.
+# The Passenger bundle is built by cmru's bundle-build handler. The preflight resolves
+# the declared variant's ciu runner and exports its checkout-local identity for [exec].
+# tests/test_run_gate_pointers.py keeps this list, ciu runner variants, run-gate environments,
+# bake targets, and the bundle/publish names in step.
 [[project.variants]]
 name = "py311"
 build_arg = "PYTHON_VERSION=3.11"
@@ -63,14 +64,21 @@ commands = [
 [steps.build]
 quiet = true
 commands = [
-  { label = "naf: build Passenger tarball per variant (inside the ciu runner)", argv = ["python3", "scripts/build_webhosting_tarball.py", "build"], cwd = "." },
+  { label = "naf: build Passenger bundle through cmru (inside this checkout's runner)", argv = ["bash", "-c", '''
+naf_bundle_exports="$(python3 tooling/passenger_bundle_build.py prepare)"
+naf_prepare_status=$?
+if [ "$naf_prepare_status" -ne 0 ]; then exit "$naf_prepare_status"; fi
+eval "$naf_bundle_exports" || exit $?
+trap 'rm -rf "$(dirname "$NAF_BUNDLE_CMRU_CONFIG")"' EXIT
+cmru handler bundle-build --bundle-config bundle.toml --cmru-config "$NAF_BUNDLE_CMRU_CONFIG" --name naf --variant all
+'''], cwd = "." },
 ]
 
 [steps.push]
 quiet = true
 commands = [
   { label = "naf: push OCI images (py311, py314)", argv = ["cmru", "handler", "oci-image-push", "--cwd", ".", "--bake-file", "docker-bake.hcl", "--bake-target", "release"], cwd = "." },
-  { label = "naf: publish Passenger tarball variant", argv = ["bash", "-c", "NAF_VERSION=\"${CMRU_RELEASE_TAG#naf-v}\" cmru handler tarball-publish --prefix naf --cwd . --glob 'dist/naf-py311.tar.xz' --version-env NAF_VERSION --notes-env NAF_RELEASE_NOTES --variant 'py311=Passenger Python 3.11'"], cwd = "." },
+  { label = "naf: publish declared Passenger tarball variants", argv = ["python3", "tooling/passenger_bundle_publish.py"], cwd = "." },
 ]
 
 # --- third-party versions (age window: adopt only releases at least 7 days old) -------------

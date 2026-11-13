@@ -23,6 +23,12 @@
 
 ### Changed
 
+- **Passenger artifact definition moves to CMRU bundle-build (KI-126 canary):** `cmru.toml` calls
+  `cmru handler bundle-build` with `bundle.toml`; naf's stage helper expands CMRU's vendored wheels,
+  seeds the webhosting database, and renders `app-defaults.env`. The resolved runner and versioned
+  archive name come from the release environment, while `cmru.toml` remains the variant list. The
+  preflight makes a temporary prefix-normalized config for the CMRU 7.3.0 manifest-tag mismatch.
+  Old-vs-new artifact equivalence is pending the controller's real-runner comparison (B101).
 - **PowerDNS backend targets Authoritative 5.1 (B093):** the managed image is
   `powerdns/pdns-auth-51:5.1.5`; the startup config is rendered through the image's
   `TEMPLATE_FILES` mechanism, and the zone bootstrap now uses the Authoritative HTTP
@@ -50,8 +56,8 @@
   they no longer construct `PROJECT_TAG-ENV_TAG-service` names. Every checkout runs its
   own gate runners (`ciu up --dir tooling/test-runner` precedes any gate there); a
   linked worktree's runner also mounts the git common dir so assay lanes and git-backed
-  tests work. `scripts/build_webhosting_tarball.py` stops with an instruction when its
-  checkout's runner is absent or stopped. `ui_tests` read the Mailpit identity from
+  tests work. `tooling/passenger_bundle_build.py` stops with an instruction when its
+  checkout's runner is absent, stopped, or mounted on a different Git `HEAD`. `ui_tests` read the Mailpit identity from
   `MAILPIT_URL`/`MAILPIT_HOST` without a literal fallback.
 - **E2E browser reuse now yields the shared pwmcp slot between test files.** The harness keeps one
   Playwright driver, reconnects at file boundaries or after a configurable 25-minute window, and
