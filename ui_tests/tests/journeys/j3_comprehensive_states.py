@@ -817,29 +817,41 @@ class APITester:
         
         # Build API request
         base_url = settings.base_url
-        endpoint = f"{base_url}/api/dns/records"
+        hostname_labels = spec.hostname.rstrip(".").split(".")
+        domain = spec.domain or ".".join(hostname_labels[-2:])
+        endpoint = f"{base_url}/api/dns/{domain}/records"
         
         headers = {
             "Authorization": f"Bearer {token_value}",
             "Content-Type": "application/json",
         }
-        
-        params = {
-            "domain": spec.hostname.split(".")[-2] + "." + spec.hostname.split(".")[-1],
-            "name": spec.hostname,
+        record = {
             "type": spec.record_type,
+            "hostname": spec.hostname,
+            "destination": "203.0.113.42" if spec.record_type in {"A", "AAAA"} else "journey-validation",
         }
         
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 if spec.operation == "read":
-                    response = await client.get(endpoint, headers=headers, params=params)
+                    response = await client.get(endpoint, headers=headers)
                 elif spec.operation == "update":
-                    response = await client.put(endpoint, headers=headers, json=params)
+                    if spec.api_style == "ddns":
+                        zone_suffix = f".{domain}"
+                        hostname = spec.hostname.rstrip(".")
+                        if hostname.lower().endswith(zone_suffix.lower()):
+                            hostname = hostname[:-len(zone_suffix)]
+                        response = await client.put(
+                            f"{base_url}/api/ddns/{domain}/{hostname}",
+                            headers=headers,
+                            params={"ip": "203.0.113.42", "type": spec.record_type},
+                        )
+                    else:
+                        response = await client.put(f"{endpoint}/1", headers=headers, json=record)
                 elif spec.operation == "create":
-                    response = await client.post(endpoint, headers=headers, json=params)
+                    response = await client.post(endpoint, headers=headers, json=record)
                 elif spec.operation == "delete":
-                    response = await client.delete(endpoint, headers=headers, params=params)
+                    response = await client.delete(f"{endpoint}/1", headers=headers)
                 else:
                     return {"status": "error", "reason": f"unknown operation: {spec.operation}"}
                 

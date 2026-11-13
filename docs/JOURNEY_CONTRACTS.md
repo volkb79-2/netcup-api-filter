@@ -176,15 +176,19 @@ ui_tests/tests/journeys/j2_account_lifecycle.py
 ### Test: J2_05_admin_sees_pending_account
 **Action**: Login as admin, navigate to `/admin/accounts/pending`
 **Verify**:
-- [ ] Test account appears in pending list
-- [ ] Status shows "pending"
-- [ ] Approve/Reject buttons available
+- [ ] A self-registered pending account appears with Approve/Reject controls
+- [ ] An admin-created invite account is already approved and appears in the account list
 **Screenshot**: `J2-16-pending-accounts.webp`
 
+### Test: J2_07_user_can_login
+When self-registration is disabled, J2 creates the account through the admin invite flow. On local
+targets it finds the invite in Mailpit, accepts it, sets a password, and verifies account login. The
+only skip is webhosting, where the synthetic mailbox cannot complete the invite.
+
 ### Postconditions
-- [x] Test account created and email verified
-- [x] Account status: pending (awaiting admin approval)
-- [x] Admin can see account in pending list
+- [x] Test account created through self-registration or the admin invite fallback
+- [x] Local invite fallback is accepted through Mailpit and the new account can log in
+- [x] Pending registration accounts remain available for admin approval
 
 ---
 
@@ -243,6 +247,12 @@ ui_tests/tests/journeys/j3_comprehensive_states.py
 - [ ] Status badges/indicators correct
 - [ ] Filter/sort works
 **Screenshot**: `J3-20-accounts-all-states.webp`
+
+### API validation
+J3_04 exercises `/api/dns/<zone>/records` and the hostname-oriented
+`/api/ddns/<zone>/<hostname>` endpoint. Creates expect HTTP 201; denied operations and out-of-zone
+requests expect 403; expired and revoked credentials expect 401. The journey fails if every API case
+fails or if any case fails.
 
 ### Postconditions
 - [x] Test account approved and can login

@@ -40,10 +40,15 @@ class TestJourneyMaster:
             from ui_tests.mailpit_client import MailpitClient
             client = MailpitClient()
             client.clear()
-            yield client
-            client.close()
         except Exception as e:
-            pytest.skip(f"Mailpit not available: {e}")
+            pytest.fail(
+                f"Local e2e requires reachable Mailpit via MAILPIT_URL ({type(e).__name__})",
+                pytrace=False,
+            )
+        try:
+            yield client
+        finally:
+            client.close()
     
     # =========================================================================
     # Journey 1: Fresh Deployment
@@ -95,7 +100,7 @@ class TestJourneyMaster:
             await journey.test_J2_04_complete_verification(browser)
             await journey.test_J2_05_admin_sees_pending_account(browser)
             await journey.test_J2_06_approve_account(browser, mailpit_client)
-            await journey.test_J2_07_user_can_login(browser)
+            await journey.test_J2_07_user_can_login(browser, mailpit_client)
             await journey.test_J2_08_summary(browser)
         
         logger.info(f"\n✓ Journey 2 complete: {len(journey_state.screenshots)} screenshots total")

@@ -98,8 +98,10 @@ class APITestSpec:
     operation: str  # "read", "update", "create", "delete"
     record_type: str  # "A", "AAAA", "TXT", etc.
     hostname: str  # What hostname to target
-    expected_status: int  # 200, 401, 403, etc.
+    expected_status: int  # Endpoint-specific status such as 200, 201, 401, or 403
     description: str = ""
+    api_style: str = "records"  # "records" or the hostname-oriented DDNS endpoint
+    domain: str | None = None  # Override the zone derived from hostname for out-of-zone cases
 
 
 # =============================================================================
@@ -370,14 +372,15 @@ API_TESTS = [
         record_type="A",
         hostname="host2.example.com",
         expected_status=200,
-        description="DDNS token can update A records"
+        description="DDNS token can update A records",
+        api_style="ddns",
     ),
     APITestSpec(
         token_name="token-full",
         operation="create",
         record_type="TXT",
         hostname="test.managed.example.com",
-        expected_status=200,
+        expected_status=201,
         description="Full token can create TXT records"
     ),
     APITestSpec(
@@ -385,7 +388,7 @@ API_TESTS = [
         operation="create",
         record_type="TXT",
         hostname="_acme-challenge.acme.example.com",
-        expected_status=200,
+        expected_status=201,
         description="ACME token can create TXT challenges"
     ),
     
@@ -424,7 +427,8 @@ API_TESTS = [
         record_type="A",
         hostname="other.example.com",  # Not in host2 realm
         expected_status=403,
-        description="Token cannot access outside its realm"
+        description="Token cannot access outside its realm",
+        domain="outside.example.net",
     ),
     
     # =========================================================================

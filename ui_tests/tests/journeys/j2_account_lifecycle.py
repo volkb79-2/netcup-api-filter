@@ -35,6 +35,7 @@ from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
 from ui_tests.mailpit_client import MailpitClient
+from ui_tests.personas import new_password
 from ui_tests import workflows
 
 logger = logging.getLogger(__name__)
@@ -439,7 +440,7 @@ class TestJourney2AccountLifecycle:
             logger.info(f"✓ Approval email sent to {journey_state.test_account_email}")
             await capture(browser, "approval-email-sent")
     
-    async def test_J2_07_user_can_login(self, browser: Browser):
+    async def test_J2_07_user_can_login(self, browser: Browser, mailpit: MailpitClient):
         """Approved user can login successfully."""
         if not journey_state.test_account_username:
             pytest.fail("J2_07 requires J2_01/J2_02 to create an account", pytrace=False)
@@ -453,10 +454,7 @@ class TestJourney2AccountLifecycle:
                     "webhosting J2 uses an invite-based admin-created account; the synthetic "
                     "mailbox cannot complete that invite login"
                 )
-            pytest.fail(
-                "J2_07 requires the created account's invite to be accepted and a password to be set",
-                pytrace=False,
-            )
+            await self._accept_admin_invite(browser, mailpit)
         
         # Logout admin if needed
         await browser.goto(settings.url("/admin/logout"))
@@ -481,6 +479,42 @@ class TestJourney2AccountLifecycle:
         assert "/login" not in current_url, f"Login should succeed, still at: {current_url}"
         
         logger.info(f"✓ User {journey_state.test_account_username} logged in successfully")
+
+    async def _accept_admin_invite(self, browser: Browser, mailpit: MailpitClient) -> None:
+        """Accept the local admin-created account's Mailpit invite and set its password."""
+        email = journey_state.test_account_email
+        if not email:
+            pytest.fail("J2_07 invite acceptance requires the created account email", pytrace=False)
+
+        message = mailpit.wait_for_message(
+            predicate=lambda item: email.lower() in [address.address.lower() for address in item.to],
+            timeout=10.0,
+        )
+        if message is None:
+            pytest.fail("J2_07 could not find the account invite in Mailpit", pytrace=False)
+
+        invite_match = re.search(
+            r"https?://[^\s]+/account/invite/[A-Za-z0-9_-]+",
+            message.text or "",
+        )
+        if not invite_match:
+            pytest.fail("J2_07 Mailpit message did not contain an account invite link", pytrace=False)
+
+        password = new_password()
+        # The account invite requires an anonymous account-portal session.
+        await browser.goto(settings.url("/account/logout"), wait_until="domcontentloaded")
+        await browser.goto(invite_match.group(0), wait_until="domcontentloaded")
+        password_field = await browser.query_selector("#new_password, input[name='new_password']")
+        if not password_field:
+            pytest.fail("J2_07 invite page did not expose its password field", pytrace=False)
+
+        await browser.fill("#new_password, input[name='new_password']", password)
+        await browser.fill("#confirm_password, input[name='confirm_password']", password)
+        await browser.click("button[type='submit']")
+        await browser.wait_for_load_state("domcontentloaded")
+
+        journey_state.test_account_password = password
+        journey_state.set_extra("invite_based_account", False)
     
     async def test_J2_08_summary(self, browser: Browser):
         """Journey 2 complete - summarize account lifecycle."""
