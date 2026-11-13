@@ -67,10 +67,10 @@ returned `priority` value is not part of that request.
 The [PowerDNS 5.1 changelog](https://doc.powerdns.com/authoritative/changelog/5.1.html)
 also records stricter record-content validation and TTL checks for RRset updates.
 The app currently passes record destination and TTL through unchanged, so content that
-4.8 accepted (for example unquoted TXT or relative CNAME data) may receive HTTP 422;
-that is an inference from the upstream changes and the current request shape.
-**UNVERIFIED:** whether these exact examples receive 422 on auth-5.1.5; the controller
-checks representative app-generated requests under B095 R8.
+4.8 accepted can receive HTTP 422. Reproduced on a real auth-5.1.5 start (B095, 2026-11-13):
+a TXT with unquoted content and a CNAME with a relative target are both rejected with 422
+"Not in expected format"; well-formed A, AAAA, MX, quoted TXT and dot-terminated CNAME
+records are accepted.
 Backlog item B097 tracks client-side normalization/validation or a clear error mapping
 with tests; this stack update does not change the application backend.
 
@@ -132,12 +132,15 @@ curl -sf -H @- "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" \
   python3 -m json.tool
 ```
 
-External access adds the traefik basicauth guard:
+External access adds the traefik basicauth guard. Both credentials go in as a curl
+config on stdin (`-K -`), so neither the guard password nor the key is on the command line
+(a `"` or `\` in a value must be backslash-escaped in this config syntax):
 
 ```bash
-curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" -H @- \
-  "$POWERDNS_API_URL/api/v1/servers/localhost" \
-  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
+curl -sf -K - "$POWERDNS_API_URL/api/v1/servers/localhost" <<EOF
+user = "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD"
+header = "X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
+EOF
 ```
 
 ## Record API examples
