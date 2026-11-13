@@ -27,7 +27,8 @@
   readers and content boundaries; tracked example templates cover operator, webhoster, live and guard
   inputs. The real files remain ignored, and a structural test checks example syntax, placeholders,
   ignore coverage and the documented key registries. The unused webhoster URL was removed from
-  `.env.defaults`; root `.env` remains an optional local build override.
+  `.env.defaults`; root `.env` remains an optional local build override. The webhoster push inventory
+  (`.ciu.hosts.toml` `bundle_excludes`) now also excludes `.env.operator`, `.env.webhoster` and `.env.live`.
 - **Mailpit HTTP defaults are stack-owned (B091):** `mailpit.web_root` and
   `mailpit.max_message_size_mb` in `tooling/mailpit/ciu.defaults.toml.j2` render into
   Compose; the healthcheck and `.env.services` URL resolver use the configured

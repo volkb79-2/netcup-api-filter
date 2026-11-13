@@ -20,9 +20,9 @@ so end-to-end tests exercise the true DNS path over TLS.
   checkout's own generated env loaded (see §2) — the marker sets
   `standalone_root = true`, so ciu refuses to run if `$REPO_ROOT` points at a sibling
   repo.
-- Public edge facts are generated for the checkout. `.env.workspace` and
-  `ciu.env` are local generated inputs; use their owning workflow instead of
-  copying values into documentation or tracked files. See the
+- The host's public IP and base FQDN (`PUBLIC_IP`, `PUBLIC_FQDN`) come from the
+  CIU-generated `ciu.env`; `.env.workspace` carries only paths and network facts.
+  Use the owning workflow instead of copying values into documentation or tracked files. See the
   [configuration guide](CONFIGURATION_GUIDE.md#environment-file-layout) for
   their exact producers and readers.
 

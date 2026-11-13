@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,9 @@ LIVE_ENV_KEY_REGISTRY = frozenset(
     }
 )
 
+# A placeholder is one or more bare lowercase tokens in angle brackets (comma separated); nothing
+# host-, address- or account-shaped can hide inside it.
+PLACEHOLDER = re.compile(r"<[a-z0-9-]+>(?:,<[a-z0-9-]+>)*")
 ASSIGNMENT = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 SECRET_NAME = re.compile(r"PASSWORD|SECRET|TOKEN|KEY|HTPASSWD", re.IGNORECASE)
 IDENTITY_OR_ENDPOINT_NAME = re.compile(
@@ -98,14 +102,14 @@ def non_placeholder_value_keys(values: dict[str, str]) -> set[str]:
     return {
         key
         for key, value in values.items()
-        if value and not (value.startswith("<") and value.endswith(">"))
+        if value and PLACEHOLDER.fullmatch(value) is None
     }
 
 
 def unsafe_value_keys(values: dict[str, str]) -> set[str]:
     unsafe: set[str] = set()
     for key, value in values.items():
-        if not value or (value.startswith("<") and value.endswith(">")):
+        if not value or PLACEHOLDER.fullmatch(value):
             continue
         if IDENTITY_OR_ENDPOINT_NAME.search(key) or any(
             pattern.search(value)
@@ -138,6 +142,9 @@ def test_env_parser_rejects_malformed_and_duplicate_assignments():
 def test_example_value_guards_reject_secrets_and_real_endpoints():
     assert secret_value_keys({"IMAP_PASSWORD": "sample"}) == {"IMAP_PASSWORD"}
     assert non_placeholder_value_keys({"DEPLOYMENT_MODE": "live"}) == {"DEPLOYMENT_MODE"}
+    assert non_placeholder_value_keys(
+        {"IMAP_HOST": "<mail.real-host.de>", "IMAP_USER": "<me@real-host.de>", "DNS_CHECK_SERVERS": "<ip-1>,<ip-2>"}
+    ) == {"IMAP_HOST", "IMAP_USER"}
     assert unsafe_value_keys(
         {
             "IMAP_HOST": "mail.example.invalid",
@@ -209,3 +216,15 @@ def test_live_example_keys_are_registered():
     )
     unregistered = live.keys() - LIVE_ENV_KEY_REGISTRY
     assert live.keys() <= LIVE_ENV_KEY_REGISTRY, f"unregistered live keys: {unregistered}"
+
+
+def test_private_env_files_are_excluded_from_the_ciu_push_bundle():
+    """`ciu up --host webhoster --thin` pushes the checkout minus `bundle_excludes`.
+
+    CIU always excludes `.git`, `.ciu` and `ciu.env`; every other private env file must be
+    named in the inventory or it is copied to the shared webhoster.
+    """
+    inventory = tomllib.loads((ROOT / ".ciu.hosts.toml").read_text(encoding="utf-8"))
+    excluded = set(inventory["deploy"]["hosts"]["webhoster"]["bundle_excludes"])
+    missing = (PRIVATE_ENV_FILES - {"ciu.env"}) - excluded
+    assert not missing, f"private env files not excluded from the webhoster push: {sorted(missing)}"

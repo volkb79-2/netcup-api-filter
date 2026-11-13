@@ -11,8 +11,8 @@ order.
 |---|---|---|---|---|---|
 | `.env.defaults` | Policy defaults, local test fixtures and the Passenger build seed | Yes | naf maintainers | `src/netcup_api_filter/config_defaults.py`, `bootstrap/admin.py`, and `build_deployment.py` during database seeding | Operator host facts or real provider credentials |
 | `.env.services` | Shell resolver for service URLs and checkout-local service identities | Yes | naf maintainers | Sourced by shell workflows; calls `ciu resolve --json` and `tooling/ciu_resolve_env.py`; its exports are read by `build_deployment.py`, `bootstrap/platform_backends.py`, `ui_tests/workflows.py`, and `ui_tests/tests/live/test_live_dns_verification.py` | Hand-entered URLs, service names or credential values |
-| `.env.workspace` | Generated workspace paths, public edge facts and local network facts | No | `.devcontainer/finalize.post.d/10-netcup-setup.sh` | Shell workflows and the CIU render context (`ciu.global.defaults.toml.j2`) | Credentials or hand-maintained overrides |
-| `ciu.env` | Generated CIU identity and host/container facts | No | `ciu env print` | CIU Compose templates, including `tooling/test-runner/ciu.compose.yml.j2` and `tooling/app-local/ciu.compose.yml.j2` | Hand-edited values or credentials outside CIU's secret mechanism |
+| `.env.workspace` | Generated devcontainer facts: `ENV_TYPE`, `USER_*`, `DOCKER_GID`, `REPO_ROOT`, `PHYSICAL_REPO_ROOT`, `DOCKER_NETWORK_INTERNAL`, `DEVCONTAINER_NAME` (no `PUBLIC_FQDN`/`PUBLIC_IP`: those are in `ciu.env`) | No | `.devcontainer/finalize.post.d/10-netcup-setup.sh` | `.vscode/ensure-mcp-connection.sh` and the manual `source` steps in `tooling/*/README.md`; CIU does not read it (its render context uses `ciu.env`, see `ciu.global.defaults.toml.j2` `workspace_env_file`) | Credentials or hand-maintained overrides |
+| `ciu.env` | Generated CIU identity and machine facts, including `PUBLIC_IP` and `PUBLIC_FQDN` | No | `ciu env generate` (`ciu env print` only prints it for `eval`) | CIU Compose templates, including `tooling/test-runner/ciu.compose.yml.j2` and `tooling/app-local/ciu.compose.yml.j2` | Hand-edited values or credentials outside CIU's secret mechanism |
 | `.env.operator` | Operator-supplied local infrastructure facts, including the delegated zone | No | Operator | Sourced before CIU; `ciu.global.defaults.toml.j2` consumes `NAF_DELEGATED_DNS_ZONE`, then the PowerDNS/app seed hooks use the rendered fact | `POWERDNS_API_KEY` or guard credentials; CIU generates the PowerDNS key |
 | `.env.webhoster` | Human webhoster URL and SSHFS route | No | Operator | Sourced by the operator; the `sshfs` and `curl` commands below read its keys. `.ciu.hosts.toml` is a separate CIU deployment input | Netcup CCP, mailbox, app or guard credentials |
 | `.env.live` | On-demand live-check mailbox, provider and DNS-test inputs | No | Operator / later CIU secret delivery | Sourced for `ui_tests/tests/live/*`; app-side `NETCUP_*` and `MAXMIND_*` values are read by `passenger_wsgi.py` and `geoip_service.py` | Credentials copied into tracked files or the webhoster SSH route |
@@ -33,6 +33,12 @@ that local file, then source the real file when the workflow calls for it:
 set -a; . ./.env.live; set +a
 ```
 
+Sourcing a file only exports its keys into the current shell. `run-gate.toml` `forward_env` does not
+forward the `.env.live` keys (`IMAP_*`, `DNS_*`, `DEPLOYMENT_MODE`, `NETCUP_*`, `MAXMIND_*`) into the
+test runners, and no `run-gate` lane runs `ui_tests/tests/live/`; a supported live lane and its
+credential delivery are B048 part 2 / B049. Until then `.env.live` is the template for that
+work, not a loader that any lane consumes.
+
 For the local CIU flow, `run-gate.toml` records the setup sequence: load CIU's generated facts,
 provide `PWMCP_NETWORK`, source `.env.guard`, then source `.env.services`. The exact file need
 depends on the workflow; these files are not a universal source chain.
@@ -40,7 +46,9 @@ depends on the workflow; these files are not a universal source chain.
 ### Webhoster route
 
 `.env.webhoster` is for manual SSHFS and URL access. CIU deployment uses `.ciu.hosts.toml` and its
-own declared inputs. After loading the local route file, the human commands consume its keys:
+own declared inputs. `ciu up --host webhoster --thin` pushes the checkout minus the inventory's `bundle_excludes`
+(plus CIU's mandatory `.git`, `.ciu`, `ciu.env`), so every private env file is named there;
+`tests/test_env_layout.py` fails when one is missing. After loading the local route file, the human commands consume its keys:
 
 ```bash
 sshfs "${WEBHOSTING_SSH_USER}@${WEBHOSTING_SSH_HOST}:${WEBHOSTING_REMOTE_DIR}" "$WEBHOSTING_MOUNT_POINT"
@@ -58,8 +66,10 @@ stacks is CIU-generated. The app's SMTP host and credentials are Settings UI/dat
 environment variables. B048 part 2 still owns CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for the
 on-demand deployed lane.
 
-The keys below intentionally override catalog values when `.env.live` is sourced. The structural
-test checks every name against `.env.defaults`:
+The keys below also appear in the `.env.defaults` catalog. Their readers (live tests, `geoip_service.py`)
+read `os.environ` with their own in-code fallbacks and do not consult the catalog, so the catalog
+values are documentation of the intended defaults, not values that `.env.live` overrides. The
+structural test checks that every name below still exists in `.env.defaults`:
 
 ```env-default-overrides
 DNS_TEST_DOMAIN

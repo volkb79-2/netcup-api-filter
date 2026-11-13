@@ -76,7 +76,7 @@ specific config condition. Restore global state you mutate.
 
 ## Local environment
 
-Public hostname is auto-detected into `.env.workspace` (`PUBLIC_FQDN`); never hardcode one
+The public hostname is a CIU fact (`PUBLIC_FQDN` in the generated `ciu.env`); never hardcode one
 ([`docs/FQDN_DETECTION.md`](docs/FQDN_DETECTION.md)). File roles, tracked examples, readers and load steps are in
 [`docs/CONFIGURATION_GUIDE.md`](docs/CONFIGURATION_GUIDE.md#environment-file-layout). HTTPS comes from the host `edge-traefik`; naf holds no TLS material
 ([`docs/DEV_INFRA_SETUP.md`](docs/DEV_INFRA_SETUP.md)). Mock services (`naf-` prefix: mailpit, geoip, netcup-api, app-local) each have a ciu stack under `tooling/<name>/`.
