@@ -295,7 +295,9 @@ async def _user_create_token(user: Browser, realm_id: int) -> tuple[str, str]:
     # token_created.html shows the once-only plaintext in #tokenValue.
     await user.wait_for_text("main h1", "Token Generated", timeout=10.0)
     token_plain = await user.get_attribute("#tokenValue", "value")
-    assert token_plain and token_plain.startswith("naf_"), f"bad token plaintext: {token_plain!r}"
+    assert token_plain and token_plain.startswith("naf_"), (
+        f"bad token plaintext shape (length={len(token_plain or '')})"
+    )
 
     # Confirm it landed in the DB (Channel A) and grab the stored prefix.
     verification.wait_for(

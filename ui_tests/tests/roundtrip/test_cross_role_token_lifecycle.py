@@ -197,7 +197,7 @@ async def _user_create_token(
     await user.wait_for_text("main h1", "Token Generated", timeout=15.0)
     token_plain = await user.get_attribute("#tokenValue", "value")
     assert token_plain and token_plain.startswith("naf_"), (
-        f"bad token plaintext: {token_plain!r}"
+        f"bad token plaintext shape (length={len(token_plain or '')})"
     )
 
     verification.wait_for(

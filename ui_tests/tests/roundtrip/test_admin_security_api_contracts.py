@@ -106,7 +106,7 @@ async def test_failed_token_auth_produces_security_event(session_manager):
 
     # Parse token: naf_<alias>_<random64>
     parts = token_plaintext.split("_", 2)
-    assert len(parts) == 3, f"Unexpected token format: {token_plaintext[:20]}..."
+    assert len(parts) == 3, f"Unexpected token format; token length was {len(token_plaintext)}"
     alias = parts[1]
     random_part = parts[2]
     token_prefix = random_part[:8]

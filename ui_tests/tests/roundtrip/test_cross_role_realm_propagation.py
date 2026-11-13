@@ -459,7 +459,9 @@ async def _user_create_token(user: Browser, realm_id: int) -> tuple[str, str]:
     await user.evaluate("() => document.querySelector('form').submit()")
     await user.wait_for_text("main h1", "Token Generated", timeout=10.0)
     token_plain = await user.get_attribute("#tokenValue", "value")
-    assert token_plain and token_plain.startswith("naf_"), f"bad token plaintext: {token_plain!r}"
+    assert token_plain and token_plain.startswith("naf_"), (
+        f"bad token plaintext shape (length={len(token_plain or '')})"
+    )
 
     verification.wait_for(
         lambda: verification.get_token(token_name=token_name) is not None,

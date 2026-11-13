@@ -62,7 +62,12 @@ async def pwmcp_connection(e2e_environment, pwmcp_contract):
     startup = loop.create_task(connection.start())
     restore_signal_handlers = None
     try:
-        restore_signal_handlers = install_signal_cleanup(connection, loop, interrupt_task=startup)
+        restore_signal_handlers = install_signal_cleanup(
+            connection,
+            loop,
+            cleanup_timeout_seconds=options.signal_cleanup_timeout_seconds,
+            interrupt_task=startup,
+        )
         await startup
     except Exception as exc:
         if not startup.done():

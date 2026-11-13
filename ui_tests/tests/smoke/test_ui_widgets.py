@@ -198,7 +198,7 @@ class TestPasswordWidget:
                 "() => document.getElementById('new_password')?.value || ''"
             )
             assert len(password) >= 20, (
-                f"Generated password should be >=20 chars, got {len(password)}: {password!r}"
+                f"Generated password should be >=20 chars, got length {len(password)}"
             )
 
     async def test_entropy_meter_updates_on_input(self, active_profile):

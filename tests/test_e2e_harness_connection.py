@@ -59,6 +59,7 @@ def _options(
     remote: bool = True,
     renew_margin: float = 60,
     recycle_interval: float = 540,
+    cleanup_timeout: float = 10,
     max_reconnects: int = 3,
 ) -> ConnectionOptions:
     return ConnectionOptions(
@@ -70,6 +71,7 @@ def _options(
         contract_timeout_seconds=10,
         recycle_interval_seconds=recycle_interval,
         lease_renew_margin_seconds=renew_margin,
+        signal_cleanup_timeout_seconds=cleanup_timeout,
         max_reconnects=max_reconnects,
     )
 
@@ -254,7 +256,7 @@ async def test_dead_shared_browser_is_reconnected_once_then_reused():
     assert playwright.chromium.connect_calls == 2
     assert session.connects == 2
     assert session.reconnects == 1
-    assert session.summary() == "pwmcp connects=2 reconnects=1 recycles=0 contexts=0"
+    assert session.summary() == "pwmcp connects=2 reconnects=1 recycles=0 contexts=0 leaked_contexts=0"
     assert session.reconnect_causes == ["browser-disconnected"]
 
     assert await session.ensure_connected() is replacement
@@ -293,8 +295,30 @@ async def test_connection_recycles_at_file_boundary_and_elapsed_window_with_fake
     assert session.connects == 3
     assert session.reconnects == 2
     assert session.recycles == 2
-    assert session.summary() == "pwmcp connects=3 reconnects=2 recycles=2 contexts=0"
+    assert session.summary() == "pwmcp connects=3 reconnects=2 recycles=2 contexts=0 leaked_contexts=0"
     assert session.reconnect_causes == ["test-file-boundary", "recycle-window-expired"]
+
+    await session.stop()
+
+
+async def test_planned_file_recycle_disposes_a_leaked_context_without_latching(caplog):
+    first, replacement = _FakeBrowser(), _FakeBrowser()
+    playwright = _FakePlaywright([first, replacement])
+    session = _session(playwright)
+
+    await session.start()
+    await session.prepare_for_test("features/test_one.py")
+    context = await session.new_context()
+
+    assert first.contexts == [context]
+    assert await session.prepare_for_test("features/test_two.py") is replacement
+    assert first.close_calls == 1
+    assert session._fatal_reason is None
+    assert session.leaked_contexts == 1
+    assert caplog.text.count("found 1 open context(s)") == 1
+    assert session.summary() == (
+        "pwmcp connects=2 reconnects=1 recycles=1 contexts=1 leaked_contexts=1"
+    )
 
     await session.stop()
 
@@ -323,6 +347,7 @@ def test_connection_defaults_match_short_recycle_window_and_bounded_retry_policy
         "E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS": "30",
         "E2E_PWMCP_CONNECT_TIMEOUT_SECONDS": "30",
         "E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS": "10",
+        "E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS": "10",
         "E2E_PWMCP_RECYCLE_INTERVAL_SECONDS": "1500",
         "E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS": "300",
         "E2E_PWMCP_MAX_RECONNECTS": "3",
@@ -337,6 +362,30 @@ def test_connection_defaults_match_short_recycle_window_and_bounded_retry_policy
     assert options.retry_max_seconds == 30
     assert options.recycle_interval_seconds == 1500
     assert options.lease_renew_margin_seconds == 300
+    assert options.signal_cleanup_timeout_seconds == 10
+
+
+def test_playwright_headless_uses_environment_or_declared_default(monkeypatch, caplog):
+    from netcup_api_filter import config_defaults
+
+    monkeypatch.delenv("PLAYWRIGHT_HEADLESS", raising=False)
+
+    def declared_default(key):
+        assert key == "PLAYWRIGHT_HEADLESS"
+        return "false"
+
+    monkeypatch.setattr(config_defaults, "require_default", declared_default)
+
+    assert UiTestConfig().playwright_headless is False
+    client = PlaywrightClient()
+    assert client.headless is False
+    assert "using its configured default" in caplog.text
+
+    caplog.clear()
+    monkeypatch.setenv("PLAYWRIGHT_HEADLESS", "true")
+    assert UiTestConfig().playwright_headless is True
+    assert PlaywrightClient().headless is True
+    assert caplog.text == ""
 
 
 def test_connection_error_redacts_endpoint_credentials_and_secret_query_values():
@@ -483,17 +532,19 @@ _NON_SECRET_METADATA = (
     "_type",
 )
 _NON_SECRET_CODES = ("status_code", "error_code", "http_code", "response_code", "exit_code", "returncode")
+# This workflow value is rendered text that can contain a one-time token.
+_SENSITIVE_FAILURE_NAMES = {"success_msg"}
 # Only the length/truthiness/type of a secret may be printed or logged.
 _SAFE_WRAPPERS = {"len", "bool", "type"}
 
 
 def _is_secret_name(name: str) -> bool:
     name = name.lower()
-    return name in _SECRET_WORDS or (
-        name.split("_")[-1] in _SECRET_WORDS
-        and not name.endswith(_NON_SECRET_METADATA)
-        and name not in _NON_SECRET_CODES
-    )
+    if name in _SENSITIVE_FAILURE_NAMES:
+        return True
+    if name in _NON_SECRET_CODES or name.endswith(_NON_SECRET_METADATA):
+        return False
+    return any(part in _SECRET_WORDS for part in name.split("_"))
 
 
 def _secret_names_in(node: ast.AST) -> set[str]:
@@ -546,6 +597,48 @@ def _secret_output_calls(source: str, filename: str = "<src>") -> list[tuple[int
     return calls
 
 
+def _secret_failure_message_calls(
+    source: str, filename: str = "<src>"
+) -> list[tuple[int, str, list[str]]]:
+    """F-string diagnostics in raise/assert/pytest.fail are user-visible output too."""
+    calls = []
+    for node in ast.walk(ast.parse(source, filename=filename)):
+        kind = None
+        message = None
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
+            message = node.exc.args[0] if node.exc.args else next(
+                (
+                    keyword.value
+                    for keyword in node.exc.keywords
+                    if keyword.arg in {"message", "msg", "reason"}
+                ),
+                None,
+            )
+            kind = "raise"
+        elif isinstance(node, ast.Assert):
+            kind, message = "assert", node.msg
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "fail"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "pytest"
+        ):
+            kind = "pytest.fail"
+            message = node.args[0] if node.args else next(
+                (
+                    keyword.value
+                    for keyword in node.keywords
+                    if keyword.arg in {"message", "msg", "reason"}
+                ),
+                None,
+            )
+        if kind is not None and isinstance(message, ast.JoinedStr):
+            names = _secret_names_in(message)
+            calls.append((node.lineno, kind, sorted(names)))
+    return calls
+
+
 def test_secret_guard_covers_logging_calls_and_attribute_names():
     flagged = _secret_output_calls(
         "logger.info('admin %s', settings.admin_password)\n"
@@ -570,7 +663,28 @@ def test_secret_guard_covers_logging_calls_and_attribute_names():
     assert [names for _line, _kind, names in clean] == [[], [], []]
 
 
-def test_ui_tests_do_not_print_and_never_print_or_log_secret_named_values():
+def test_secret_guard_covers_f_string_failure_messages():
+    flagged = _secret_failure_message_calls(
+        'raise AssertionError(f"unexpected token {token}")\n'
+        'raise AssertionError(f"success output {success_msg}")\n'
+        'assert ok, f"persona password {persona.password}"\n'
+        'pytest.fail(f"secret key {secret_key}")\n'
+    )
+    assert [names for _line, _kind, names in flagged] == [
+        ["token"],
+        ["success_msg"],
+        ["password"],
+        ["secret_key"],
+    ]
+    clean = _secret_failure_message_calls(
+        'raise AssertionError(f"token length {len(token)}")\n'
+        'assert ok, f"status {response.status_code}"\n'
+        'pytest.fail(f"key length {len(secret_key)}")\n'
+    )
+    assert [names for _line, _kind, names in clean] == [[], [], []]
+
+
+def test_ui_tests_do_not_emit_secret_named_values_in_output_or_failures():
     root = Path(__file__).resolve().parents[1]
     targets = sorted((root / "ui_tests").rglob("*.py"))
     workflows = root / "ui_tests" / "workflows.py"
@@ -579,11 +693,17 @@ def test_ui_tests_do_not_print_and_never_print_or_log_secret_named_values():
 
     for path in targets:
         in_no_print_scope = path == workflows or path.is_relative_to(test_tree)
-        for lineno, kind, names in _secret_output_calls(path.read_text(encoding="utf-8"), str(path)):
+        source = path.read_text(encoding="utf-8")
+        for lineno, kind, names in _secret_output_calls(source, str(path)):
             if names or (kind == "print" and in_no_print_scope):
                 offenders.append(f"{path.relative_to(root)}:{lineno}: {kind}({names})")
+        for lineno, kind, names in _secret_failure_message_calls(
+            source, str(path)
+        ):
+            if names:
+                offenders.append(f"{path.relative_to(root)}:{lineno}: {kind}({names})")
 
-    assert offenders == [], "debug print or secret-bearing print/log calls in ui_tests:\n" + "\n".join(offenders)
+    assert offenders == [], "debug output or secret-bearing failure messages in ui_tests:\n" + "\n".join(offenders)
 
 
 # ---------------------------------------------------------------------------
@@ -678,7 +798,7 @@ async def test_browser_deaths_beyond_the_reconnect_cap_latch_without_connecting(
     with pytest.raises(PwmcpConnectionClosed, match="E2E_PWMCP_MAX_RECONNECTS=1"):
         await session.ensure_connected()
     assert playwright.chromium.connect_calls == 2
-    assert session.summary() == "pwmcp connects=2 reconnects=1 recycles=0 contexts=0"
+    assert session.summary() == "pwmcp connects=2 reconnects=1 recycles=0 contexts=0 leaked_contexts=0"
 
     await session.stop()
 
@@ -753,6 +873,7 @@ async def test_process_signal_closes_browser_before_forwarding_signal(signum):
     restore = install_signal_cleanup(
         session,
         loop,
+        cleanup_timeout_seconds=session.options.signal_cleanup_timeout_seconds,
         signal_api=signal_api,
         process_api=process_api,
     )
@@ -768,6 +889,126 @@ async def test_process_signal_closes_browser_before_forwarding_signal(signum):
     restore()
     await session.stop()
     assert browser.close_calls == 1
+
+
+def _fake_signal_harness():
+    class FakeSignalApi:
+        SIGTERM = signal.SIGTERM
+        SIGINT = signal.SIGINT
+
+        def __init__(self):
+            self.old = {self.SIGTERM: object(), self.SIGINT: object()}
+            self.restored = {}
+
+        def getsignal(self, number):
+            return self.old[number]
+
+        def signal(self, number, handler):
+            self.restored[number] = handler
+
+    class FakeProcessApi:
+        def __init__(self):
+            self.kills = []
+
+        def getpid(self):
+            return 4242
+
+        def kill(self, pid, number):
+            self.kills.append((pid, number))
+
+    class RecordingLoop:
+        def __init__(self, actual_loop):
+            self.actual_loop = actual_loop
+            self.handlers = {}
+            self.tasks = []
+
+        def add_signal_handler(self, number, callback, *args):
+            self.handlers[number] = (callback, args)
+
+        def remove_signal_handler(self, number):
+            self.handlers.pop(number, None)
+            return True
+
+        def create_task(self, coroutine):
+            task = self.actual_loop.create_task(coroutine)
+            self.tasks.append(task)
+            return task
+
+    return FakeSignalApi(), FakeProcessApi(), RecordingLoop(asyncio.get_running_loop())
+
+
+async def test_signal_cleanup_timeout_is_configured_and_signal_is_forwarded():
+    browser = _FakeBrowser()
+    playwright = _FakePlaywright([browser])
+    session = _session(playwright)
+    await session.start()
+    signal_api, process_api, loop = _fake_signal_harness()
+    timeouts: list[float] = []
+
+    async def timeout_without_waiting(awaitable, *, timeout):
+        timeouts.append(timeout)
+        awaitable.close()
+        raise asyncio.TimeoutError
+
+    restore = install_signal_cleanup(
+        session,
+        loop,
+        cleanup_timeout_seconds=4,
+        signal_api=signal_api,
+        process_api=process_api,
+        wait_for_api=timeout_without_waiting,
+    )
+    callback, args = loop.handlers[signal_api.SIGTERM]
+    callback(*args)
+    await loop.tasks[0]
+
+    assert timeouts == [4]
+    assert browser.close_calls == 0
+    assert process_api.kills == [(4242, signal_api.SIGTERM)]
+    assert signal_api.restored == signal_api.old
+    restore()
+    await session.stop()
+
+
+async def test_second_signal_restores_and_forwards_without_waiting_for_cleanup():
+    browser = _FakeBrowser()
+    playwright = _FakePlaywright([browser])
+    session = _session(playwright)
+    await session.start()
+    signal_api, process_api, loop = _fake_signal_harness()
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+    timeouts: list[float] = []
+
+    async def blocked_wait_for(awaitable, *, timeout):
+        timeouts.append(timeout)
+        cleanup_started.set()
+        await release_cleanup.wait()
+        await awaitable
+
+    restore = install_signal_cleanup(
+        session,
+        loop,
+        cleanup_timeout_seconds=4,
+        signal_api=signal_api,
+        process_api=process_api,
+        wait_for_api=blocked_wait_for,
+    )
+    first_callback, first_args = loop.handlers[signal_api.SIGINT]
+    second_callback, second_args = loop.handlers[signal_api.SIGTERM]
+    first_callback(*first_args)
+    await cleanup_started.wait()
+
+    second_callback(*second_args)
+    assert process_api.kills == [(4242, signal_api.SIGTERM)]
+    assert signal_api.restored == signal_api.old
+
+    release_cleanup.set()
+    await loop.tasks[0]
+    assert timeouts == [4]
+    assert browser.close_calls == 1
+    assert process_api.kills == [(4242, signal_api.SIGTERM), (4242, signal_api.SIGINT)]
+    restore()
 
 
 # ---------------------------------------------------------------------------
@@ -890,6 +1131,55 @@ async def test_goto_failure_redacts_one_time_path_tokens_and_secret_query_values
     assert secret not in str(exc)
     assert secret not in repr(exc)
     assert exc.payload["url"] == "http://app:8000/account/invite/<redacted>?next=/x&token=<redacted>"
+
+
+async def test_goto_non_timeout_failure_redacts_one_time_url_tokens():
+    secret = "oneTimeInviteSecret"
+    url = f"http://app:8000/account/invite/{secret}?token={secret}Q"
+
+    class Page:
+        url = "about:blank"
+
+        async def goto(self, target, wait_until, timeout):
+            raise RuntimeError(f"net::ERR_CONNECTION_REFUSED at {target}")
+
+    with pytest.raises(ToolError) as caught:
+        await Browser(Page()).goto(url, wait_until="domcontentloaded")
+
+    assert secret not in str(caught.value)
+    assert secret not in repr(caught.value)
+    assert caught.value.payload["url"] == (
+        "http://app:8000/account/invite/<redacted>?token=<redacted>"
+    )
+    assert caught.value.__suppress_context__
+
+
+async def test_goto_fallback_non_timeout_failure_redacts_one_time_url_tokens():
+    from playwright.async_api import TimeoutError as PlaywrightTimeout
+
+    secret = "fallbackInviteSecret"
+    url = f"http://app:8000/account/invite/{secret}"
+
+    class Page:
+        url = "about:blank"
+        calls = 0
+
+        async def goto(self, target, wait_until, timeout):
+            self.calls += 1
+            if self.calls == 1:
+                raise PlaywrightTimeout(f"timeout navigating to {target}")
+            raise RuntimeError(f"net::ERR_ABORTED at {target}")
+
+    with pytest.raises(ToolError) as caught:
+        await Browser(Page()).goto(url)
+
+    assert secret not in str(caught.value)
+    assert secret not in repr(caught.value)
+    assert caught.value.payload == {
+        "url": "http://app:8000/account/invite/<redacted>",
+        "wait_until": "domcontentloaded",
+    }
+    assert caught.value.__suppress_context__
 
 
 @pytest.mark.parametrize("path", ["/account/register/verify/", "/account/reset-password/"])

@@ -225,9 +225,14 @@ test-file boundary:
   requests 30 minutes, capped by the contract's maximum. This limits a leaked slot after a crashed
   runner; an open websocket prevents the 30-second idle recycle during the long app-start test, and
   immediate reconnect avoids leaving the gateway sessionless between files.
-- Session teardown and SIGTERM/SIGINT close the browser and driver. The terminal summary reports
-  successful `connects`, `reconnects`, intentional `recycles`, and created `contexts`; 503 exhaustion
-  includes the `naf-e2e:<lane>:<pid-or-xdist-worker>` label from the pwmcp admin session list.
+- Session teardown closes the browser and driver. SIGTERM/SIGINT cleanup is bounded by
+  `E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS`; a second signal skips the wait. Signal handlers run
+  only while the asyncio loop is running, so blocking synchronous work delays dispatch. The terminal
+  summary reports successful `connects`, `reconnects`, intentional `recycles`, created `contexts`,
+  and leaked contexts; 503 exhaustion includes the `naf-e2e:<lane>:<pid-or-xdist-worker>` label from
+  the pwmcp admin session list.
+- A deliberate close can lose its freed slot to another estate consumer before reconnect. B083
+  tracks a longer recycle reconnect deadline or skipping a recycle when that slot is contested.
 - Do not load one shared storage-state file into every context. Use `admin_browser`, `user_browser`,
   or `anon_browser` (and the equivalent `browser_session(role)` call). Role files live in the session
   work dir, are written after each fresh login of that role and reused while the cached login is

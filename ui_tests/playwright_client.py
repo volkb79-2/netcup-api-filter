@@ -90,9 +90,11 @@ class PlaywrightClient:
             self.headless = headless
         else:
             headless_str = os.getenv('PLAYWRIGHT_HEADLESS')
-            if not headless_str:
-                headless_str = 'true'
-                logger.warning("PLAYWRIGHT_HEADLESS is not set; using the declared default true")
+            if not headless_str or not headless_str.strip():
+                from netcup_api_filter.config_defaults import require_default
+
+                headless_str = require_default("PLAYWRIGHT_HEADLESS")
+                logger.warning("PLAYWRIGHT_HEADLESS is not set; using its configured default")
             self.headless = headless_str.lower() == 'true'
         self.timeout = timeout
         self.storage_state_path = storage_state_path

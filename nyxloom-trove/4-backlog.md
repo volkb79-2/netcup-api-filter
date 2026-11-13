@@ -330,9 +330,10 @@ class (b).
   (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`).
   Evidence: `browser.py:210` puts `value` in `ToolError.payload` and `browser.py:26-27` prints it; remote
   smoke uses the operator password (`config.py:173-175`), and `test_2fa_security.py:581` prints a 2FA code.
-  Implemented: fill/select/evaluate errors retain only safe operation metadata; navigation and request
-  failures redact one-time URL tokens and secret-named query values; the AST guard checks print,
-  logger/logging calls, and attribute names. Unit tests cover a failing fill and redacted URLs.
+  Implemented: fill/select/evaluate errors retain only safe operation metadata; timeout and other
+  navigation failures redact one-time URL tokens and secret-named query values; the AST guard checks
+  print/logging calls and f-string raise/assert/pytest.fail messages. Unit tests cover typed values,
+  navigation failures, and the diagnostic guard.
 
 - **B061 — Cross-account and cross-role authorization sweep over every id-bearing portal route.**
   Evidence: only `test_ddns_quick_update_http.py:105` checks another account's realm; 18 `/account` rules take
@@ -402,8 +403,9 @@ class (b).
   interval, whichever comes first. It checks `/contract` once, uses the contract's lease cap, requests an
   interval-plus-margin lease, retries 503 for a bounded interval, and labels the holder
   `naf-e2e:<lane>:<pid-or-xdist-worker>`. A failed replacement is latched, and the session closes on teardown
-  and SIGTERM/SIGINT. Oracle: exact fake-clock file/time recycle counts, bounded retry and busy-label message;
-  final e2e evidence records connects/reconnects/recycles/contexts and duration.
+  and bounded SIGTERM/SIGINT cleanup. Planned recycle disposes and counts leaked contexts. Oracle: exact fake-clock
+  file/time recycle counts, bounded retry and busy-label message; final e2e evidence records connects/reconnects/
+  recycles/contexts/leaked_contexts and duration.
 
 - **B070 — Mailpit isolation and loop-safe waits; enable 2-worker parallelism within pwmcp's 2-slot cap.**
   Dependency: concurrent worktree identity is B046. Evidence: global clears at `conftest.py:289,297`,
@@ -466,4 +468,10 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
 
 - **B082 — netcup config page: "Test connection" posts a field the handler ignores. Status: open**
   templates/admin/config_netcup.html JS posts `test_only=true`; `config_netcup` ignores it, saves the configuration and returns HTML where the script expects JSON. Add a test-only branch that validates without saving.
+
+- **B083 — pwmcp planned recycle can lose the released slot before reconnect. Status: open**
+  With two estate-wide slots, another consumer can acquire a slot after this session closes its browser
+  and before the immediate reconnect. If bounded 503 retry exhausts, the current session latches failed.
+  Consider a longer reconnect deadline specifically for planned recycles, or skip a recycle while the
+  slot is contested. Preserve the short initial-connect budget and the prompt slot yield between files.
 

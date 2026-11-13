@@ -1068,12 +1068,16 @@ async def submit_client_form(browser: Browser, data: ClientFormData) -> str:
         # Fallback: try to extract after colon (but before any HTML)
         match = re.search(r'Authentication token[^:]*:\s*([A-Za-z0-9_:]+)(?=\s|<|$)', success_msg)
         if not match:
-            raise AssertionError(f"Could not extract token from success message: {success_msg}")
+            raise AssertionError(
+                f"Could not extract token from success message of length {len(success_msg)}"
+            )
         token = match.group(1)
     
     # Verify token format (should contain exactly one colon)
     if ':' not in token:
-        raise AssertionError(f"Token should be in client_id:secret_key format, got: {token}")
+        raise AssertionError(
+            f"Token should be in client_id:secret_key format; received length {len(token)}"
+        )
     
     return token
 

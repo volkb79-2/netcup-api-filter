@@ -119,7 +119,12 @@ class UiTestConfig:
     """Session-bound UI target configuration."""
 
     def __init__(self) -> None:
-        self.playwright_headless: bool = os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() in {"true", "1"}
+        headless = os.getenv("PLAYWRIGHT_HEADLESS", "").strip()
+        if not headless:
+            from netcup_api_filter.config_defaults import require_default
+
+            headless = require_default("PLAYWRIGHT_HEADLESS")
+        self.playwright_headless: bool = headless.lower() in {"true", "1"}
         self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "test")
         self._profiles: dict[str, UiTargetProfile] = {}
         self._active: UiTargetProfile | None = None

@@ -125,6 +125,18 @@ class Browser:
                     return {"url": self.current_url, "title": self.current_title, "status": response.status if response else None}
                 except PlaywrightTimeout:
                     pass  # Fall through to original error
+                except Exception as fallback_exc:
+                    raise ToolError(
+                        name="goto",
+                        payload={"url": redact_url_text(url), "wait_until": "domcontentloaded"},
+                        message=redact_url_text(str(fallback_exc)),
+                    ) from None
+            raise ToolError(
+                name="goto",
+                payload={"url": redact_url_text(url), "wait_until": wait_until},
+                message=redact_url_text(str(exc)),
+            ) from None
+        except Exception as exc:
             raise ToolError(
                 name="goto",
                 payload={"url": redact_url_text(url), "wait_until": wait_until},

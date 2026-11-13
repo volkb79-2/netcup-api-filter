@@ -294,8 +294,8 @@ class TestRegistrationEmails:
         # Verify content contains verification code
         full_msg = mailpit.get_message(msg.id)
         code = extract_verification_code(full_msg.text)
-        assert code is not None, f"No verification code found in email: {full_msg.text[:200]}"
-        assert len(code) == 6, f"Verification code should be 6 chars: {code}"
+        assert code is not None, f"No verification code found in email text of length {len(full_msg.text)}"
+        assert len(code) == 6, f"Verification code should be 6 chars; received length {len(code)}"
 
     async def test_registration_sends_admin_notification(
         self, registration_browser, mailpit: MailpitClient, unique_username, unique_email

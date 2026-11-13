@@ -46,9 +46,11 @@ At session start the harness:
 5. Between tests, it replaces a dead browser (at most `E2E_PWMCP_MAX_RECONNECTS` times per session)
    and renews a lease near expiry. A failed replacement is latched: every later test fails
    immediately with the same reason, without connecting again.
-6. Session teardown and SIGTERM/SIGINT close the browser connection and stop the driver.
-7. Prints `pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n>` once in the terminal summary,
-   plus reconnect causes or the latched failure when present.
+6. Session teardown closes the browser connection and stops the driver. SIGTERM/SIGINT cleanup is
+   bounded by `E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS`; a second signal forwards immediately.
+   Signal handlers run only while the asyncio loop is running, so blocking synchronous work delays dispatch.
+7. Prints `pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n> leaked_contexts=<n>` once
+   in the terminal summary, plus reconnect causes or the latched failure when present.
 
 The gateway allows two estate-wide clients. Two concurrent worktrees can therefore run; a third sees
 503 until a slot frees. On exhaustion, the error says the slots are busy and gives the
@@ -56,6 +58,9 @@ The gateway allows two estate-wide clients. Two concurrent worktrees can therefo
 idle-recycled only when no websocket session is open. An open session prevents the 30-second idle
 recycle during slow app-start tests, so no heartbeat is required. The default 25-minute recycle
 interval plus 5-minute margin requests an 1800-second lease; `/contract` caps it at 7200 seconds.
+A planned recycle can lose its freed slot to another consumer before reconnect; if bounded retries
+are exhausted, the session latches failed. B083 tracks a longer recycle deadline or skipping a
+recycle while the slot is contested.
 
 ### Role-specific storage state
 
@@ -137,6 +142,7 @@ service, set `PLAYWRIGHT_SERVER_WS` as a repo secret/env and remove the
 | `E2E_PWMCP_LANE_NAME` | `e2e` | Lane component of the `naf-e2e:<lane>:<pid-or-xdist-worker>` admin label |
 | `E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS` | `10` | `/contract` fetch timeout |
 | `E2E_PWMCP_CONNECT_TIMEOUT_SECONDS` | `30` | Per connect-attempt timeout |
+| `E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS` | `10` | Maximum graceful SIGTERM/SIGINT cleanup wait |
 | `E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS` | `60` | Total deadline for HTTP 503 retry |
 | `E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS` | `15` | First 503 backoff |
 | `E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS` | `30` | Maximum 503 backoff |

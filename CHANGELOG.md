@@ -27,6 +27,11 @@
   Playwright driver, reconnects at file boundaries or after a configurable 25-minute window, and
   requests a short lease derived from that window. Bounded 503 retries identify the session label in
   the pwmcp admin view; a failed reconnect is latched for the rest of the suite.
+- **E2E browser state is now isolated by role.** Admin and user contexts reuse separate login-state
+  files, while anonymous contexts start empty; a missing role file is not passed to Playwright.
+- **E2E failure output now redacts typed secrets and one-time URLs.** Navigation failures and legacy
+  token-helper assertions expose only redacted text or value lengths, and the source guard checks
+  f-string exception/assertion diagnostics as well as print and logging calls.
 
 - **PowerDNS configuration has one source per fact**: `POWERDNS_API_URL` and
   `POWERDNS_API_URL_INTERNAL` are defined only by `.env.services`; the app consumes

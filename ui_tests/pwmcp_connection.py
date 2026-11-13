@@ -53,6 +53,7 @@ class ConnectionOptions:
     contract_timeout_seconds: float
     recycle_interval_seconds: float
     lease_renew_margin_seconds: float
+    signal_cleanup_timeout_seconds: float
     max_reconnects: int
     browser_type: str = "chromium"
 
@@ -116,6 +117,9 @@ def load_connection_options(
     contract_timeout = _positive_float("E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS", env, default_lookup)
     recycle_interval = _positive_float("E2E_PWMCP_RECYCLE_INTERVAL_SECONDS", env, default_lookup)
     renew_margin = _positive_float("E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS", env, default_lookup)
+    signal_cleanup_timeout = _positive_float(
+        "E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS", env, default_lookup
+    )
     max_reconnects = _non_negative_int("E2E_PWMCP_MAX_RECONNECTS", env, default_lookup)
     if initial > maximum:
         raise RuntimeError("E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS exceeds the maximum backoff")
@@ -128,6 +132,7 @@ def load_connection_options(
         contract_timeout_seconds=contract_timeout,
         recycle_interval_seconds=recycle_interval,
         lease_renew_margin_seconds=renew_margin,
+        signal_cleanup_timeout_seconds=signal_cleanup_timeout,
         max_reconnects=max_reconnects,
     )
 
@@ -396,6 +401,7 @@ class SharedPwmcpSession:
         self.reconnects = 0
         self.contexts = 0
         self.recycles = 0
+        self.leaked_contexts = 0
         self.reconnect_causes: list[str] = []
         self._recoveries = 0
         self._fatal_reason: str | None = None
@@ -476,7 +482,9 @@ class SharedPwmcpSession:
 
     async def _launch_local(self) -> Any:
         browser_type = getattr(self._playwright, self.options.browser_type, self._playwright.chromium)
-        headless = self.env.get("PLAYWRIGHT_HEADLESS", "true").lower() in {"true", "1"}
+        headless = (
+            _config_value("PLAYWRIGHT_HEADLESS", self.env, None).lower() in {"true", "1"}
+        )
         browser = await browser_type.launch(headless=headless)
         self.connects += 1
         return browser
@@ -568,8 +576,12 @@ class SharedPwmcpSession:
             return await self.ensure_connected()
         open_contexts = self._open_context_count()
         if open_contexts:
-            raise self._latch(
-                f"cannot recycle pwmcp connection after {cause}: {open_contexts} browser context(s) remain open"
+            self.leaked_contexts += open_contexts
+            logger.warning(
+                "pwmcp planned recycle after %s found %d open context(s); "
+                "closing the connection to dispose them",
+                cause,
+                open_contexts,
             )
         return await self._replace_browser(cause, planned_recycle=True)
 
@@ -641,7 +653,8 @@ class SharedPwmcpSession:
     def summary(self) -> str:
         return (
             f"pwmcp connects={self.connects} reconnects={self.reconnects} "
-            f"recycles={self.recycles} contexts={self.contexts}"
+            f"recycles={self.recycles} contexts={self.contexts} "
+            f"leaked_contexts={self.leaked_contexts}"
         )
 
     def summary_details(self) -> list[str]:
@@ -655,7 +668,7 @@ class SharedPwmcpSession:
 
 
 _current_session: SharedPwmcpSession | None = None
-_last_summary = "pwmcp connects=0 reconnects=0 recycles=0 contexts=0"
+_last_summary = "pwmcp connects=0 reconnects=0 recycles=0 contexts=0 leaked_contexts=0"
 _last_details: list[str] = []
 
 
@@ -688,11 +701,13 @@ def install_signal_cleanup(
     session: SharedPwmcpSession,
     loop: asyncio.AbstractEventLoop,
     *,
+    cleanup_timeout_seconds: float,
     interrupt_task: asyncio.Task[Any] | None = None,
     signal_api: Any = signal,
     process_api: Any = os,
+    wait_for_api: Callable[..., Awaitable[Any]] = asyncio.wait_for,
 ) -> Callable[[], None]:
-    """Close the browser lease before forwarding SIGTERM/SIGINT to pytest."""
+    """Bound cleanup before forwarding SIGTERM/SIGINT; handlers run only while loop runs."""
     previous: dict[int, Any] = {}
     restored = False
     cleanup_task: asyncio.Task[Any] | None = None
@@ -708,10 +723,18 @@ def install_signal_cleanup(
 
     async def shutdown_then_forward(number: int) -> None:
         try:
-            if interrupt_task is not None and not interrupt_task.done():
-                interrupt_task.cancel()
-                await asyncio.gather(interrupt_task, return_exceptions=True)
-            await session.stop()
+            async def cleanup() -> None:
+                if interrupt_task is not None and not interrupt_task.done():
+                    interrupt_task.cancel()
+                    await asyncio.gather(interrupt_task, return_exceptions=True)
+                await session.stop()
+
+            await wait_for_api(cleanup(), timeout=cleanup_timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "pwmcp shutdown on signal exceeded configured timeout of %.3fs",
+                cleanup_timeout_seconds,
+            )
         except Exception as exc:
             logger.warning("pwmcp shutdown on signal failed: %s", type(exc).__name__)
         finally:
@@ -720,8 +743,12 @@ def install_signal_cleanup(
 
     def handle(number: int) -> None:
         nonlocal cleanup_task
-        if cleanup_task is None or cleanup_task.done():
-            cleanup_task = loop.create_task(shutdown_then_forward(number))
+        if cleanup_task is not None and not cleanup_task.done():
+            # A second signal is an explicit request to stop waiting for graceful cleanup.
+            restore()
+            process_api.kill(process_api.getpid(), number)
+            return
+        cleanup_task = loop.create_task(shutdown_then_forward(number))
 
     try:
         for number in (signal_api.SIGTERM, signal_api.SIGINT):

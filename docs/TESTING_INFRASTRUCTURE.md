@@ -120,12 +120,16 @@ pytest session / xdist worker
 `ui_tests/pwmcp_connection.py` owns this lifecycle; `ui_tests/conftest.py` installs it through the
 autouse `pwmcp_connection` session fixture and the `pwmcp_recycle_window` function fixture. The
 counters are emitted once at the end of the session as
-`pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n>`: `connects` counts successful browser
-connections including the first, `reconnects` counts successful replacements, `recycles` counts the
+`pwmcp connects=<n> reconnects=<n> recycles=<n> contexts=<n> leaked_contexts=<n>`.
+`connects` counts successful browser connections including the first, `reconnects` counts successful
+replacements, `recycles` counts the
 intentional file/time/lease replacements, and `contexts` counts successful contexts. A
 `pwmcp reconnect causes: ...` line and a `pwmcp connection latched as failed: ...` line follow when
 applicable. There is one driver per pytest process (therefore one per xdist worker); xdist is not
 enabled by the current e2e lane, and its worker counters are not aggregated by the controller.
+An open context found at a planned file/time recycle is counted as leaked, then disposed by closing
+the old browser so one missed context cleanup does not fail every later file. The lease-renewal path
+still waits for a between-test point with no open contexts.
 
 The contract check is fail-fast: `/contract` must publish schema version 1 and a protocol matching
 the installed Playwright major.minor, plus a maximum lease. A missing contract, incompatible
@@ -148,6 +152,12 @@ lane budget. A browser found dead between tests (gateway restart or recycle) is 
 `E2E_PWMCP_MAX_RECONNECTS` (3) times. A failed replacement is latched: every later test errors
 immediately with the same reason instead of spending a connect/503-retry budget each. A browser lost
 in the middle of a test is still a failure of that test (there is no mid-test retry).
+At a deliberate recycle, another estate consumer can take the released slot before the immediate
+reconnect; if its bounded 503 retry is exhausted, the session latches failed. B083 tracks two options:
+give recycle reconnects a longer deadline, or skip a recycle while the slot is contested.
+SIGTERM/SIGINT cleanup is bounded by `E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS`; a second signal
+forwards immediately. The handler runs only while the asyncio loop is running, so a signal received
+during blocking synchronous work waits until the loop can dispatch it.
 
 ### Per-role browser state
 
@@ -174,14 +184,16 @@ shared browser and selects the admin/user cache only for the matching session pe
 
 `Browser.fill`, `Browser.select`, and `Browser.evaluate` never place typed values, selected values, or
 evaluated code in `ToolError.payload`; they record lengths/type and a redacted operation message.
-`Browser.goto`, the `request_*` helpers and `verify_status` mask one-time URL tokens (the segment after
-`/verify/`, `/reset/`, `/reset-password/`, `/invite/`) and secret-named query values and request
-params, in both the payload and the Playwright message. Tests and workflow helpers use `logging`,
+`Browser.goto` masks one-time URL tokens on timeout and other navigation errors; the `request_*`
+helpers and `verify_status` mask tokens in errors (the segment after `/verify/`, `/reset/`,
+`/reset-password/`, `/invite/`) and secret-named query values and request params, in both the payload
+and the Playwright message. Tests and workflow helpers use `logging`,
 never `print`, and do not log passwords, tokens, 2FA or verification codes, invite/reset links, or full
-session cookies. The unit lane enforces the `ToolError` redaction and a source guard over every
-`print(...)` and `logger.<level>(...)`/`logging.<level>(...)` call in `ui_tests/` (secret-named
-variables and attributes such as `settings.admin_password`; only `len(...)` of a secret may be logged)
-without starting a browser.
+session cookies. The unit lane enforces the `ToolError` redaction and a source guard over `print(...)`
+and logger calls, plus f-string `raise`, `assert`, and `pytest.fail` messages in every `ui_tests/`
+Python file. It flags secret-named variables and attributes such as `settings.admin_password`; only
+length, truthiness, or type metadata may be logged or included in a failure message. The guard runs
+without a browser.
 
 ```bash
 run-gate local-build --worktree "$PWD"   # deploy-local/ + golden DB (3.11 runner)

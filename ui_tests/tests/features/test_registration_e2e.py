@@ -265,7 +265,7 @@ class TestRegistrationWithMailpit:
         code_match = re.search(r'\b(\d{6})\b', email_text)
         
         if not code_match:
-            pytest.fail(f"Could not find 6-digit code in email: {email_text[:500]}")
+            pytest.fail(f"Could not find 6-digit code in email text of length {len(email_text)}")
         
         verification_code = code_match.group(1)
         
