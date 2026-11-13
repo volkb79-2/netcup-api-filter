@@ -35,7 +35,7 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
 
       # Stack-owned values; callers do not need to export Mailpit settings.
-      MP_MAX_MESSAGE_SIZE: "{{ mailpit.max_message_size }}"
+      MP_MAX_MESSAGE_SIZE: "{{ mailpit.max_message_size_mb }}"
 
       # UI features
       MP_UI_BIND_ADDR: "0.0.0.0:{{ mailpit.web_port }}"

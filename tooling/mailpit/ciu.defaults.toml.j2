@@ -27,7 +27,8 @@ web_port = 8025
 # Mailpit serves both its UI and API below this path. Compose, its healthcheck,
 # and tooling/ciu_resolve_env.py consume these values from this stack config.
 web_root = "/mailpit"
-max_message_size = 10485760  # 10 MiB; Mailpit's documented default.
+# Mailpit's MP_MAX_MESSAGE_SIZE is in MEGABYTES (0 = unlimited), not bytes.
+max_message_size_mb = 10
 
 [mailpit.hooks]
 pre_compose = []

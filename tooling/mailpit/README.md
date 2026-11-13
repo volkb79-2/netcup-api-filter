@@ -45,7 +45,7 @@ Stack-owned settings in `ciu.defaults.toml.j2`:
 | `mailpit.web_port` | `8025` | Internal web UI/API port |
 | `mailpit.smtp_port` | `1025` | Internal SMTP port |
 | `mailpit.web_root` | Set in `ciu.defaults.toml.j2` | UI/API path prefix used by Compose, its healthcheck, and `.env.services` |
-| `mailpit.max_message_size` | `10485760` | Maximum email size in bytes (10 MiB), rendered as `MP_MAX_MESSAGE_SIZE` |
+| `mailpit.max_message_size_mb` | `10` | Maximum message size in megabytes (Mailpit's unit; 0 = unlimited), rendered as `MP_MAX_MESSAGE_SIZE` |
 
 The stack renders `mailpit.web_root` as `MP_WEBROOT`; neither the webroot nor the
 message-size limit needs to be exported by the caller. `MAILPIT_VERBOSE` remains an

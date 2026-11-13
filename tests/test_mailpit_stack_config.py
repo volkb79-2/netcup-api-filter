@@ -27,12 +27,12 @@ def test_mailpit_compose_uses_committed_defaults_without_shell_inputs():
     compose = COMPOSE_PATH.read_text(encoding="utf-8")
 
     assert defaults["web_root"] == "/mailpit"
-    assert defaults["max_message_size"] == 10485760
+    assert defaults["max_message_size_mb"] == 10
     assert not re.findall(
         r"\$\{MAILPIT_(?:WEBROOT|MAX_MESSAGE_SIZE)\b[^}]*\}", compose
     )
     assert 'MP_WEBROOT: "{{ mailpit.web_root }}"' in compose
-    assert 'MP_MAX_MESSAGE_SIZE: "{{ mailpit.max_message_size }}"' in compose
+    assert 'MP_MAX_MESSAGE_SIZE: "{{ mailpit.max_message_size_mb }}"' in compose
 
 
 def test_mailpit_healthcheck_path_matches_the_rendered_webroot():

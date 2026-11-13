@@ -46,7 +46,7 @@ Its URL path prefix is configured once as `mailpit.web_root`; `.env.services` de
 | `MP_SMTP_BIND_ADDR` | `0.0.0.0:1025` | SMTP listen address |
 | `MP_SMTP_AUTH_ACCEPT_ANY` | `true` | Accept any SMTP auth credentials for this test service |
 | `MP_SMTP_AUTH_ALLOW_INSECURE` | `true` | Allow SMTP auth without TLS on the internal test network |
-| `MP_MAX_MESSAGE_SIZE` | `mailpit.max_message_size` | Max email size in bytes; configured in the stack defaults |
+| `MP_MAX_MESSAGE_SIZE` | `mailpit.max_message_size_mb` | Max message size in megabytes (0 = unlimited); configured in the stack defaults |
 | `MP_WEBROOT` | `mailpit.web_root` | UI/API path prefix; configured in the stack defaults |
 | `MP_VERBOSE` | `false` | Enable verbose logging |
 

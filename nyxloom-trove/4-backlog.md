@@ -497,7 +497,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   and prove it once with the long-lived backend-powerdns stack (WP5).
 
 - **B091 — Mailpit webroot and message size are stack-owned. Status: done (`mailpit-config`)**
-  `tooling/mailpit/ciu.defaults.toml.j2` now owns `web_root` and `max_message_size`; Compose renders both values,
+  `tooling/mailpit/ciu.defaults.toml.j2` now owns `web_root` and `max_message_size_mb`; Compose renders both values,
   and its healthcheck uses the same `web_root`. `tooling/ciu_resolve_env.py` reads the configured web port and
   webroot when deriving `MAILPIT_URL` and `MAILPIT_API_URL`. Static tests reject caller-shell reads, a healthcheck
   path that differs from `MP_WEBROOT`, and resolver drift from a changed configured webroot. A clean shell no longer
