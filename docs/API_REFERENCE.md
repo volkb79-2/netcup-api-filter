@@ -290,7 +290,11 @@ good 2001:db8::1
 
 **Endpoint:** `GET /api/myip`
 
-**Description:** Returns caller's public IP address (no authentication required).
+**Description:** Returns caller's public IP address (no authentication required). `ip` is the
+middleware-resolved `request.remote_addr`; `headers` echoes the raw, untrusted `X-Forwarded-For` and
+`X-Real-IP` request values for diagnosis. With `TRUSTED_PROXY_HOPS=0` (the default) `ip` is the
+direct peer address and forged forwarding headers never change it. The example below shows a
+deployment with a trusted proxy hop configured.
 
 **Example Request:**
 ```bash

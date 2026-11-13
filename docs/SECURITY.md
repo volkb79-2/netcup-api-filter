@@ -134,7 +134,10 @@ arriving unchanged as the only chain entry, `X-Forwarded-Proto` passing through 
 the server reported HTTPS, and `REMOTE_ADDR` remaining the actual client address. A deployment
 behind a real proxy must set `TRUSTED_PROXY_HOPS` explicitly to the measured count and verify
 `GET /api/myip` with both a plain request and one carrying forged `X-Forwarded-For` and
-`X-Forwarded-Proto` values; confirm the returned `ip` is not changed by the forged values.
+`X-Forwarded-Proto` values; confirm the returned `ip` is not changed by the forged values. With
+zero trusted hops behind a real proxy, every client appears under the proxy's address, so per-IP
+rate limits, login lockouts, GeoIP checks, the activity log and the admin IP whitelist all see one
+client; that is why the count must be measured and set, not guessed.
 
 ## Deployment posture
 
@@ -148,6 +151,9 @@ Documented honestly so the doc and code stay in sync:
 
 - **Closing the first-login window of the tarball** (setting the pre-set admin's password from an
   operator-held value at activation) is not implemented.
+- **Self-measuring proxy calibration** for other webhosters (B092 part 2): the Passenger catalog
+  ships zero trusted hops and nothing measures or proposes a hop count at activation; operators
+  set `TRUSTED_PROXY_HOPS` by hand.
 - **TOTP secret encryption at rest**, **password-history reuse checks**, and response
   **`Content-Security-Policy` / `Strict-Transport-Security`** headers.
 - **SCRAM-SHA-256 HTTP authentication for scoped DNS API clients** (B040/F027). Machine

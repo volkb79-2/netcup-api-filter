@@ -40,8 +40,8 @@ These endpoints allow automated DNS record updates for dynamic IP addresses (hom
 
 When `myip` requests automatic detection, the app uses the middleware-resolved
 `request.remote_addr`. `TRUSTED_PROXY_HOPS` controls whether proxy forwarding headers
-can influence that address; the source default is zero. See [`SECURITY.md`](SECURITY.md)
-for hop configuration and the Passenger runtime's unverified status-quo setting.
+can influence that address; the source and Passenger catalog defaults are zero. See
+[`SECURITY.md`](SECURITY.md) for hop configuration.
 
 ---
 
