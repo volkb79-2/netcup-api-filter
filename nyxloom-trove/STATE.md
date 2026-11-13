@@ -1,6 +1,6 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-11-13 (B048 part 1 delivered; B093 PowerDNS 5.1 implementation and resolution committed; B095 real-start verification and CIU secret delivery remain open).** Start here.
+**Last synced: 2026-11-13 (B048 part 1 delivered; B093 PowerDNS 5.1 implementation and resolution committed; B095 real-start verification done; CIU secret delivery remains open).** Start here.
 For this sync, only this status note, the WP3 (B044) probe row and the `Open items for the operator` line below were
 re-synced (plus the WP8 row for the PowerDNS series decision); the other dashboard sections retain their earlier snapshot and were not checked.
 The direction spine lives in [1-north-star.md](1-north-star.md),
@@ -36,7 +36,7 @@ reviewed independently on the other, with gates through `run-gate`.
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058 in progress on `fixup3-form-contracts` | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
 
-Open items for the operator: separate Passenger WSGI probe (B054), B048 part 2 CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for `.env.live` credentials, delegation/A records for the public tier, provider firewall for port 53, B095 PowerDNS real-start verification (the controller runs it), and the B097 PowerDNS record-content/TTL compatibility follow-up.
+Open items for the operator: separate Passenger WSGI probe (B054), B048 part 2 CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for `.env.live` credentials, delegation/A records for the public tier, provider firewall for port 53, the B097 PowerDNS record-content/TTL compatibility follow-up.
 
 ## Release & infra model (current)
 

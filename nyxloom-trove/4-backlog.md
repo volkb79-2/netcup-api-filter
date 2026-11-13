@@ -92,6 +92,8 @@ items:
   - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
   - {id: B095, title: "Verify PowerDNS 5.1.5 on a real start: logs, version API, zone and record round trip, health", type: feature, component: infra, context_estimate: small}
   - {id: B097, title: "Handle PowerDNS 5.1 record-content and TTL validation in the app backend", type: bugfix, component: backends, context_estimate: medium}
+  - {id: B098, title: "The delegated zone has no A record for its own nameserver (ns1) because the bootstrap hook creates only NS and SOA", type: bugfix, component: infra, context_estimate: small}
+  - {id: B100, title: "app.py logs nothing at startup when TRUSTED_PROXY_HOPS is above 0", type: bugfix, component: app, context_estimate: small}
   - {id: B096, title: "Resolve catalog-only live-test defaults", type: bugfix, component: config, context_estimate: medium}
 ---
 
@@ -523,7 +525,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   report only; admins can re-run or override in settings. Verify with `/api/myip` plain and forged after the first
   deploy.
 
-- **B093 — PowerDNS 5.1 series. Status: implementation and resolution committed; B095 real-start verification open**
+- **B093 — PowerDNS 5.1 series. Status: done 2026-11-13: implemented, resolved, and verified on a real 5.1.5 start (B095)**
   Operator decision 2026-11-13: use PowerDNS 5.1 (`pdns-auth-51`), with 5.1.5 selected. The cmru target and stack
   declarations move to the new series; the controller recorded the resolution in commit `9847b7b`. The stack renders
   configuration using the image's `TEMPLATE_FILES` mechanism and creates zones through the HTTP API with explicit
@@ -538,7 +540,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   PowerDNS require it, and GeoIP mock falls back to its configured workspace path. Make the identity and host-path
   inputs fail fast consistently, retaining a configured fallback only where explicitly intended.
 
-- **B095 — PowerDNS 5.1.5 real-start verification. Status: open**
+- **B095 — PowerDNS 5.1.5 real-start verification. Status: done 2026-11-13 (R15 not run)**
   On the controller's real start, inspect container logs for config parse/backend/API startup errors and absence of
   fatal messages; call `GET /api/v1/servers/localhost` and verify `version` reports 5.1.5; create a disposable zone
   in the `.invalid` test namespace through `POST /api/v1/servers/localhost/zones`, read it back and verify its SOA,
@@ -546,13 +548,35 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   healthcheck is healthy. **UNVERIFIED:** the 5.1.5 image's acceptance of the per-zone `soa_edit_api` field and
   exact readback normalization must be confirmed on that start.
 
-- **B097 — PowerDNS 5.1 API record validation. Status: open**
+  **Result 2026-11-13 (controller, fresh data directory, then once over a copy of the 4.8-era database):** R0-R14 pass.
+  Init container exit 0, main container healthy with 0 restarts, `pdns_control version` 5.1.5, template mounted
+  where the image's startup script reads it (the reviewer's mount-path fix), config parsed, gsqlite3 backend loaded,
+  UDP+TCP 53 bound on IPv4 and IPv6, no errors and no API key text in the logs. API from the app network: 200 with
+  `authoritative` / `5.1.5`; wrong key, no key and the removed `?api-key=` query argument all 401. Disposable zone in the
+  `.invalid` namespace: create 201, read-back Native / dnssec false / `soa_edit_api` DEFAULT (the per-zone field is
+  accepted), apex NS and explicit SOA as sent; A, AAAA, CNAME, TXT (quoted) and MX PATCH 204 with exact read-back, the
+  SOA serial rising by exactly 1 per change; second REPLACE and DELETE correct; the empty non-terminal returns
+  NOERROR/NODATA and a missing name NXDOMAIN with the `api_rectify` override gone (decision M1 confirmed); answers are
+  authoritative (aa) over UDP and TCP both on the container network and on the host's published port 53; no crypto keys;
+  the bootstrap hook is idempotent (zone untouched, serial unchanged), the zone and the DB bind-mount (953:994, 660)
+  survive down/up, deletion returns 204 and the lookup `[]`; only 53/tcp and 53/udp are published (the API port is not).
+  The delegated zone answers NS and SOA through the default resolver, 1.1.1.1 and 8.8.8.8. Started over a copy of the
+  4.8-era database, 5.1.5 came up healthy and kept its two zones (SOA+NS only, no records), so upgrade-in-place works;
+  the clean 5.1-created database was kept live and the original 4.8 database stays archived untouched. Not run: R15
+  (the live DNS verification test has no lane yet, B048 part 2 / B049).
+
+- **B097 — PowerDNS 5.1 API record validation. Status: open (reproduced on 5.1.5, see below)**
   PowerDNS 5.1 tightened record-content validation and RRset TTL enforcement. The app backend currently sends
   `record['destination']` and `record.get('ttl', 60)` unchanged in
   `src/netcup_api_filter/backends/powerdns.py:141-148`; some inputs accepted by 4.8 may now receive HTTP 422.
   Add client-side content normalization/validation or a clear error mapping for those responses, with tests for
   supported record types. **UNVERIFIED:** which exact content/TTL cases return 422 on auth-5.1.5. This follow-up
   does not change the backend in B093.
+  Reproduced 2026-11-13 on the real 5.1.5 start (B095): PATCH of a TXT with unquoted content (`unquoted-text`) returns
+  422 "Not in expected format (parsed as '"unquoted-text"')", and a CNAME with a relative target (`target`) returns 422
+  "Not in expected format (parsed as 'target.')". Well-formed records (A, AAAA, CNAME with a trailing dot, quoted TXT, MX) are
+  accepted. `backends/powerdns.py` passes `record['destination']` unchanged, so user input that 4.8 accepted can now
+  surface as a raw backend error.
 
 - **B096 — Resolve catalog-only live-test defaults. Status: open (Low/Medium)**
   Seventeen `.env.defaults` entries (`DNS_TEST_DOMAIN`, `DNS_TEST_SUBDOMAIN_PREFIX`,
@@ -566,3 +590,16 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   Decide whether to remove these catalog entries or migrate the readers to the defaults catalog,
   then retire the `env-default-overrides` registry and its structural test in
   `tests/test_env_layout.py`.
+
+- **B098 — The delegated zone lacks an A record for its own nameserver. Status: open (Low)**
+  The bootstrap hook (`tooling/backend-powerdns/post_compose_zone.py`) creates the delegated zone with apex NS
+  `ns1.<zone>.` and an explicit SOA only. The parent's glue makes the delegation resolve (verified through three public
+  resolvers), but the child zone does not answer `A ns1.<zone>` (NODATA), which strict resolvers may dislike. Create the
+  A (and AAAA when configured) record for `ns1` from the stack's public-address fact, config-driven and idempotent, with a
+  test; the PowerDNS host address is already an operator fact in the CIU environment.
+
+- **B100 — app.py logs nothing at startup when TRUSTED_PROXY_HOPS is above 0. Status: open (Low)**
+  Found by the proxy-default0 review: with `TRUSTED_PROXY_HOPS=0` the app logs a warning, with a positive value it logs
+  nothing, so an operator cannot see from the log that forwarded headers are being trusted. Log one INFO line with the hop
+  count and which headers are honoured (never values), and cover it with a test. The separate Passenger-side probe (B054)
+  stays open because the PHP path was measured, not the WSGI path.
