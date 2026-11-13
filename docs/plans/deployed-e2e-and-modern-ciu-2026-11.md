@@ -50,8 +50,9 @@ zone, real SMTP/IMAP and netcup accounts) exists only as unconnected pieces.
 - **D-013 proxy trust.** `TRUSTED_PROXY_HOPS` (default 0), `x_host` never trusted, canonical `PUBLIC_BASE_URL` for every emailed
   link (reset-link host poisoning), host-only session cookies (the old `auto` shared one cookie with every sibling under
   `.PUBLIC_FQDN`), every client address from `request.remote_addr`, a static test forbids raw forwarded-header reads in `src/`.
-  The shipped tarball keeps today's behaviour (1 hop) until the operator has measured the webhoster (WP3); both 0 and 1 can
-  fail there, so the default is a measured decision.
+  The B044 probe completed on 2026-11-13 from two clients against one shared Passenger webhoster: forged forwarding values
+  passed through unchanged, so the shipped tarball defaults to zero for that measured deployment. B092 part 2 remains open
+  to calibrate other webhosters.
 - **Tier split.** Hermetic e2e stays. The deployed tier is a small DEPLOYMENT-CONTRACT suite on the existing remote target
   (`NAF_E2E_TARGET=remote`), not the full UI suite (which seeds personas into SQLite and needs pristine installs): TLS chain,
   Secure and host-only cookies, forged forwarded headers through the edge, https email links, the guard, the app-to-PowerDNS wire,
@@ -66,9 +67,9 @@ Routes: author on one route, independent review on the other; every merge needs 
 |---|---|---|---|---|
 | WP0 | B041 | R2 close-out: lane lists include the survivor files (main `d077df0`), rerun the four lanes on the stable commit, triage | controller + ds | - |
 | WP1 | B042 | Config hygiene: one source for the PowerDNS URLs, remove the retired proxy-path variables, invented SOA default and dead helpers from the defaults, drift tests (the API-key move to `GEN_LOCAL` is WP4b-1/WP5, not here) | A=ds | - |
-| WP2 | B043 | Proxy trust (D-013): `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, ten raw forwarded-header reads removed + static guard test, tarball keeps 1 until WP3 | A=luna | - |
-| WP3 | B044 | Webhoster probe: run the EXISTING `test-webspace-php-environment.php` now (it already reports XFF/XFP/REMOTE_ADDR); new `test-webspace-forwarded-headers.php` (forged-header verdict) | A=ds | - |
-| WP3b | B054 | Passenger probe: a standalone WSGI app dir (vbpub scripts) that dumps what a Passenger app sees for a forged header (PHP-FPM may sit behind a different front than Passenger); operator runs it, decides the tarball default | A=ds | WP3 |
+| WP2 | B043 | Proxy trust (D-013): `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, ten raw forwarded-header reads removed + static guard test; Passenger catalog now inherits zero after WP3 | A=luna | - |
+| WP3 | B044 | Webhoster forwarded-header probe: `test-webspace-forwarded-headers.php` completed 2026-11-13 from two clients and supports zero trusted hops on the measured deployment | A=ds | - |
+| WP3b | B054 | Separate Passenger WSGI probe: a standalone app dir (vbpub scripts) that checks what a Passenger app sees for a forged header; distinct from the B044 PHP probe and no longer the basis for the measured zero-hop default | A=ds | WP3 |
 | WP4a | B045 | DONE (section 6; corrected by the Opus review) | controller | - |
 | WP4b-1 | B046 | Identity: `environment_tag="$INSTANCE_ID"` everywhere, derived traefik router/service/middleware/subdomain, `ciu resolve` instead of name building (`.env.services`, hooks, run-gate env), `.gitignore` ciu entries, `ciu.user_tables`, re-run the CIU-176 repro (fixed in 7.23.0), `PUBLIC_BASE_URL`/hops in stack config; `POWERDNS_API_KEY` becomes a checkout-local `GEN_LOCAL` secret. Gates all worktree stack work | A=ds | WP1 |
 | WP4b-2 | B053 | Deployment type: overlay fact + `service_profiles`, `topology.deployment.type`, v8-named realness/publish keys, the pre-compose change guard, templates branch on the fact | A=ds | WP4b-1 |
@@ -92,7 +93,8 @@ Each gap names evidence from this repo and a "close when". Until a gap is closed
 - Fill `.env.live` and answer the `ASK_EXTERNAL` prompts (SMTP, IMAP, netcup CCP) once per store.
 - Upstream: the delegation for the zone (NS + glue, `DEV_INFRA_SETUP.md` 3a) and a wildcard/individual A record for the public
   frontend names under `PUBLIC_FQDN` (verify what already exists; WP5 documents the exact records).
-- Run the webhoster probe (WP3) and report the result; until then the tarball trusts no proxy.
+- B044's forwarded-header measurement was completed 2026-11-13; the Passenger catalog now defaults to zero trusted hops. B092 part 2 remains open for self-calibration on other webhosters.
+- B054's Passenger WSGI-specific probe remains a separate operator check if that request path needs independent confirmation.
 
 ## 6. WP4a spike result (2026-11-11, reading ciu 7.24 docs + `ciu check` on main)
 
@@ -109,8 +111,9 @@ Each gap names evidence from this repo and a "close when". Until a gap is closed
 
 Host port 53 occupancy, provider firewall and IPv6 (glue AAAA without a v6 publish breaks intermittently; Docker publishes bypass ufw);
 live tls-edge overrides (only the template was read); traefik duplicate-router and forwarded-header stripping (from knowledge, test
-through the edge); the source IP traefik sees for same-host clients (hairpin); Let's Encrypt limits (about 50 certificates per
-registered domain per week, estate-wide: stable names, wait for the SAN); whether the pdns image self-initialises sqlite (alpine init
+through the edge); the source IP traefik sees for same-host clients (hairpin); the separate Passenger WSGI probe (WP3b/B054);
+Let's Encrypt limits (about 50 certificates per registered domain per week, estate-wide: stable names, wait for the SAN);
+whether the pdns image self-initialises sqlite (alpine init
 removable); `ASK_FILE` under DooD; the webhoster front end (WP3/WP3b, operator only).
 
 ## 8. Requests to the tools (filed in vbpub backlogs)

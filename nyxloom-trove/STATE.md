@@ -28,7 +28,7 @@ reviewed independently on the other, with gates through `run-gate`.
 |---|---|---|
 | WP1 (B042) PowerDNS config hygiene | merged (`ed42b97`) | unit-py311 1050 passed; stale keys gone, drift tests |
 | WP2 (B043) proxy trust | merged (`51083e3`, plus fixes `177bd79`, `43216d0`) | `TRUSTED_PROXY_HOPS`, `PUBLIC_BASE_URL`, host-only cookies, ten raw XFF reads removed, default-deny static guard; unit-py311 1175, unit-py314 PASS on the branch head |
-| WP3/WP3b (B044/B054) webhoster probes | merged in vbpub (`scripts/test-webspace-forwarded-headers.php`, `scripts/test-webspace-passenger-forwarded-headers/`) | **operator action pending:** run both probes against the webhoster, then decide the tarball hop count (shipped default stays 1, unverified) |
+| WP3 (B044) webhoster forwarded-header probe | done 2026-11-13 | Run plain and forged requests from two clients against one shared Passenger webhoster; forged XFF/XFP passed through unchanged and `REMOTE_ADDR` remained the real client address. Passenger catalog now ships zero trusted hops. WP3b (B054) remains a separate Passenger WSGI probe. |
 | WP8 (B050) cmru versions cover every image | merged (`c2d31a4`) | targets python 3.11.17 / 3.14.9, mailpit 1.33.0, powerdns 4.8.5; PowerDNS 4.8 is EOL upstream, 5.1 recommended (decision open) |
 | ciu CIU-193/205/206 | merged in vbpub main, unreleased (ciu 7.25.0 planned by the vbpub controller) | worktree-safe `ciu down`, selection facts + selection record under `ciu up --dir`, `ASK_HOST` host-wide secret |
 | WP4b-1/WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | wait for ciu 7.25.0 (identity, deployment type, public stacks, credentials, `e2e-public`) |
@@ -36,7 +36,7 @@ reviewed independently on the other, with gates through `run-gate`.
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058 in progress on `fixup3-form-contracts` | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
 
-Open items for the operator: probes on the webhoster, B048 part 2 CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for `.env.live` credentials, delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
+Open items for the operator: separate Passenger WSGI probe (B054), B048 part 2 CIU `ASK_EXTERNAL` / `ASK_FILE` delivery for `.env.live` credentials, delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
 
 ## Release & infra model (current)
 

@@ -142,11 +142,7 @@ database; `scripts/activate.py` carries the persisted value across greenfield we
   control browser session handling.
 - `FLASK_SESSION_COOKIE_DOMAIN` is empty by default, keeping the session cookie host-only. Set a
   validated DNS domain only when sibling hosts must share a cookie; `auto` is not accepted.
-- `TRUSTED_PROXY_HOPS` is a non-negative integer. `0` ignores forwarded headers; `N > 0` trusts
-  the rightmost `N` `X-Forwarded-For` and `X-Forwarded-Proto` values. `X-Forwarded-Host` is never
-  trusted. The repository default is `0`; invalid, empty and negative values fail startup. The
-  generated Passenger catalog currently sets `1` as the documented compatibility policy until
-  the webhoster chain is measured by the B044 probe.
+- `TRUSTED_PROXY_HOPS` is a non-negative integer. `0` ignores forwarded headers; `N > 0` trusts the rightmost `N` `X-Forwarded-For` and `X-Forwarded-Proto` values. `X-Forwarded-Host` is never trusted. The repository and Passenger `app-defaults.env` defaults are `0`; invalid, empty, and negative values fail startup. Deployments behind a real proxy must explicitly set the measured hop count and verify `GET /api/myip` with plain and forged forwarding-header requests; see [`SECURITY.md`](SECURITY.md).
 - `PUBLIC_BASE_URL` is empty by default. Set an HTTP(S) origin with no path, query, fragment or
   credentials to make externally generated links use that scheme and host. `tooling/app-local`
   derives it from the configured public topology; the per-session e2e app clears it for its direct

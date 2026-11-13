@@ -46,13 +46,9 @@ RUNTIME_DEFAULT_KEYS = frozenset({
 # Never shipped, whatever the allowlist says (defence in depth): credential-like names.
 SECRET_LOOKING_MARKERS = ("PASSWORD", "SECRET", "TOKEN", "API_KEY", "LICENSE_KEY", "PRIVATE")
 
-# Preserve the webhosting tarball's pre-WP2 client/protocol hop count until the operator
-# measures its front-end chain with probe B044. Repository and app-local defaults remain
-# zero; this is an explicit shipped compatibility policy, not a code fallback. X-Forwarded-Host
-# remains untrusted under the new policy.
-SHIPPED_RUNTIME_OVERRIDES = {
-    "TRUSTED_PROXY_HOPS": ("1", "status quo, unverified, see B044"),
-}
+# Artifact-specific overrides remain available for future deployment needs. Keep this empty
+# so shipped defaults have one source of truth in .env.defaults, including proxy trust.
+SHIPPED_RUNTIME_OVERRIDES: dict[str, tuple[str, str]] = {}
 
 
 def is_shipped_key(key: str) -> bool:
