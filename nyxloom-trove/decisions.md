@@ -135,12 +135,12 @@ either, since it would be restarting the daemon that dispatches it.
 
 The running `nyxloom-prod-nyxloomd` container mounts only:
 
-    /home/vb/volkb79-2/vbpub    -> /workspaces/vbpub
-    /home/vb/volkb79-2/dstdns   -> /workspaces/dstdns
-    /home/vb/mdt--mounted-folders -> /home/vscode
+    /home/<user>/vbpub          -> /workspaces/vbpub
+    /home/<user>/dstdns         -> /workspaces/dstdns
+    /home/<user>/mdt--mounted-folders -> /home/vscode
     /var/run/docker.sock
 
-There is **no mount for `/home/vb/volkb79-2/netcup-api-filter`**, so the daemon cannot
+There is **no mount for `/home/<user>/netcup-api-filter`**, so the daemon cannot
 read this trove, lint it, or dispatch from it. This is exactly the access check
 STANDARD.md says `init` performs.
 
@@ -237,5 +237,5 @@ plan: `docs/plans/deployed-e2e-and-modern-ciu-2026-11.md`, review: `docs/plans/d
 - **D-012 frontends run the OCI release image** (non-root, data volume only), never the test-runner image with the repo mounted rw.
 - **D-013 proxy trust:** `TRUSTED_PROXY_HOPS` (default 0), `x_host` never trusted, canonical `PUBLIC_BASE_URL` for emailed links,
   host-only session cookies, `request.remote_addr` only (static guard test). The 2026-11-13 forwarded-header probe supports zero
-  trusted hops on the measured shared Passenger webhoster; its tarball catalog inherits the source default of 0. B092's
+  trusted hops based on a PHP probe on the same webhost; the Passenger WSGI path is unmeasured (B054). Its tarball catalog inherits the source default of 0. B092's
   self-calibration for other deployments remains open.

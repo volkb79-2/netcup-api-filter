@@ -91,16 +91,20 @@ items:
   - {id: B093, title: "Switch the PowerDNS backend to the 5.1 series (pdns-auth-51) via cmru versions", type: feature, component: infra, context_estimate: medium}
   - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
   - {id: B095, title: "Verify PowerDNS 5.1.5 on a real start: logs, version API, zone and record round trip, health", type: feature, component: infra, context_estimate: small}
+  - {id: B096, title: "Resolve catalog-only live-test defaults", type: bugfix, component: config, context_estimate: medium}
   - {id: B097, title: "Handle PowerDNS 5.1 record-content and TTL validation in the app backend", type: bugfix, component: backends, context_estimate: medium}
   - {id: B098, title: "The delegated zone has no A record for its own nameserver (ns1) because the bootstrap hook creates only NS and SOA", type: bugfix, component: infra, context_estimate: small}
-  - {id: B100, title: "app.py logs nothing at startup when TRUSTED_PROXY_HOPS is above 0", type: bugfix, component: app, context_estimate: small}
-  - {id: B096, title: "Resolve catalog-only live-test defaults", type: bugfix, component: config, context_estimate: medium}
+  - {id: B100, title: "app.py emits no proxy-trust notice on the first request carrying X-Forwarded-*", type: bugfix, component: app, context_estimate: small}
+  - {id: B101, title: "Bound ActivityLog growth from failed admin logins", type: bugfix, component: security, context_estimate: medium}
+  - {id: B102, title: "Move app-local and ciu identity hook timeouts and paths into stack config", type: bugfix, component: infra, context_estimate: medium}
+  - {id: B103, title: "Coordinate PowerDNS port 53 across checkouts", type: bugfix, component: infra, context_estimate: small}
 ---
 
 # Backlog
 
 This is the enumerated ledger for the un-carved buckets from the former backlog. STATE.md
 remains the status dashboard; completed B-AUTH work is intentionally not re-opened here.
+IDs B084–B089 and B099 were reserved but never filed.
 
 ## B-PORTAL
 
@@ -281,21 +285,20 @@ Opus review); decisions D-008..D-013.
 - **B043 — Proxy trust (D-013).** `app.py:75` hardcodes `ProxyFix(x_for=1, x_proto=1, x_host=1)`; ten raw `X-Forwarded-For` reads
   (`api/account.py` 187,356,822,1258,1307,1851,2148,2192; `filter_proxy.py` 505,597); session cookie domain `auto` = `.PUBLIC_FQDN`.
   `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, static guard test; the Passenger catalog now inherits the zero-hop source default after B044.
-- **B044 — Webhoster probe. DONE 2026-11-13.** The forwarded-header probe was run plain and with forged markers from two clients
-  against one shared Passenger webhoster. The forged XFF reached the app unchanged as the only chain entry, XFP passed through
-  unchanged while the server reported HTTPS, and REMOTE_ADDR remained the actual client address. This measured deployment
-  supports zero trusted hops; B092 part 1 records the catalog change, while calibration for other hosts remains open.
+- **B044 — Webhoster probe. DONE 2026-11-13.** The evidence came from a PHP probe on the same webhost; the Passenger WSGI path is unmeasured (B054).
+  The PHP probe used plain and forged requests from two clients. Forged XFF reached PHP unchanged as the only chain entry,
+  XFP passed through unchanged while the server reported HTTPS, and REMOTE_ADDR remained the actual client address. This
+  supports zero trusted hops for the measured PHP path; B092 part 1 records the catalog change, while other hosts remain open.
 - **B045 — ciu spike. DONE 2026-11-11, corrected by the Opus review** (plan section 6).
-- **B046 — Identity.** `environment_tag = "$INSTANCE_ID"` everywhere (CIU-193 open), derived traefik router/service/middleware/
+- **B046 — Identity. Status: merged (51bcd81).** `environment_tag = "$INSTANCE_ID"` everywhere, derived traefik router/service/middleware/
   subdomain, `ciu resolve --json [--live]` instead of name building in `.env.services` and hooks, `.gitignore` ciu entries,
   `ciu.user_tables`, re-run the CIU-176 repro (fixed in 7.23.0), PowerDNS key as checkout-local `GEN_LOCAL`.
-  **Implemented on `wp4b1-identity`:** container/Traefik/frontend names derive from `INSTANCE_ID`; `.env.services` and hooks
+  The merged change makes container/Traefik/frontend names derive from `INSTANCE_ID`; `.env.services` and hooks
   consume ciu-resolved identities (against the `full` profile, so a narrow selection cannot hide a peer); `.gitignore` covers
   worktree artifacts; `ciu.user_tables = ["build"]`; app-local, which sits behind the host traefik, sets an explicit public origin
   and `trusted_proxy_hops = 0` until WP4b-2/WP5 measure the hop chain (so all human clients appear as the proxy address); and the
-  PowerDNS key is a shared checkout-local `GEN_LOCAL` consumed by backend and app. Every checkout runs its own gate runners; a
-  linked worktree's runner mounts the git common dir (Opus review H1). Review FIX round 1 (H1, H2, M1-M5, L1, L2, L4-L6) is on
-  the branch; release-builder runner readiness moved to WP9 (M4). Awaits re-review, main-checkout cutover and its gate receipt.
+  PowerDNS API key is a shared checkout-local `GEN_LOCAL` consumed by backend and app. Every checkout runs its own gate runners;
+  a linked worktree's runner mounts the git common dir (Opus review H1). Release-builder runner readiness moved to WP9 (M4).
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
 - **B048 — Credentials. Status: part 1 delivered; part 2 remains open.** Part 1 provides the
@@ -317,41 +320,27 @@ Opus review); decisions D-008..D-013.
 
 ## B-E2E-REVIEW (2026-11-12 independent e2e/pwmcp review)
 
-Priority: B057 and B058 first (security product defects; both **in progress 2026-11-12** on
-`fixup3-form-contracts`), then B059, B060, B061, B062, then the rest. Entries marked **(b)** need the
+Priority: B057 and B058 first (security product defects; both done in `133a036`), then B059, B060, B061, B062, then the rest. Entries marked **(b)** need the
 deployed tier; the review's class-(b) scope remains with B049/B051/B054/B055, and no new item below is
 class (b).
 
-- **B057 — Portal token form: IP allow-list, expiry, rate limit and notes are silently dropped.**
-  **In progress 2026-11-12** (`fixup3-form-contracts`); that branch owns the product fix and visible-form e2e.
-  Evidence: `templates/account/create_token.html:79,96,109,123` submits `expires_in`, `ip_whitelist`,
-  `rate_limit_per_minute`, `notes`; `api/account.py:688-697` reads `expires`, `ip_ranges`, `description` and
-  no handler reads a rate limit. Static evidence was not confirmed by a form request (review §7).
-  Oracle: submit the visible form with `203.0.113.0/24` and 30 days; Channel A must show that CIDR and
-  `expires_at`, and the runner's API call must return 403 `ip_denied`. Current main stores NULLs and returns 200.
+- **B057 — Portal token form: IP allow-list, expiry, rate limit and notes are silently dropped. Status: done (133a036).**
+  The visible form now persists the supported IP allow-list and expiry values; the form contract and token tests submit
+  rendered fields and verify stored scope and lifetime.
 
-- **B058 — Reset-password form posts 'password' but the route reads 'new_password'; remove the e2e workaround.**
-  **In progress 2026-11-12** (`fixup3-form-contracts`).
-  Evidence: `templates/account/reset_password.html:24` posts `password`; `api/account.py:222` reads
-  `new_password`, so a real reset fails with "Passwords do not match". The unit test posts the route's names
-  (`tests/test_password_policy_reset_invite.py:87-131`), while the browser test injects `new_password`
-  (`roundtrip/test_cross_role_account_lifecycle.py:642-663`).
-  Oracle: the reset journey fills only `#password`/`#confirm-password`, clicks `#submit-btn`, then proves the
-  hash changed and the old password is rejected; it fails before the fix.
+- **B058 — Reset-password form posts 'password' but the route reads 'new_password'; remove the e2e workaround. Status: done (133a036).**
+  The reset and invite form contract tests post fields parsed from each rendered form and verify that the password hash
+  changes; the browser journey no longer injects the handler's old field name.
 
-- **B059 — Template-to-route form-field contract guard; journeys submit through the real form.**
-  Depends on B057 and B058 (both in progress 2026-11-12); the other branch owns the guard.
-  Evidence: both defects share a template/route field-name mismatch masked by handler-shaped unit POSTs and
-  e2e field injection. Add a `tests/` guard over every rendered `<form>` endpoint and its `request.form`
-  reads, with an explicit optional/alias allowlist; forbid input-creating/modifying `evaluate` in real-form
-  journeys.
-  Oracle: the guard reports `account.reset_password` and `account.create_new_token` before B057/B058 and passes
-  after; re-introducing a renamed field turns it red.
+- **B059 — Template-to-route form-field contract guard; journeys submit through the real form. Status: done (133a036).**
+  The `tests/test_form_route_contract.py` guard compares Flask-rendered form fields with each handler's
+  `request.form` reads, using an explicit optional/alias allowlist. Journey source checks reject input-creating
+  or modifying `evaluate` calls; the two form contracts submit parsed fields and verify persisted outcomes.
+  Reintroducing a renamed field fails the guard.
 
-- **B060 — ui_tests: never print typed values or 2FA codes in failure output. Status: complete**
-  (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`).
-  Evidence: `browser.py:210` puts `value` in `ToolError.payload` and `browser.py:26-27` prints it; remote
-  smoke uses the operator password (`config.py:173-175`), and `test_2fa_security.py:581` prints a 2FA code.
+- **B060 — ui_tests: never print typed values or 2FA codes in failure output. Status: complete.**
+  Evidence: browser fill/select/evaluate failures once put typed input in `ToolError` payloads; remote
+  smoke uses its configured password, and a security journey printed a 2FA code.
   Implemented: fill/select/evaluate errors retain only safe operation metadata; timeout and other
   navigation failures redact one-time URL tokens and secret-named query values; the AST guard checks
   print/logging calls and f-string raise/assert/pytest.fail messages. Unit tests cover typed values,
@@ -419,8 +408,8 @@ class (b).
   Oracle: a canary `throw new Error()` fails with its message; a deliberate failure leaves screenshot, trace,
   console log, and app-log tail; blocking `cdn.jsdelivr.net` breaks no test.
 
-- **B069 — pwmcp connection model: short recycle-window connection, contract check, bounded connect and 503 retry.**
-  **Status: complete** (harness1, report `/tmp/naf-ctl/harness1-luna-report.md`). The harness starts one
+- **B069 — pwmcp connection model: short recycle-window connection, contract check, bounded connect and 503 retry. Status: complete.**
+  The harness starts one
   Playwright driver, then recycles the gateway browser at each test-file boundary or after the configured
   interval, whichever comes first. It checks `/contract` once, uses the contract's lease cap, requests an
   interval-plus-margin lease, retries 503 for a bounded interval, and labels the holder
@@ -506,7 +495,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   and the backend-powerdns stack contract, add a test that runs the hook with a zone set and a fake context,
   and prove it once with the long-lived backend-powerdns stack (WP5).
 
-- **B091 — Mailpit webroot and message size are stack-owned. Status: done (`mailpit-config`)**
+- **B091 — Mailpit webroot and message size are stack-owned. Status: done (59708d5, 7cad692).**
   `tooling/mailpit/ciu.defaults.toml.j2` now owns `web_root` and `max_message_size_mb`; Compose renders both values,
   and its healthcheck uses the same `web_root`. `tooling/ciu_resolve_env.py` reads the configured web port and
   webroot when deriving `MAILPIT_URL` and `MAILPIT_API_URL`. Static tests reject caller-shell reads, a healthcheck
@@ -514,8 +503,9 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   needs Mailpit-specific exports for these settings.
 
 - **B092 — PROXY-CALIBRATE. Status: open; part 1 done 2026-11-13**
-  **Part 1 done:** the B044 measurement showed forged `X-Forwarded-For` passed through unchanged and `X-Forwarded-Proto`
-  was not normalised on the measured deployment, supporting zero trusted hops there. The Passenger catalog now inherits
+  **Part 1 done:** the B044 PHP probe on the same webhost showed forged `X-Forwarded-For` passed through unchanged and
+  `X-Forwarded-Proto` was not normalised; the Passenger WSGI path remains unmeasured (B054). This supports the conservative
+  zero-hop default. The Passenger catalog now inherits
   `TRUSTED_PROXY_HOPS=0` from `.env.defaults`.
 
   **Part 2 remains open:** releases must work on other webhosters too, so add a self-check after extract/activate: the app
@@ -530,25 +520,18 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   declarations move to the new series; the controller recorded the resolution in commit `9847b7b`. The stack renders
   configuration using the image's `TEMPLATE_FILES` mechanism and creates zones through the HTTP API with explicit
   SOA content and per-zone `soa_edit_api`. The gsqlite3 schema is byte-identical to upstream auth-4.8.5 and auth-5.1.5.
-  `UNVERIFIED`: a real 5.1.5 start must confirm rendered config acceptance, API zone creation/readback, and health; see B095.
+  B095 records the real-start verification: rendered config was accepted, zone creation/readback succeeded, and the healthcheck passed.
 
 - **B094 — Fail fast on missing CIU inputs in local stacks. Status: open (Low)**
-  `tooling/app-local/ciu.compose.yml.j2:27,57` interpolates `CONTAINER_UID`, `DOCKER_GID` and
-  `PHYSICAL_REPO_ROOT` without a required-value guard; `tooling/backend-powerdns/ciu.compose.yml.j2:56,73,142`
-  interpolates `DOCKER_GID` without one. If `ciu.env` is not loaded, UID/GID values can render empty (including
+  `tooling/app-local/ciu.compose.yml.j2` interpolates `CONTAINER_UID`, `DOCKER_GID` and
+  `PHYSICAL_REPO_ROOT` without a required-value guard; `tooling/backend-powerdns/ciu.compose.yml.j2` interpolates
+  `DOCKER_GID` in the init command and daemon user without one. If `ciu.env` is not loaded, UID/GID values can render empty (including
   `user: ":"`). Host-path handling is inconsistent: app-local uses a bare `PHYSICAL_REPO_ROOT`, Netcup mock and
   PowerDNS require it, and GeoIP mock falls back to its configured workspace path. Make the identity and host-path
   inputs fail fast consistently, retaining a configured fallback only where explicitly intended.
 
-- **B095 — PowerDNS 5.1.5 real-start verification. Status: done 2026-11-13 (R15 not run)**
-  On the controller's real start, inspect container logs for config parse/backend/API startup errors and absence of
-  fatal messages; call `GET /api/v1/servers/localhost` and verify `version` reports 5.1.5; create a disposable zone
-  in the `.invalid` test namespace through `POST /api/v1/servers/localhost/zones`, read it back and verify its SOA,
-  NS, serial, `soa_edit_api`, and a record round trip through `PATCH`/`GET`; confirm the `pdns_control version`
-  healthcheck is healthy. **UNVERIFIED:** the 5.1.5 image's acceptance of the per-zone `soa_edit_api` field and
-  exact readback normalization must be confirmed on that start.
-
-  **Result 2026-11-13 (controller, fresh data directory, then once over a copy of the 4.8-era database):** R0-R14 pass.
+- **B095 — PowerDNS 5.1.5 real-start verification. Status: done 2026-11-13.**
+  **Controller-recorded result (fresh data directory, then once over a copy of the 4.8-era database):**
   Init container exit 0, main container healthy with 0 restarts, `pdns_control version` 5.1.5, template mounted
   where the image's startup script reads it (the reviewer's mount-path fix), config parsed, gsqlite3 backend loaded,
   UDP+TCP 53 bound on IPv4 and IPv6, no errors and no API key text in the logs. API from the app network: 200 with
@@ -562,21 +545,20 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   survive down/up, deletion returns 204 and the lookup `[]`; only 53/tcp and 53/udp are published (the API port is not).
   The delegated zone answers NS and SOA through the default resolver, 1.1.1.1 and 8.8.8.8. Started over a copy of the
   4.8-era database, 5.1.5 came up healthy and kept its two zones (SOA+NS only, no records), so upgrade-in-place works;
-  the clean 5.1-created database was kept live and the original 4.8 database stays archived untouched. Not run: R15
-  (the live DNS verification test has no lane yet, B048 part 2 / B049).
+  the clean 5.1-created database was kept live and the original 4.8 database stays archived untouched. The separate
+  live DNS verification was not run because it has no lane yet (B048 part 2 / B049).
 
 - **B097 — PowerDNS 5.1 API record validation. Status: open (reproduced on 5.1.5, see below)**
   PowerDNS 5.1 tightened record-content validation and RRset TTL enforcement. The app backend currently sends
   `record['destination']` and `record.get('ttl', 60)` unchanged in
   `src/netcup_api_filter/backends/powerdns.py:141-148`; some inputs accepted by 4.8 may now receive HTTP 422.
   Add client-side content normalization/validation or a clear error mapping for those responses, with tests for
-  supported record types. **UNVERIFIED:** which exact content/TTL cases return 422 on auth-5.1.5. This follow-up
-  does not change the backend in B093.
+  supported record types. This follow-up does not change the backend in B093.
   Reproduced 2026-11-13 on the real 5.1.5 start (B095): PATCH of a TXT with unquoted content (`unquoted-text`) returns
   422 "Not in expected format (parsed as '"unquoted-text"')", and a CNAME with a relative target (`target`) returns 422
   "Not in expected format (parsed as 'target.')". Well-formed records (A, AAAA, CNAME with a trailing dot, quoted TXT, MX) are
-  accepted. `backends/powerdns.py` passes `record['destination']` unchanged, so user input that 4.8 accepted can now
-  surface as a raw backend error.
+  accepted. No TTL-specific rejection was recorded in this real-start check. `backends/powerdns.py` passes
+  `record['destination']` unchanged, so user input that 4.8 accepted can now surface as a raw backend error.
 
 - **B096 — Resolve catalog-only live-test defaults. Status: open (Low/Medium)**
   Seventeen `.env.defaults` entries (`DNS_TEST_DOMAIN`, `DNS_TEST_SUBDOMAIN_PREFIX`,
@@ -598,8 +580,29 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   A (and AAAA when configured) record for `ns1` from the stack's public-address fact, config-driven and idempotent, with a
   test; the PowerDNS host address is already an operator fact in the CIU environment.
 
-- **B100 — app.py logs nothing at startup when TRUSTED_PROXY_HOPS is above 0. Status: open (Low)**
-  Found by the proxy-default0 review: with `TRUSTED_PROXY_HOPS=0` the app logs a warning, with a positive value it logs
-  nothing, so an operator cannot see from the log that forwarded headers are being trusted. Log one INFO line with the hop
-  count and which headers are honoured (never values), and cover it with a test. The separate Passenger-side probe (B054)
-  stays open because the PHP path was measured, not the WSGI path.
+- **B100 — app.py emits no proxy-trust notice on the first request carrying `X-Forwarded-*`. Status: open (Low)**
+  The app installs a warning only for `TRUSTED_PROXY_HOPS=0`, and that warning runs on the first request carrying an
+  `X-Forwarded-*` header (`src/netcup_api_filter/app.py`). With positive hops, the app emits no notice when it first
+  trusts those headers. Log one INFO line with the configured hop count and trusted header names (never values), and
+  cover the request-hook behavior with a test. The Passenger WSGI path remains unmeasured (B054).
+
+- **B101 — Bound ActivityLog growth from failed admin logins. Status: open (Low)**
+  `src/netcup_api_filter/api/admin.py:146-163,548` writes an `ActivityLog` row for every failed admin-login POST,
+  including unknown usernames; `:1892-1900` exposes only admin-triggered trimming. The per-IP limiter does not bound
+  distributed attempts. Coordinate with B079's failed-login Settings growth. Add a configured retention window and scheduled,
+  bounded cleanup for failed-login rows (or an explicitly justified sampling policy), with tests that prove the
+  retention bound and preserve other audit actions.
+
+- **B102 — Move app-local and ciu identity hook timeouts and paths into stack config. Status: open (Low)**
+  `tooling/ciu_identity.py:38` hardcodes a 30-second `ciu resolve` timeout. `tooling/app-local/post_compose_seed_domain.py:166-188`
+  hardcodes 90-second health, 30 attempts with 5-second Docker probes and 2-second sleeps, a 60-second subprocess timeout,
+  and `/opt/tester-venv/bin/python`; `tooling/app-local/post_compose_init_instance.py:37,81-87` hardcodes 120-second
+  health and subprocess timeouts.
+  Add typed `[app_local.hooks]` settings (and a corresponding ciu identity setting), pass them through the merged
+  stack config, and test that changed configured values control each wait, timeout, and executable path.
+
+- **B103 — Coordinate PowerDNS port 53 across checkouts. Status: open (Low)**
+  `tooling/backend-powerdns/ciu.compose.yml.j2:135-136` publishes `${backend_powerdns.ports.dns}:53/udp` and `:53/tcp` on the
+  host, so two checkout instances cannot bind concurrently. The PowerDNS README documents this current limit. Choose
+  a host-wide singleton stack or add an explicit host-port reservation/ownership contract before supporting parallel
+  checkouts; test the selected guard before Compose starts.

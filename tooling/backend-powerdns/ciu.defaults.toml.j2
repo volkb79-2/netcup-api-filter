@@ -8,7 +8,7 @@
 # across unchanged in ciu.compose.yml.j2.
 #
 # REVIEW HISTORY: a prior conversion of this stack was REJECTED for inventing
-# SOA/zone defaults (hardcoding something like ns1.vxxu.de / hostmaster.vxxu.de)
+# SOA/zone defaults (hardcoding something like ns1.example.com / hostmaster.example.com)
 # instead of sourcing the delegated zone from the operator. This version does
 # NOT do that:
 #   * `zone` below is `{{ topology.dns.delegated_zone }}` — a GLOBAL topology
@@ -51,15 +51,14 @@ api = 8081
 
 [backend_powerdns.pdns]
 # Static daemon values are passed as container environment and rendered by the
-# mounted `pdns-auth.conf.j2` template. None is zone-specific or secret; the
-# API key is the only credential and remains a required compose guard.
+# mounted `pdns-auth.conf.j2` template. None is zone-specific. The separate
+# API key and webserver password are generated secrets and required compose guards.
 auth_api = "yes"
 webserver = "yes"
 webserver_address = "0.0.0.0"
-# The webserver only ever receives traffic from docker-internal networks
-# (project network peers, or traefik on the ingress network) — never directly
-# from the public internet — so its own IP allowlist is left open and access
-# control is delegated entirely to traefik's basicauth guard instead.
+# The webserver only receives traffic from docker-internal networks, not from
+# the public internet. Traefik's basicauth guards the public route; the separate
+# webserver password also protects direct access from internal network peers.
 webserver_allow_from = "0.0.0.0/0,::/0"
 launch = "gsqlite3"
 gsqlite3_database = "/var/lib/powerdns/pdns.sqlite3"
@@ -104,6 +103,7 @@ soa_edit_api = "DEFAULT"
 # it after ciu's documented expose_env delivery; the value itself is replaced
 # by a guard in templates.
 powerdns_api_key = { directive = "GEN_LOCAL:naf/powerdns_api_key", expose_env = "POWERDNS_API_KEY" }
+powerdns_webserver_password = { directive = "GEN_LOCAL:naf/powerdns_webserver_password", expose_env = "POWERDNS_WEBSERVER_PASSWORD" }
 
 [backend_powerdns.health]
 # pdns_control talks to the running daemon's control socket directly — this

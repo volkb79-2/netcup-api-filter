@@ -99,12 +99,12 @@ invite_expiry_hours = 48          # Account invite link validity (hours)
 # Leave commented for initial setup via admin UI
 # Uncomment and configure for automated deployment
 [smtp]
-smtp_host = "mxe98f.netcup.net"
+smtp_host = "smtp.example.com"
 smtp_port = 465
 smtp_security = "ssl"           # "ssl" (465), "tls" (587), or "none" (25)
-smtp_username = "dstdns@vxxu.de"
+smtp_username = "admin@example.com"
 smtp_password = ""
-from_email = "dstdns@vxxu.de"
+from_email = "admin@example.com"
 from_name = "Netcup API Filter"
 
 # GeoIP Configuration (MaxMind)
@@ -204,7 +204,7 @@ require_email_verification = true
 # Example user with explicit password (for deterministic testing)
 # [[users]]
 # username = "naf-user"                  # Login username
-# email = "naf-user@vxxu.de"             # Recipient for email-based 2FA and password reset
+# email = "naf-user@example.com"             # Recipient for email-based 2FA and password reset
 # password = "CHANGE_ME_STRONG_PASSWORD" # Or "generate" to auto-generate (shown once in logs)
 # is_approved = true                      # Auto-approve (skip admin approval workflow)
 # must_change_password = false            # Force change on first login?
@@ -213,7 +213,7 @@ require_email_verification = true
 # Example user with generated password (copy from logs on first start)
 # [[users]]
 # username = "naf-user2"
-# email = "naf-user2@vxxu.de"
+# email = "naf-user2@example.com"
 # password = "generate"
 # is_approved = true
 # must_change_password = true

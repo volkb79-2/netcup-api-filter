@@ -677,7 +677,7 @@ The original proposal in sections above is technically sound but incomplete. It 
    - **Platform-managed backends**: Admin provides credentials, users get subdomain access
    - **User-managed backends**: User provides their own DNS credentials (BYOD - Bring Your Own DNS)
 3. **`backend_type` should be a foreign key** to a `backend_providers` table (plugins), not a text column
-4. **Multiple backends per domain tree supported**: e.g., `vxxu.de` at Netcup AND `dyn.vxxu.de` delegated to PowerDNS
+4. **Multiple backends per domain tree supported**: e.g., `example.com` at Netcup AND `dyn.example.com` delegated to PowerDNS
 
 This section provides a comprehensive architectural redesign addressing all gaps.
 
@@ -931,7 +931,7 @@ CREATE TABLE managed_domain_roots (
     backend_service_id INTEGER NOT NULL REFERENCES backend_services(id),
     
     -- Zone identification
-    root_domain VARCHAR(255) NOT NULL,             -- 'vxxu.de' or 'dyn.vxxu.de'
+    root_domain VARCHAR(255) NOT NULL,             -- 'example.com' or 'dyn.example.com'
     dns_zone VARCHAR(255) NOT NULL,                -- Actual zone in backend (may differ)
     
     -- Access control (FK to enum table for type safety)
@@ -1015,7 +1015,7 @@ CREATE TRIGGER check_realm_backend_exclusive_update
 -- Realm Uniqueness Constraint (prevent duplicate subdomain claims)
 -- ============================================================================
 -- Ensure the same subdomain under a domain root can only be claimed by one account
--- This prevents user A from claiming 'myhost.dyn.vxxu.de' if user B already has it
+-- This prevents user A from claiming 'myhost.dyn.example.com' if user B already has it
 CREATE UNIQUE INDEX idx_unique_realm_subdomain 
     ON account_realms(domain_root_id, realm_value) 
     WHERE domain_root_id IS NOT NULL;
@@ -1031,8 +1031,8 @@ CREATE UNIQUE INDEX idx_unique_user_realm
 ### Use Case A: Platform-Managed Backends (Multi-Backend Example)
 
 **Scenario**: Admin has multiple DNS backends:
-- `vxxu.de` is hosted at Netcup (registrar DNS)
-- `dyn.vxxu.de` is delegated via NS records to a self-hosted PowerDNS instance
+- `example.com` is hosted at Netcup (registrar DNS)
+- `dyn.example.com` is delegated via NS records to a self-hosted PowerDNS instance
 
 Users can request realms under either zone, with different backends handling the DNS operations.
 
@@ -1043,7 +1043,7 @@ Users can request realms under either zone, with different backends handling the
 ```
 Backend Service 1:
   Provider: netcup
-  Service Name: netcup-vxxu  
+  Service Name: netcup-primary
   Config: {customer_id, api_key, api_password}
   Owner Type: platform
 
@@ -1057,19 +1057,19 @@ Backend Service 2:
 **Step 2: Admin creates TWO Managed Domain Roots**
 
 ```
-Domain Root 1 (for direct vxxu.de records):
-  Backend: netcup-vxxu
-  Root Domain: vxxu.de
-  DNS Zone: vxxu.de (same - managed at Netcup)
+Domain Root 1 (for direct example.com records):
+  Backend: netcup-primary
+  Root Domain: example.com
+  DNS Zone: example.com (same - managed at Netcup)
   Visibility: private (admin grants required)
   Min Subdomain Depth: 1
   Allowed Record Types: [A, AAAA, CNAME, TXT]
   Allowed Operations: [read, update]
 
-Domain Root 2 (for delegated dyn.vxxu.de zone):
+Domain Root 2 (for delegated dyn.example.com zone):
   Backend: powerdns-dyn
-  Root Domain: dyn.vxxu.de
-  DNS Zone: dyn.vxxu.de (delegated zone in PowerDNS)
+  Root Domain: dyn.example.com
+  DNS Zone: dyn.example.com (delegated zone in PowerDNS)
   Visibility: public (any user can claim free subdomain)
   Min Subdomain Depth: 1
   Allowed Record Types: [A, AAAA, TXT]
@@ -1079,30 +1079,30 @@ Domain Root 2 (for delegated dyn.vxxu.de zone):
 **Step 3: Different users create realms under different roots**
 
 ```
-User A (granted access to vxxu.de):
-  Available Roots: [vxxu.de (Private - Netcup), dyn.vxxu.de (Public - PowerDNS)]
-  Selected: vxxu.de
-  Requested Subdomain: host1 → host1.vxxu.de
+User A (granted access to example.com):
+  Available Roots: [example.com (Private - Netcup), dyn.example.com (Public - PowerDNS)]
+  Selected: example.com
+  Requested Subdomain: host1 → host1.example.com
   → Realm uses Netcup API
 
 User B (public access):
-  Available Roots: [dyn.vxxu.de (Public - PowerDNS)]
-  Selected: dyn.vxxu.de
-  Requested Subdomain: host2 → host2.dyn.vxxu.de
+  Available Roots: [dyn.example.com (Public - PowerDNS)]
+  Selected: dyn.example.com
+  Requested Subdomain: host2 → host2.dyn.example.com
   → Realm uses PowerDNS API
 
 User C (also public):
-  Available Roots: [dyn.vxxu.de (Public - PowerDNS)]
-  Selected: dyn.vxxu.de
-  Requested Subdomain: host2 → ERROR: "host2.dyn.vxxu.de already claimed"
+  Available Roots: [dyn.example.com (Public - PowerDNS)]
+  Selected: dyn.example.com
+  Requested Subdomain: host2 → ERROR: "host2.dyn.example.com already claimed"
   → Uniqueness constraint prevents duplicate claims
 ```
 
 **Step 4: API calls route to correct backend**
 
 ```
-Token(host1.vxxu.de) → Realm → DomainRoot(vxxu.de) → BackendService(netcup-vxxu) → Netcup API
-Token(host2.dyn.vxxu.de) → Realm → DomainRoot(dyn.vxxu.de) → BackendService(powerdns-dyn) → PowerDNS API
+Token(host1.example.com) → Realm → DomainRoot(example.com) → BackendService(netcup-primary) → Netcup API
+Token(host2.dyn.example.com) → Realm → DomainRoot(dyn.example.com) → BackendService(powerdns-dyn) → PowerDNS API
 ```
 
 **Key Design Points**:
@@ -1138,7 +1138,7 @@ Token(host2.dyn.vxxu.de) → Realm → DomainRoot(dyn.vxxu.de) → BackendServic
     <input type="text" name="subdomain" placeholder="myhost" pattern="[a-z0-9-]+">
     <span class="input-group-text">.{{ selected_root.root_domain }}</span>
   </div>
-  <small>Your full hostname will be: <code id="preview">myhost.dyn.vxxu.de</code></small>
+  <small>Your full hostname will be: <code id="preview">myhost.dyn.example.com</code></small>
 </div>
 ```
 

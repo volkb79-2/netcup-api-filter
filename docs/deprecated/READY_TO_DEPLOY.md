@@ -4,7 +4,7 @@
 
 ## Status: ✅ Hello World is Working!
 
-Your hello world test at https://hosting.vxxu.de/netcup-api-filter shows:
+Your hello world test at https://hosting.example.com/netcup-api-filter shows:
 - ✅ Passenger is working
 - ✅ Python 3.11.2 is running
 - ✅ All files are uploaded correctly
@@ -15,7 +15,7 @@ Your hello world test at https://hosting.vxxu.de/netcup-api-filter shows:
 
 **Application Directory (from diagnostic page):**
 ```
-/var/www/vhosts/hosting218629.ae98d.netcup.net/netcup-api-filter
+/var/www/vhosts/<webhoster-host>/netcup-api-filter
 ```
 
 **Control Panel Settings (should be):**
@@ -62,12 +62,12 @@ PassengerAppType wsgi
 
 **Option C - Via SSH (if available):**
 ```bash
-touch /var/www/vhosts/hosting218629.ae98d.netcup.net/netcup-api-filter/tmp/restart.txt
+touch /var/www/vhosts/<webhoster-host>/netcup-api-filter/tmp/restart.txt
 ```
 
 ### Step 3: Test
 
-Access: https://hosting.vxxu.de/netcup-api-filter/admin
+Access: https://hosting.example.com/netcup-api-filter/admin
 
 **Expected Result:**
 - You should see the admin login page
@@ -119,9 +119,9 @@ From netcup documentation:
 > App Root ist relativ zum Webspace
 
 Your setup:
-- **Webspace root:** `/var/www/vhosts/hosting218629.ae98d.netcup.net/`
+- **Webspace root:** `/var/www/vhosts/<webhoster-host>/`
 - **App Root (relative):** `/netcup-api-filter`
-- **Full path:** `/var/www/vhosts/hosting218629.ae98d.netcup.net/netcup-api-filter`
+- **Full path:** `/var/www/vhosts/<webhoster-host>/netcup-api-filter`
 
 The `.htaccess` in your app directory is correctly being read because:
 1. Control panel Python settings point to this directory

@@ -29,9 +29,13 @@ from netcup_api_filter.models import (
     VisibilityEnum,
 )
 
-ZONE = "managed.vxxu.de"
+ZONE = "managed.example.com"
 API_URL = "http://naf-instance42-powerdns:8081"  # fixture identity, not a real container
 API_KEY = "test-powerdns-api-key"
+
+
+def test_seed_fixture_uses_documentation_zone():
+    assert ZONE == "managed.example.com"
 
 
 def test_empty_zone_is_a_noop(app, db):
@@ -84,7 +88,7 @@ def test_seeds_backend_service_and_domain_root_with_required_fields(app, db):
 
 
 def test_zone_with_trailing_dot_and_whitespace_is_normalized(app, db):
-    root = seed_delegated_zone_domain_root("  managed.vxxu.de.  ", api_url=API_URL, api_key=API_KEY)
+    root = seed_delegated_zone_domain_root("  managed.example.com.  ", api_url=API_URL, api_key=API_KEY)
     assert root.root_domain == ZONE
     assert root.dns_zone == ZONE
 

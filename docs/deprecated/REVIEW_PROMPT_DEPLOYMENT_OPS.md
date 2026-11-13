@@ -149,7 +149,7 @@ cat deploy-local/build_info.json
 - [ ] **Greenfield**: validate the fresh seeded database after activation
 
 #### SSH Configuration
-- [ ] **Host**: `hosting218629@hosting218629.ae98d.netcup.net`
+- [ ] **Host**: `<webhoster-user>@<webhoster-host>`
 - [ ] **Directory**: `/netcup-api-filter`
 - [ ] **Key-based auth**: SSH key configured (not password)
 - [ ] **SSH agent**: Keys loaded in devcontainer
@@ -277,7 +277,7 @@ sqlite3 deploy-local/netcup_filter.db \
 tail -f deploy-local/netcup_filter.log
 
 # View production logs
-ssh hosting218629@hosting218629.ae98d.netcup.net \
+ssh <webhoster-user>@<webhoster-host> \
   "tail -f /netcup-api-filter/netcup_filter.log"
 
 # Search logs
@@ -514,7 +514,7 @@ rg -i "(password|api_key|secret)\s*=\s*['\"][a-zA-Z0-9]{12,}" --glob="!.env*" .
 # Should return no results
 
 # Verify SSH key auth (not password)
-ssh -v hosting218629@hosting218629.ae98d.netcup.net 2>&1 | grep "Offering public key"
+ssh -v <webhoster-user>@<webhoster-host> 2>&1 | grep "Offering public key"
 # Should show key-based authentication
 
 # Verify HTTPS security
@@ -665,7 +665,7 @@ sqlite3 deploy-local/netcup_filter.db "SELECT COUNT(*) FROM Account;"
 ## Usage
 
 ```
-Please perform a comprehensive deployment and operations review using the checklist defined in .vscode/REVIEW_PROMPT_DEPLOYMENT_OPS.md.
+Please perform a comprehensive deployment and operations review using the checklist in this archived prompt.
 
 Focus on:
 1. Verifying production parity between local and deployed environments

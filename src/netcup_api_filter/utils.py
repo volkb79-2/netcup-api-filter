@@ -73,12 +73,13 @@ def parse_client_address(value: str | None) -> ipaddress.IPv4Address | ipaddress
     return None
 
 
-def parse_bool(raw: object, *, default: bool = False) -> bool:
+def parse_bool(raw: object, *, default: bool = False, strict: bool = False) -> bool:
     """Parse a boolean from an env string / setting value / actual bool.
 
-    Returns ``default`` for ``None`` or any unrecognised string so a malformed
-    value never crashes the caller. JSON booleans (already ``bool``) pass
-    through unchanged, which matters for settings stored as JSON ``false``.
+    Returns ``default`` for ``None`` or any unrecognised string unless ``strict``
+    is true, in which case unrecognised values raise ``ValueError``. JSON
+    booleans (already ``bool``) pass through unchanged, which matters for
+    settings stored as JSON ``false``.
     """
     if raw is None:
         return default
@@ -89,6 +90,8 @@ def parse_bool(raw: object, *, default: bool = False) -> bool:
         return True
     if value in _FALSY_VALUES:
         return False
+    if strict:
+        raise ValueError(f"Unrecognised boolean value: {raw!r}")
     return default
 
 

@@ -36,6 +36,7 @@ import secrets
 import string
 import httpx
 import os
+import pytest
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -878,6 +879,7 @@ class TestJourney3ComprehensiveStates:
             await capture(browser, f"account-{spec.name}")
         
         # Store for later journeys
+        assert creator.created_accounts, "J3_01 did not create any accounts"
         journey_state.set_extra("account_creator", creator)
         
         # Screenshot: All accounts list
@@ -900,8 +902,7 @@ class TestJourney3ComprehensiveStates:
         
         account_creator = journey_state.get_extra("account_creator")
         if not account_creator:
-            logger.info("⚠️  No account creator found, skipping realm creation")
-            return
+            pytest.fail("J3_02 requires J3_01 to create accounts", pytrace=False)
         
         creator = RealmCreator(browser, account_creator)
         
@@ -910,6 +911,7 @@ class TestJourney3ComprehensiveStates:
             await capture(browser, f"realm-{spec.name}")
         
         # Store for token creation
+        assert creator.created_realms, "J3_02 did not create any realms"
         journey_state.set_extra("realm_creator", creator)
         
         # Screenshot: All realms list
@@ -932,10 +934,9 @@ class TestJourney3ComprehensiveStates:
         
         realm_creator = journey_state.get_extra("realm_creator")
         if not realm_creator:
-            logger.info("⚠️  No realm creator found, skipping token creation")
-            return
+            pytest.fail("J3_03 requires J3_02 to create realms", pytrace=False)
 
-        # Webhosting/live runs typically cannot complete per-account token creation
+        # Webhosting runs typically cannot complete per-account token creation
         # because J3 creates synthetic accounts with non-deliverable emails.
         # Keep this config-driven so it can be enabled explicitly when desired.
         from ui_tests.config import settings
@@ -947,8 +948,9 @@ class TestJourney3ComprehensiveStates:
                 "yes",
             }
             if not allow:
-                logger.info(
-                    "ℹ️  Skipping token creation on webhosting (set UI_J3_CREATE_TOKENS_WEBHOSTING=1 to enable)"
+                pytest.skip(
+                    "webhosting J3 token creation is disabled because synthetic accounts use "
+                    "non-deliverable emails; set UI_J3_CREATE_TOKENS_WEBHOSTING=1 to enable"
                 )
                 return
         
@@ -958,6 +960,7 @@ class TestJourney3ComprehensiveStates:
             await creator.create_token(spec)
         
         # Store for API testing
+        assert creator.created_tokens, "J3_03 did not create any tokens"
         journey_state.set_extra("token_creator", creator)
         
         # Screenshot: Tokens list
@@ -974,8 +977,11 @@ class TestJourney3ComprehensiveStates:
         
         token_creator = journey_state.get_extra("token_creator")
         if not token_creator:
-            logger.info("⚠️  No token creator found, skipping API tests")
-            return
+            from ui_tests.config import settings
+
+            if settings.deployment_target == "webhosting" and os.getenv("UI_J3_CREATE_TOKENS_WEBHOSTING", "0").strip().lower() not in {"1", "true", "yes"}:
+                pytest.skip("webhosting J3 API cases require token creation, disabled for synthetic non-deliverable accounts")
+            pytest.fail("J3_04 requires J3_03 to create tokens", pytrace=False)
         
         tester = APITester(token_creator)
         
@@ -988,6 +994,10 @@ class TestJourney3ComprehensiveStates:
         skipped = sum(1 for r in tester.results if r.get("status") == "skipped")
         
         logger.info(f"\n✓ API Tests: {passed} passed, {failed} failed, {skipped} skipped")
+        assert failed == 0 and passed > 0, (
+            f"J3_04 expected passing API cases and no failures; got {passed} passed, "
+            f"{failed} failed, {skipped} skipped"
+        )
     
     async def test_J3_05_ui_validation(self, browser: Browser):
         """Validate UI correctly shows all states."""

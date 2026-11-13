@@ -12,7 +12,7 @@
 ```
 ┌─────────────────────────────────────┐
 │ Netcup Webhosting                   │
-│ https://naf.vxxu.de                 │
+│ https://naf.example.com                 │
 │                                     │
 │ passenger_wsgi.py                   │
 │  ├─ Real database mode              │

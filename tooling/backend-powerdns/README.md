@@ -80,10 +80,20 @@ the integration.
 
 ## Start the stack
 
-`POWERDNS_API_KEY` is generated once by ciu into this checkout's
-`GEN_LOCAL:naf/powerdns_api_key` store. It is never operator-supplied, committed, or
-shared with another worktree. The backend gets it through ciu's `expose_env` channel;
-the app-local seed hook reads the same file through `ctx.secret_file()`.
+`POWERDNS_API_KEY` and `POWERDNS_WEBSERVER_PASSWORD` are separate checkout-local CIU
+`GEN_LOCAL` secrets. The API key authenticates REST API calls; the webserver password protects
+the built-in webserver independently. Its dashboard and stats endpoints expose process statistics,
+query rings and Prometheus `/metrics`; the same listener also serves the JSON/REST API for zone
+content, metadata and DNSSEC management. `webserver-allow-from` is broad inside the container
+network, so sharing the API key with the webserver would couple both access paths.
+PowerDNS recommends both password protection and restricting webserver network access; this
+stack keeps the API key API-only and gives the webserver its own generated password. See the
+[PowerDNS HTTP API and webserver documentation](https://doc.powerdns.com/authoritative/http-api/)
+and [webserver settings](https://doc.powerdns.com/authoritative/settings.html#webserver-password).
+
+Both secrets are generated once into this checkout's CIU secret store, are not operator-supplied,
+committed, or shared with another worktree, and are exposed to the daemon through CIU's secret
+delivery. The app-local seed hook reads only the API key through `ctx.secret_file()`.
 
 ```bash
 cd /workspaces/netcup-api-filter
@@ -100,8 +110,8 @@ ciu up --profile full
 ```
 
 `.env.operator` provides the delegated zone; `.env.guard` provides the basicauth
-username/password/hash used by the traefik route. `ciu up` materializes the generated
-PowerDNS key in this checkout's secret store and fails fast when the guard hash is
+username/password/hash used by the traefik route. `ciu up` materializes both generated
+PowerDNS secrets in this checkout's secret store and fails fast when the guard hash is
 absent. Values are never printed.
 
 ## URLs
@@ -181,8 +191,8 @@ The stack keeps non-secret daemon configuration in `[backend_powerdns]`:
   logging, and AXFR settings;
 - health-check timing and external-route toggle.
 
-Only `POWERDNS_API_KEY` is secret. The delegated zone and public FQDN are global
-topology facts. `.env.services` reads the PowerDNS container identity from
+`POWERDNS_API_KEY` and `POWERDNS_WEBSERVER_PASSWORD` are secrets. The delegated zone and public
+FQDN are global topology facts. `.env.services` reads the PowerDNS container identity from
 `ciu resolve --json`; keep the resolved service and `backend_powerdns.ports.api`
 aligned through their stack declarations.
 
@@ -195,6 +205,9 @@ to the PowerDNS-image init service command in `ciu.compose.yml.j2`.
 The database is the host bind mount
 `tooling/backend-powerdns/data/pdns.sqlite3`, resolved through
 `PHYSICAL_REPO_ROOT`. It is not a Docker named volume.
+
+Only one checkout per host can run this stack at a time: each checkout publishes DNS on host
+port 53 over both UDP and TCP, so simultaneous checkouts collide at bind time.
 
 For an idempotent stack bring-up and teardown, use ciu's supported verbs:
 

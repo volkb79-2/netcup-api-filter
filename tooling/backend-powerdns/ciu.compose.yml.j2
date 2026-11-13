@@ -105,6 +105,7 @@ services:
       # option below is rendered once into the config directory from the
       # mounted config template.
       - POWERDNS_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}
+      - POWERDNS_WEBSERVER_PASSWORD=${POWERDNS_WEBSERVER_PASSWORD:?POWERDNS_WEBSERVER_PASSWORD must be set}
       - TEMPLATE_FILES={{ backend_powerdns.api.template_name }}
       - PDNS_AUTH_API={{ backend_powerdns.pdns.auth_api }}
       - PDNS_AUTH_WEBSERVER={{ backend_powerdns.pdns.webserver }}
@@ -127,6 +128,7 @@ services:
 
     secrets:
       - powerdns_api_key
+      - powerdns_webserver_password
 
     ports:
       # DNS server (public access required — see header. NOT a traefik route).

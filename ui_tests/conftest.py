@@ -380,8 +380,13 @@ def mailpit():
     # Clear mailbox before test for isolation
     try:
         client.clear()
-    except Exception:
-        pytest.skip("Mailpit not available - start with: ciu up --dir tooling/mailpit")
+    except Exception as exc:
+        pytest.fail(
+            "Local e2e requires reachable Mailpit configured by MAILPIT_URL; "
+            "start the tooling/mailpit stack before the gate "
+            f"({type(exc).__name__})",
+            pytrace=False,
+        )
     
     yield client
     

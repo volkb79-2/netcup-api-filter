@@ -19,8 +19,8 @@ from netcup_api_filter.database import db, get_setting
 
 LIMITS = {
     "admin_rate_limit": "2 per minute",
-    "account_rate_limit": "2 per minute",
-    "api_rate_limit": "2 per minute",
+    "account_rate_limit": "3 per minute",
+    "api_rate_limit": "4 per minute",
 }
 RETRY_AFTER_SECONDS = parse(LIMITS["api_rate_limit"]).get_expiry()
 FROZEN_LIMIT_CLOCK = 1000.1
@@ -72,7 +72,9 @@ def _request(app, path, ip):
 
 def _freeze_limit_clock(monkeypatch):
     """Freeze both limits' memory storage and the app's reset arithmetic."""
-    monkeypatch.setattr(time, "time", lambda: FROZEN_LIMIT_CLOCK)
+    clock = [FROZEN_LIMIT_CLOCK]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    return clock
 
 
 def _assert_html_rate_limit(response):
@@ -104,12 +106,12 @@ def test_admin_account_and_api_limits_return_429_after_configured_request_count(
     limiter = _app_limiter(app)
 
     cases = (
-        ("/admin/login", "198.51.100.41", 200),
-        ("/account/login", "198.51.100.42", 200),
-        ("/api/dns/example.com/records", "198.51.100.43", 401),
+        ("/admin/login", "198.51.100.41", 200, 2),
+        ("/account/login", "198.51.100.42", 200, 3),
+        ("/api/dns/example.com/records", "198.51.100.43", 401, 4),
     )
-    for path, client_ip, under_limit_status in cases:
-        for _ in range(2):
+    for path, client_ip, under_limit_status, allowed_count in cases:
+        for _ in range(allowed_count):
             response = _request(app, path, client_ip)
             assert response.status_code == under_limit_status, f"unexpected pre-limit status for {path}"
 
@@ -128,19 +130,20 @@ def test_admin_account_and_api_limits_return_429_after_configured_request_count(
 
 
 def test_api_rate_limit_returns_numeric_retry_after_header(app, monkeypatch):
-    """API 429s carry a positive integer derived from the configured limit window."""
-    _freeze_limit_clock(monkeypatch)
+    """Retry-After equals the remaining window after fake time advances."""
+    clock = _freeze_limit_clock(monkeypatch)
     limiter = _app_limiter(app)
     path = "/api/dns/example.com/records"
     client_ip = "198.51.100.49"
-    assert _request(app, path, client_ip).status_code == 401
-    assert _request(app, path, client_ip).status_code == 401
+    for _ in range(4):
+        assert _request(app, path, client_ip).status_code == 401
+    clock[0] += 20
 
     limited = _request(app, path, client_ip)
     assert limited.status_code == 429
     retry_after = limited.headers["Retry-After"]
     assert retry_after.isdigit()
-    assert int(retry_after) == RETRY_AFTER_SECONDS
+    assert int(retry_after) == RETRY_AFTER_SECONDS - 20
     payload = limited.get_json()
     assert float(payload["retry_after"]) == float(retry_after)
     limiter.reset()
@@ -162,15 +165,15 @@ def test_limits_are_per_client_and_resettable_without_waiting(app):
     # memory:// is process-local. Each reset below checks same-client storage
     # clearing explicitly; it is not a simulation of fixed-window expiry.
     cases = (
-        ("/admin/login", 200, False),
-        ("/account/login", 200, False),
-        ("/api/dns/example.com/records", 401, True),
+        ("/admin/login", 200, False, 2),
+        ("/account/login", 200, False, 3),
+        ("/api/dns/example.com/records", 401, True, 4),
     )
-    for index, (path, under_limit_status, is_api) in enumerate(cases):
+    for index, (path, under_limit_status, is_api, allowed_count) in enumerate(cases):
         client_a = f"198.51.100.{51 + index * 2}"
         client_b = f"198.51.100.{52 + index * 2}"
-        assert _request(app, path, client_a).status_code == under_limit_status
-        assert _request(app, path, client_a).status_code == under_limit_status
+        for _ in range(allowed_count):
+            assert _request(app, path, client_a).status_code == under_limit_status
         assert _request(app, path, client_b).status_code == under_limit_status
         limited_a = _request(app, path, client_a)
         if is_api:

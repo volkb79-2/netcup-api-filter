@@ -29,6 +29,8 @@ import re
 import secrets
 import string
 
+import pytest
+
 from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
@@ -240,8 +242,10 @@ class TestJourney2AccountLifecycle:
             return
         
         if not journey_state.get_extra("self_registration_available", False):
-            logger.info("ℹ️  Skipping - self-registration not available")
-            return
+            pytest.fail(
+                "J2_02 found no self-registration form and J2_01 did not create a fallback account",
+                pytrace=False,
+            )
         
         # Clear mailpit
         mailpit.clear()
@@ -278,8 +282,7 @@ class TestJourney2AccountLifecycle:
     async def test_J2_03_check_verification_email(self, browser: Browser, mailpit: MailpitClient):
         """Verification email is sent with correct content."""
         if not journey_state.test_account_email:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_03 requires J2_01/J2_02 to create an account email", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved (admin-created)")
@@ -321,8 +324,7 @@ class TestJourney2AccountLifecycle:
     async def test_J2_04_complete_verification(self, browser: Browser):
         """Complete email verification process."""
         if not journey_state.test_account_email:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_04 requires J2_01/J2_02 to create an account email", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
@@ -356,8 +358,7 @@ class TestJourney2AccountLifecycle:
     async def test_J2_05_admin_sees_pending_account(self, browser: Browser):
         """Admin can see the pending account in the list."""
         if not journey_state.test_account_username:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_05 requires J2_01/J2_02 to create an account", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
@@ -388,8 +389,7 @@ class TestJourney2AccountLifecycle:
     async def test_J2_06_approve_account(self, browser: Browser, mailpit: MailpitClient):
         """Admin approves the pending account."""
         if not journey_state.test_account_username:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_06 requires J2_01/J2_02 to create an account", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
@@ -442,17 +442,21 @@ class TestJourney2AccountLifecycle:
     async def test_J2_07_user_can_login(self, browser: Browser):
         """Approved user can login successfully."""
         if not journey_state.test_account_username:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_07 requires J2_01/J2_02 to create an account", pytrace=False)
         
         if not journey_state.test_account_approved:
-            logger.info("ℹ️  Skipping - account not approved")
-            return
+            pytest.fail("J2_07 requires J2_06 to approve the created account", pytrace=False)
         
-        # Skip if invite-based account (no password set - user sets via invite link)
         if journey_state.get_extra("invite_based_account") or not journey_state.test_account_password:
-            logger.info("ℹ️  Skipping - invite-based account (password set via invite link)")
-            return
+            if settings.deployment_target == "webhosting":
+                pytest.skip(
+                    "webhosting J2 uses an invite-based admin-created account; the synthetic "
+                    "mailbox cannot complete that invite login"
+                )
+            pytest.fail(
+                "J2_07 requires the created account's invite to be accepted and a password to be set",
+                pytrace=False,
+            )
         
         # Logout admin if needed
         await browser.goto(settings.url("/admin/logout"))

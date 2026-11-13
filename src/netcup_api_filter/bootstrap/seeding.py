@@ -483,7 +483,7 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
          "record_types": ["A", "AAAA", "TXT", "CNAME"], "operations": ["read", "create", "update", "delete"]},
         
         # demo-power-user: 5 realms (various states)
-        {"account": "demo-power-user", "domain": "vxxu.de", "realm_type": "subdomain_only",
+        {"account": "demo-power-user", "domain": "example.com", "realm_type": "subdomain_only",
          "realm_value": "client1", "status": "approved",
          "record_types": ["A", "AAAA", "TXT"], "operations": ["read", "create", "update", "delete"]},
         {"account": "demo-power-user", "domain": "example.com", "realm_type": "host",
@@ -555,13 +555,13 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
          "record_types_override": ["A", "AAAA"], "operations_override": ["read"]},
         
         # demo-power-user tokens
-        {"realm_key": "subdomain_only:client1@vxxu.de", "token_name": "certbot-prod",
+        {"realm_key": "subdomain_only:client1@example.com", "token_name": "certbot-prod",
          "description": "Certbot production DNS-01", "is_active": True,
          "expires": None, "ip_ranges": None},
-        {"realm_key": "subdomain_only:client1@vxxu.de", "token_name": "certbot-staging",
+        {"realm_key": "subdomain_only:client1@example.com", "token_name": "certbot-staging",
          "description": "Certbot staging (EXPIRED)", "is_active": False,
          "expires": datetime.utcnow() - timedelta(days=30), "ip_ranges": None},
-        {"realm_key": "subdomain_only:client1@vxxu.de", "token_name": "old-system",
+        {"realm_key": "subdomain_only:client1@example.com", "token_name": "old-system",
          "description": "Old system (REVOKED)", "is_active": False,
          "expires": None, "ip_ranges": None},
         {"realm_key": "host:vpn@example.com", "token_name": "vpn-gateway",
@@ -670,10 +670,10 @@ def seed_comprehensive_demo_data(admin: Account) -> None:
          "details": {"operation": "create", "domain": "example.com", "record": "sensor1.iot.example.com", "type": "A"}},
         {"action": "api_call", "ip": "52.94.76.8", "hours_ago": 6,
          "success": True, "account": "demo-power-user", "token": "certbot-prod",
-         "details": {"operation": "create", "domain": "vxxu.de", "record": "_acme-challenge.client1.vxxu.de", "type": "TXT"}},
+         "details": {"operation": "create", "domain": "example.com", "record": "_acme-challenge.client1.example.com", "type": "TXT"}},
         {"action": "api_call", "ip": "52.94.76.8", "hours_ago": 5,
          "success": True, "account": "demo-power-user", "token": "certbot-prod",
-         "details": {"operation": "delete", "domain": "vxxu.de", "record": "_acme-challenge.client1.vxxu.de", "type": "TXT"}},
+         "details": {"operation": "delete", "domain": "example.com", "record": "_acme-challenge.client1.example.com", "type": "TXT"}},
         
         # API calls - denied
         {"action": "api_call", "ip": "203.0.113.50", "hours_ago": 18,
@@ -974,7 +974,7 @@ def create_domain_root(
     
     Args:
         backend_service: BackendService that manages this domain
-        root_domain: The domain root (e.g., 'dyn.vxxu.de')
+        root_domain: The domain root (e.g., 'dyn.example.com')
         dns_zone: Actual zone in backend (defaults to root_domain)
         visibility: 'public', 'private', or 'invite'
         display_name: Human-readable name
@@ -1122,7 +1122,7 @@ def seed_delegated_zone_domain_root(
     Granting specific users access is DomainRootGrant, out of scope here.
 
     Args:
-        zone: The delegated DNS zone (e.g. 'managed.vxxu.de'). Callers read
+        zone: The delegated DNS zone (e.g. 'managed.example.com'). Callers read
             this from config["topology"]["dns"]["delegated_zone"].
         api_url: PowerDNS API URL to store in the backend config. Defaults to
             POWERDNS_API_URL_INTERNAL from the environment (see

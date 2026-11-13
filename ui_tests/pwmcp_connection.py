@@ -22,13 +22,10 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
+from netcup_api_filter.utils import parse_bool
+from ui_tests.redaction import WS_URL_RE, redact_url_text
+
 logger = logging.getLogger(__name__)
-_WS_URL_RE = re.compile(r"wss?://[^\s\"'<>]+", re.IGNORECASE)
-_SECRET_QUERY_RE = re.compile(
-    r"([?&;][^=&#\s\"'<>]*(?:token|code|key|secret|password|otp|signature|sig)[^=&#\s\"'<>]*=)"
-    r"[^&#\s\"'<>]+",
-    re.IGNORECASE,
-)
 
 
 class PwmcpContractError(RuntimeError):
@@ -165,8 +162,8 @@ def _safe_netloc(parts: Any) -> str:
 
 def safe_connection_error(exc: BaseException) -> str:
     """Keep useful status text while removing endpoint credentials and query values."""
-    message = _WS_URL_RE.sub(lambda match: _safe_ws_url(match.group(0)), str(exc))
-    return _SECRET_QUERY_RE.sub(r"\1<redacted>", message)
+    message = WS_URL_RE.sub(lambda match: _safe_ws_url(match.group(0)), str(exc))
+    return redact_url_text(message)
 
 
 def _safe_ws_url(value: str) -> str:
@@ -482,9 +479,7 @@ class SharedPwmcpSession:
 
     async def _launch_local(self) -> Any:
         browser_type = getattr(self._playwright, self.options.browser_type, self._playwright.chromium)
-        headless = (
-            _config_value("PLAYWRIGHT_HEADLESS", self.env, None).lower() in {"true", "1"}
-        )
+        headless = parse_bool(_config_value("PLAYWRIGHT_HEADLESS", self.env, None), strict=True)
         browser = await browser_type.launch(headless=headless)
         self.connects += 1
         return browser

@@ -448,7 +448,7 @@ def test_no_retired_powerdns_paths_or_keys_are_committed():
         re.compile("POWERDNS_" + "PROXY_"),
         # Exclude the legitimate filesystem directory `tooling/backend-powerdns`.
         re.compile(r"(?<!tooling)/backend-" + r"powerdns"),
-        re.compile("powerhosts." + "vxxu.de"),
+        re.compile(r"powerhosts\.(?!example\.com)"),
     )
     hits = [
         f"{path.relative_to(REPO)}: {pattern.pattern}"

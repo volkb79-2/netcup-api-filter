@@ -46,8 +46,8 @@ ciu up --host webhoster --thin -- --variant py311 → Passenger activation
 
 ```bash
 # 1. Clone and open in the devcontainer (VS Code builds it and runs post-create,
-#    which installs packages and generates .env.workspace: PUBLIC_FQDN,
-#    PHYSICAL_REPO_ROOT, DOCKER_GID). The public FQDN is auto-detected there.
+#    which installs packages and generates .env.workspace with PHYSICAL_REPO_ROOT
+#    and DOCKER_GID. CIU resolves PUBLIC_FQDN into ciu.env.
 git clone git@github.com:user/netcup-api-filter.git
 cd netcup-api-filter
 

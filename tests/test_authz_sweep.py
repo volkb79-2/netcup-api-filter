@@ -179,9 +179,18 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
     """Exercise each of the 18 current id-bearing portal rules with valid CSRF."""
     owner, resources, markers = _create_foreign_resources(make_account, make_realm, make_token, db)
     other_user = make_account("sweep-owner-b", password="Portal-Sweep-Pass-9!", email="owner-b-sweep@example.invalid")
+    own_realm = make_realm(
+        other_user,
+        domain="owner-b-sweep.example",
+        realm_value="own-marker",
+        operations=("read",),
+    )
 
     client = app.test_client()
     login_portal(client, other_user)
+    own_response = client.get(f"/account/realms/{own_realm.id}")
+    assert own_response.status_code == 200
+    assert own_realm.domain in own_response.get_data(as_text=True)
     other_session = AccountSession.query.filter_by(account_id=other_user.id).one()
     other_session.last_active = datetime(2100, 1, 1)
     db.session.commit()
@@ -189,7 +198,8 @@ def test_every_id_bearing_account_route_refuses_foreign_owner(
 
     discovered = [
         rule for rule in app.url_map.iter_rules()
-        if rule.rule.startswith("/account/") and "<int:" in rule.rule
+        if rule.rule.startswith("/account/")
+        and any(argument == "id" or argument.endswith("_id") for argument in rule.arguments)
     ]
     actual_endpoint_counts = Counter(rule.endpoint for rule in discovered)
     expected_endpoint_counts = Counter({

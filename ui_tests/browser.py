@@ -15,37 +15,18 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 from ui_tests.config import settings
 from ui_tests.playwright_client import PlaywrightClient
 from ui_tests.pwmcp_connection import context_storage_state
+from ui_tests.redaction import REDACTED, is_secret_param, redact_url_text
 
 logger = logging.getLogger(__name__)
-
-REDACTED = "<redacted>"
-# One-time credentials the app puts into URLs: /account/register/verify/<token>,
-# /account/reset-password/<token>, /account/invite/<token>. A failing navigation must
-# not print them (ToolError payloads and Playwright messages end up in gate logs).
-_ONE_TIME_PATH_RE = re.compile(r"(/(?:verify|reset|reset-password|invite)/)[^/?#\s\"'<>]+", re.IGNORECASE)
-_SECRET_PARAM_WORDS = ("token", "code", "key", "secret", "password", "otp", "signature", "sig")
-_SECRET_QUERY_RE = re.compile(
-    r"([?&;](?:[^=&#\s\"'<>]*?)(?:" + "|".join(_SECRET_PARAM_WORDS) + r")(?:[^=&#\s\"'<>]*)=)[^&#\s\"'<>]+",
-    re.IGNORECASE,
-)
-
 
 # Every ToolError that carries redacted text is raised ``from None``: pytest prints the implicit
 # ``__context__`` chain, and Playwright's own message (call log with the filled value, the full URL)
 # would otherwise follow the redacted one into the gate log.
-def redact_url_text(text: Any) -> Any:
-    """Mask one-time path tokens and secret-named query values in a URL or message."""
-    if not isinstance(text, str):
-        return text
-    text = _ONE_TIME_PATH_RE.sub(lambda m: m.group(1) + REDACTED, text)
-    return _SECRET_QUERY_RE.sub(lambda m: m.group(1) + REDACTED, text)
-
-
 def _redact_params(params: Dict[str, Any] | None) -> Dict[str, Any] | None:
     if not params:
         return params
     return {
-        key: (REDACTED if any(word in str(key).lower() for word in _SECRET_PARAM_WORDS) else value)
+        key: (REDACTED if is_secret_param(key) else value)
         for key, value in params.items()
     }
 
@@ -279,7 +260,7 @@ class Browser:
             )
             return {"selector": selector, "url": self.current_url}
         except Exception as exc:
-            raise ToolError(name="click", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="click", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def select(self, selector: str, value: str | list[str]) -> Dict[str, Any]:
         """Select option(s) in select element."""
@@ -300,7 +281,7 @@ class Browser:
             text = await self._page.text_content(selector, timeout=5000)
             return text or ""
         except Exception as exc:
-            raise ToolError(name="text", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="text", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def get_attribute(self, selector: str, attribute: str) -> str:
         """Get attribute value of element."""
@@ -308,7 +289,7 @@ class Browser:
             value = await self._page.get_attribute(selector, attribute, timeout=5000)
             return value or ""
         except Exception as exc:
-            raise ToolError(name="get_attribute", payload={"selector": selector, "attribute": attribute}, message=str(exc))
+            raise ToolError(name="get_attribute", payload={"selector": selector, "attribute": attribute}, message=redact_url_text(str(exc))) from None
 
     async def verify_status(self, expected_status: int = 200) -> int:
         """Verify HTTP status code of current page.
@@ -335,8 +316,8 @@ class Browser:
                 raise ToolError(
                     name="verify_status",
                     payload={"expected": expected_status, "actual": status_code, "url": redact_url_text(self.current_url)},
-                    message=error_msg
-                )
+                    message=redact_url_text(error_msg)
+                ) from None
             
             return status_code
         except ToolError:
@@ -351,14 +332,14 @@ class Browser:
             html = await self._page.inner_html(selector, timeout=5000)
             return html or ""
         except Exception as exc:
-            raise ToolError(name="html", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="html", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def page_content(self) -> str:
         """Get full HTML content of the current page."""
         try:
             return await self._page.content()
         except Exception as exc:
-            raise ToolError(name="page_content", payload={}, message=str(exc))
+            raise ToolError(name="page_content", payload={}, message=redact_url_text(str(exc))) from None
 
     async def evaluate(self, script: str, arg: Any = None) -> Any:
         """Execute JavaScript in the page context."""
@@ -419,7 +400,7 @@ class Browser:
                 message="SCREENSHOT_DIR environment variable must be set. No defaults allowed (fail-fast policy)."
             )
         except Exception as exc:
-            raise ToolError(name="screenshot", payload={"name": name}, message=str(exc))
+            raise ToolError(name="screenshot", payload={"name": name}, message=redact_url_text(str(exc))) from None
 
     async def submit(self, selector: str) -> Dict[str, Any]:
         """Submit form.
@@ -441,7 +422,7 @@ class Browser:
             await self._update_state()
             return {"selector": selector, "url": self.current_url}
         except Exception as exc:
-            raise ToolError(name="submit", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="submit", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def uncheck(self, selector: str) -> Dict[str, Any]:
         """Uncheck checkbox."""
@@ -449,7 +430,7 @@ class Browser:
             await self._page.uncheck(selector)
             return {"selector": selector}
         except Exception as exc:
-            raise ToolError(name="uncheck", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="uncheck", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def wait_for_text(self, selector: str, expected: str, timeout: float = 3.0, interval: float = 0.5) -> str:
         """Poll for text content until it contains the expected substring."""
@@ -501,14 +482,14 @@ class Browser:
         try:
             return await self._page.query_selector(selector)
         except Exception as exc:
-            raise ToolError(name="query_selector", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="query_selector", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def query_selector_all(self, selector: str):
         """Get all element handles matching selector (exposes Playwright ElementHandle API)."""
         try:
             return await self._page.query_selector_all(selector)
         except Exception as exc:
-            raise ToolError(name="query_selector_all", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="query_selector_all", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def wait_for_enabled(self, selector: str, timeout: float = 5.0) -> bool:
         """Wait for an element to become enabled (not disabled).
@@ -529,7 +510,7 @@ class Browser:
                 message=f"Element '{selector}' did not become enabled within {timeout}s"
             )
         except Exception as exc:
-            raise ToolError(name="wait_for_enabled", payload={"selector": selector}, message=str(exc))
+            raise ToolError(name="wait_for_enabled", payload={"selector": selector}, message=redact_url_text(str(exc))) from None
 
     async def set_viewport(self, width: int | None = None, height: int | None = None) -> None:
         """Set viewport size using environment config (NO HARDCODED VALUES)."""
@@ -627,6 +608,6 @@ def _maybe_emit_step_timing(action: str, duration_s: float, details: Dict[str, A
     test_id = os.environ.get("PYTEST_CURRENT_TEST", "").split(" ", 1)[0]
     detail_str = ""
     if details:
-        safe_details = ", ".join(f"{k}={v}" for k, v in details.items())
+        safe_details = redact_url_text(", ".join(f"{k}={v}" for k, v in details.items()))
         detail_str = f" | {safe_details}"
     logger.info("[UI_TIMING] %s %s %.1fms%s", test_id, action, duration_s * 1000, detail_str)

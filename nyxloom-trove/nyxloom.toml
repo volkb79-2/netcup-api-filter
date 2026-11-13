@@ -79,6 +79,6 @@ reconcile_interval_seconds = 30
 http_port = 8943
 
 [notify]
-ntfy_url = "https://nyxloom.gstammtisch.dchive.de"
+ntfy_url = "https://nyxloom.example.org"
 notifications_topic = "notifications"
 feedback_topic = "feedback"

@@ -242,10 +242,6 @@ def copy_application_files(deploy_dir):
         # .env may contain secrets and must NEVER ship in deploy.zip.
         ".env.defaults",  # Defaults skeleton (may be used as fallback during seeding)
         ".env",  # Preferred env file (if present)
-        "TROUBLESHOOTING.md",  # Comprehensive troubleshooting guide
-        "DEBUG_QUICK_START.md",  # Quick debugging reference
-        "READY_TO_DEPLOY.md",  # Instructions based on working hello world
-        "DEBUG_404_ERROR.md",  # How to debug 404 errors with debug version
         ("src/netcup_api_filter/diagnostics/passenger_wsgi_hello.py", "passenger_wsgi_hello.py"),
     ]
     
@@ -483,7 +479,7 @@ You should already have `deploy.zip` - that's this package!
    - Host: `ftp.yourdomain.com` or `ssh.webhosting-XXX.your-server.de`
    - Use your netcup webhosting credentials
 
-2. Navigate to your domain directory (e.g., `/www/htdocs/w0123456/yourdomain.com/`)
+2. Navigate to your domain directory (e.g., `/www/htdocs/<webhoster-user>/yourdomain.com/`)
 
 3. Create a directory for the application (e.g., `netcup-filter/`)
 
@@ -496,7 +492,7 @@ You should already have `deploy.zip` - that's this package!
 ### Step 3: Point Passenger to the app entrypoint
 
 1. In the netcup control panel, open the Passenger configuration for your domain.
-2. Set the **App Root** to the directory where you uploaded this package (e.g., `/www/htdocs/w0123456/yourdomain.com/netcup-api-filter`).
+2. Set the **App Root** to the directory where you uploaded this package (e.g., `/www/htdocs/<webhoster-user>/yourdomain.com/netcup-api-filter`).
 3. Ensure the startup file is `passenger_wsgi.py` (default). No `.htaccess` overrides are required.
 4. To relocate the SQLite database, define `NETCUP_FILTER_DB_PATH` via the control panel's environment variables.
 

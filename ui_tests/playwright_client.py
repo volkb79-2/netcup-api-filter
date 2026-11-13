@@ -44,6 +44,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
+from netcup_api_filter.utils import parse_bool
 from ui_tests.pwmcp_connection import (
     SharedPwmcpSession,
     current_shared_session,
@@ -95,7 +96,7 @@ class PlaywrightClient:
 
                 headless_str = require_default("PLAYWRIGHT_HEADLESS")
                 logger.warning("PLAYWRIGHT_HEADLESS is not set; using its configured default")
-            self.headless = headless_str.lower() == 'true'
+            self.headless = parse_bool(headless_str, strict=True)
         self.timeout = timeout
         self.storage_state_path = storage_state_path
         

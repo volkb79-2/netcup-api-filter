@@ -50,8 +50,8 @@ zone, real SMTP/IMAP and netcup accounts) exists only as unconnected pieces.
 - **D-013 proxy trust.** `TRUSTED_PROXY_HOPS` (default 0), `x_host` never trusted, canonical `PUBLIC_BASE_URL` for every emailed
   link (reset-link host poisoning), host-only session cookies (the old `auto` shared one cookie with every sibling under
   `.PUBLIC_FQDN`), every client address from `request.remote_addr`, a static test forbids raw forwarded-header reads in `src/`.
-  The B044 probe completed on 2026-11-13 from two clients against one shared Passenger webhoster: forged forwarding values
-  passed through unchanged, so the shipped tarball defaults to zero for that measured deployment. B092 part 2 remains open
+  The B044 evidence is a PHP probe on the same webhost; the Passenger WSGI path is unmeasured (B054). Forged forwarding values
+  passed through unchanged; this PHP evidence supports the conservative zero-hop catalog default. B092 part 2 remains open
   to calibrate other webhosters.
 - **Tier split.** Hermetic e2e stays. The deployed tier is a small DEPLOYMENT-CONTRACT suite on the existing remote target
   (`NAF_E2E_TARGET=remote`), not the full UI suite (which seeds personas into SQLite and needs pristine installs): TLS chain,
@@ -68,7 +68,7 @@ Routes: author on one route, independent review on the other; every merge needs 
 | WP0 | B041 | R2 close-out: lane lists include the survivor files (main `d077df0`), rerun the four lanes on the stable commit, triage | controller + ds | - |
 | WP1 | B042 | Config hygiene: one source for the PowerDNS URLs, remove the retired proxy-path variables, invented SOA default and dead helpers from the defaults, drift tests (the API-key move to `GEN_LOCAL` is WP4b-1/WP5, not here) | A=ds | - |
 | WP2 | B043 | Proxy trust (D-013): `TRUSTED_PROXY_HOPS`, `x_host=0`, `PUBLIC_BASE_URL`, host-only cookies, ten raw forwarded-header reads removed + static guard test; Passenger catalog now inherits zero after WP3 | A=luna | - |
-| WP3 | B044 | Webhoster forwarded-header probe: `test-webspace-forwarded-headers.php` completed 2026-11-13 from two clients and supports zero trusted hops on the measured deployment | A=ds | - |
+| WP3 | B044 | Webhoster forwarded-header probe: PHP probe on the same webhost completed 2026-11-13 from two clients; the Passenger WSGI path remains unmeasured (B054), and the evidence supports the zero-hop catalog default | A=ds | - |
 | WP3b | B054 | Separate Passenger WSGI probe: a standalone app dir (vbpub scripts) that checks what a Passenger app sees for a forged header; distinct from the B044 PHP probe and no longer the basis for the measured zero-hop default | A=ds | WP3 |
 | WP4a | B045 | DONE (section 6; corrected by the Opus review) | controller | - |
 | WP4b-1 | B046 | Identity: `environment_tag="$INSTANCE_ID"` everywhere, derived traefik router/service/middleware/subdomain, `ciu resolve` instead of name building (`.env.services`, hooks, run-gate env), `.gitignore` ciu entries, `ciu.user_tables`, re-run the CIU-176 repro (fixed in 7.23.0), `PUBLIC_BASE_URL`/hops in stack config; `POWERDNS_API_KEY` becomes a checkout-local `GEN_LOCAL` secret. Gates all worktree stack work | A=ds | WP1 |

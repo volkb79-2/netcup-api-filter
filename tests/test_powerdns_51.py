@@ -100,7 +100,8 @@ def test_powerdns_51_template_renders_api_and_gsqlite_options():
     template = (BACKEND / "pdns-auth.conf.j2").read_text(encoding="utf-8")
     variables = {
         "PDNS_AUTH_API": "yes",
-        "POWERDNS_API_KEY": "unit-test-value",
+        "POWERDNS_API_KEY": "api-only-test-value",
+        "POWERDNS_WEBSERVER_PASSWORD": "webserver-only-test-value",
         "PDNS_AUTH_WEBSERVER": "yes",
         "PDNS_AUTH_WEBSERVER_ADDRESS": "0.0.0.0",
         "PDNS_AUTH_WEBSERVER_PORT": "8081",
@@ -117,18 +118,19 @@ def test_powerdns_51_template_renders_api_and_gsqlite_options():
 
     for expected in (
         "api=yes",
-        "api-key=unit-test-value",
+        "api-key=api-only-test-value",
         "webserver=yes",
         "webserver-address=0.0.0.0",
         "webserver-port=8081",
         "webserver-allow-from=0.0.0.0/0,::/0",
-        "webserver-password=unit-test-value",
+        "webserver-password=webserver-only-test-value",
         "launch=gsqlite3",
         "gsqlite3-database=/var/lib/powerdns/pdns.sqlite3",
         "gsqlite3-dnssec=yes",
         "disable-axfr=yes",
     ):
         assert expected in rendered.splitlines()
+    assert "webserver-password=api-only-test-value" not in rendered.splitlines()
     assert "allow-axfr-ips=" not in rendered
 
 
@@ -137,9 +139,24 @@ def test_powerdns_compose_uses_the_image_template_entrypoint_for_config():
 
     assert "- TEMPLATE_FILES={{ backend_powerdns.api.template_name }}" in compose
     assert "- POWERDNS_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}" in compose
+    assert "- POWERDNS_WEBSERVER_PASSWORD=${POWERDNS_WEBSERVER_PASSWORD:?POWERDNS_WEBSERVER_PASSWORD must be set}" in compose
+    assert "- powerdns_webserver_password" in compose
     # startup.py (auth-5.1.5) opens templates.d/<TEMPLATE_FILES entry>.j2; a
     # `.conf.j2` mount target would leave that file missing and crash the start.
     assert "/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.j2:ro" in compose
+
+
+def test_powerdns_webserver_password_is_its_own_checkout_secret():
+    defaults = (BACKEND / "ciu.defaults.toml.j2").read_text(encoding="utf-8")
+
+    assert (
+        'powerdns_api_key = { directive = "GEN_LOCAL:naf/powerdns_api_key", '
+        'expose_env = "POWERDNS_API_KEY" }'
+    ) in defaults
+    assert (
+        'powerdns_webserver_password = { directive = "GEN_LOCAL:naf/powerdns_webserver_password", '
+        'expose_env = "POWERDNS_WEBSERVER_PASSWORD" }'
+    ) in defaults
     assert "{{ backend_powerdns.api.template_name }}.conf.j2" not in compose
     assert "- PDNS_AUTH_API_KEY=${POWERDNS_API_KEY" not in compose
     assert "PDNS_ALLOW_AXFR_IPS" not in compose

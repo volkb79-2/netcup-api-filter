@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from ui_tests.browser import Browser, ToolError, browser_session
+from ui_tests.browser import _maybe_emit_step_timing
 from ui_tests.config import UiTestConfig, settings
 from ui_tests.parallel_session_manager import ParallelSessionManager
 from ui_tests.playwright_client import PlaywrightClient
@@ -340,29 +341,33 @@ def test_role_storage_paths_are_isolated_and_anonymous_has_none(tmp_path):
     assert context_storage_state("anonymous", config.storage_state_path) is None
 
 
-def test_connection_defaults_match_short_recycle_window_and_bounded_retry_policy():
-    defaults = {
-        "E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS": "60",
-        "E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS": "15",
-        "E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS": "30",
-        "E2E_PWMCP_CONNECT_TIMEOUT_SECONDS": "30",
-        "E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS": "10",
-        "E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS": "10",
-        "E2E_PWMCP_RECYCLE_INTERVAL_SECONDS": "1500",
-        "E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS": "300",
-        "E2E_PWMCP_MAX_RECONNECTS": "3",
-    }
+def test_connection_defaults_match_short_recycle_window_and_bounded_retry_policy(monkeypatch):
+    defaults = (
+        "E2E_PWMCP_CONNECT_RETRY_TOTAL_SECONDS",
+        "E2E_PWMCP_CONNECT_RETRY_INITIAL_SECONDS",
+        "E2E_PWMCP_CONNECT_RETRY_MAX_SECONDS",
+        "E2E_PWMCP_CONNECT_TIMEOUT_SECONDS",
+        "E2E_PWMCP_CONTRACT_TIMEOUT_SECONDS",
+        "E2E_PWMCP_SIGNAL_CLEANUP_TIMEOUT_SECONDS",
+        "E2E_PWMCP_RECYCLE_INTERVAL_SECONDS",
+        "E2E_PWMCP_LEASE_RENEW_MARGIN_SECONDS",
+        "E2E_PWMCP_MAX_RECONNECTS",
+    )
+    for key in defaults:
+        monkeypatch.delenv(key, raising=False)
     options = load_connection_options(
         {"PLAYWRIGHT_SERVER_WS": "ws://pwmcp:3000/"},
-        default_lookup=defaults.__getitem__,
     )
 
     assert options.retry_total_seconds == 60
     assert options.retry_initial_seconds == 15
     assert options.retry_max_seconds == 30
+    assert options.connect_timeout_seconds == 30
+    assert options.contract_timeout_seconds == 10
     assert options.recycle_interval_seconds == 1500
     assert options.lease_renew_margin_seconds == 300
     assert options.signal_cleanup_timeout_seconds == 10
+    assert options.max_reconnects == 3
 
 
 def test_playwright_headless_uses_environment_or_declared_default(monkeypatch, caplog):
@@ -386,6 +391,59 @@ def test_playwright_headless_uses_environment_or_declared_default(monkeypatch, c
     assert UiTestConfig().playwright_headless is True
     assert PlaywrightClient().headless is True
     assert caplog.text == ""
+
+
+def test_all_headless_readers_reject_unknown_values(monkeypatch):
+    from netcup_api_filter import config_defaults
+
+    monkeypatch.setenv("PLAYWRIGHT_HEADLESS", "tru")
+    monkeypatch.setattr(config_defaults, "require_default", lambda key: "false")
+    with pytest.raises(ValueError, match="Unrecognised boolean value"):
+        UiTestConfig()
+    with pytest.raises(ValueError, match="Unrecognised boolean value"):
+        PlaywrightClient()
+
+    class FakeBrowserType:
+        async def launch(self, *, headless):
+            raise AssertionError(f"launch must not receive malformed setting {headless!r}")
+
+    class FakePlaywright:
+        chromium = FakeBrowserType()
+
+    session = SharedPwmcpSession(
+        _options(remote=False), contract=None, env={"PLAYWRIGHT_HEADLESS": "tru"}
+    )
+    session._playwright = FakePlaywright()
+    with pytest.raises(ValueError, match="Unrecognised boolean value"):
+        asyncio.run(session._launch_local())
+
+
+def test_step_timing_redacts_one_time_urls(monkeypatch, caplog):
+    monkeypatch.setenv("UI_STEP_TIMING", "1")
+    caplog.set_level("INFO", logger="ui_tests.browser")
+    secret_url = "https://app.example/account/reset-password/pathSecret?token=querySecret"
+
+    _maybe_emit_step_timing("goto", 0.01, {"url": secret_url})
+
+    assert "pathSecret" not in caplog.text
+    assert "querySecret" not in caplog.text
+    assert "<redacted>" in caplog.text
+
+
+async def test_browser_tool_error_redacts_and_suppresses_raw_playwright_message():
+    class FakePage:
+        async def click(self, _selector):
+            raise RuntimeError(
+                "failed https://app.example/account/reset-password/pathSecret?token=querySecret"
+            )
+
+    browser = Browser(FakePage())
+    with pytest.raises(ToolError) as caught:
+        await browser.click("button")
+
+    assert "pathSecret" not in str(caught.value)
+    assert "querySecret" not in str(caught.value)
+    assert caught.value.__suppress_context__ is True
 
 
 def test_connection_error_redacts_endpoint_credentials_and_secret_query_values():

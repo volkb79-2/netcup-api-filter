@@ -63,7 +63,7 @@ This verifies that Passenger can run Python code at all.
 
 3. **Edit .htaccess:**
    - Change `PassengerAppRoot /netcup-api-filter` to your actual full path
-   - Example: `PassengerAppRoot /www/htdocs/w0123456/hosting.vxxu.de/netcup-api-filter`
+   - Example: `PassengerAppRoot /www/htdocs/<webhoster-user>/hosting.example.com/netcup-api-filter`
 
 4. **Restart the application:**
    - Via SSH: `mkdir -p tmp && touch tmp/restart.txt`
@@ -115,13 +115,13 @@ Based on your description, you're seeing 404 errors. This means Passenger isn't 
 **The Solution:**
 - `.htaccess` MUST be in the domain's document root that Apache serves
 - On netcup, this is typically something like:
-  - `/www/htdocs/w0123456/hosting.vxxu.de/.htaccess`
+  - `/www/htdocs/<webhoster-user>/hosting.example.com/.htaccess`
 
 **Two Deployment Options:**
 
 #### Option A: Files in Document Root
 ```
-/www/htdocs/w0123456/hosting.vxxu.de/
+/www/htdocs/<webhoster-user>/hosting.example.com/
 ├── .htaccess               ← Here!
 ├── passenger_wsgi.py
 ├── vendor/
@@ -131,12 +131,12 @@ Based on your description, you're seeing 404 errors. This means Passenger isn't 
 
 In this case, `.htaccess` should have:
 ```apache
-PassengerAppRoot /www/htdocs/w0123456/hosting.vxxu.de
+PassengerAppRoot /www/htdocs/<webhoster-user>/hosting.example.com
 ```
 
 #### Option B: Files in Subdirectory (Recommended)
 ```
-/www/htdocs/w0123456/hosting.vxxu.de/
+/www/htdocs/<webhoster-user>/hosting.example.com/
 ├── .htaccess               ← Still in document root!
 └── netcup-api-filter/
     ├── passenger_wsgi.py
@@ -147,7 +147,7 @@ PassengerAppRoot /www/htdocs/w0123456/hosting.vxxu.de
 
 In this case, `.htaccess` should have:
 ```apache
-PassengerAppRoot /www/htdocs/w0123456/hosting.vxxu.de/netcup-api-filter
+PassengerAppRoot /www/htdocs/<webhoster-user>/hosting.example.com/netcup-api-filter
 ```
 
 ### Missing Python Binary Issue

@@ -79,7 +79,7 @@ Ensure the local TLS proxy uses dynamically detected FQDN and certificate paths 
 **Dynamic detection**: Populated by `./auto-detect-fqdn.sh` via:
 1. External IP query (ipify.org, icanhazip.com, etc.)
 2. Reverse DNS lookup on detected IP
-3. Result: `gstammtisch.dchive.de` (production) or `naf.localtest.me` (fallback)
+3. Result: `example.org` (production) or `naf.localtest.me` (fallback)
 
 **NO HARDCODED VALUES**: Always read from `proxy.env`, generated dynamically
 
@@ -142,18 +142,18 @@ All other variables (`LOCAL_TLS_BIND_HTTPS`, `LOCAL_PROXY_NETWORK`, etc.) are **
 cd /workspaces/netcup-api-filter/tooling/local_proxy
 ./auto-detect-fqdn.sh --verify-certs
 # Output:
-# ✓ Detected public IP: 152.53.179.117
-# ✓ Detected public FQDN: gstammtisch.dchive.de
+# ✓ Detected public IP: 203.0.113.117
+# ✓ Detected public FQDN: example.org
 # ✓ Certificates verified
 
 # 2. Render nginx config
 ./render-nginx-conf.sh
 # Output:
-# ✓ Rendered for gstammtisch.dchive.de -> netcup-api-filter-devcontainer:5100
+# ✓ Rendered for example.org -> netcup-api-filter-devcontainer:5100
 # ✓ nginx configuration rendered
 
 # 3. Verify no hardcoded values
-grep -E "(gstammtisch|localtest)" nginx.conf.template
+grep -E "(example|localtest)" nginx.conf.template
 # Output: (none - only template variables ${LOCAL_TLS_DOMAIN})
 
 grep -E "4443|443" docker-compose.yml
@@ -175,7 +175,7 @@ LE_CERT_BASE=/tmp/netcup-local-proxy/certs  # Fallback test certs
 ```bash
 ./auto-detect-fqdn.sh  # Regenerates proxy.env with detected values
 # Result:
-# LOCAL_TLS_DOMAIN=gstammtisch.dchive.de
+# LOCAL_TLS_DOMAIN=example.org
 # LE_CERT_BASE=/etc/letsencrypt
 # ... (all other values auto-populated)
 ```
@@ -253,7 +253,7 @@ openssl x509 -in /etc/letsencrypt/live/$FQDN/fullchain.pem -noout -dates
 
 ```bash
 # Support SAN certificates with multiple FQDNs
-LOCAL_TLS_DOMAIN="gstammtisch.dchive.de,naf.vxxu.de"
+LOCAL_TLS_DOMAIN="example.org,naf.example.com"
 # nginx server_name can handle multiple domains
 ```
 

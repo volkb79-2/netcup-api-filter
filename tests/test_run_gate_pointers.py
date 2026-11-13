@@ -45,11 +45,14 @@ def test_runner_variants_agree_across_cmru_ciu_run_gate_and_bake():
         assert env["image"].endswith(f"/test-runner:{name}"), env["image"]
 
 
-def test_e2e_lane_requires_the_pwmcp_endpoint_and_nothing_cockpit_specific():
+def test_e2e_lane_requires_its_services_and_emits_info_logs():
     """Review #8: without PLAYWRIGHT_SERVER_WS the runner (no browser engine) errors test by
     test; the per-session design needs no target URL or deployment selector from the cockpit."""
     lane = _toml("run-gate.toml")["lanes"]["e2e"]
-    assert lane["required_env"] == ["PLAYWRIGHT_SERVER_WS"]
+    assert lane["required_env"] == ["PLAYWRIGHT_SERVER_WS", "MAILPIT_URL"]
     env = _toml("run-gate.toml")["environments"][lane["environment"]]
-    assert "PLAYWRIGHT_SERVER_WS" in env["forward_env"]
+    assert {"PLAYWRIGHT_SERVER_WS", "MAILPIT_URL"} <= set(env["forward_env"])
     assert not {"UI_BASE_URL", "DEPLOYMENT_TARGET"} & set(env["forward_env"])
+    command = " ".join(lane["argv"])
+    assert "-o log_cli=true" in command
+    assert "-o log_cli_level=INFO" in command

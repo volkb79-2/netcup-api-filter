@@ -74,7 +74,7 @@ DEPLOYED_ADMIN_USERNAME=admin
 DEPLOYED_ADMIN_PASSWORD=<random-secure-token>
 
 # Webhosting configuration
-UI_BASE_URL=https://naf.vxxu.de
+UI_BASE_URL=https://naf.example.com
 FLASK_ENV=production
 ```
 
@@ -156,7 +156,7 @@ This automated script:
 
 ⚠️ **IMPORTANT**: Every fresh deployment requires password change!
 
-1. Visit https://naf.vxxu.de/admin/
+1. Visit https://naf.example.com/admin/
 2. Login with default credentials from `.env.defaults`:
    - Username: `admin`
    - Password: `admin`
@@ -239,9 +239,9 @@ URLs are derived from environment:
 - **Database**: `$REPO_ROOT/deploy-local/netcup_filter.db`
 
 ### Webhosting Deployment
-- **Public URL**: `https://naf.vxxu.de`
+- **Public URL**: `https://naf.example.com`
 - **Screenshots**: `$REPO_ROOT/deploy-webhosting/screenshots/`
-- **Remote FS**: Mounted via SSHFS at `/home/vscode/sshfs-hosting218629@...`
+- **Remote FS**: Mounted via SSHFS at `/home/vscode/sshfs-<webhoster-user>@...`
 
 ## Devcontainer Variables
 
@@ -269,7 +269,7 @@ UI_BASE_URL="http://${DEVCONTAINER_NAME}:5100"
 | Aspect | Local Deployment | Webhosting Deployment |
 |--------|------------------|----------------------|
 | **Environment File** | `.env.local` | `.env.webhosting` |
-| **Base URL** | `http://localhost:5100` | `https://naf.vxxu.de` |
+| **Base URL** | `http://localhost:5100` | `https://naf.example.com` |
 | **Deployment Dir** | `$REPO_ROOT/deploy-local/` | Remote: `/netcup-api-filter/` |
 | **Database** | `deploy-local/netcup_filter.db` | Remote: `/netcup-api-filter/netcup_filter.db` |
 | **Screenshots** | `deploy-local/screenshots/` | `deploy-webhosting/screenshots/` |
