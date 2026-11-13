@@ -1,6 +1,6 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-11-11 (deployed-e2e / modern-ciu migration section below; the rest of this file is older and kept as written).** Start here. This dashboard reflects the *current* state of
+**Last synced: 2026-11-13 (B093 PowerDNS series decision and implementation in progress; the rest of this file is older and kept as written).** Start here. This dashboard reflects the *current* state of
 netcup-api-filter; the direction spine lives in [1-north-star.md](1-north-star.md),
 [2-product-definition.md](2-product-definition.md), [3-roadmap.md](3-roadmap.md), and
 [4-backlog.md](4-backlog.md); decisions live in [decisions.md](decisions.md) (D-###), and
@@ -27,14 +27,15 @@ reviewed independently on the other, with gates through `run-gate`.
 | WP1 (B042) PowerDNS config hygiene | merged (`ed42b97`) | unit-py311 1050 passed; stale keys gone, drift tests |
 | WP2 (B043) proxy trust | merged (`51083e3`, plus fixes `177bd79`, `43216d0`) | `TRUSTED_PROXY_HOPS`, `PUBLIC_BASE_URL`, host-only cookies, ten raw XFF reads removed, default-deny static guard; unit-py311 1175, unit-py314 PASS on the branch head |
 | WP3/WP3b (B044/B054) webhoster probes | merged in vbpub (`scripts/test-webspace-forwarded-headers.php`, `scripts/test-webspace-passenger-forwarded-headers/`) | **operator action pending:** run both probes against the webhoster, then decide the tarball hop count (shipped default stays 1, unverified) |
-| WP8 (B050) cmru versions cover every image | merged (`c2d31a4`) | targets python 3.11.17 / 3.14.9, mailpit 1.33.0, powerdns 4.8.5; PowerDNS 4.8 is EOL upstream, 5.1 recommended (decision open) |
+| WP8 (B050) cmru versions cover every image | merged (`c2d31a4`) | series decision made 2026-11-13: move naf's backend to PowerDNS 5.1 (`pdns-auth-51`); B093 updates the target and stack, with record regeneration and final gates pending |
+| B093 PowerDNS 5.1 migration | implementation on `pdns51`; resolver/final gates pending | stack and zone bootstrap target 5.1.5; controller must regenerate cmru records; B095 tracks real-start verification |
 | ciu CIU-193/205/206 | merged in vbpub main, unreleased (ciu 7.25.0 planned by the vbpub controller) | worktree-safe `ciu down`, selection facts + selection record under `ciu up --dir`, `ASK_HOST` host-wide secret |
 | WP4b-1/WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | wait for ciu 7.25.0 (identity, deployment type, public stacks, credentials, `e2e-public`) |
 | Final gates | green | release-gate PASS on `43216d0` (unit py311/py314, R1 floors, R3 canaries), e2e PASS on `177bd79`, `cmru versions check naf` matches, pushed to origin (no tags) |
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058 in progress on `fixup3-form-contracts` | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
 
-Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, PowerDNS series decision.
+Open items for the operator: probes on the webhoster, `.env.live` credentials and delegation/A records for the public tier, provider firewall for port 53, and B095 PowerDNS real-start verification.
 
 ## Release & infra model (current)
 

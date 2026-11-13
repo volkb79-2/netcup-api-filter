@@ -23,6 +23,11 @@
 
 ### Changed
 
+- **PowerDNS backend targets Authoritative 5.1 (B093):** the managed image is
+  `powerdns/pdns-auth-51:5.1.5`; the startup config is rendered through the image's
+  `TEMPLATE_FILES` mechanism, and the zone bootstrap now uses the Authoritative HTTP
+  API with explicit SOA/API SOA-EDIT fields. The existing gsqlite3 schema was checked
+  against upstream 4.8.5 and 5.1.5 and requires no DDL change.
 - **Mailpit HTTP defaults are stack-owned (B091):** `mailpit.web_root` and
   `mailpit.max_message_size_mb` in `tooling/mailpit/ciu.defaults.toml.j2` render into
   Compose; the healthcheck and `.env.services` URL resolver use the configured

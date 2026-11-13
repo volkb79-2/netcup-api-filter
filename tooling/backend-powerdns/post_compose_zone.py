@@ -1,49 +1,65 @@
 #!/usr/bin/env python3
-"""tooling/backend-powerdns — post_compose hook (S9.1 / S9.4).
+"""Bootstrap the configured PowerDNS zone through the Authoritative HTTP API.
 
-Bootstraps the delegated DNS zone (D-007) inside PowerDNS after `docker
-compose up` brings the auth server online. The zone name is NOT invented
-here — it comes entirely from `[backend_powerdns].zone`, which
-ciu.defaults.toml.j2 flattens from the GLOBAL `{{ topology.dns.delegated_zone }}`
-fact (env-ref `NAF_DELEGATED_DNS_ZONE`, committed default empty). This hook is
-a pure no-op whenever that value is empty — it never guesses a zone or an SOA.
-See nyxloom-trove/decisions.md D-007.
+The zone name comes from ``backend_powerdns.zone``. Bootstrap is an idempotent
+no-op for an existing zone. New zones are created with explicit SOA content,
+an apex nameserver, DNSSEC disabled, and the configured SOA-EDIT-API mode.
 
-Talks to PowerDNS via `pdnsutil` INSIDE the container (docker exec), not the
-HTTP API: the admin API port is intentionally NOT published to the host (see
-ciu.compose.yml.j2's header) — it's reachable only via the project network or
-traefik's ingress network, neither of which this hook (running as the ciu
-host process) is attached to. `pdnsutil` talks straight to the gsqlite3
-backend, so no network hop is needed.
-
-Idempotent: if the zone already exists, this is a full no-op — nothing is
-touched, including the SOA — so reruns can never regress an existing zone's
-serial or content. SOA/NS content is set ONLY at first creation, derived
-from the zone itself:
-    NS:   <zone>.  IN  NS  ns1.<zone>.        (via `pdnsutil create-zone ZONE NSNAME`)
-    SOA:  ns1.<zone>. hostmaster.<zone>. <serial> 10800 3600 604800 3600
-
-This mirrors the old setup-zones.sh convention, minus any hardcoded
-vxxu.de/ns1 default — those were exactly the invented values the previous
-ciu-powerdns conversion attempt was rejected for.
-
-VALIDATED 2026-07-21 against a live pdns-auth-48: create-zone + replace-rrset @ SOA
-CLI docs, not yet exercised against a running PowerDNS container (see the
-report from the conversion that added this file).
-
-Returns {} (pure side-effect hook — no config values to persist).
+The hook runs on the host, outside the service network. It invokes Python
+inside the PowerDNS container to call the loopback HTTP API, using the
+container's ``POWERDNS_API_KEY`` environment value without placing the key in
+the docker command line or logs.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ciu_identity import container_for
+
+
+logger = logging.getLogger(__name__)
+
+_API_REQUEST_SCRIPT = r"""
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+base_url, port, method, path, timeout, payload_json = sys.argv[1:]
+api_key = os.environ.get("POWERDNS_API_KEY")
+if not api_key:
+    raise SystemExit("POWERDNS_API_KEY is unavailable in the PowerDNS container")
+
+payload = payload_json.encode("utf-8") if payload_json else None
+headers = {"Accept": "application/json", "X-API-Key": api_key}
+if payload is not None:
+    headers["Content-Type"] = "application/json"
+request = urllib.request.Request(
+    f"{base_url.rstrip('/')}:{port}{path}",
+    data=payload,
+    headers=headers,
+    method=method,
+)
+try:
+    with urllib.request.urlopen(request, timeout=float(timeout)) as response:
+        body = response.read().decode("utf-8", errors="replace")
+        status = response.status
+except urllib.error.HTTPError as response:
+    body = response.read().decode("utf-8", errors="replace")
+    status = response.code
+print(json.dumps({"status": status, "body": body}))
+"""
 
 
 def _require(value: Any, label: str) -> Any:
@@ -52,28 +68,174 @@ def _require(value: Any, label: str) -> Any:
     return value
 
 
-def _docker_exec(container: str, *args: str, timeout: int = 30) -> subprocess.CompletedProcess:
+def _zone_fqdn(zone: str) -> str:
+    normalized = zone.strip().rstrip(".")
+    if not normalized:
+        raise ValueError("[backend-powerdns post hook] Zone name is empty")
+    return f"{normalized}."
+
+
+def build_zone_collection_path(server_id: str, zone: str) -> str:
+    """Build the filtered zone-list endpoint used for idempotency checks."""
+    server = quote(server_id, safe="")
+    query = urlencode({"zone": _zone_fqdn(zone)})
+    return f"/api/v1/servers/{server}/zones?{query}"
+
+
+def build_zone_payload(zone: str, serial: str, settings: dict[str, Any]) -> dict[str, Any]:
+    """Build one complete create request with zone-derived NS and SOA records."""
+    zone_name = _zone_fqdn(zone)
+    nameserver = f"ns1.{zone_name}"
+    hostmaster = f"hostmaster.{zone_name}"
+    soa_content = " ".join(
+        (
+            nameserver,
+            hostmaster,
+            serial,
+            str(_require(settings.get("soa_refresh"), "backend_powerdns.zone_bootstrap.soa_refresh")),
+            str(_require(settings.get("soa_retry"), "backend_powerdns.zone_bootstrap.soa_retry")),
+            str(_require(settings.get("soa_expire"), "backend_powerdns.zone_bootstrap.soa_expire")),
+            str(_require(settings.get("soa_minimum_ttl"), "backend_powerdns.zone_bootstrap.soa_minimum_ttl")),
+        )
+    )
+    return {
+        "name": zone_name,
+        "kind": "Native",
+        "masters": [],
+        "nameservers": [nameserver],
+        "dnssec": False,
+        "api_rectify": False,
+        "soa_edit_api": _require(
+            settings.get("soa_edit_api"), "backend_powerdns.zone_bootstrap.soa_edit_api"
+        ),
+        "rrsets": [
+            {
+                "name": zone_name,
+                "type": "SOA",
+                "ttl": int(_require(settings.get("soa_ttl"), "backend_powerdns.zone_bootstrap.soa_ttl")),
+                "changetype": "REPLACE",
+                "records": [{"content": soa_content, "disabled": False}],
+            }
+        ],
+    }
+
+
+def _docker_exec(container: str, *args: str, timeout: float) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "exec", container, *args],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
     )
 
 
-def _zone_exists(container: str, zone: str) -> bool:
-    """True iff `pdnsutil list-zone <zone>` succeeds.
+def _api_request(
+    container: str,
+    backend_cfg: dict[str, Any],
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    api_cfg = backend_cfg.get("api", {})
+    ports = backend_cfg.get("ports", {})
+    request_timeout = float(
+        _require(api_cfg.get("request_timeout_seconds"), "backend_powerdns.api.request_timeout_seconds")
+    )
+    exec_timeout = float(
+        _require(api_cfg.get("docker_exec_timeout_seconds"), "backend_powerdns.api.docker_exec_timeout_seconds")
+    )
+    payload_json = json.dumps(payload, separators=(",", ":")) if payload is not None else ""
+    result = _docker_exec(
+        container,
+        "python3",
+        "-c",
+        _API_REQUEST_SCRIPT,
+        str(_require(api_cfg.get("base_url"), "backend_powerdns.api.base_url")),
+        str(_require(ports.get("api"), "backend_powerdns.ports.api")),
+        method,
+        path,
+        str(request_timeout),
+        payload_json,
+        timeout=exec_timeout,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+        raise RuntimeError(f"[backend-powerdns post hook] PowerDNS API transport failed: {detail}")
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "[backend-powerdns post hook] PowerDNS API helper returned invalid JSON"
+        ) from exc
+    if not isinstance(response, dict) or "status" not in response or "body" not in response:
+        raise RuntimeError("[backend-powerdns post hook] PowerDNS API helper returned an invalid response")
+    return response
 
-    pdnsutil exits 0 and prints the zone's records if it exists; non-zero
-    ("Zone '<zone>' not found") if not.
-    """
-    result = _docker_exec(container, "pdnsutil", "list-zone", zone)
-    return result.returncode == 0
+
+def _response_error(response: dict[str, Any]) -> str:
+    return f"HTTP {response['status']}: {response['body']}"
+
+
+def _zone_exists(container: str, backend_cfg: dict[str, Any], zone: str) -> bool:
+    api_cfg = backend_cfg.get("api", {})
+    server_id = str(_require(api_cfg.get("server_id"), "backend_powerdns.api.server_id"))
+    response = _api_request(
+        container,
+        backend_cfg,
+        "GET",
+        build_zone_collection_path(server_id, zone),
+    )
+    if response["status"] != 200:
+        raise RuntimeError(
+            f"[backend-powerdns post hook] PowerDNS zone lookup failed: {_response_error(response)}"
+        )
+    try:
+        zones = json.loads(response["body"])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("[backend-powerdns post hook] PowerDNS zone lookup returned invalid JSON") from exc
+    if not isinstance(zones, list):
+        raise RuntimeError("[backend-powerdns post hook] PowerDNS zone lookup did not return a list")
+    expected_name = _zone_fqdn(zone)
+    return any(isinstance(item, dict) and item.get("name") == expected_name for item in zones)
+
+
+def _wait_until_healthy(container: str, service_name: str, api_cfg: dict[str, Any], ctx) -> None:
+    readiness_timeout = float(
+        _require(api_cfg.get("readiness_timeout_seconds"), "backend_powerdns.api.readiness_timeout_seconds")
+    )
+    if ctx.wait_healthy is not None:
+        if not ctx.wait_healthy(service_name, timeout_s=readiness_timeout):
+            raise RuntimeError(
+                f"[backend-powerdns post hook] {container} did not become healthy; inspect its container logs"
+            )
+        return
+
+    probe_timeout = float(
+        _require(
+            api_cfg.get("readiness_probe_timeout_seconds"),
+            "backend_powerdns.api.readiness_probe_timeout_seconds",
+        )
+    )
+    poll_interval = float(
+        _require(api_cfg.get("readiness_poll_seconds"), "backend_powerdns.api.readiness_poll_seconds")
+    )
+    deadline = time.monotonic() + readiness_timeout
+    while True:
+        result = _docker_exec(container, "pdns_control", "version", timeout=probe_timeout)
+        if result.returncode == 0:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval, remaining))
+    raise RuntimeError(
+        f"[backend-powerdns post hook] {container} did not become healthy; inspect its container logs"
+    )
 
 
 def run(config: dict, ctx) -> dict:
-    """Post-compose hook: bootstrap the delegated zone (D-007).
-
-    Pure side-effect; returns {}.
-    """
+    """Bootstrap the delegated DNS zone (D-007) through the HTTP API."""
     backend_cfg = config.get("backend_powerdns", {})
     if not backend_cfg:
         raise ValueError(
@@ -82,79 +244,56 @@ def run(config: dict, ctx) -> dict:
 
     zone = (backend_cfg.get("zone") or "").strip().rstrip(".")
     if not zone:
-        print(
-            "[INFO] topology.dns.delegated_zone is empty (NAF_DELEGATED_DNS_ZONE "
-            "not set) — skipping zone bootstrap. This is the expected no-op "
-            "state until an operator delegates a real zone.",
-            flush=True,
+        logger.info(
+            "topology.dns.delegated_zone is empty; skipping PowerDNS zone bootstrap"
         )
         return {}
 
-    service_name = _require(backend_cfg.get("name"), "backend_powerdns.name")
+    service_name = str(_require(backend_cfg.get("name"), "backend_powerdns.name"))
     container = container_for(ctx, "tooling/backend-powerdns", service_name)
+    api_cfg = backend_cfg.get("api", {})
+    zone_cfg = backend_cfg.get("zone_bootstrap", {})
+    server_id = str(_require(api_cfg.get("server_id"), "backend_powerdns.api.server_id"))
+    logger.info("bootstrapping PowerDNS zone %s in %s", zone, container)
 
-    print(f"[INFO] Bootstrapping PowerDNS zone '{zone}' in {container}", flush=True)
-
-    # Wait for the auth server's own healthcheck (pdns_control version) before
-    # touching pdnsutil — post_compose runs right after `docker compose up -d`,
-    # which races the daemon's startup (S9.3/CIU-4 readiness probe).
-    if ctx.wait_healthy is not None:
-        if not ctx.wait_healthy(service_name, timeout_s=90.0):
-            raise RuntimeError(
-                f"[backend-powerdns post hook] {container} did not become "
-                f"healthy within 90s — see `docker logs {container}`"
-            )
-    else:
-        # Bare/unit construction (HookContext docstring) — fall back to a
-        # short manual poll so the hook still works outside the engine.
-        for _ in range(30):
-            check = _docker_exec(container, "pdns_control", "version", timeout=5)
-            if check.returncode == 0:
-                break
-            time.sleep(2)
-
-    if _zone_exists(container, zone):
-        print(f"[INFO] Zone '{zone}' already exists — no-op (SOA left untouched)", flush=True)
+    _wait_until_healthy(container, service_name, api_cfg, ctx)
+    if _zone_exists(container, backend_cfg, zone):
+        logger.info("PowerDNS zone %s already exists; leaving it untouched", zone)
         return {}
 
-    ns_fqdn = f"ns1.{zone}"
-    hostmaster = f"hostmaster.{zone}"
-
-    # `create-zone ZONE NSNAME` creates the zone AND an apex NS record for
-    # NSNAME in one step (pdnsutil docs).
-    create = _docker_exec(container, "pdnsutil", "create-zone", zone, ns_fqdn, timeout=30)
-    if create.returncode != 0:
-        # Race: something else created it between our check and this call.
-        # Treat "already exists" as success; anything else is a real failure.
-        if "already exists" in (create.stdout + create.stderr).lower():
-            print(f"[INFO] Zone '{zone}' created concurrently — no-op", flush=True)
+    serial_format = str(
+        _require(zone_cfg.get("serial_format"), "backend_powerdns.zone_bootstrap.serial_format")
+    )
+    serial = datetime.now(timezone.utc).strftime(serial_format)
+    if not serial.isdigit():
+        raise ValueError("[backend-powerdns post hook] configured SOA serial format must produce digits")
+    payload = build_zone_payload(zone, serial, zone_cfg)
+    response = _api_request(
+        container,
+        backend_cfg,
+        "POST",
+        f"/api/v1/servers/{quote(server_id, safe='')}/zones",
+        payload,
+    )
+    if response["status"] not in {200, 201}:
+        # A concurrent bootstrap may create the zone after our lookup. Treat
+        # that race as success only after the API confirms the zone exists.
+        if _zone_exists(container, backend_cfg, zone):
+            logger.info("PowerDNS zone %s was created concurrently", zone)
             return {}
         raise RuntimeError(
-            f"[backend-powerdns post hook] pdnsutil create-zone {zone} failed: "
-            f"{create.stderr.strip() or create.stdout.strip()}"
+            f"[backend-powerdns post hook] PowerDNS zone creation failed: {_response_error(response)}"
         )
-    print(f"[INFO] Zone '{zone}' created (apex NS -> {ns_fqdn}.)", flush=True)
 
-    # Explicit SOA content, derived from the zone (D-007) — replaces the pdns
-    # image's built-in "a.misconfigured.dns.server.invalid" placeholder SOA
-    # that create-zone leaves behind by default. Only done at first creation
-    # (see the no-op branch above) so reruns never touch the serial.
-    serial = time.strftime("%Y%m%d00")
-    soa_content = f"{ns_fqdn}. {hostmaster}. {serial} 10800 3600 604800 3600"
-    soa = _docker_exec(
-        container, "pdnsutil", "replace-rrset", zone, "@", "SOA", "3600", soa_content, timeout=30,
+    logger.info(
+        "PowerDNS zone %s created with apex NS %s and explicit SOA serial %s",
+        _zone_fqdn(zone),
+        payload["nameservers"][0],
+        serial,
     )
-    if soa.returncode != 0:
-        raise RuntimeError(
-            f"[backend-powerdns post hook] pdnsutil replace-rrset SOA for {zone} failed: "
-            f"{soa.stderr.strip() or soa.stdout.strip()}"
-        )
-    print(f"[INFO] SOA set: {soa_content}", flush=True)
-
-    print(f"[INFO] Zone '{zone}' bootstrap complete", flush=True)
     return {}
 
 
 if __name__ == "__main__":
-    print("[ERROR] This hook is intended to be run by CIU.", file=sys.stderr)
+    logger.error("This hook is intended to be run by CIU.")
     raise SystemExit(1)

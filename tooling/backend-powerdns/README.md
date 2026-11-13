@@ -12,7 +12,8 @@ The stack has two services:
   SQLite data directory and loads `schema.sqlite3.sql` when the database does not
   exist (the upstream image already carries `sqlite3`, so no floating Alpine image
   is needed);
-- `powerdns/pdns-auth-48`, running after initialization with the gsqlite3 backend.
+- `powerdns/pdns-auth-51:5.1.5`, running after initialization with the gsqlite3
+  backend. The stack declaration constrains the managed image target to 5.1.x.
 
 Publish and exposure are deliberately different:
 
@@ -32,17 +33,22 @@ The delegated zone is not configured in this directory. It is the global
 `[topology.dns].delegated_zone` fact from `ciu.global.defaults.toml.j2`, sourced from the
 operator environment as `NAF_DELEGATED_DNS_ZONE`. The committed default is empty.
 
-On `ciu up`, `post_compose_zone.py` creates that zone when the value is non-empty. The
-first creation derives all zone-specific records from the zone itself:
+On `ciu up`, `post_compose_zone.py` checks for that zone through the Authoritative HTTP
+API and creates it when the value is non-empty. The image startup wrapper renders the
+mounted `pdns-auth.conf.j2` from `TEMPLATE_FILES`; it uses the checkout-local API key
+from `POWERDNS_API_KEY`, while the built-in `_api.conf` generation variable is unset.
+The first creation derives all zone-specific records from the zone itself:
 
 ```text
 NS   <zone>.          ns1.<zone>.
 SOA  ns1.<zone>.      hostmaster.<zone>. <serial> 10800 3600 604800 3600
 ```
 
-The hook is idempotent: an existing zone is left untouched, including its SOA serial.
-An empty `NAF_DELEGATED_DNS_ZONE` is a no-op. No committed default guesses a zone,
-nameserver, or SOA.
+The API request explicitly sets the SOA record, API SOA-EDIT mode, and DNSSEC-disabled
+zone state. An existing zone is left untouched, including its SOA serial. An empty
+`NAF_DELEGATED_DNS_ZONE` is a no-op. No committed default guesses a zone, nameserver,
+or SOA. PowerDNS 5.1 normalizes API record data on write, so a later readback may use a
+different textual representation.
 
 ## Start the stack
 
@@ -138,9 +144,10 @@ To remove the record, PATCH the same endpoint with `"changetype": "DELETE"` and 
 The stack keeps non-secret daemon configuration in `[backend_powerdns]`:
 
 - `ports.dns = 53` and `ports.api = 8081`;
-- image and image tag;
+- `powerdns/pdns-auth-51:5.1.5` (managed under the 5.1.x cmru constraint);
 - data-directory UID;
-- `PDNS_AUTH_*`, `PDNS_LAUNCH`, logging, and AXFR settings;
+- the mounted auth config template, `PDNS_AUTH_*`, `PDNS_LAUNCH`, gsqlite3 DNSSEC,
+  logging, and AXFR settings;
 - health-check timing and external-route toggle.
 
 Only `POWERDNS_API_KEY` is secret. The delegated zone and public FQDN are global
@@ -181,6 +188,9 @@ docker logs <project-environment-powerdns>
 Common causes are an unmaterialized ciu secret, port 53 already occupied, or incorrect
 permissions on the bind-mounted data directory. Port 53 must remain 53 for real
 delegation; do not move it to an arbitrary host port.
+
+Do not enable `DEBUG_CONFIG=yes` on a real stack: the image startup wrapper can print
+rendered configuration, including the API key.
 
 If the API is unreachable, verify the URL selected by `.env.services`, the network shared
 by the app and PowerDNS stacks, and the guard credentials used for the public route.

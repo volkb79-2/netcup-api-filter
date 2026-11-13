@@ -103,12 +103,14 @@ released_at = "2026-10-31T02:30:23Z"
 age_source = "oci-image-created-fallback"
 tag = "v1.33.0"
 
+# B093 partial migration: the target and consumers move first; the controller
+# must regenerate this target's machine-written resolved record and snapshots.
 [versions.targets."oci.powerdns-auth"]
 mode = "single"
-constraint = ">=4.8.0,<4.9.0"
+constraint = ">=5.1.0,<5.2.0"
 
 [versions.targets."oci.powerdns-auth".oci]
-image = "docker.io/powerdns/pdns-auth-48"
+image = "docker.io/powerdns/pdns-auth-51"
 tag = "{version}"
 username_env = "DOCKERHUB_USERNAME"
 password_env = "DOCKERHUB_TOKEN"

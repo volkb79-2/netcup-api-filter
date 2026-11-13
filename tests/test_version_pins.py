@@ -48,8 +48,8 @@ EXPECTED_TARGETS = {
         "tag": "v{version}",
     },
     "oci.powerdns-auth": {
-        "constraint": ">=4.8.0,<4.9.0",
-        "image": "docker.io/powerdns/pdns-auth-48",
+        "constraint": ">=5.1.0,<5.2.0",
+        "image": "docker.io/powerdns/pdns-auth-51",
         "tag": "{version}",
     },
     "oci.python311": {

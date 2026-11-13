@@ -1,3 +1,7 @@
+-- Byte-identical to the official PowerDNS Auth gsqlite3 schema at auth-4.8.5
+-- and auth-5.1.5. Local history does not identify which tag supplied the copy.
+-- Sources: https://raw.githubusercontent.com/PowerDNS/pdns/auth-4.8.5/modules/gsqlite3backend/schema.sqlite3.sql
+--          https://raw.githubusercontent.com/PowerDNS/pdns/auth-5.1.5/modules/gsqlite3backend/schema.sqlite3.sql
 PRAGMA foreign_keys = 1;
 
 CREATE TABLE domains (

@@ -38,7 +38,7 @@
 services:
   {{ backend_powerdns.name }}-init:
     image: {{ backend_powerdns.image }}:{{ backend_powerdns.image_tag }}
-    # Always re-pull so a moving tag (:latest / :3.11-slim) never gets stuck stale.
+    # This versioned release tag is pulled when it is not already available.
     pull_policy: missing
     # The official image runs as pdns by default and has a startup.py entrypoint.
     # This one-shot needs root only to prepare/chown the bind mount, and it needs a
@@ -89,7 +89,7 @@ services:
 
   {{ backend_powerdns.name }}:
     image: {{ backend_powerdns.image }}:{{ backend_powerdns.image_tag }}
-    # Always re-pull so a moving tag (:latest / :3.11-slim) never gets stuck stale.
+    # This versioned release tag is pulled when it is not already available.
     pull_policy: missing
     container_name: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}
     hostname: {{ deploy.project_name }}-{{ deploy.environment_tag }}-{{ backend_powerdns.name }}
@@ -100,9 +100,12 @@ services:
         condition: service_completed_successfully
 
     environment:
-      # API configuration — POWERDNS_API_KEY is the only required secret;
-      # everything else here is static daemon config ([backend_powerdns.pdns]).
-      - PDNS_AUTH_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}
+      # The image auto-generates API config only for PDNS_AUTH_API_KEY. This
+      # stack uses its documented TEMPLATE_FILES mechanism so every daemon
+      # option below is rendered once into the config directory from the
+      # mounted config template.
+      - POWERDNS_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}
+      - TEMPLATE_FILES={{ backend_powerdns.api.template_name }}
       - PDNS_AUTH_API={{ backend_powerdns.pdns.auth_api }}
       - PDNS_AUTH_WEBSERVER={{ backend_powerdns.pdns.webserver }}
       - PDNS_AUTH_WEBSERVER_ADDRESS={{ backend_powerdns.pdns.webserver_address }}
@@ -112,6 +115,7 @@ services:
       # Database backend
       - PDNS_LAUNCH={{ backend_powerdns.pdns.launch }}
       - PDNS_GSQLITE3_DATABASE={{ backend_powerdns.pdns.gsqlite3_database }}
+      - PDNS_GSQLITE3_DNSSEC={{ backend_powerdns.pdns.gsqlite3_dnssec }}
 
       # Logging
       - PDNS_LOGLEVEL={{ backend_powerdns.pdns.loglevel }}
@@ -136,6 +140,9 @@ services:
     volumes:
       # Persistent database storage (prepared by init container)
       - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/data:/var/lib/powerdns
+      # PowerDNS startup renders this template into pdns.d using the
+      # environment above (including the checkout-local API key).
+      - ${PHYSICAL_REPO_ROOT:?PHYSICAL_REPO_ROOT must be set}/tooling/backend-powerdns/pdns-auth.conf.j2:/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.conf.j2:ro
 
     # Run as pdns user (UID {{ backend_powerdns.uid }}) with docker group (GID from host)
     # This allows PowerDNS to access the database owned by {{ backend_powerdns.uid }}:docker

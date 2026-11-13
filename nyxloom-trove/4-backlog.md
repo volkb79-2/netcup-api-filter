@@ -51,7 +51,7 @@ items:
   - {id: B047, title: "Public stacks: OCI release-image frontends, public-dns role, realm-label reaper", type: feature, component: infra, context_estimate: large, folds_into: F028}
   - {id: B048, title: "Credentials: ASK_EXTERNAL secrets and .env.live skeleton, delivered as files", type: feature, component: infra, context_estimate: medium, folds_into: F028}
   - {id: B049, title: "Deployment-contract suite and on-demand e2e-public lane with probing preflight", type: feature, component: tests, context_estimate: large, folds_into: F028}
-  - {id: B050, title: "cmru versions: cover every stack image, check in the release gate, pdns series decision", type: feature, component: release, context_estimate: medium, folds_into: F028}
+  - {id: B050, title: "cmru versions: cover every stack image, check in the release gate, select PowerDNS 5.1 series", type: feature, component: release, context_estimate: medium, folds_into: F028}
   - {id: B051, title: "OCI release image boot smoke", type: feature, component: tests, context_estimate: medium, folds_into: F028}
   - {id: B052, title: "Docs and closeout of the deployed tier", type: feature, component: docs, context_estimate: small, folds_into: F028}
   - {id: B053, title: "Deployment type as a per-checkout fact with a change guard", type: feature, component: infra, context_estimate: medium, folds_into: F028}
@@ -90,6 +90,7 @@ items:
   - {id: B092, title: "PROXY-CALIBRATE: measure the proxy chain after extract and set trusted hops (Passenger default 0 first)", type: feature, component: deploy, context_estimate: medium}
   - {id: B093, title: "Switch the PowerDNS backend to the 5.1 series (pdns-auth-51) via cmru versions", type: feature, component: infra, context_estimate: medium}
   - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
+  - {id: B095, title: "Verify PowerDNS 5.1.5 on a real start: logs, version API, zone and record round trip, health", type: feature, component: infra, context_estimate: small}
 ---
 
 # Backlog
@@ -247,7 +248,7 @@ remains the status dashboard; completed B-AUTH work is intentionally not re-open
 - Cgroup placement: `ciu.compose` runners rely on the ciu governance overlay; verify `$CGROUP_PARENT_DEV_GATES` for exec runners after first `ciu up`.
 - Add a run-gate docs-example test and a freshness check of the assay pin against the latest release.
 - Ruff: `ruff check src` clean at py311 as of 2026-11-05 (commit 5288060); keep it that way.
-- **cmru versions (2026-11-05):** `[versions]` now declares mailpit, powerdns (pdns-auth-48) and the python 3.11/3.14 slim-trixie bases (14-day age window), but `cmru versions resolve naf` has not completed: Docker Hub answered HTTP 429 (anonymous pull limit shared by this host). Retry after the window (or with Docker Hub credentials via `username_env`/`password_env`), commit `versions/oci-images.json`, then pin `tooling/mailpit` and `tooling/backend-powerdns` `image_tag` from it (they are still `latest`) and add a test that the pins equal the record.
+- **cmru versions (2026-11-05 through 2026-11-11):** the first registry resolution hit HTTP 429; WP8 later recorded the stack/build image pins and added the pin-drift test. At that point the PowerDNS target still used `pdns-auth-48`; B093 now moves the target to the chosen 5.1 series.
 - **cmru release is gated on the push:** `cmru release --dry-run` validates the new config and stops at "local main is N commits ahead of origin/main". The `run-tests` step runs `run-gate release-gate --worktree .` which needs a runner named from the judged tree's `ciu.global.toml` (gitignored): inside cmru's isolated release clone that file is absent, so the step must be reworked (declared runner `container_name` is wrong per RG-165 text; consider cmru `tester-gate` or running `run-gate` against the main checkout) before the first real `cmru release`.
 - Defaults-as-hazards: `ui_tests/mailpit_client.py:468` falls back to SMTP port `1025` when `MAILPIT_SMTP_PORT` is unset.
 - Mocks no longer publish host ports (tests reach them by name); restart the mock stacks to apply, and drop the now-unused `*_PORT` keys from `tooling/*/.env` when convenient.
@@ -297,7 +298,7 @@ Opus review); decisions D-008..D-013.
   the edge, https links, guard, app-to-PowerDNS wire, live mail/netcup/DNS), `endpoints.json` manifest, lane preflight with real
   read-only login probes, certificate SAN wait, failure classes, secret scrubbing, per-instance guard credential.
 - **B050 — cmru versions coverage.** Every stack image a target, floating tags gone, `cmru versions check` in the release gate,
-  the pdns series/EOL decision (`<4.9.0` can never advance), alpine init removed or pinned.
+  and the PowerDNS series decision. **Decision made 2026-11-13:** use the 5.1 series (`pdns-auth-51`); B093 updates the target and stack.
 - **B051 — OCI boot smoke.** Build the release image, boot with/without `NAF_BOOTSTRAP_ADMIN_*`, non-root `/data` and `/config`.
 - **B052 — Closeout.** Docs, STATE, release-gate + e2e on the final HEAD, R2 evidence, push.
 - **B053 — Deployment type guard.** Per-checkout fact (`[topology.deployment] type`, `service_profiles`), pre-compose guard that
@@ -514,11 +515,12 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   report only; admins can re-run or override in settings. Verify with `/api/myip` plain and forged after the first
   deploy.
 
-- **B093 — PowerDNS 5.1 series. Status: open**
-  Operator decision 2026-11-13: use PowerDNS 5.1 (pdns-auth-51). 5.1.5 was released 2026-10-21. Change the cmru
-  target, `versions/oci-images*.json`, `tooling/backend-powerdns` (image, image_tag, config keys that changed between
-  4.8 and 5.x, UID 953), `post_compose_zone.py`, the version-pin test and docs; confirm the image repository name
-  with `cmru versions resolve` (at most once per hour, Docker Hub rate limit) and that the pdns drift test still holds.
+- **B093 — PowerDNS 5.1 series. Status: implementation committed; record regeneration and final gates pending**
+  Operator decision 2026-11-13: use PowerDNS 5.1 (`pdns-auth-51`), with 5.1.5 selected. The cmru target and stack
+  declarations move to the new series; the controller owns the generated resolution records. The stack renders
+  configuration using the image's `TEMPLATE_FILES` mechanism and creates zones through the HTTP API with explicit
+  SOA content and per-zone `soa_edit_api`. The gsqlite3 schema is byte-identical to upstream auth-4.8.5 and auth-5.1.5.
+  `UNVERIFIED`: a real 5.1.5 start must confirm rendered config acceptance, API zone creation/readback, and health; see B095.
 
 - **B094 — Fail fast on missing CIU inputs in local stacks. Status: open (Low)**
   `tooling/app-local/ciu.compose.yml.j2:27,57` interpolates `CONTAINER_UID`, `DOCKER_GID` and
@@ -527,3 +529,11 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   `user: ":"`). Host-path handling is inconsistent: app-local uses a bare `PHYSICAL_REPO_ROOT`, Netcup mock and
   PowerDNS require it, and GeoIP mock falls back to its configured workspace path. Make the identity and host-path
   inputs fail fast consistently, retaining a configured fallback only where explicitly intended.
+
+- **B095 — PowerDNS 5.1.5 real-start verification. Status: open**
+  On the controller's real start, inspect container logs for config parse/backend/API startup errors and absence of
+  fatal messages; call `GET /api/v1/servers/localhost` and verify `version` reports 5.1.5; create a disposable zone
+  in the `.invalid` test namespace through `POST /api/v1/servers/localhost/zones`, read it back and verify its SOA,
+  NS, serial, `soa_edit_api`, and a record round trip through `PATCH`/`GET`; confirm the `pdns_control version`
+  healthcheck is healthy. **UNVERIFIED:** the 5.1.5 image's acceptance of the per-zone `soa_edit_api` field and
+  exact readback normalization must be confirmed on that start.

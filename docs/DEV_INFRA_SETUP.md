@@ -98,6 +98,12 @@ Two independent things resolve to this host — set both.
 
 ### 3a. Delegate the PowerDNS zone (`NAF_DELEGATED_DNS_ZONE`)
 
+The local backend image is PowerDNS Authoritative 5.1.5 (`pdns-auth-51`) with the
+gsqlite3 backend. Its image startup wrapper renders the stack-owned daemon settings;
+the post-compose hook creates a new configured zone through the HTTP API with an
+explicit SOA record and DNSSEC disabled. The existing healthcheck remains
+`pdns_control version`.
+
 PowerDNS on this host is **authoritative** for the operator-supplied
 `NAF_DELEGATED_DNS_ZONE`. For the internet to reach it, the parent zone must
 delegate that subzone here. DNS queries hit **port 53 directly — NOT traefik**
