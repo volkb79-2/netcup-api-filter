@@ -515,9 +515,9 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   report only; admins can re-run or override in settings. Verify with `/api/myip` plain and forged after the first
   deploy.
 
-- **B093 — PowerDNS 5.1 series. Status: implementation committed; record regeneration and final gates pending**
+- **B093 — PowerDNS 5.1 series. Status: implementation committed; records regenerated; final gates pending**
   Operator decision 2026-11-13: use PowerDNS 5.1 (`pdns-auth-51`), with 5.1.5 selected. The cmru target and stack
-  declarations move to the new series; the controller owns the generated resolution records. The stack renders
+  declarations move to the new series; the controller recorded the resolution in commit `9847b7b`. The stack renders
   configuration using the image's `TEMPLATE_FILES` mechanism and creates zones through the HTTP API with explicit
   SOA content and per-zone `soa_edit_api`. The gsqlite3 schema is byte-identical to upstream auth-4.8.5 and auth-5.1.5.
   `UNVERIFIED`: a real 5.1.5 start must confirm rendered config acceptance, API zone creation/readback, and health; see B095.
