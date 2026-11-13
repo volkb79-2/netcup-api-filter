@@ -74,3 +74,21 @@ def test_mailpit_resolver_uses_the_configured_webroot(tmp_path, monkeypatch):
     assert values["MAILPIT_API_URL"] == (
         "http://naf-test-mailpit:8765/configured-root/api/v1"
     )
+
+
+def test_mailpit_resolver_error_includes_original_failure(tmp_path, monkeypatch):
+    """Reverting tooling/ciu_resolve_env.py to 7cad692 hides this exact cause."""
+    resolver = _load_resolver()
+    defaults_path = tmp_path / "ciu.defaults.toml.j2"
+    defaults_path.write_text('[mailpit]\nweb_root = "/mailpit"\n', encoding="utf-8")
+    monkeypatch.setattr(resolver, "MAILPIT_DEFAULTS_PATH", defaults_path, raising=False)
+
+    try:
+        resolver._mailpit_web_settings()
+    except ValueError as exc:
+        assert str(exc) == (
+            f"cannot read mailpit.web_port and mailpit.web_root from {defaults_path}: "
+            "KeyError('web_port')"
+        )
+    else:
+        raise AssertionError("a missing Mailpit web_port did not fail")

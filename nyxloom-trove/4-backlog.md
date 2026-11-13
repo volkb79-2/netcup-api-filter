@@ -89,6 +89,7 @@ items:
   - {id: B091, title: "Mailpit webroot and message-size defaults come from stack config", type: bugfix, component: infra, context_estimate: small}
   - {id: B092, title: "PROXY-CALIBRATE: measure the proxy chain after extract and set trusted hops (Passenger default 0 first)", type: feature, component: deploy, context_estimate: medium}
   - {id: B093, title: "Switch the PowerDNS backend to the 5.1 series (pdns-auth-51) via cmru versions", type: feature, component: infra, context_estimate: medium}
+  - {id: B094, title: "Fail fast on missing CIU inputs in local stacks", type: bugfix, component: infra, context_estimate: small}
 ---
 
 # Backlog
@@ -518,3 +519,11 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   target, `versions/oci-images*.json`, `tooling/backend-powerdns` (image, image_tag, config keys that changed between
   4.8 and 5.x, UID 953), `post_compose_zone.py`, the version-pin test and docs; confirm the image repository name
   with `cmru versions resolve` (at most once per hour, Docker Hub rate limit) and that the pdns drift test still holds.
+
+- **B094 — Fail fast on missing CIU inputs in local stacks. Status: open (Low)**
+  `tooling/app-local/ciu.compose.yml.j2:27,57` interpolates `CONTAINER_UID`, `DOCKER_GID` and
+  `PHYSICAL_REPO_ROOT` without a required-value guard; `tooling/backend-powerdns/ciu.compose.yml.j2:56,73,142`
+  interpolates `DOCKER_GID` without one. If `ciu.env` is not loaded, UID/GID values can render empty (including
+  `user: ":"`). Host-path handling is inconsistent: app-local uses a bare `PHYSICAL_REPO_ROOT`, Netcup mock and
+  PowerDNS require it, and GeoIP mock falls back to its configured workspace path. Make the identity and host-path
+  inputs fail fast consistently, retaining a configured fallback only where explicitly intended.

@@ -74,7 +74,8 @@ def _mailpit_web_settings() -> tuple[int, str]:
         web_root = mailpit["web_root"]
     except (OSError, KeyError, TypeError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(
-            f"cannot read mailpit.web_port and mailpit.web_root from {MAILPIT_DEFAULTS_PATH}"
+            f"cannot read mailpit.web_port and mailpit.web_root from {MAILPIT_DEFAULTS_PATH}: "
+            f"{exc!r}"
         ) from exc
 
     if not isinstance(web_port, int) or web_port < 1:
