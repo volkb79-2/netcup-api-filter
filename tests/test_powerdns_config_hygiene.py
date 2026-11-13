@@ -63,6 +63,7 @@ _FALLBACK_ROOT_FILES = frozenset({
     "build_deployment.py",
     "ciu.global.defaults.toml.j2",
     "cmru.toml",
+    "bundle.toml",
     "docker-bake.hcl",
     "gunicorn.conf.py",
     "mypy.ini",
@@ -73,6 +74,12 @@ _FALLBACK_ROOT_FILES = frozenset({
     "run-gate.toml",
     "setup.cfg",
 })
+
+
+def test_cmru_bundle_config_is_in_the_source_fallback_allowlist():
+    """Reverting the KI-126 config addition removes the root file this fallback must track."""
+    assert Path("bundle.toml") in _FALLBACK_ROOT_FILES
+    assert (REPO / "bundle.toml").is_file()
 
 # Generated directories are pruned only inside the otherwise tracked roots.
 _FALLBACK_GENERATED_DIR_NAMES = frozenset({
