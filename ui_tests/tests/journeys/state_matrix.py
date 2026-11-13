@@ -51,7 +51,6 @@ Total systematic coverage: ~50-100 distinct states × API validations
 
 from dataclasses import dataclass, field
 from typing import Optional
-from datetime import datetime, timedelta
 
 
 @dataclass
@@ -271,16 +270,15 @@ TOKENS = [
     TokenSpec(
         name="token-expiring",
         realm_name="realm-subdomain-approved",
-        expires_in_hours=1.0,
-        description="Short-lived token (1 hour)"
+        expires_in_hours=30 * 24,
+        description="Short-lived token (30 days, shortest supported UI expiry)"
     ),
     
-    # Already expired token
+    # Expired-token auth case: current account UI cannot create an expiry in the past.
     TokenSpec(
         name="token-expired",
         realm_name="realm-subdomain-approved",
-        expires_in_hours=-1.0,  # Negative = already expired
-        description="Already expired token"
+        description="Expired-token API scenario; UI cannot create a past expiry"
     ),
     
     # Revoked token
@@ -362,7 +360,7 @@ API_TESTS = [
         token_name="token-readonly",
         operation="read",
         record_type="A",
-        hostname="k8s.example.com",
+        hostname="{realm}",
         expected_status=200,
         description="Read-only token can read records"
     ),
@@ -370,7 +368,7 @@ API_TESTS = [
         token_name="token-ddns",
         operation="update",
         record_type="A",
-        hostname="host2.example.com",
+        hostname="{realm}",
         expected_status=200,
         description="DDNS token can update A records",
         api_style="ddns",
@@ -379,7 +377,7 @@ API_TESTS = [
         token_name="token-full",
         operation="create",
         record_type="TXT",
-        hostname="test.managed.example.com",
+        hostname="validation.{realm}",
         expected_status=201,
         description="Full token can create TXT records"
     ),
@@ -387,7 +385,7 @@ API_TESTS = [
         token_name="token-acme",
         operation="create",
         record_type="TXT",
-        hostname="_acme-challenge.acme.example.com",
+        hostname="_acme-challenge.{realm}",
         expected_status=201,
         description="ACME token can create TXT challenges"
     ),
@@ -399,7 +397,7 @@ API_TESTS = [
         token_name="token-readonly",
         operation="update",
         record_type="A",
-        hostname="k8s.example.com",
+        hostname="{realm}",
         expected_status=403,
         description="Read-only token cannot update"
     ),
@@ -407,7 +405,7 @@ API_TESTS = [
         token_name="token-ddns",
         operation="delete",
         record_type="A",
-        hostname="host2.example.com",
+        hostname="{realm}",
         expected_status=403,
         description="DDNS token cannot delete"
     ),
@@ -415,7 +413,7 @@ API_TESTS = [
         token_name="token-acme",
         operation="create",
         record_type="A",
-        hostname="acme.example.com",
+        hostname="{realm}",
         expected_status=403,
         description="ACME token cannot create A records"
     ),
@@ -438,7 +436,7 @@ API_TESTS = [
         token_name="token-expired",
         operation="read",
         record_type="A",
-        hostname="k8s.example.com",
+        hostname="{realm}",
         expected_status=401,
         description="Expired token gets 401"
     ),
@@ -446,7 +444,7 @@ API_TESTS = [
         token_name="token-revoked",
         operation="read",
         record_type="A",
-        hostname="k8s.example.com",
+        hostname="{realm}",
         expected_status=401,
         description="Revoked token gets 401"
     ),

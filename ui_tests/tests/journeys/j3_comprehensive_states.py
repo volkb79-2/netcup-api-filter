@@ -37,7 +37,7 @@ import string
 import httpx
 import os
 import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from ui_tests.browser import Browser
@@ -45,6 +45,7 @@ from ui_tests.config import settings
 from ui_tests.personas import new_password
 from ui_tests.mailpit_client import MailpitClient
 from ui_tests.tests.journeys import journey_state
+from ui_tests import verification
 from ui_tests.tests.journeys.state_matrix import (
     ACCOUNTS, REALMS, TOKENS, API_TESTS,
     AccountSpec, RealmSpec, TokenSpec, APITestSpec,
@@ -690,19 +691,17 @@ class TokenCreator:
         
         # Expiration
         if spec.expires_in_hours:
-            # Find expires select/radio
             if spec.expires_in_hours <= 0:
-                # Already expired - use custom date in past
-                custom_radio = await self.browser.query_selector(
-                    "input[name='expires'][value='custom']"
+                pytest.fail(
+                    f"The account token form cannot create an already-expired token ({spec.name})",
+                    pytrace=False,
                 )
-                if custom_radio:
-                    await custom_radio.click()
-                    past_date = (datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%d")
-                    await self.browser.fill(
-                        "#expires_custom, input[name='expires_custom']",
-                        past_date
-                    )
+            expiry_option = (
+                "1month" if spec.expires_in_hours <= 30 * 24
+                else "3months" if spec.expires_in_hours <= 90 * 24
+                else "1year"
+            )
+            await self.browser.select("#expires", expiry_option)
         
         # Submit form
         await self.browser.click("button[type='submit']")
@@ -749,14 +748,7 @@ class TokenCreator:
             "realm_fqdn": realm["fqdn"],
             "token_value": token_value,
             "is_revoked": spec.is_revoked,
-            "expires_at": None,
         }
-        
-        if spec.expires_in_hours:
-            if spec.expires_in_hours > 0:
-                token_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=spec.expires_in_hours)
-            else:
-                token_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=spec.expires_in_hours)
         
         if token_value:
             logger.info(f"✓ Created token: {token_name} for {realm['fqdn']} (value captured)")
@@ -774,26 +766,27 @@ class TokenCreator:
         return token_data
     
     async def _revoke_token(self, realm_id: int, token_name: str):
-        """Revoke a token after creation."""
-        # Navigate to realm tokens and find revoke button
+        """Revoke a token after creation and verify the persisted state."""
         await self.browser.goto(settings.url(f"/account/realms/{realm_id}"))
         await self.browser.wait_for_timeout(300)
-        
-        revoke_btn = await self.browser.query_selector(
-            f'tr:has-text("{token_name}") button:has-text("Revoke"), '
-            f'a:has-text("Revoke")'
-        )
-        if revoke_btn:
-            await revoke_btn.click()
-            await self.browser.wait_for_load_state('domcontentloaded')
-            # Confirm if modal
-            confirm_btn = await self.browser.query_selector(
-                "button:has-text('Confirm'), button:has-text('Yes')"
-            )
-            if confirm_btn:
-                await confirm_btn.click()
-                await self.browser.wait_for_load_state('domcontentloaded')
-            logger.info(f"  ✓ Revoked token: {token_name}")
+
+        revoke_selector = f'tr:has-text("{token_name}") button[title="Revoke"]'
+        if not await self.browser.query_selector(revoke_selector):
+            pytest.fail(f"Token revoke control not found for {token_name}", pytrace=False)
+        await self.browser.click(revoke_selector)
+
+        submit_selector = "#revokeForm button[type='submit']"
+        if not await self.browser.query_selector(submit_selector):
+            pytest.fail(f"Revoke confirmation form not found for {token_name}", pytrace=False)
+        async with self.browser._page.expect_navigation(wait_until="domcontentloaded", timeout=10000):
+            await self.browser.click(submit_selector)
+
+        if not verification.db_available():
+            pytest.fail("Cannot verify token revocation without the read-only database", pytrace=False)
+        token_row = verification.get_token(token_name=token_name)
+        if not token_row or int(token_row.get("is_active", 1)) != 0:
+            pytest.fail(f"Revocation was not persisted for token {token_name}", pytrace=False)
+        logger.info(f"  ✓ Revoked and verified token: {token_name}")
 
 
 class APITester:
@@ -807,17 +800,49 @@ class APITester:
         """Run API test based on spec."""
         token_data = self.token_creator.created_tokens.get(spec.token_name)
         if not token_data:
-            logger.info(f"⚠️  Token {spec.token_name} not found for API test")
-            return {"status": "skipped", "reason": "token not found"}
+            result = {"status": "failed", "reason": f"token {spec.token_name} was not created"}
+            self.results.append(result)
+            logger.info("✗ API test failed: %s", result["reason"])
+            return result
         
         token_value = token_data.get("token_value")
         if not token_value:
-            logger.info(f"⚠️  Token {spec.token_name} has no value for API test")
-            return {"status": "skipped", "reason": "token has no value"}
+            result = {"status": "failed", "reason": f"token {spec.token_name} has no captured value"}
+            self.results.append(result)
+            logger.info("✗ API test failed: %s", result["reason"])
+            return result
+
+        if spec.token_name == "token-expired":
+            if not verification.db_available():
+                result = {"status": "skipped", "reason": "no read-only token database is available"}
+                logger.info("⚠️ API test skipped: cannot verify expired token state without the read-only database")
+                self.results.append(result)
+                return result
+            token_row = verification.get_token(token_name=token_data["token_name"])
+            if token_row is None:
+                pytest.fail(
+                    f"Read-only database did not contain token {token_data['token_name']}",
+                    pytrace=False,
+                )
+            expires_at = token_row.get("expires_at") if token_row else None
+            if isinstance(expires_at, str) and expires_at:
+                expires_at = datetime.fromisoformat(expires_at)
+            if expires_at is not None and expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at is None or expires_at >= datetime.now(timezone.utc):
+                result = {
+                    "status": "skipped",
+                    "reason": "the account token form only creates future expirations; read-only DB confirms this token is not expired",
+                }
+                logger.info("⚠️ API test skipped: token expiry is absent or in the future according to the read-only database")
+                self.results.append(result)
+                return result
+
+        hostname = spec.hostname.replace("{realm}", token_data["realm_fqdn"])
         
         # Build API request
         base_url = settings.base_url
-        hostname_labels = spec.hostname.rstrip(".").split(".")
+        hostname_labels = hostname.rstrip(".").split(".")
         domain = spec.domain or ".".join(hostname_labels[-2:])
         endpoint = f"{base_url}/api/dns/{domain}/records"
         
@@ -827,7 +852,7 @@ class APITester:
         }
         record = {
             "type": spec.record_type,
-            "hostname": spec.hostname,
+            "hostname": hostname,
             "destination": "203.0.113.42" if spec.record_type in {"A", "AAAA"} else "journey-validation",
         }
         
@@ -838,11 +863,11 @@ class APITester:
                 elif spec.operation == "update":
                     if spec.api_style == "ddns":
                         zone_suffix = f".{domain}"
-                        hostname = spec.hostname.rstrip(".")
-                        if hostname.lower().endswith(zone_suffix.lower()):
-                            hostname = hostname[:-len(zone_suffix)]
+                        ddns_hostname = hostname.rstrip(".")
+                        if ddns_hostname.lower().endswith(zone_suffix.lower()):
+                            ddns_hostname = ddns_hostname[:-len(zone_suffix)]
                         response = await client.put(
-                            f"{base_url}/api/ddns/{domain}/{hostname}",
+                            f"{base_url}/api/ddns/{domain}/{ddns_hostname}",
                             headers=headers,
                             params={"ip": "203.0.113.42", "type": spec.record_type},
                         )
@@ -1005,7 +1030,7 @@ class TestJourney3ComprehensiveStates:
         failed = sum(1 for r in tester.results if not r.get("passed") and r.get("status") != "skipped")
         skipped = sum(1 for r in tester.results if r.get("status") == "skipped")
         
-        logger.info(f"\n✓ API Tests: {passed} passed, {failed} failed, {skipped} skipped")
+        logger.info(f"\nAPI Tests: {passed} passed, {failed} failed, {skipped} skipped")
         assert failed == 0 and passed > 0, (
             f"J3_04 expected passing API cases and no failures; got {passed} passed, "
             f"{failed} failed, {skipped} skipped"

@@ -471,11 +471,16 @@ class TestJourney2AccountLifecycle:
         
         await browser.click("button[type='submit']")
         await browser.wait_for_timeout(1000)
+
+        if "/2fa" in (browser.current_url or ""):
+            if not await _handle_2fa_via_mailpit(browser):
+                pytest.fail("J2_07 login reached 2FA but Mailpit verification did not complete", pytrace=False)
+            await browser.wait_for_timeout(300)
         
         await capture(browser, "user-logged-in")
         
         # Verify not on login page anymore
-        current_url = browser.current_url or ""
+        current_url = browser._page.url
         assert "/login" not in current_url, f"Login should succeed, still at: {current_url}"
         
         logger.info(f"✓ User {journey_state.test_account_username} logged in successfully")
