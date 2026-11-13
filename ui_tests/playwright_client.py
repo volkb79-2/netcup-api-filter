@@ -92,7 +92,7 @@ class PlaywrightClient:
             headless_str = os.getenv('PLAYWRIGHT_HEADLESS')
             if not headless_str:
                 headless_str = 'true'
-            logger.warning("PLAYWRIGHT_HEADLESS is not set; using the declared default true")
+                logger.warning("PLAYWRIGHT_HEADLESS is not set; using the declared default true")
             self.headless = headless_str.lower() == 'true'
         self.timeout = timeout
         self.storage_state_path = storage_state_path
