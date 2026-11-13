@@ -84,6 +84,7 @@ items:
   - {id: B080, title: "ActivityLog `user_agent` is stored untruncated", type: bugfix, component: security, context_estimate: small}
   - {id: B081, title: "`/admin/settings` SMTP quick form omits fields the handler overwrites", type: bugfix, component: admin-ui, context_estimate: small}
   - {id: B082, title: "netcup config page: 'Test connection' posts a field the handler ignores", type: bugfix, component: admin-ui, context_estimate: small}
+  - {id: B083, title: "pwmcp planned recycle can lose the released slot before reconnect", type: bugfix, component: test-infra, context_estimate: small}
 ---
 
 # Backlog
