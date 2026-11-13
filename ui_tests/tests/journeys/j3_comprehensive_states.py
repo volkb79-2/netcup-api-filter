@@ -821,7 +821,7 @@ class APITester:
             token_row = verification.get_token(token_name=token_data["token_name"])
             if token_row is None:
                 pytest.fail(
-                    f"Read-only database did not contain token {token_data['token_name']}",
+                    "Read-only database did not contain the token for the expired-state API check",
                     pytrace=False,
                 )
             expires_at = token_row.get("expires_at") if token_row else None
