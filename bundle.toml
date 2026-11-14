@@ -10,9 +10,11 @@ python_bin = "/opt/tester-venv/bin/python"
 name_template = "naf-v{version}-{variant}.tar.xz"
 version_env = "NAF_VERSION"
 format = "xztar"
+keep = ["app-defaults.env", "vendor/certifi/cacert.pem"]
+keep_tree = false
 
 [copy]
-files = [".env.defaults", "src/netcup_api_filter/passenger_wsgi.py"]
+files = ["src/netcup_api_filter/passenger_wsgi.py"]
 dirs = ["src", "scripts"]
 
 [vendor]

@@ -48,7 +48,7 @@ def test_runner_variants_agree_across_cmru_ciu_run_gate_and_bake():
 
 
 def test_passenger_bundle_and_publish_use_the_cmru_variant_list(monkeypatch):
-    """Reverting the bundle handler, archive cleanup, trap, or declared publisher variants fails."""
+    """Reverting the handler path, stale-archive prune, or declared publisher variants fails."""
     cmru = _toml("cmru.toml")
     bundle = _toml("bundle.toml")
     variants = cmru["project"]["variants"]
@@ -56,6 +56,10 @@ def test_passenger_bundle_and_publish_use_the_cmru_variant_list(monkeypatch):
     assert "variants" not in bundle
     assert bundle["archive"]["name_template"] == "naf-v{version}-{variant}.tar.xz"
     assert bundle["archive"]["version_env"] == "NAF_VERSION"
+    assert bundle["archive"]["keep"] == [
+        "app-defaults.env", "vendor/certifi/cacert.pem",
+    ]
+    assert bundle["archive"].get("keep_tree", False) is False
     assert bundle["manifest"]["name"] == "manifest.json"
 
     build_commands = cmru["steps"]["build"]["commands"]
@@ -66,11 +70,8 @@ def test_passenger_bundle_and_publish_use_the_cmru_variant_list(monkeypatch):
     build_script = build_argv[2]
     assert "passenger_bundle_build.py prepare" in build_script
     assert "scripts/build_webhosting_tarball.py" not in build_script
-    assert build_script.index("trap cleanup_bundle_cmru_config EXIT") < build_script.index("eval \"$naf_bundle_exports\"")
-    assert "unset NAF_BUNDLE_CMRU_CONFIG" in build_script
-    assert 'case "${NAF_BUNDLE_CMRU_CONFIG:-}" in' in build_script
-    assert '"$PWD"/.naf-bundle-cmru-*/cmru.toml)' in build_script
-    assert ".naf-bundle-cmru-*/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "NAF_BUNDLE_CMRU_CONFIG" not in build_script
+    assert "cleanup_bundle_cmru_config" not in build_script
     assert "rm -f -- dist/naf-v*.tar.xz" in build_script
     assert build_script.index("rm -f -- dist/naf-v*.tar.xz") < build_script.index(
         "cmru handler bundle-build"
@@ -82,18 +83,9 @@ def test_passenger_bundle_and_publish_use_the_cmru_variant_list(monkeypatch):
     )
     assert shlex.split(bundle_command) == [
         "cmru", "handler", "bundle-build", "--bundle-config", "bundle.toml",
-        "--cmru-config", "$NAF_BUNDLE_CMRU_CONFIG", "--name", "naf", "--variant",
+        "--cmru-config", "cmru.toml", "--name", "naf", "--variant",
         "all", "||", "exit", "$?",
     ]
-    archive_guard = 'bundle_archives=(dist/naf-v"${NAF_VERSION}"-*.tar.xz)'
-    archive_exists_check = 'if [ -f "${bundle_archives[0]}" ]; then'
-    assert archive_guard in build_script
-    assert archive_exists_check in build_script
-    assert build_script.index(archive_guard) < build_script.index(archive_exists_check)
-    assert build_script.index(archive_exists_check) < build_script.index("rm -rf -- dist/app")
-    assert build_script.index("rm -rf -- dist/app") > build_script.index(
-        "cmru handler bundle-build"
-    )
 
     publish_commands = [
         command["argv"]

@@ -21,20 +21,21 @@ identity through the environment names configured in `bundle.toml`. CMRU vendors
 the target ABI. `tooling/passenger_bundle_stage.py` runs inside that runner to expand wheels into
 Passenger's importable layout, seed the release database, and write the filtered runtime defaults.
 
-CMRU 7.3.0 appends `-v` to the prefix supplied for the manifest tag. Naf's release config stores
-`naf-v`, so the preflight supplies a temporary config copy with that field normalized to `naf`;
-the variant list is unchanged and the copy is removed after the handler exits. This cmru behavior
-is documented as a vbpub finding in the B101 canary report.
+This bundle requires CMRU **7.3.1 or newer**, declared in the `cmru.toml` header. The bundle test
+checks the installed parser version when available and otherwise checks its structural contract.
+CMRU 7.3.1 canonicalizes the `naf-v` manifest prefix and uses a Git-bound `.devN+g<hash>` version
+when `NAF_VERSION` is unset; the naf preflight only resolves the matching
+checkout runner identity and conditionally passes an explicit release version through. The temporary
+prefix config workaround is gone.
 
-The Passenger bundle is built only in a tagged `cmru release`; the preflight requires
-`CMRU_RELEASE_TAG` and rejects an untagged `NAF_VERSION`. The build removes stale versioned
-Passenger archives before invoking CMRU and removes `dist/app` after success when the current archive
-exists. The controller's equivalence procedure compares the archives, so the staged tree is no
-longer needed after that step. CMRU 7.3.0 currently refuses this bundle because its hard-exclude
-rules reject `app-defaults.env` and the vendored `certifi/cacert.pem`; B101 remains open until vbpub
-KI-162 is fixed upstream and the real comparison passes.
+Naf's exact `[archive].keep` paths preserve `app-defaults.env` and the wheel-extracted
+`vendor/certifi/cacert.pem`. `.env.defaults` is copied by the stage helper for seeding only and is
+removed before manifest creation. CMRU cleans the staged bundle after success (`keep_tree = false`);
+naf retains the stale-archive prune because CMRU only deletes the current archive and leaves sibling
+versions in `dist/`. The real Passenger bundle has not been built by this implementer; KI-126
+acceptance and the old/new data comparison remain open in B106.
 
-When CMRU can produce the bundle, it uses the canonical name, `naf-v<version>-<variant>.tar.xz`, and carries a
+The configured bundle uses the canonical name, `naf-v<version>-<variant>.tar.xz`, and carries a
 `manifest.json` under one top-level `app/` directory. The CIU adapter strips that directory while
 extracting; CMRU's generated installer follows the same single-directory bundle contract.
 

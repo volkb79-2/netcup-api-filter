@@ -1,6 +1,7 @@
 """CMRU Passenger bundle contracts and real release-artifact content checks."""
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import os
 import shutil
@@ -10,8 +11,10 @@ import tomllib
 import types
 import zipfile
 from contextlib import nullcontext
-from pathlib import Path
+from importlib.metadata import version as distribution_version
+from pathlib import Path, PurePosixPath
 
+from packaging.version import Version
 import pytest
 from netcup_api_filter.config_defaults import (
     RUNTIME_DEFAULT_KEYS,
@@ -21,6 +24,9 @@ from netcup_api_filter.config_defaults import (
 )
 
 REPO = Path(__file__).resolve().parents[1]
+PROTECTED_SUFFIXES = (".toml", ".env", ".pem", ".crt", ".key", ".p12", ".pfx", ".log")
+MUST_NOT_SHIP_PROTECTED_COPY_PATHS: dict[str, str] = {}
+LEGACY_COPY_IGNORE_PATTERNS = ("__pycache__", "*.pyc", "*,cover")
 
 
 def _load_stage_helper():
@@ -47,7 +53,6 @@ def staging(tmp_path_factory) -> Path:
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*,cover")
     shutil.copytree(REPO / "src", root / "src", ignore=ignore)
     shutil.copytree(REPO / "scripts", root / "scripts", ignore=ignore)
-    shutil.copy2(REPO / ".env.defaults", root / ".env.defaults")
     shutil.copy2(
         REPO / "src/netcup_api_filter/passenger_wsgi.py",
         root / "passenger_wsgi.py",
@@ -59,6 +64,7 @@ def staging(tmp_path_factory) -> Path:
     mp.setenv("DEPLOYMENT_TARGET", "webhosting")
     mp.setenv("NETCUP_FILTER_DB_PATH", str(root / "netcup_filter.db"))
     try:
+        stage.copy_seed_defaults(root, REPO)
         stage.seed_database(root)
         stage.ship_runtime_defaults(root, REPO)
     finally:
@@ -96,9 +102,13 @@ def test_tree_ships_runtime_catalog_and_no_env_or_state_files(staging):
     """Leaving the staged .env.defaults file in the artifact fails the file-list oracle."""
     names = {p.name for p in staging.rglob("*") if p.is_file()}
     assert SHIPPED_DEFAULTS_FILENAME in names
-    forbidden_env_files = {name for name in names if name.startswith(".env")}
-    assert not forbidden_env_files, forbidden_env_files
-    assert "ciu.env" not in names
+    forbidden = {
+        ".env", ".env.defaults", ".env.services", ".env.workspace", "ciu.env",
+        ".env.operator", ".env.webhoster", ".env.live", ".env.guard",
+        ".env.operator.example", ".env.webhoster.example", ".env.live.example",
+        ".env.guard.example",
+    }
+    assert not (names & forbidden), names & forbidden
     assert not [n for n in names if n.startswith("deployment_state_")]
     assert (staging / "passenger_wsgi.py").is_file()
 
@@ -139,56 +149,94 @@ def test_shipped_catalog_contains_only_allowlisted_nonsensitive_keys(staging):
     )
 
 
-def test_bundle_config_uses_cmru_parser_or_structural_contract():
-    """Reverting cmru.toml to the hand-rolled builder leaves no valid bundle config."""
+def test_bundle_config_parses_with_cmru_731_and_declares_exact_keep_paths():
+    """The installed 7.3.1 parser or structural token checks reject a config revert."""
     config = _bundle_config()
+    expected_keep = ["app-defaults.env", "vendor/certifi/cacert.pem"]
+    assert set(config) == {
+        "project_root", "dist_dir", "bundle_dir", "wheel", "archive", "copy",
+        "vendor", "stage", "exec", "manifest",
+    }
+    assert config["project_root"] == "."
+    assert config["dist_dir"] == "dist"
+    assert config["bundle_dir"] == "app"
+    assert config["wheel"] == {
+        "enabled": False,
+        "python_bin": "/opt/tester-venv/bin/python",
+    }
+    assert config["archive"] == {
+        "name_template": "naf-v{version}-{variant}.tar.xz",
+        "version_env": "NAF_VERSION",
+        "format": "xztar",
+        "keep": expected_keep,
+        "keep_tree": False,
+    }
+    assert config["copy"] == {
+        "files": ["src/netcup_api_filter/passenger_wsgi.py"],
+        "dirs": ["src", "scripts"],
+    }
+    assert config["vendor"] == {
+        "requirements": ["requirements-runtime.txt"],
+        "platforms": ["manylinux2014_x86_64", "any"],
+        "dest": "vendor",
+    }
+    assert config["stage"]["argv"] == [
+        "/opt/tester-venv/bin/python",
+        "tooling/passenger_bundle_stage.py",
+        "{bundle_dir}",
+        "{python_version}",
+    ]
+    assert config["exec"]["prefix"] == [
+        "docker", "exec", "-e", "SOURCE_DATE_EPOCH", "-w", "{root}", "{container}",
+    ]
+    assert config["exec"]["env"] == {
+        "root": "NAF_BUNDLE_RUNNER_ROOT",
+        "container": "NAF_BUNDLE_RUNNER_CONTAINER",
+    }
+    assert config["manifest"] == {"name": "manifest.json"}
+    # Structural fallback checks every placeholder is from CMRU's documented token sets.
+    from string import Formatter
+
+    def format_fields(value):
+        return {field for _, field, _, _ in Formatter().parse(value) if field}
+
+    assert format_fields(config["archive"]["name_template"]) == {"version", "variant"}
+    for value in config["stage"]["argv"]:
+        assert all(
+            field in {"bundle_dir", "python_version"}
+            for field in format_fields(value)
+        )
+    for value in config["exec"]["prefix"]:
+        assert all(
+            field in {"root", "container"}
+            for field in format_fields(value)
+        )
+    assert config["archive"]["keep"] == expected_keep
+    assert all(
+        not PurePosixPath(path).is_absolute()
+        and ".." not in PurePosixPath(path).parts
+        and not any(char in path for char in "*?[]{}!")
+        for path in config["archive"]["keep"]
+    )
     try:
         from cmru.bundle import parse_config
-    except ImportError:
-        # The tester image may not carry cmru's package. Keep this closed structural
-        # check in that case; the canary's release runner uses cmru's installed parser.
-        assert set(config) == {
-            "project_root", "dist_dir", "bundle_dir", "wheel", "archive",
-            "copy", "vendor", "stage", "exec", "manifest",
-        }
-        assert config["archive"] == {
-            "name_template": "naf-v{version}-{variant}.tar.xz",
-            "version_env": "NAF_VERSION",
-            "format": "xztar",
-        }
-        assert config["wheel"] == {
-            "enabled": False,
-            "python_bin": "/opt/tester-venv/bin/python",
-        }
-        assert config["copy"] == {
-            "files": [".env.defaults", "src/netcup_api_filter/passenger_wsgi.py"],
-            "dirs": ["src", "scripts"],
-        }
-        assert config["vendor"] == {
-            "requirements": ["requirements-runtime.txt"],
-            "platforms": ["manylinux2014_x86_64", "any"],
-            "dest": "vendor",
-        }
-        assert config["stage"]["argv"][:2] == [
-            "/opt/tester-venv/bin/python", "tooling/passenger_bundle_stage.py",
-        ]
-        assert config["stage"]["argv"][-2:] == ["{bundle_dir}", "{python_version}"]
-        assert config["exec"]["prefix"] == [
-            "docker", "exec", "-e", "SOURCE_DATE_EPOCH", "-w", "{root}", "{container}",
-        ]
-        assert config["exec"]["env"] == {
-            "root": "NAF_BUNDLE_RUNNER_ROOT",
-            "container": "NAF_BUNDLE_RUNNER_CONTAINER",
-        }
-        assert config["manifest"] == {"name": "manifest.json"}
+    except ModuleNotFoundError as exc:
+        if exc.name != "cmru":
+            raise
+        # CMRU is GitHub-release/wheelhouse-only, not a safe bare PyPI requirement;
+        # the clean tester image uses the exact structural assertions above.
+        pass
     else:
+        assert Version(distribution_version("cmru")) >= Version("7.3.1")
         parsed = parse_config(REPO / "bundle.toml")
+        assert parsed.archive_keep == expected_keep
+        assert parsed.keep_tree is False
         assert parsed.wheel_enabled is False
         assert parsed.wheel_python_bin == "/opt/tester-venv/bin/python"
         assert parsed.bundle_dir == REPO / "dist/app"
         assert parsed.archive_template == "naf-v{version}-{variant}.tar.xz"
         assert parsed.archive_format == "xztar"
-        assert parsed.copy_files == [".env.defaults", "src/netcup_api_filter/passenger_wsgi.py"]
+        assert parsed.copy_files == ["src/netcup_api_filter/passenger_wsgi.py"]
         assert parsed.copy_dirs == ["src", "scripts"]
         assert parsed.vendor.requirements == ["requirements-runtime.txt"]
         assert parsed.vendor.platforms == ["manylinux2014_x86_64", "any"]
@@ -202,6 +250,7 @@ def test_bundle_config_uses_cmru_parser_or_structural_contract():
             "container": "NAF_BUNDLE_RUNNER_CONTAINER",
         }
         assert parsed.manifest_name == "manifest.json"
+    assert "Requires CMRU >= 7.3.1" in (REPO / "cmru.toml").read_text(encoding="utf-8")
 
 
 def test_bundle_copy_paths_and_retired_ignore_patterns_are_pinned_as_data():
@@ -209,11 +258,51 @@ def test_bundle_copy_paths_and_retired_ignore_patterns_are_pinned_as_data():
     config = _bundle_config()
     helper = _load_stage_helper()
     assert config["copy"] == {
-        "files": [".env.defaults", "src/netcup_api_filter/passenger_wsgi.py"],
+        "files": ["src/netcup_api_filter/passenger_wsgi.py"],
         "dirs": ["src", "scripts"],
     }
+    assert ".env.defaults" not in config["copy"]["files"]
+    assert config["archive"]["keep"] == [
+        "app-defaults.env", "vendor/certifi/cacert.pem",
+    ]
     assert helper.LEGACY_COPY_IGNORE_PATTERNS == ("__pycache__", "*.pyc", "*,cover")
     assert config["manifest"]["name"] == "manifest.json"
+
+
+def test_protected_suffixes_in_copy_inputs_are_classified():
+    """Even an untracked new source file needs an exact keep or explicit skip decision."""
+    config = _bundle_config()
+    copy = config["copy"]
+    outputs = set()
+    for raw in copy["files"]:
+        source = REPO / raw
+        if source.is_file():
+            outputs.add(PurePosixPath(source.name).as_posix())
+    for directory in copy["dirs"]:
+        source_root = REPO / directory
+        for source in source_root.rglob("*"):
+            relative = source.relative_to(source_root)
+            if not source.is_file() or any(
+                fnmatch.fnmatch(part, pattern)
+                for part in relative.parts
+                for pattern in LEGACY_COPY_IGNORE_PATTERNS
+            ):
+                continue
+            outputs.add(PurePosixPath(directory, relative.as_posix()).as_posix())
+    protected = {
+        path for path in outputs
+        if path.endswith(PROTECTED_SUFFIXES)
+    }
+    keep = set(config["archive"]["keep"])
+    must_not_ship = set(MUST_NOT_SHIP_PROTECTED_COPY_PATHS)
+    assert all(reason.strip() for reason in MUST_NOT_SHIP_PROTECTED_COPY_PATHS.values())
+    assert not (keep & must_not_ship), "a protected copy path cannot be both kept and skipped"
+    assert must_not_ship <= protected, f"stale must-not-ship entries: {must_not_ship - protected}"
+    unclassified = protected - keep - must_not_ship
+    assert not unclassified, (
+        "protected-suffix copy inputs need an exact [archive].keep path or an explicit "
+        f"MUST_NOT_SHIP_PROTECTED_COPY_PATHS decision: {sorted(unclassified)}"
+    )
 
 
 def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, monkeypatch):
@@ -226,8 +315,7 @@ def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, mo
     (project_root / ".env.defaults").write_text(
         "DEFAULT_ADMIN_PASSWORD=fixture-only\n", encoding="utf-8"
     )
-    (bundle_dir / ".env.defaults").parent.mkdir(parents=True)
-    shutil.copy2(project_root / ".env.defaults", bundle_dir / ".env.defaults")
+    bundle_dir.mkdir(parents=True)
     (bundle_dir / "src/netcup_api_filter/templates").mkdir(parents=True)
     (bundle_dir / "scripts").mkdir()
     vendor_dir.mkdir()
@@ -240,6 +328,7 @@ def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, mo
     wheel_path = vendor_dir / "sample-1.0-py3-none-any.whl"
     with zipfile.ZipFile(wheel_path, "w") as wheel:
         wheel.writestr("sampledep/__init__.py", "VALUE = 'wheel'\n")
+        wheel.writestr("certifi/cacert.pem", "fixture certificate\n")
         wheel.writestr("sample-1.0.dist-info/METADATA", "Name: sample\n")
         # The old copytree patterns never applied to extracted vendor contents.
         wheel.writestr("sampledep/generated,cover", "retained vendor data")
@@ -268,6 +357,9 @@ def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, mo
             os.environ.get("NETCUP_FILTER_DB_PATH"), tuple(sys.path[:3]),
         ))
         assert Path("vendor/sampledep/__init__.py").is_file()
+        assert Path(".env.defaults").read_text(encoding="utf-8") == (
+            "DEFAULT_ADMIN_PASSWORD=fixture-only\n"
+        )
         assert not list(Path("vendor").glob("*.dist-info"))
         assert Path("vendor/sampledep/generated,cover").is_file()
         Path("netcup_filter.db").write_bytes(b"fake seeded database")
@@ -326,6 +418,9 @@ def test_stage_expands_wheels_seeds_and_renders_defaults_with_fakes(tmp_path, mo
     assert sys.path == original_sys_path
     assert not wheel_path.exists()
     assert not list(vendor_dir.glob("*.dist-info"))
+    assert (vendor_dir / "certifi/cacert.pem").read_text(encoding="utf-8") == (
+        "fixture certificate\n"
+    )
     assert not (bundle_dir / "src/cache/__pycache__").exists()
     assert not (bundle_dir / "src/stale.pyc").exists()
     assert not (bundle_dir / "src/generated,cover").exists()

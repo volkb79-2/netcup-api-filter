@@ -23,15 +23,15 @@
 
 ### Changed
 
-- **Passenger artifact definition moves to CMRU bundle-build (KI-126 canary):** the configured `cmru.toml` step calls
-  `cmru handler bundle-build` with `bundle.toml`; naf's stage helper expands CMRU's vendored wheels,
-  seeds the webhosting database, and renders `app-defaults.env`. The resolved runner and versioned
-  archive name come from the release environment, while `cmru.toml` remains the variant list. The
-  preflight makes a temporary prefix-normalized config for the CMRU 7.3.0 manifest-tag mismatch.
-  Passenger builds are supported only in a tagged `cmru release`; the build step removes stale
-  versioned archives and deletes `dist/app` after a successful archive exists. CMRU 7.3.0 currently
-  refuses the staged `.env` and vendored `.pem` files, so no Passenger archive has been produced by
-  this branch. Old-vs-new artifact equivalence and vbpub KI-126 acceptance remain open in B101.
+- **Adopt CMRU 7.3.1 for the KI-126 Passenger bundle canary (B106):** the configured build step
+  calls `cmru handler bundle-build`; `cmru.toml` declares the minimum CMRU version and remains the
+  single variant list. CMRU 7.3.1 provides exact `[archive].keep` paths, a canonical manifest tag,
+  an untagged `.devN+g<hash>` version fallback, and success cleanup of staged trees. Naf keeps only
+  the generated `app-defaults.env` catalog and extracted `vendor/certifi/cacert.pem`, sources
+  `.env.defaults` temporarily in its stage helper, and retains stale-archive pruning because CMRU
+  preserves sibling version archives. The real Passenger build has not been run by this
+  implementer; the controller's old/new data comparison and vbpub KI-126 acceptance remain open in
+  B106.
 - **PowerDNS backend targets Authoritative 5.1 (B093):** the managed image is
   `powerdns/pdns-auth-51:5.1.5`; the startup config is rendered through the image's
   `TEMPLATE_FILES` mechanism, and the zone bootstrap now uses the Authoritative HTTP

@@ -48,24 +48,29 @@ Git `HEAD`, and supplies its root and identity through the environment variables
 wheels, seeds the database, and renders shipped defaults inside the matching runner. This is
 separate from the local `build_deployment.py --local` build.
 
-CMRU 7.3.0 appends `-v` to the project prefix while generating the manifest tag. Naf's release
-config already uses `naf-v`, so the preflight passes the handler a temporary config copy with only
-that value normalized to `naf`; it preserves the variant list and removes the copy when the step
-ends. The canary report records this cmru handler finding for vbpub.
+This bundle requires CMRU **7.3.1 or newer**, declared in the `cmru.toml` header. The bundle
+configuration test uses the installed `cmru.bundle.parse_config` and checks its version when CMRU
+is present; the test-runner image's dependencies do not include CMRU, so it also checks the
+structural contract there.
+CMRU 7.3.1 writes the canonical manifest tag for the existing `naf-v` prefix, so naf uses the
+checked-in `cmru.toml` directly; no temporary normalized config is created.
 
-The Passenger bundle is supported only inside a tagged `cmru release`: its build preflight requires
-`CMRU_RELEASE_TAG` and rejects `NAF_VERSION` by itself. Use `cmru release` when the tagged Passenger
-artifact is ready; `cmru build` and `cmru publish --build-output` do not produce this project's
-Passenger bundle. The untagged version-source gap is filed with vbpub as KI-163 (see B101).
+`NAF_VERSION` may supply a release version. When it is unset, `bundle-build` derives the planned
+version (or latest tag when unchanged) and adds `.devN+g<hash>` from Git. The preflight does not
+require a tag or version; it still resolves this checkout's runner, checks that it is running and
+mounted on the same `HEAD`, and passes the root/container values through `[exec].env`. `cmru release`
+remains the release and publication path.
 
-Each build step removes old `dist/naf-v*.tar.xz` files before calling the handler so the publisher
-and activation adapter cannot select multiple release versions. After a successful handler run, it
-removes `dist/app` only when the current version's archive exists. The equivalence procedure compares
-the archives, so it does not need the staged tree afterward.
+The archive keeps exactly `app-defaults.env` and `vendor/certifi/cacert.pem`: the stage helper
+generates the runtime catalog and expands the certifi wheel into the CA file. It copies `.env.defaults`
+from the checkout only as a temporary seed input, then removes it before the manifest. CMRU removes
+the staged bundle after success because `keep_tree = false`. Naf still clears `dist/naf-v*.tar.xz`
+before building: CMRU removes the archive for the current variant/version but preserves sibling
+archives, and the publisher glob must see only this run's versions.
 
-**Current canary blocker:** CMRU 7.3.0 hard-excludes both the staged `app-defaults.env` and vendored
-`certifi/cacert.pem`; manifest generation therefore refuses this bundle tree. This branch remains
-parked until a CMRU release fixes vbpub KI-162 and the controller completes B101's old/new data comparison.
+The real Passenger build has **not** been run by this implementer. CMRU 7.3.1 removes the prior
+hard-exclude blocker; KI-126 acceptance remains open until the controller builds both implementations
+in the matching runner and records the data comparison in B106.
 
 ### Artifact contents
 
@@ -75,14 +80,14 @@ test fixtures) with `app-defaults.env`: only the allowlisted runtime keys of `.e
 `netcup_api_filter.config_defaults.write_shipped_defaults`. The OCI artifact has its own generated
 runtime catalog. Neither release artifact is intended to ship a secret or demo account.
 
-- **Passenger tarball contract (not yet produced by this branch)** (`naf-v<version>-<variant>.tar.xz`):
+- **Passenger tarball contract** (`naf-v<version>-<variant>.tar.xz`):
   a CMRU bundle with `manifest.json`, the runtime tree, extracted vendored packages, `app-defaults.env`, and a freshly seeded
   `netcup_filter.db` with exactly one account, the pre-set admin
   (`is_admin=1`, `must_change_password=1`). No `secret_key` row (created at first start), no `.env*`,
   no `deployment_state_*.json`. The archive has a single top-level `app/` directory; CIU activation
   strips it into the Passenger application root, as CMRU's generated installer does for its bundles.
-  This is the configured artifact contract; CMRU 7.3.0 currently refuses to archive it for the
-  hard-exclude conflict above, so this branch has not produced a Passenger tarball.
+  This is the configured artifact contract. The implementer has not run the real CMRU bundle build;
+  the controller owns the old/new equivalence build and KI-126 acceptance evidence (B106).
 - **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
   and `VOLUME /data`; no database and no account. It runs as the non-root user `naf`
   (`APP_UID`/`APP_GID` build args, default 10001): `/app` is read-only for it, `/data` (DB, init lock,

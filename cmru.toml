@@ -1,4 +1,6 @@
 # cmru.toml — CMRU 7.x project config for netcup-api-filter (naf).
+# Requires CMRU >= 7.3.1 for exact bundle keep paths, dev-version fallback,
+# canonical manifest tags, and successful staged-tree cleanup.
 # One tagged release publishes the self-hosting OCI images (py311, py314) and the Passenger
 # py311 tarball variant. NO SECRETS here: the GitHub token comes from the user's `gh` login.
 schema_version = 1
@@ -65,23 +67,10 @@ commands = [
 quiet = true
 commands = [
   { label = "naf: build Passenger bundle through cmru (inside this checkout's runner)", argv = ["bash", "-c", '''
-unset NAF_BUNDLE_CMRU_CONFIG
-cleanup_bundle_cmru_config() {
-  case "${NAF_BUNDLE_CMRU_CONFIG:-}" in
-    "$PWD"/.naf-bundle-cmru-*/cmru.toml)
-      rm -rf -- "$(dirname -- "$NAF_BUNDLE_CMRU_CONFIG")"
-      ;;
-  esac
-}
-trap cleanup_bundle_cmru_config EXIT
 naf_bundle_exports="$(python3 tooling/passenger_bundle_build.py prepare)" || exit $?
 eval "$naf_bundle_exports" || exit $?
 rm -f -- dist/naf-v*.tar.xz
-cmru handler bundle-build --bundle-config bundle.toml --cmru-config "$NAF_BUNDLE_CMRU_CONFIG" --name naf --variant all || exit $?
-bundle_archives=(dist/naf-v"${NAF_VERSION}"-*.tar.xz)
-if [ -f "${bundle_archives[0]}" ]; then
-  rm -rf -- dist/app
-fi
+cmru handler bundle-build --bundle-config bundle.toml --cmru-config cmru.toml --name naf --variant all || exit $?
 '''], cwd = "." },
 ]
 

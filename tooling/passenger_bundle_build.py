@@ -7,7 +7,6 @@ import os
 import shlex
 import subprocess
 import sys
-import tempfile
 import tomllib
 from pathlib import Path
 
@@ -19,12 +18,6 @@ RUNNER_UP_INSTRUCTION = (
     "run `ciu up --dir tooling/test-runner` in {root} first (with its ciu env loaded: "
     "`eval \"$(ciu env print)\"`, PWMCP_NETWORK), then retry"
 )
-UNTAGGED_BUILD_INSTRUCTION = (
-    "Passenger bundle builds are supported only inside `cmru release` after it creates the "
-    "release tag; run `cmru release` to build and publish the tagged bundle."
-)
-
-
 def _project_variants() -> list[dict[str, str]]:
     with (REPO_ROOT / "cmru.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
@@ -44,46 +37,19 @@ def _project_variants() -> list[dict[str, str]]:
     return variants
 
 
-def _release_version(environ: dict[str, str]) -> str:
+def _optional_release_version(environ: dict[str, str]) -> str | None:
+    """Use a supplied CMRU release version when present; otherwise defer to CMRU's fallback."""
+    explicit = environ.get("NAF_VERSION", "").strip()
     tag = environ.get("CMRU_RELEASE_TAG", "").strip()
     prefix = "naf-v"
+    if not tag:
+        return explicit or None
     if not tag.startswith(prefix) or not tag[len(prefix):]:
-        raise RuntimeError(UNTAGGED_BUILD_INSTRUCTION)
+        raise RuntimeError("CMRU_RELEASE_TAG must use the naf-v<version> prefix")
     version = tag[len(prefix):]
-    explicit = environ.get("NAF_VERSION", "").strip()
     if explicit and explicit != version:
         raise RuntimeError("NAF_VERSION does not match the CMRU release tag")
     return version
-
-
-def _write_bundle_cmru_config() -> Path:
-    """Normalize cmru's tag prefix for KI-126's current manifest-tag implementation.
-
-    naf's project.prefix follows cmru's checked-in template convention (`naf-v`), while
-    bundle-build currently passes that value to version_to_tag(), which adds another `-v`.
-    Keep the declared variants and all other config bytes intact, changing only the temporary
-    copy's prefix to `naf` so the resulting manifest tag matches the release tag.
-    """
-    source = REPO_ROOT / "cmru.toml"
-    raw = source.read_text(encoding="utf-8")
-    with source.open("rb") as handle:
-        project = tomllib.load(handle)["project"]
-    prefix = project.get("prefix")
-    if project.get("id") != "naf" or not isinstance(prefix, str) or not prefix.endswith("-v"):
-        raise RuntimeError("expected cmru.toml project.id=naf and a project.prefix ending in -v")
-    old_line = f'prefix = "{prefix}"'
-    if raw.count(old_line) != 1:
-        raise RuntimeError("could not safely normalize the cmru.toml project prefix")
-    normalized = raw.replace(old_line, f'prefix = "{prefix.removesuffix("-v")}"', 1)
-    directory = Path(tempfile.mkdtemp(prefix=".naf-bundle-cmru-", dir=REPO_ROOT))
-    path = directory / "cmru.toml"
-    try:
-        path.write_text(normalized, encoding="utf-8")
-    except Exception:
-        path.unlink(missing_ok=True)
-        directory.rmdir()
-        raise
-    return path
 
 
 def _runner_container(variant: str) -> str:
@@ -140,7 +106,7 @@ def _runner_head(container: str) -> str:
 def _prepare_environment(environ: dict[str, str] | None = None) -> dict[str, str]:
     environment = dict(os.environ if environ is None else environ)
     variant = _project_variants()[0]["name"]
-    version = _release_version(environment)
+    version = _optional_release_version(environment)
     container = _runner_container(variant)
     _require_running(container)
     host_head = _host_head()
@@ -150,12 +116,13 @@ def _prepare_environment(environ: dict[str, str] | None = None) -> dict[str, str
             f"{container} sees {runner_head[:12]} at {REPO_ROOT}, release tree is "
             f"{host_head[:12]}: the runner mounts a different checkout; start it from this tree"
         )
-    return {
+    exports = {
         "NAF_BUNDLE_RUNNER_ROOT": str(REPO_ROOT),
         "NAF_BUNDLE_RUNNER_CONTAINER": container,
-        "NAF_VERSION": version,
-        "NAF_BUNDLE_CMRU_CONFIG": str(_write_bundle_cmru_config()),
     }
+    if version is not None:
+        exports["NAF_VERSION"] = version
+    return exports
 
 
 def main() -> None:

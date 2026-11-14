@@ -45,22 +45,22 @@ in `[exec].env`. CMRU downloads ABI-tagged wheels from `requirements-runtime.txt
 helper expands them into Passenger's importable `vendor/` layout, seeds the database, and renders
 `app-defaults.env` under the matching interpreter.
 
-CMRU 7.3.0 appends `-v` to `project.prefix` when writing the manifest tag, while naf's release
-config already stores `naf-v`. The preflight therefore creates a short-lived `cmru.toml` copy
-with only that prefix normalized to `naf`; the declared variant table remains intact. This
-handler mismatch is recorded for vbpub in the B101 canary report.
+Passenger bundle builds require CMRU **7.3.1 or newer**, declared in the `cmru.toml` header and
+checked by the parser test when the tool is installed. CMRU 7.3.1 writes the canonical `naf-v`
+manifest tag and, when `NAF_VERSION` is unset, derives a commit-bound `.devN+g<hash>` version. Naf's preflight still
+checks the checkout runner identity but no longer requires a release tag or creates a temporary
+`cmru.toml` copy. `cmru release` remains the publishing path.
 
-Passenger bundles are built only during tagged `cmru release`; the preflight requires
-`CMRU_RELEASE_TAG`, and an untagged `cmru build` is unsupported. Each build clears stale versioned
-Passenger archives and removes `dist/app` after a successful archive exists. CMRU 7.3.0 currently
-blocks archive creation because its hard-exclude rules reject `app-defaults.env` and vendored
-`certifi/cacert.pem`; B101 stays open until vbpub ships the KI-162 fix and the controller verifies
-old/new artifact equivalence.
+The bundle keeps exactly the generated `app-defaults.env` and wheel-extracted
+`vendor/certifi/cacert.pem`. The stage helper reads `.env.defaults` from the checkout for database
+seeding and removes the temporary copy before manifest creation. CMRU removes `dist/app` after
+success (`keep_tree = false`); naf still removes stale `dist/naf-v*.tar.xz` siblings because CMRU
+keeps archives for other versions. The implementer has not run the real bundle build; the old/new
+artifact comparison and KI-126 acceptance remain open in B106.
 
 The configured artifact name is `naf-v<version>-<variant>.tar.xz`, matching CMRU's variant
-publisher and generated installer. Once the cmru hard-exclude blocker is fixed, it will include
-`manifest.json` inside one top-level `app/` directory; the CIU activation adapter strips that
-directory when extracting into the Passenger application root.
+publisher and generated installer. The bundle manifest is inside one top-level `app/` directory;
+the CIU activation adapter strips that directory when extracting into the Passenger application root.
 
 Each Passenger tarball contains:
 - Vendored dependencies (no pip install needed on server)

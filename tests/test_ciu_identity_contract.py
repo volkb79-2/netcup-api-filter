@@ -577,8 +577,8 @@ def test_bundle_build_refuses_a_runner_mounted_to_another_checkout():
     assert seen == ["py311", "resolved-runner"]
 
 
-def test_bundle_build_exports_the_resolved_runner_and_release_version():
-    """Reverting to direct cmru.toml feeds naf-v to version_to_tag and mis-tags the manifest."""
+def test_bundle_build_exports_the_runner_and_optional_release_version():
+    """The runner stays checkout-local; a tagged release version is passed through when present."""
     builder = _load_bundle_runner()
     seen = []
     builder._runner_container = lambda variant: seen.append(variant) or "ciu-resolved-container"
@@ -587,42 +587,28 @@ def test_bundle_build_exports_the_resolved_runner_and_release_version():
     builder._runner_head = lambda container: "a" * 40
     prepared = builder._prepare_environment({"CMRU_RELEASE_TAG": "naf-v1.2.3"})
     assert seen == ["py311", "ciu-resolved-container"]
-    try:
-        assert prepared["NAF_BUNDLE_RUNNER_ROOT"] == str(builder.REPO_ROOT)
-        assert prepared["NAF_BUNDLE_RUNNER_CONTAINER"] == "ciu-resolved-container"
-        assert prepared["NAF_VERSION"] == "1.2.3"
-        temporary_config = Path(prepared["NAF_BUNDLE_CMRU_CONFIG"])
-        assert temporary_config.name == "cmru.toml"
-        with temporary_config.open("rb") as handle:
-            bundle_project = tomllib.load(handle)["project"]
-        with (builder.REPO_ROOT / "cmru.toml").open("rb") as handle:
-            source_project = tomllib.load(handle)["project"]
-        assert bundle_project["prefix"] == "naf"
-        assert bundle_project["variants"] == source_project["variants"]
-    finally:
-        temporary_config = Path(prepared["NAF_BUNDLE_CMRU_CONFIG"])
-        temporary_config.unlink(missing_ok=True)
-        temporary_config.parent.rmdir()
+    assert prepared == {
+        "NAF_BUNDLE_RUNNER_ROOT": str(builder.REPO_ROOT),
+        "NAF_BUNDLE_RUNNER_CONTAINER": "ciu-resolved-container",
+        "NAF_VERSION": "1.2.3",
+    }
 
 
-def test_untagged_passenger_build_explains_the_cmru_release_requirement():
-    """Reverting the M2 preflight message hides that only tagged cmru release builds are supported."""
+def test_untagged_bundle_preflight_defers_version_resolution_to_cmru():
+    """Requiring a release tag here bypasses CMRU 7.3.1's commit-bound dev-version fallback."""
     builder = _load_bundle_runner()
-    expected = (
-        "Passenger bundle builds are supported only inside `cmru release` after it creates the "
-        "release tag; run `cmru release` to build and publish the tagged bundle."
-    )
-    assert builder.UNTAGGED_BUILD_INSTRUCTION == expected
-    try:
-        builder._release_version({})
-    except RuntimeError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("an untagged Passenger bundle build was accepted")
-    assert message == expected
-    try:
-        builder._release_version({"NAF_VERSION": "1.2.3"})
-    except RuntimeError as exc:
-        assert str(exc) == expected
-    else:
-        raise AssertionError("an untagged version override was accepted")
+    seen = []
+    builder._runner_container = lambda variant: seen.append(variant) or "ciu-resolved-container"
+    builder._require_running = lambda container: seen.append(container)
+    builder._host_head = lambda: "a" * 40
+    builder._runner_head = lambda container: "a" * 40
+
+    prepared = builder._prepare_environment({})
+
+    assert seen == ["py311", "ciu-resolved-container"]
+    assert prepared == {
+        "NAF_BUNDLE_RUNNER_ROOT": str(builder.REPO_ROOT),
+        "NAF_BUNDLE_RUNNER_CONTAINER": "ciu-resolved-container",
+    }
+    assert builder._optional_release_version({}) is None
+    assert builder._optional_release_version({"NAF_VERSION": "1.2.3"}) == "1.2.3"

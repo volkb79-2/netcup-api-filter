@@ -110,6 +110,15 @@ def seed_database(bundle_dir: Path) -> None:
                 os.environ[name] = value
 
 
+def copy_seed_defaults(bundle_dir: Path, repo_root: Path) -> None:
+    """Copy the build-only defaults for seeding; CMRU must not copy this protected input."""
+    bundle_dir = bundle_dir.resolve()
+    source = repo_root.resolve() / ".env.defaults"
+    if not source.is_file():
+        raise FileNotFoundError(f"Passenger seed defaults not found: {source}")
+    shutil.copy2(source, bundle_dir / ".env.defaults")
+
+
 def ship_runtime_defaults(bundle_dir: Path, repo_root: Path) -> None:
     """Replace the staged seed input with naf's allowlisted runtime defaults."""
     bundle_dir = bundle_dir.resolve()
@@ -146,6 +155,7 @@ def stage_bundle(
     _assert_target_interpreter(python_version)
     _prune_legacy_copy_exclusions(bundle_dir)
     _extract_vendor_wheels(bundle_dir / "vendor")
+    copy_seed_defaults(bundle_dir, repo_root)
     seed(bundle_dir)
     render_defaults(bundle_dir, repo_root)
 

@@ -633,15 +633,19 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
 
 - **B106 — Verify CMRU KI-126 Passenger bundle equivalence canary. Status: open**
   Naf replaces its hand-rolled Passenger tarball builder with `bundle.toml`, the `bundle-build`
-  handler, and a naf-owned stage helper. CMRU 7.3.1 is now the minimum supported builder version
-  (declared in the `cmru.toml` header); its exact `[archive].keep` list preserves the generated
-  `app-defaults.env` catalog and the extracted `vendor/certifi/cacert.pem`. The controller must
+  handler, and a naf-owned stage helper. CMRU 7.3.1 fixes the KI-162 hard-exclude collision and is
+  now the minimum supported builder version (declared in the `cmru.toml` header); its exact
+  `[archive].keep` list preserves the generated `app-defaults.env` catalog and the extracted
+  `vendor/certifi/cacert.pem`. Naf's former workarounds for tagged-only versioning,
+  prefix-normalized config, and staged-tree cleanup have been removed. Naf still prunes stale
+  versioned archives because 7.3.1 preserves sibling archives. The controller must
   build both the old implementation from `d5f7652:scripts/build_webhosting_tarball.py` and the new
   handler in the matching checkout runner, then compare sorted payload paths, sizes, and SHA-256
   for every non-database file; compare SQLite table names and row counts, the shipped admin, and
   absence of `secret_key`; and validate the new manifest. CMRU 7.3.1 names untagged output with its
-  commit-bound `.devN+g<hash>` fallback, removes staged trees after success, warns and skips
-  protected-suffix copied inputs, and fails on unkept protected-suffix files left by staging. The
-  implementer has not run either real artifact build; KI-126 acceptance remains open until the
+  commit-bound `.devN+g<hash>` fallback and removes staged trees after success. The tracked `src/`
+  and `scripts/` copy inputs currently contain no protected-suffix files, so the expected CMRU
+  skipped-path WARN count is zero; `.env.defaults` is excluded from CMRU copy and is stage-only.
+  The implementer has not run either real artifact build; KI-126 acceptance remains open until the
   controller records the full comparison and any mismatch here.
 
