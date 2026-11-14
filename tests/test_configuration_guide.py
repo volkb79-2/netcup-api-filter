@@ -57,7 +57,9 @@ def test_startup_guide_pins_init_lock_and_cli_inputs():
     assert any(
         "--enforce-admin" in action.option_strings for action in init_parser._actions
     ), "the real bootstrap CLI parser must expose --enforce-admin"
-    assert "`--enforce-admin`" in guide
+    assert re.search(r"`[^`]*--enforce-admin[^`]*`", guide), (
+        "the guide must show --enforce-admin in the explicit bootstrap command"
+    )
 
 
 def test_local_build_mailpit_and_mock_inputs_match_the_build_reader():
