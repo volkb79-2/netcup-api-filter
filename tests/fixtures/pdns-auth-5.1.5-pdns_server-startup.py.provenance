@@ -1,0 +1,12 @@
+Upstream test oracle provenance
+===============================
+
+Image: powerdns/pdns-auth-51:5.1.5
+Image ID: sha256:aebf3621c09d8bc6d41a8cda533a8996bb9b507ed7f14aa0103bac034e0327f3
+Repo digest: powerdns/pdns-auth-51@sha256:77ff4efdbb9ec30e9309c8a1cbed6121a67fa3be25c848bbbfa756fc75bf9a27
+Image path: /usr/local/sbin/pdns_server-startup
+SHA-256: 17869813e5b375f9732c65fd3941d3101be1641b4837970486230c7951ad8e04
+
+This is GPL-licensed PowerDNS source copied byte-for-byte from the pinned image and kept only
+as a test oracle for the PowerDNS template mount and render-context contract. It is not shipped
+or executed as application code.
