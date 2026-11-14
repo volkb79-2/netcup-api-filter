@@ -42,11 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
-    """Handle 2FA page by intercepting code from Mailpit.
-    
-    Returns True if successfully handled, False otherwise.
-    Note: We fill the code and submit the form directly via JavaScript.
-    """
+    """Handle a login 2FA page with its emailed code and verify the redirect."""
     try:
         # If multiple 2FA methods exist, prefer email because our automation
         # can retrieve email codes (TOTP cannot be automated here).
@@ -60,61 +56,42 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
             pass
 
         mailpit = MailpitClient()
-        
-        # Wait for 2FA email
-        msg = mailpit.wait_for_message(
-            predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
-            timeout=10.0
-        )
-        
-        if msg:
-            full_msg = mailpit.get_message(msg.id)
-            # Extract 6-digit code
-            code_match = re.search(r'\b(\d{6})\b', full_msg.text)
-            
-            if code_match:
-                code = code_match.group(1)
-                logger.info("extracted 2FA code from email (length=%d)", len(code))
-                
-                # Remember current URL to detect navigation
-                # Use _page.url directly to get live URL
-                url_before = browser._page.url
-                
-                # Fill the code field and submit the form directly via JavaScript
-                await browser.evaluate(f"""
-                    (function() {{
-                        const input = document.getElementById('code');
-                        const form = document.getElementById('twoFaForm');
-                        if (input && form) {{
-                            input.value = '{code}';
-                            form.submit();
-                        }}
-                    }})();
-                """)
-                
-                # Wait for navigation to complete
-                for _ in range(20):  # Up to 10 seconds
-                    await browser.wait_for_load_state('domcontentloaded')
-                    # Get live URL directly from page
-                    new_url = browser._page.url
-                    if new_url != url_before and "/2fa" not in new_url:
-                        logger.info(f"✓ 2FA navigation complete: {new_url}")
-                        break
-                else:
-                    logger.info(f"⚠️  2FA navigation did not complete, still at: {browser._page.url}")
-                
-                # Clear the used email
-                mailpit.delete_message(msg.id)
-                mailpit.close()
-                return True
-            else:
-                logger.info("⚠️  Could not extract code from email")
-        else:
-            logger.info("⚠️  No 2FA email found in Mailpit")
-        
-        mailpit.close()
+        try:
+            msg = mailpit.wait_for_message(
+                predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
+                timeout=10.0,
+            )
+            if not msg:
+                logger.info("No 2FA email found in Mailpit")
+                return False
+
+            code_match = re.search(r"\b(\d{6})\b", msg.text or msg.html or "")
+            if not code_match:
+                logger.info("Could not extract a 2FA code from the Mailpit message")
+                return False
+
+            code = code_match.group(1)
+            logger.info("extracted 2FA code from email (length=%d)", len(code))
+            url_before = browser._page.url
+            await browser.fill("#code", code)
+            async with browser._page.expect_navigation(
+                wait_until="domcontentloaded",
+                timeout=10000,
+            ):
+                await browser.click("form button[type='submit']")
+
+            new_url = browser._page.url
+            mailpit.delete_message(msg.id)
+            if new_url == url_before or "/2fa" in new_url:
+                logger.info("2FA submission did not leave the verification page")
+                return False
+
+            logger.info("2FA navigation completed")
+            return True
+        finally:
+            mailpit.close()
     except Exception as e:
-        logger.info("⚠️  2FA via Mailpit failed (%s)", type(e).__name__)
+        logger.info("2FA via Mailpit failed (%s)", type(e).__name__)
     
     return False
 

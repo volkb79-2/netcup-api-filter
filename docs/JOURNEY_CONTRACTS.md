@@ -252,10 +252,11 @@ ui_tests/tests/journeys/j3_comprehensive_states.py
 J3_04 exercises `/api/dns/<zone>/records` and the hostname-oriented
 `/api/ddns/<zone>/<hostname>` endpoint. Creates expect HTTP 201; denied operations and out-of-zone
 requests expect 403; expired and revoked credentials expect 401. Realm-host cases use the FQDN
-created during that run. The expired-token case runs only when the read-only database confirms the
-token is expired; the current token form creates only future expirations, so otherwise that case is
-reported as skipped. The expiring-token case uses the shortest supported form option (30 days).
-J3_04 requires at least one passing API case and fails if any non-skipped case fails.
+created during that run, and the test realms carry the read-only, TXT-only, or full-control
+operations used by their API cases. The expired-token case runs only when the read-only database
+confirms the token is expired; the current token form creates only future expirations, so otherwise
+that case is reported as skipped. The expiring-token case uses the shortest supported form option
+(30 days). J3_04 requires at least one passing API case and fails if any non-skipped case fails.
 
 ### Postconditions
 - [x] Test account approved and can login

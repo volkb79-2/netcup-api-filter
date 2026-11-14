@@ -362,10 +362,14 @@ class RealmCreator:
                 full_domain
             )
         
-        # Realm type selection
-        type_select = await self.browser.query_selector("#realm_type, select[name='realm_type']")
-        if type_select:
-            await self.browser.select("#realm_type, select[name='realm_type']", spec.realm_type)
+        # The realm form uses radio inputs, so select the matching label explicitly.
+        type_radio = f"input[name='realm_type'][value='{spec.realm_type}']"
+        if not await self.browser.query_selector(type_radio):
+            pytest.fail(f"Realm form has no control for type {spec.realm_type}", pytrace=False)
+        if not await self.browser.query_selector(f"{type_radio}:checked"):
+            await self.browser.click(f"label[for='type_{spec.realm_type}']")
+        if not await self.browser.query_selector(f"{type_radio}:checked"):
+            pytest.fail(f"Realm form did not select type {spec.realm_type}", pytrace=False)
         
         # Record types (multi-select or checkboxes)
         for record_type in spec.allowed_record_types:

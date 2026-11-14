@@ -177,7 +177,8 @@ REALMS = [
         domain="example.com",
         realm_value="k8s",
         status="approved",
-        description="Subdomain realm (k8s.example.com + children) approved"
+        allowed_operations=["read"],
+        description="Read-only subdomain realm (k8s.example.com + children) approved"
     ),
     
     # Subdomain-only type realms (children only, not apex)
