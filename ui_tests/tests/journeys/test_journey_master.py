@@ -114,6 +114,19 @@ class TestJourneyMaster:
             await run_step("J2_08", journey.test_J2_08_summary(browser))
         
         logger.info(f"\n✓ Journey 2 complete: {len(journey_state.screenshots)} screenshots total")
+        from ui_tests.config import settings
+
+        if (
+            journey_state.get_extra("invite_based_account")
+            and settings.deployment_target != "webhosting"
+        ):
+            expected_skipped_steps = {"J2_02", "J2_03", "J2_04", "J2_05", "J2_06"}
+            actual_skipped_steps = {name for name, _ in skipped_steps}
+            assert actual_skipped_steps == expected_skipped_steps, (
+                "The local admin-invite path must report J2_02 through J2_06 as skipped; "
+                f"got {sorted(actual_skipped_steps)}"
+            )
+
         if skipped_steps:
             pytest.skip(
                 "Journey 2 completed with documented skipped steps: "
