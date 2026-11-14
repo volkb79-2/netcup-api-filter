@@ -595,12 +595,12 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   bounded cleanup for failed-login rows (or an explicitly justified sampling policy), with tests that prove the
   retention bound and preserve other audit actions.
 
-- **B102 — Move app-local and ciu identity hook timeouts and paths into stack config. Status: open (Low)**
+- **B102 — Move app-local, ciu identity, and journey timeouts into config. Status: open (Low)**
   `tooling/ciu_identity.py:38` hardcodes a 30-second `ciu resolve` timeout. `tooling/app-local/post_compose_seed_domain.py:166-188`
   hardcodes 90-second health, 30 attempts with 5-second Docker probes and 2-second sleeps, a 60-second subprocess timeout,
   and `/opt/tester-venv/bin/python`; `tooling/app-local/post_compose_init_instance.py:37,81-87` hardcodes 120-second
   health and subprocess timeouts. The journeys also hardcode 10-second waits/timeouts at
-  `ui_tests/tests/journeys/j2_account_lifecycle.py:69,86,420,480` and
+  `ui_tests/tests/journeys/j2_account_lifecycle.py:69,86,420,481` and
   `ui_tests/tests/journeys/j3_comprehensive_states.py:185,816,908`.
   Add typed `[app_local.hooks]` settings (and a corresponding ciu identity setting), pass them through the merged
   stack config, and add an `E2E_*` setting for journey waits/timeouts. Tests should prove configured values control each
