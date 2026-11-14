@@ -84,6 +84,7 @@ class TestJourneyMaster:
     
     async def test_journey_2_account_lifecycle(self, mailpit_client):
         """Journey 2: Account registration, verification, and approval."""
+        journey_state.set_extra("j2_user_login_verified", False)
         logger.info("\n" + "=" * 60)
         logger.info("JOURNEY 2: Account Lifecycle")
         logger.info("=" * 60)
@@ -125,6 +126,18 @@ class TestJourneyMaster:
     
     async def test_journey_3_comprehensive_states(self):
         """Journey 3: Create ALL account/realm/token states from matrix."""
+        from ui_tests.config import settings
+
+        if (
+            journey_state.get_extra("invite_based_account")
+            and settings.deployment_target != "webhosting"
+            and not journey_state.get_extra("j2_user_login_verified")
+        ):
+            pytest.fail(
+                "The local J2 admin-invite path did not reach and verify J2_07 user login",
+                pytrace=False,
+            )
+
         logger.info("\n" + "=" * 60)
         logger.info("JOURNEY 3: Comprehensive State Population")
         logger.info("=" * 60)

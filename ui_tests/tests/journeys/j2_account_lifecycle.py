@@ -466,6 +466,7 @@ class TestJourney2AccountLifecycle:
         # Verify not on login page anymore
         current_url = browser._page.url
         assert "/login" not in current_url, f"Login should succeed, still at: {current_url}"
+        journey_state.set_extra("j2_user_login_verified", True)
         
         logger.info(f"✓ User {journey_state.test_account_username} logged in successfully")
 
