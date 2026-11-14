@@ -266,9 +266,9 @@ read-only database confirms the token is expired; the expiring-token case uses t
 supported form option (30 days). Every other case must pass.
 
 ### Postconditions
-- [x] Test account approved and can login
+- [x] The J2 admin-invite account accepts its invite and logs in on the local target
 - [x] Multiple accounts in various states exist
-- [x] Approval workflow verified end-to-end
+- [ ] Full self-registration, verification, admin approval, and login coverage remains open in B105
 
 ---
 
