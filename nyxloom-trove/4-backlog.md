@@ -96,8 +96,10 @@ items:
   - {id: B098, title: "The delegated zone has no A record for its own nameserver (ns1) because the bootstrap hook creates only NS and SOA", type: bugfix, component: infra, context_estimate: small}
   - {id: B100, title: "app.py emits no proxy-trust notice on the first request carrying X-Forwarded-*", type: bugfix, component: app, context_estimate: small}
   - {id: B101, title: "Bound ActivityLog growth from failed admin logins", type: bugfix, component: security, context_estimate: medium}
-  - {id: B102, title: "Move app-local and ciu identity hook timeouts and paths into stack config", type: bugfix, component: infra, context_estimate: medium}
+  - {id: B102, title: "Move app-local, ciu identity, and journey timeouts into config", type: bugfix, component: infra, context_estimate: medium}
   - {id: B103, title: "Coordinate PowerDNS port 53 across checkouts", type: bugfix, component: infra, context_estimate: small}
+  - {id: B104, title: "Move operator-specific values out of tracked live config", type: bugfix, component: infra, context_estimate: small}
+  - {id: B105, title: "Add missing expired-token and registration-approval e2e oracles", type: bugfix, component: test-infra, context_estimate: medium}
 ---
 
 # Backlog
@@ -597,12 +599,33 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   `tooling/ciu_identity.py:38` hardcodes a 30-second `ciu resolve` timeout. `tooling/app-local/post_compose_seed_domain.py:166-188`
   hardcodes 90-second health, 30 attempts with 5-second Docker probes and 2-second sleeps, a 60-second subprocess timeout,
   and `/opt/tester-venv/bin/python`; `tooling/app-local/post_compose_init_instance.py:37,81-87` hardcodes 120-second
-  health and subprocess timeouts.
+  health and subprocess timeouts. The journeys also hardcode 10-second waits/timeouts at
+  `ui_tests/tests/journeys/j2_account_lifecycle.py:69,86,420,480` and
+  `ui_tests/tests/journeys/j3_comprehensive_states.py:185,816,908`.
   Add typed `[app_local.hooks]` settings (and a corresponding ciu identity setting), pass them through the merged
-  stack config, and test that changed configured values control each wait, timeout, and executable path.
+  stack config, and add an `E2E_*` setting for journey waits/timeouts. Tests should prove configured values control each
+  wait, timeout, and executable path.
 
 - **B103 — Coordinate PowerDNS port 53 across checkouts. Status: open (Low)**
   `tooling/backend-powerdns/ciu.compose.yml.j2:135-136` publishes `${backend_powerdns.ports.dns}:53/udp` and `:53/tcp` on the
   host, so two checkout instances cannot bind concurrently. The PowerDNS README documents this current limit. Choose
   a host-wide singleton stack or add an explicit host-port reservation/ownership contract before supporting parallel
   checkouts; test the selected guard before Compose starts.
+
+- **B104 — Move operator-specific values out of tracked live config. Status: open (Low)**
+  The tracked live configuration contains an SSH key filename carrying an account number in
+  `.devcontainer/finalize.post.d/10-netcup-setup.sh`, a personal-domain `ntfy_url` in
+  `nyxloom-trove/nyxloom.toml`, and a CIU deployment label prefix containing a personal domain in
+  `ciu.global.defaults.toml.j2`. The values were restored byte-for-byte from `958b389` after the M10 sweep changed
+  them outside that finding's scope. Move each to a gitignored/devcontainer environment setting with a loud,
+  documented default; the operator decides the desired values and no value should be silently rewritten.
+
+- **B105 — Add missing expired-token and registration-approval e2e oracles. Status: open (Low)**
+  J3_04 honestly skips `token-expired` because the account UI cannot create a past expiry; product-level rejection
+  remains covered by `tests/test_api_security_http.py::test_expired_token_rejected` and
+  `tests/test_token_auth_unit.py::test_auth_token_expired`. Add an admin-side or test-hook mechanism that creates a
+  past-expiry token in the isolated e2e session, then assert the request receives 401. Separately, the existing
+  `ui_tests/tests/features/test_registration_e2e.py::TestFullRegistrationFlow.test_full_registration_to_pending`
+  covers register/verify through pending, while `TestAdminAccountApproval.test_pending_accounts_visible_in_admin`
+  only checks visibility; neither performs admin approval followed by user login. Add an integration e2e for the
+  full register, verify, approve, and login flow.

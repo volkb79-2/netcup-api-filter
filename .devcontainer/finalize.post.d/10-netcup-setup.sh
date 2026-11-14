@@ -237,7 +237,7 @@ EOF
     fi
 
     # SSH keys to add to agent (from mounted host ~/.ssh)
-    local SSH_KEYS=("netcup-webhosting-ed25519")
+    local SSH_KEYS=("netcup-hosting218629-ed25519")
     local ssh_dir="/home/vscode/.ssh-host"
 
     if [[ ! -d "$ssh_dir" ]]; then
