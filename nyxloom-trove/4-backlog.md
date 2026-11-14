@@ -101,6 +101,7 @@ items:
   - {id: B104, title: "Move operator-specific values out of tracked live config", type: bugfix, component: infra, context_estimate: small}
   - {id: B105, title: "Add missing expired-token and registration-approval e2e oracles", type: bugfix, component: test-infra, context_estimate: medium}
   - {id: B106, title: "journey and test oracle gaps (low)", type: bugfix, component: tests, context_estimate: medium}
+  - {id: B107, title: "Diagnose the recurring ERR_CONNECTION_RESET in cross-role token lifecycle e2e tests", type: bugfix, component: test-infra, context_estimate: medium}
 ---
 
 # Backlog
@@ -666,3 +667,20 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
     changing the UI contract.
   - `nyxloom-trove/4-backlog.md:43,235`: B039's index title says “Adopt a meaningful, verified gate” while
     its body says “Adopt the shared testing library once it exists.” Rename one so index and body agree.
+
+- **B107 — Diagnose the recurring ERR_CONNECTION_RESET in the cross-role token lifecycle e2e tests. Status: open (Medium)**
+  Three full e2e runs, each on a different head, hit `net::ERR_CONNECTION_RESET` (or the 500/reset of the
+  throwaway app) in `ui_tests/tests/roundtrip/test_cross_role_token_lifecycle.py` and passed on the next run
+  with no code change in that area: (1) `test_user_token_revocation_blocks_api_and_logs` in the first candidate
+  run of the fold-in package (5 failures, later identical code passed); (2) the same test file in a later
+  candidate run of that package; (3) `test_readonly_token_scope_enforced` ("goto failed ... ERR_CONNECTION_RESET
+  at http://<runner>:<port>/account/login", networkidle) in the first correctly provisioned run of the next
+  package (1 failed, 316 passed, 36 skipped); the controller's rerun of the same head passed 317/36/0. It has
+  not been reproduced on demand and the cause is UNKNOWN. Do not mask it with retries or longer waits.
+  Diagnosis plan: capture the throwaway app's stdout/stderr (`ui_tests/e2e_env.py` starts it per session) and
+  the process state around the failing test (did the app process restart or hit a worker timeout while the
+  browser navigated); check the Playwright navigation uses `networkidle` against a server with keep-alive and
+  a single worker; check whether the pwmcp recycle (`E2E_PWMCP_RECYCLE_*`, B069) closes a context while a
+  request is in flight; add the app log tail to the failure message of the e2e harness so the next occurrence
+  carries evidence. Acceptance: either a root cause with a fix and a test that fails on the old behaviour, or
+  ten consecutive full e2e runs without the reset after the diagnostic logging is in place, recorded here.
