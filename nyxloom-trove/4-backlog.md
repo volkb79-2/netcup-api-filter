@@ -668,7 +668,7 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   - `nyxloom-trove/4-backlog.md:43,235`: B039's index title says “Adopt a meaningful, verified gate” while
     its body says “Adopt the shared testing library once it exists.” Rename one so index and body agree.
 
-- **B107 — Diagnose the recurring ERR_CONNECTION_RESET in the cross-role token lifecycle e2e tests. Status: open (Medium)**
+- **B107 — Diagnose the recurring ERR_CONNECTION_RESET in cross-role token lifecycle e2e tests. Status: open (Medium)**
   Three full e2e runs, each on a different head, hit `net::ERR_CONNECTION_RESET` (or the 500/reset of the
   throwaway app) in `ui_tests/tests/roundtrip/test_cross_role_token_lifecycle.py` and passed on the next run
   with no code change in that area: (1) `test_user_token_revocation_blocks_api_and_logs` in the first candidate
