@@ -91,19 +91,33 @@ class TestJourneyMaster:
         from ui_tests.tests.journeys.j2_account_lifecycle import TestJourney2AccountLifecycle
         
         journey = TestJourney2AccountLifecycle()
+        skipped_steps = []
+
+        async def run_step(name, step):
+            try:
+                await step
+            except pytest.skip.Exception as exc:
+                reason = str(exc)
+                skipped_steps.append((name, reason))
+                logger.info("Journey 2 step %s skipped: %s", name, reason)
         
         # Execute journey steps in order using function-scope browser
         async with browser_session("anonymous") as browser:
-            await journey.test_J2_01_registration_page(browser)
-            await journey.test_J2_02_submit_registration(browser, mailpit_client)
-            await journey.test_J2_03_check_verification_email(browser, mailpit_client)
-            await journey.test_J2_04_complete_verification(browser)
-            await journey.test_J2_05_admin_sees_pending_account(browser)
-            await journey.test_J2_06_approve_account(browser, mailpit_client)
-            await journey.test_J2_07_user_can_login(browser, mailpit_client)
-            await journey.test_J2_08_summary(browser)
+            await run_step("J2_01", journey.test_J2_01_registration_page(browser))
+            await run_step("J2_02", journey.test_J2_02_submit_registration(browser, mailpit_client))
+            await run_step("J2_03", journey.test_J2_03_check_verification_email(browser, mailpit_client))
+            await run_step("J2_04", journey.test_J2_04_complete_verification(browser))
+            await run_step("J2_05", journey.test_J2_05_admin_sees_pending_account(browser))
+            await run_step("J2_06", journey.test_J2_06_approve_account(browser, mailpit_client))
+            await run_step("J2_07", journey.test_J2_07_user_can_login(browser, mailpit_client))
+            await run_step("J2_08", journey.test_J2_08_summary(browser))
         
         logger.info(f"\n✓ Journey 2 complete: {len(journey_state.screenshots)} screenshots total")
+        if skipped_steps:
+            pytest.skip(
+                "Journey 2 completed with documented skipped steps: "
+                + "; ".join(f"{name}: {reason}" for name, reason in skipped_steps)
+            )
     
     # =========================================================================
     # Journey 3: Comprehensive State Population

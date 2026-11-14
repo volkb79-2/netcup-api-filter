@@ -184,7 +184,8 @@ ui_tests/tests/journeys/j2_account_lifecycle.py
 When self-registration is disabled, J2 creates the account through the admin invite flow. On local
 targets it finds the invite in Mailpit, accepts it, sets a password, and verifies account login.
 J2_02 through J2_06 are reported as skipped on this path because they do not exercise
-self-registration; J2_05 still captures the admin account list. The feature test
+self-registration; J2_05 still captures the admin account list. The journey master collects these
+step skips and continues through J2_07, then reports the overall J2 item as skipped. The feature test
 `ui_tests/tests/features/test_registration_e2e.py::TestFullRegistrationFlow.test_full_registration_to_pending`
 covers registration and verification through the pending state. No current e2e test combines that
 flow with admin approval and user login; B105 tracks the missing integration coverage. The invite
