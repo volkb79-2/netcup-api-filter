@@ -92,8 +92,9 @@ stack keeps the API key API-only and gives the webserver its own generated passw
 and [webserver settings](https://doc.powerdns.com/authoritative/settings.html#webserver-password).
 
 Both secrets are generated once into this checkout's CIU secret store, are not operator-supplied,
-committed, or shared with another worktree, and are exposed to the daemon through CIU's secret
-delivery. The app-local seed hook reads only the API key through `ctx.secret_file()`.
+committed, or shared with another worktree. They reach the daemon as Compose `environment:` values
+through CIU's `expose_env` mapping and are visible to anyone with permission to run `docker inspect`.
+The app-local seed hook reads only the API key through `ctx.secret_file()`.
 
 ```bash
 cd /workspaces/netcup-api-filter

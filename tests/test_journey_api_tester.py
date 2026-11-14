@@ -97,3 +97,45 @@ async def test_api_tester_fails_when_required_token_was_not_created(monkeypatch)
 
     assert result["status"] == "failed"
     assert tester.results == [result]
+
+
+@pytest.mark.asyncio
+async def test_api_tester_records_request_errors_as_failed_results(monkeypatch):
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def get(self, url, *, headers):
+            raise ConnectionError("fake API connection failure")
+
+    monkeypatch.setattr(j3, "settings", SimpleNamespace(base_url="http://app.test"))
+    monkeypatch.setattr(j3.httpx, "AsyncClient", FakeClient)
+    tester = j3.APITester(SimpleNamespace(created_tokens={
+        "token-readonly": {
+            "token_name": "token-readonly-random",
+            "token_value": "test-token-value",
+            "realm_fqdn": "managed-random.example.com",
+        }
+    }))
+
+    result = await tester.run_test(APITestSpec(
+        token_name="token-readonly",
+        operation="read",
+        record_type="A",
+        hostname="{realm}",
+        expected_status=200,
+        description="a transport error must count as an API test failure",
+    ))
+
+    failed = sum(
+        1 for recorded in tester.results if recorded.get("status") in {"failed", "error"}
+    )
+    assert result["status"] == "error"
+    assert tester.results == [result]
+    assert failed == 1

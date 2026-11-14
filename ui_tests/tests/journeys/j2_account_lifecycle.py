@@ -40,6 +40,13 @@ from ui_tests import workflows
 
 logger = logging.getLogger(__name__)
 
+_ADMIN_INVITE_PATH_SKIP_REASON = (
+    "admin-invite path: self-registration not exercised here; register/verify-to-pending is "
+    "covered by ui_tests/tests/features/test_registration_e2e.py::"
+    "TestFullRegistrationFlow.test_full_registration_to_pending; full admin approval-to-login "
+    "integration is tracked in B105"
+)
+
 
 async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
     """Handle a login 2FA page with its emailed code and verify the redirect."""
@@ -217,7 +224,7 @@ class TestJourney2AccountLifecycle:
         # Skip if we used admin creation
         if journey_state.test_account_username:
             logger.info("ℹ️  Skipping - account already created by admin")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         if not journey_state.get_extra("self_registration_available", False):
             pytest.fail(
@@ -264,7 +271,7 @@ class TestJourney2AccountLifecycle:
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved (admin-created)")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         # Wait for verification email
         msg = mailpit.wait_for_message(
@@ -306,7 +313,7 @@ class TestJourney2AccountLifecycle:
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         verification_code = journey_state.get_extra("verification_code")
         verification_link = journey_state.get_extra("verification_link")
@@ -345,7 +352,7 @@ class TestJourney2AccountLifecycle:
             await browser.goto(settings.url("/admin/accounts"))
             await browser.wait_for_timeout(300)
             await capture(browser, "accounts-list-with-created")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         # Login as admin
         await _login_as_admin(browser)
@@ -371,7 +378,7 @@ class TestJourney2AccountLifecycle:
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         # Clear mailpit to catch approval email
         mailpit.clear()

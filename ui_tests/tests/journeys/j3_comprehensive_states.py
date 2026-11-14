@@ -400,14 +400,48 @@ class RealmCreator:
         await self.browser.click("button[type='submit']")
         await self.browser.wait_for_timeout(1000)
         
-        # Check for success
         page_text = await self.browser.text("body")
-        success = "added" in page_text.lower() or "created" in page_text.lower() or "realm" in page_text.lower()
-        
-        # Get realm ID from redirect URL if possible
         realm_id = None
-        current_url = self.browser.current_url or ""
-        # Might redirect to account detail page
+
+        if verification.db_available():
+            account_username = account.get("username")
+            if not account_username:
+                pytest.fail(
+                    f"J3_02 cannot verify persisted realm {spec.name}: account username is missing",
+                    pytrace=False,
+                )
+            realm_row = verification.get_realm(
+                account_username=account_username,
+                domain=spec.domain,
+                realm_value=realm_value,
+            )
+            if realm_row is None:
+                pytest.fail(
+                    f"J3_02 did not persist realm {spec.name} for {full_domain}",
+                    pytrace=False,
+                )
+            expected_fields = {
+                "domain": spec.domain,
+                "realm_value": realm_value,
+                "realm_type": spec.realm_type,
+                "status": "approved",
+            }
+            mismatches = {
+                field: (realm_row.get(field), expected)
+                for field, expected in expected_fields.items()
+                if realm_row.get(field) != expected
+            }
+            if mismatches:
+                pytest.fail(
+                    f"J3_02 persisted realm {spec.name} has unexpected fields: {mismatches}",
+                    pytrace=False,
+                )
+            realm_id = realm_row.get("id")
+        elif "Realm added" not in page_text:
+            pytest.fail(
+                f"J3_02 did not show the exact success flash for realm {spec.name}",
+                pytrace=False,
+            )
         
         realm_data = {
             "spec_name": spec.name,
@@ -429,10 +463,7 @@ class RealmCreator:
             logger.info("  ℹ️  Note: Admin-created realms are auto-approved, spec wanted 'pending'")
         
         self.created_realms[spec.name] = realm_data
-        if success:
-            logger.info(f"✓ Created realm: {full_domain} ({spec.realm_type}, {realm_data['status']})")
-        else:
-            logger.info(f"⚠️  Realm creation may have failed for {full_domain}")
+        logger.info(f"✓ Created realm: {full_domain} ({spec.realm_type}, {realm_data['status']})")
         
         return realm_data
 
@@ -804,21 +835,33 @@ class APITester:
         """Run API test based on spec."""
         token_data = self.token_creator.created_tokens.get(spec.token_name)
         if not token_data:
-            result = {"status": "failed", "reason": f"token {spec.token_name} was not created"}
+            result = {
+                "token_name": spec.token_name,
+                "status": "failed",
+                "reason": f"token {spec.token_name} was not created",
+            }
             self.results.append(result)
             logger.info("✗ API test failed: %s", result["reason"])
             return result
         
         token_value = token_data.get("token_value")
         if not token_value:
-            result = {"status": "failed", "reason": f"token {spec.token_name} has no captured value"}
+            result = {
+                "token_name": spec.token_name,
+                "status": "failed",
+                "reason": f"token {spec.token_name} has no captured value",
+            }
             self.results.append(result)
             logger.info("✗ API test failed: %s", result["reason"])
             return result
 
         if spec.token_name == "token-expired":
             if not verification.db_available():
-                result = {"status": "skipped", "reason": "no read-only token database is available"}
+                result = {
+                    "token_name": spec.token_name,
+                    "status": "skipped",
+                    "reason": "no read-only token database is available",
+                }
                 logger.info("⚠️ API test skipped: cannot verify expired token state without the read-only database")
                 self.results.append(result)
                 return result
@@ -835,6 +878,7 @@ class APITester:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at is None or expires_at >= datetime.now(timezone.utc):
                 result = {
+                    "token_name": spec.token_name,
                     "status": "skipped",
                     "reason": "the account token form only creates future expirations; read-only DB confirms this token is not expired",
                 }
@@ -882,13 +926,21 @@ class APITester:
                 elif spec.operation == "delete":
                     response = await client.delete(f"{endpoint}/1", headers=headers)
                 else:
-                    return {"status": "error", "reason": f"unknown operation: {spec.operation}"}
+                    result = {
+                        "token_name": spec.token_name,
+                        "status": "error",
+                        "reason": f"unknown operation: {spec.operation}",
+                    }
+                    self.results.append(result)
+                    return result
                 
                 result = {
+                    "token_name": spec.token_name,
                     "spec": spec,
                     "actual_status": response.status_code,
                     "expected_status": spec.expected_status,
                     "passed": response.status_code == spec.expected_status,
+                    "status": "passed" if response.status_code == spec.expected_status else "failed",
                 }
                 
                 if result["passed"]:
@@ -901,7 +953,13 @@ class APITester:
                 
         except Exception as e:
             logger.info("✗ API test error: %s - %s", spec.description, type(e).__name__)
-            return {"status": "error", "reason": type(e).__name__}
+            result = {
+                "token_name": spec.token_name,
+                "status": "error",
+                "reason": type(e).__name__,
+            }
+            self.results.append(result)
+            return result
 
 
 class TestJourney3ComprehensiveStates:
@@ -952,7 +1010,9 @@ class TestJourney3ComprehensiveStates:
             await capture(browser, f"realm-{spec.name}")
         
         # Store for token creation
-        assert creator.created_realms, "J3_02 did not create any realms"
+        assert len(creator.created_realms) == len(REALMS), (
+            f"J3_02 created {len(creator.created_realms)} of {len(REALMS)} configured realms"
+        )
         journey_state.set_extra("realm_creator", creator)
         
         # Screenshot: All realms list
@@ -1030,14 +1090,36 @@ class TestJourney3ComprehensiveStates:
             await tester.run_test(spec)
         
         # Summary
-        passed = sum(1 for r in tester.results if r.get("passed"))
-        failed = sum(1 for r in tester.results if not r.get("passed") and r.get("status") != "skipped")
-        skipped = sum(1 for r in tester.results if r.get("status") == "skipped")
+        passed = sum(1 for result in tester.results if result.get("status") == "passed")
+        failed = sum(
+            1 for result in tester.results if result.get("status") in {"failed", "error"}
+        )
+        skipped_results = [
+            result for result in tester.results if result.get("status") == "skipped"
+        ]
+        skipped = len(skipped_results)
         
         logger.info(f"\nAPI Tests: {passed} passed, {failed} failed, {skipped} skipped")
-        assert failed == 0 and passed > 0, (
-            f"J3_04 expected passing API cases and no failures; got {passed} passed, "
-            f"{failed} failed, {skipped} skipped"
+        assert len(tester.results) == len(API_TESTS), (
+            f"J3_04 recorded {len(tester.results)} of {len(API_TESTS)} API test results"
+        )
+        assert all(result.get("token_name") == "token-expired" for result in skipped_results), (
+            "J3_04 permits only token-expired to skip because the current token form cannot "
+            "create a past expiry (or no read-only database is available to verify it)"
+        )
+        assert all(
+            result.get("reason") in {
+                "no read-only token database is available",
+                "the account token form only creates future expirations; read-only DB confirms this token is not expired",
+            }
+            for result in skipped_results
+        ), "J3_04 token-expired skips must state why the expired-token oracle could not run"
+        assert passed + skipped == len(API_TESTS), (
+            f"J3_04 expected every API case to pass or be the documented token-expired skip; "
+            f"got {passed} passed, {failed} failed, {skipped} skipped for {len(API_TESTS)} cases"
+        )
+        assert failed == 0, (
+            f"J3_04 expected no failed or error API cases; got {failed} failures/errors"
         )
     
     async def test_J3_05_ui_validation(self, browser: Browser):

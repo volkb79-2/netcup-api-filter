@@ -182,13 +182,18 @@ ui_tests/tests/journeys/j2_account_lifecycle.py
 
 ### Test: J2_07_user_can_login
 When self-registration is disabled, J2 creates the account through the admin invite flow. On local
-targets it finds the invite in Mailpit, accepts it, sets a password, and verifies account login. The
-only skip is webhosting, where the synthetic mailbox cannot complete the invite.
+targets it finds the invite in Mailpit, accepts it, sets a password, and verifies account login.
+J2_02 through J2_06 are reported as skipped on this path because they do not exercise
+self-registration; J2_05 still captures the admin account list. The feature test
+`ui_tests/tests/features/test_registration_e2e.py::TestFullRegistrationFlow.test_full_registration_to_pending`
+covers registration and verification through the pending state. No current e2e test combines that
+flow with admin approval and user login; B105 tracks the missing integration coverage. The invite
+login step is skipped on webhosting, where the synthetic mailbox cannot complete the invite.
 
 ### Postconditions
 - [x] Test account created through self-registration or the admin invite fallback
 - [x] Local invite fallback is accepted through Mailpit and the new account can log in
-- [x] Pending registration accounts remain available for admin approval
+- [x] Pending registration accounts remain available for admin approval when self-registration is enabled
 
 ---
 
@@ -253,10 +258,12 @@ J3_04 exercises `/api/dns/<zone>/records` and the hostname-oriented
 `/api/ddns/<zone>/<hostname>` endpoint. Creates expect HTTP 201; denied operations and out-of-zone
 requests expect 403; expired and revoked credentials expect 401. Realm-host cases use the FQDN
 created during that run, and the test realms carry the read-only, TXT-only, or full-control
-operations used by their API cases. The expired-token case runs only when the read-only database
-confirms the token is expired; the current token form creates only future expirations, so otherwise
-that case is reported as skipped. The expiring-token case uses the shortest supported form option
-(30 days). J3_04 requires at least one passing API case and fails if any non-skipped case fails.
+operations used by their API cases. J3_04 records one result for every API spec and counts both
+failed HTTP expectations and request errors as failures. Only `token-expired` may skip, with a
+reason stating either that the current token form creates only future expirations or that no
+read-only database is available to verify an expiry. The expired-token case runs only when the
+read-only database confirms the token is expired; the expiring-token case uses the shortest
+supported form option (30 days). Every other case must pass.
 
 ### Postconditions
 - [x] Test account approved and can login

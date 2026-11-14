@@ -34,10 +34,6 @@ API_URL = "http://naf-instance42-powerdns:8081"  # fixture identity, not a real 
 API_KEY = "test-powerdns-api-key"
 
 
-def test_seed_fixture_uses_documentation_zone():
-    assert ZONE == "managed.example.com"
-
-
 def test_empty_zone_is_a_noop(app, db):
     result = seed_delegated_zone_domain_root("", api_url=API_URL, api_key=API_KEY)
     assert result is None
