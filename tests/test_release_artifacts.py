@@ -96,12 +96,9 @@ def test_tree_ships_runtime_catalog_and_no_env_or_state_files(staging):
     """Leaving the staged .env.defaults file in the artifact fails the file-list oracle."""
     names = {p.name for p in staging.rglob("*") if p.is_file()}
     assert SHIPPED_DEFAULTS_FILENAME in names
-    forbidden = {
-        ".env", ".env.defaults", ".env.services", ".env.workspace", "ciu.env",
-        ".env.operator", ".env.webhoster", ".env.live", ".env.guard",
-        ".env.operator.example", ".env.webhoster.example", ".env.live.example", ".env.guard.example",
-    }
-    assert not (names & forbidden), names & forbidden
+    forbidden_env_files = {name for name in names if name.startswith(".env")}
+    assert not forbidden_env_files, forbidden_env_files
+    assert "ciu.env" not in names
     assert not [n for n in names if n.startswith("deployment_state_")]
     assert (staging / "passenger_wsgi.py").is_file()
 

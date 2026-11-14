@@ -166,6 +166,26 @@ First-start initialization is serialized by `<db>.init.lock`; failures are fatal
 never rendered to clients. Configured bootstrap passwords must satisfy the product password
 policy.
 
+### Bootstrap inputs, init lock and SECRET_KEY
+
+For a container first start, set `NAF_BOOTSTRAP_ADMIN_USERNAME` and
+`NAF_BOOTSTRAP_ADMIN_EMAIL`, plus exactly one of `NAF_BOOTSTRAP_ADMIN_PASSWORD_FILE` (preferred,
+pointing to a mounted secret) or `NAF_BOOTSTRAP_ADMIN_PASSWORD`. The password value and password
+file are mutually exclusive. Instead of environment inputs, `app-config.toml` may define an
+`[[users]]` entry with `is_admin = true` and an explicit password. These inputs create the first
+admin only; they do not reset an existing account. The explicit operator command
+`python -m netcup_api_filter.bootstrap init --enforce-admin` reasserts the configured admin;
+startup hooks do not use this option.
+
+Initialization uses an exclusive `<db>.init.lock`; other processes wait up to
+`NAF_INIT_LOCK_TIMEOUT_SECONDS` and startup fails if that wait expires. `SECRET_KEY_FILE` and
+`SECRET_KEY` are mutually exclusive. A supplied key must be at least 16 characters; when neither
+is supplied, the app creates and persists one in the database.
+
+Local builds and `tooling/app-local` seed Mailpit settings from `SERVICE_MAILPIT` (resolved by
+`.env.services`) and the `.env.defaults` keys `LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, and
+`LOCAL_MAIL_ADMIN_EMAIL`. These are local-only configuration, not webhosting or OCI credentials.
+
 ## Adding configuration
 
 Put a new key in the file whose scope owns it. Add a `.env.defaults` entry only when the value is

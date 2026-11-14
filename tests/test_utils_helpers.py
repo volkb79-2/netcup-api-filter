@@ -50,6 +50,11 @@ def test_parse_bool_bool_passthrough_and_none(value, default):
     assert utils.parse_bool(None, default=default) is default
 
 
+def test_parse_bool_strict_mode_rejects_unknown_values():
+    with pytest.raises(ValueError, match="Unrecognised boolean value"):
+        utils.parse_bool("tru", strict=True)
+
+
 # ----------------------------------------------------------------- sha256_hex
 @given(st.text(max_size=200))
 def test_sha256_hex_shape_and_determinism(s):

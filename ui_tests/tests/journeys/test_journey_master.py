@@ -40,10 +40,15 @@ class TestJourneyMaster:
             from ui_tests.mailpit_client import MailpitClient
             client = MailpitClient()
             client.clear()
-            yield client
-            client.close()
         except Exception as e:
-            pytest.skip(f"Mailpit not available: {e}")
+            pytest.fail(
+                f"Local e2e requires reachable Mailpit via MAILPIT_URL ({type(e).__name__})",
+                pytrace=False,
+            )
+        try:
+            yield client
+        finally:
+            client.close()
     
     # =========================================================================
     # Journey 1: Fresh Deployment
@@ -79,6 +84,7 @@ class TestJourneyMaster:
     
     async def test_journey_2_account_lifecycle(self, mailpit_client):
         """Journey 2: Account registration, verification, and approval."""
+        journey_state.set_extra("j2_user_login_verified", False)
         logger.info("\n" + "=" * 60)
         logger.info("JOURNEY 2: Account Lifecycle")
         logger.info("=" * 60)
@@ -86,19 +92,46 @@ class TestJourneyMaster:
         from ui_tests.tests.journeys.j2_account_lifecycle import TestJourney2AccountLifecycle
         
         journey = TestJourney2AccountLifecycle()
+        skipped_steps = []
+
+        async def run_step(name, step):
+            try:
+                await step
+            except pytest.skip.Exception as exc:
+                reason = str(exc)
+                skipped_steps.append((name, reason))
+                logger.info("Journey 2 step %s skipped: %s", name, reason)
         
         # Execute journey steps in order using function-scope browser
         async with browser_session("anonymous") as browser:
-            await journey.test_J2_01_registration_page(browser)
-            await journey.test_J2_02_submit_registration(browser, mailpit_client)
-            await journey.test_J2_03_check_verification_email(browser, mailpit_client)
-            await journey.test_J2_04_complete_verification(browser)
-            await journey.test_J2_05_admin_sees_pending_account(browser)
-            await journey.test_J2_06_approve_account(browser, mailpit_client)
-            await journey.test_J2_07_user_can_login(browser)
-            await journey.test_J2_08_summary(browser)
+            await run_step("J2_01", journey.test_J2_01_registration_page(browser))
+            await run_step("J2_02", journey.test_J2_02_submit_registration(browser, mailpit_client))
+            await run_step("J2_03", journey.test_J2_03_check_verification_email(browser, mailpit_client))
+            await run_step("J2_04", journey.test_J2_04_complete_verification(browser))
+            await run_step("J2_05", journey.test_J2_05_admin_sees_pending_account(browser))
+            await run_step("J2_06", journey.test_J2_06_approve_account(browser, mailpit_client))
+            await run_step("J2_07", journey.test_J2_07_user_can_login(browser, mailpit_client))
+            await run_step("J2_08", journey.test_J2_08_summary(browser))
         
         logger.info(f"\n✓ Journey 2 complete: {len(journey_state.screenshots)} screenshots total")
+        from ui_tests.config import settings
+
+        if (
+            journey_state.get_extra("invite_based_account")
+            and settings.deployment_target != "webhosting"
+        ):
+            expected_skipped_steps = {"J2_02", "J2_03", "J2_04", "J2_05", "J2_06"}
+            actual_skipped_steps = {name for name, _ in skipped_steps}
+            assert actual_skipped_steps == expected_skipped_steps, (
+                "The local admin-invite path must report J2_02 through J2_06 as skipped; "
+                f"got {sorted(actual_skipped_steps)}"
+            )
+
+        if skipped_steps:
+            pytest.skip(
+                "Journey 2 completed with documented skipped steps: "
+                + "; ".join(f"{name}: {reason}" for name, reason in skipped_steps)
+            )
     
     # =========================================================================
     # Journey 3: Comprehensive State Population
@@ -106,6 +139,18 @@ class TestJourneyMaster:
     
     async def test_journey_3_comprehensive_states(self):
         """Journey 3: Create ALL account/realm/token states from matrix."""
+        from ui_tests.config import settings
+
+        if (
+            journey_state.get_extra("invite_based_account")
+            and settings.deployment_target != "webhosting"
+            and not journey_state.get_extra("j2_user_login_verified")
+        ):
+            pytest.fail(
+                "The local J2 admin-invite path did not reach and verify J2_07 user login",
+                pytrace=False,
+            )
+
         logger.info("\n" + "=" * 60)
         logger.info("JOURNEY 3: Comprehensive State Population")
         logger.info("=" * 60)

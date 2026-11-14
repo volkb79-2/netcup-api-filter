@@ -160,10 +160,10 @@ assert any(b.service_name == 'platform-powerdns' for b in backends), "PowerDNS b
 # Check domain roots created
 roots = ManagedDomainRoot.query.all()
 assert len(roots) > 0, "No domain roots created"
-assert any(r.root_domain == 'powerdomains.vxxu.de' for r in roots), "Free domain missing"
+assert any(r.root_domain == 'powerdomains.example.com' for r in roots), "Free domain missing"
 
 # Check backend-domain link
-root = ManagedDomainRoot.query.filter_by(root_domain='powerdomains.vxxu.de').first()
+root = ManagedDomainRoot.query.filter_by(root_domain='powerdomains.example.com').first()
 assert root.backend_service is not None, "Domain not linked to backend"
 assert root.backend_service.provider.provider_code == 'powerdns', "Wrong backend type"
 ```
@@ -505,7 +505,7 @@ print("✓ End-to-end test PASSED")
 Copy this prompt and provide it to a Copilot agent or use it as a review guide:
 
 ```
-Please perform a comprehensive deep-dive review of the multi-backend TOML configuration feature using the checklist and methodology defined in .vscode/REVIEW_PROMPT_MULTI_BACKEND_TOML.md. 
+Please perform a comprehensive deep-dive review of the multi-backend TOML configuration feature using the checklist and methodology in this archived prompt.
 
 Focus on:
 1. Verifying complete implementation across all layers

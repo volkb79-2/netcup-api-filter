@@ -184,7 +184,7 @@ HTTPS through edge-traefik.
 The `tooling/backend-powerdns` conversion is committed on `wt/ciu-powerdns` but **deliberately
 not merged**. The agent disclosed (to its credit) that it converted the stack's mandatory
 `${VAR:?must be set}` environment variables into **committed TOML defaults with invented
-values** — SOA `ns1.vxxu.de` / `hostmaster.vxxu.de`, the API port, and the `PDNS_*` server
+values** — SOA `ns1.example.com` / `hostmaster.example.com`, the API port, and the `PDNS_*` server
 settings — because the real values live in gitignored `.env` files it could not read.
 
 That is the wrong trade for this repo: it replaces fail-fast required-vars with

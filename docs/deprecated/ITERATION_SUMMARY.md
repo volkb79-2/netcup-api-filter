@@ -10,7 +10,7 @@ This document summarizes the complete iterative testing cycle performed on the N
 ## Iteration Timeline
 
 ### Iteration 0: Initial State (Previous Session)
-- ✅ Application deployed to https://naf.vxxu.de/
+- ✅ Application deployed to https://naf.example.com/
 - ✅ Database seeded with admin user and test client
 - ⚠️ No comprehensive testing performed
 - **User Challenge:** "Prove it's running successfully"
@@ -74,7 +74,7 @@ This document summarizes the complete iterative testing cycle performed on the N
 
 #### Testing After Fix #1
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "qweqweqwe.vi"}}'
 ```
@@ -119,7 +119,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Valid Token Test:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "qweqweqwe.vi"}}'
 ```
@@ -127,7 +127,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Invalid Token Test:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer invalid-token-12345" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "qweqweqwe.vi"}}'
 ```
@@ -135,7 +135,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Unauthorized Domain Test:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "unauthorized.com"}}'
 ```
@@ -143,7 +143,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Unauthorized Operation Test:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -d '{"action": "updateDnsRecords", "param": {"domainname": "qweqweqwe.vi", "dnsrecordset": {"dnsrecords": [{"hostname": "test", "type": "A", "destination": "1.2.3.4"}]}}}'
 ```
@@ -180,7 +180,7 @@ curl -X POST https://naf.vxxu.de/api \
 **Verified:**
 - ✅ All API requests logged
 - ✅ Client ID captured
-- ✅ IP address captured (152.53.179.117)
+- ✅ IP address captured (203.0.113.117)
 - ✅ Operation type recorded
 - ✅ Domain name recorded
 - ✅ Success/failure status

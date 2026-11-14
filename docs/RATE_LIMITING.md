@@ -66,7 +66,7 @@ Flask-Limiter applies rate limits at application startup. Runtime changes to the
 
 ```bash
 # SSH into server
-ssh hosting218629@hosting218629.ae98d.netcup.net
+ssh <webhoster-user>@<webhoster-host>
 
 # Restart application
 touch /netcup-api-filter/tmp/restart.txt

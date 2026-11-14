@@ -112,13 +112,13 @@ FLASK_SESSION_LIFETIME=3600
 ```
 Client (Browser/Playwright)
   ↓
-curl --resolve "gstammtisch.dchive.de:443:127.0.0.1" https://...
+curl --resolve "example.org:443:127.0.0.1" https://...
   ↓
 Docker Host: 0.0.0.0:443 → local-proxy container
   ↓
 nginx (TLS termination)
-  - Certificate: /etc/letsencrypt/live/gstammtisch.dchive.de/fullchain.pem
-  - Private Key: /etc/letsencrypt/live/gstammtisch.dchive.de/privkey.pem
+  - Certificate: /etc/letsencrypt/live/example.org/fullchain.pem
+  - Private Key: /etc/letsencrypt/live/example.org/privkey.pem
   - disable_symlinks off (follows symlinks to archive/)
   ↓
 proxy_pass http://netcup-api-filter-devcontainer:5100
@@ -155,11 +155,11 @@ Database settings (runtime via admin UI)
 
 **Example Output**:
 ```
-[SUCCESS] Detected public IP: 152.53.179.117
-[SUCCESS] Detected public FQDN: gstammtisch.dchive.de
+[SUCCESS] Detected public IP: 203.0.113.117
+[SUCCESS] Detected public FQDN: example.org
 [SUCCESS] Certificates verified:
-  Fullchain: /etc/letsencrypt/live/gstammtisch.dchive.de/fullchain.pem -> ...
-  Private Key: /etc/letsencrypt/live/gstammtisch.dchive.de/privkey.pem -> ...
+  Fullchain: /etc/letsencrypt/live/example.org/fullchain.pem -> ...
+  Private Key: /etc/letsencrypt/live/example.org/privkey.pem -> ...
 ```
 
 ### Session Cookie Behavior
@@ -201,7 +201,7 @@ UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
 
 ```bash
 ./build-and-deploy.sh
-# Uploads to: https://naf.vxxu.de
+# Uploads to: https://naf.example.com
 # Uses: HTTPS, Secure=True (from config, no code change)
 # Tests: 26 passed on production
 ```
@@ -231,13 +231,13 @@ UI_BASE_URL="https://$FQDN" pytest ui_tests/tests -v
 
 ```bash
 docker run --rm -v /etc/letsencrypt:/certs:ro python:3.11.17-slim-trixie \
-  ls -la /certs/live/gstammtisch.dchive.de/
+  ls -la /certs/live/example.org/
 ```
 
 **Output**:
 ```
-lrwxrwxrwx ... fullchain.pem -> ../../archive/gstammtisch.dchive.de/fullchain2.pem
-lrwxrwxrwx ... privkey.pem -> ../../archive/gstammtisch.dchive.de/privkey2.pem
+lrwxrwxrwx ... fullchain.pem -> ../../archive/example.org/fullchain2.pem
+lrwxrwxrwx ... privkey.pem -> ../../archive/example.org/privkey2.pem
 ```
 
 ✅ Symlinks preserved, certificates accessible, nginx can read.
@@ -245,13 +245,13 @@ lrwxrwxrwx ... privkey.pem -> ../../archive/gstammtisch.dchive.de/privkey2.pem
 ### HTTPS Connection Test
 
 ```bash
-FQDN=gstammtisch.dchive.de
+FQDN=example.org
 curl -v --resolve "$FQDN:443:127.0.0.1" "https://$FQDN/" 2>&1 | grep subject:
 ```
 
 **Output**:
 ```
-subject: CN=gstammtisch.dchive.de
+subject: CN=example.org
 issuer: C=US; O=Let's Encrypt; CN=E5
 ```
 

@@ -86,12 +86,16 @@ def _assert_mismatch_rejected(client, db, account, old_hash, page_path):
     page = client.get(page_path)
     assert page.status_code == 200
     form, password_fields, data = _password_fields(page.get_data(as_text=True))
+    assert password_fields[0].name == "new_password", (
+        "the mismatch case must submit the handler's actual password field"
+    )
     data[password_fields[1].name] = STRONG_PASSWORD + "-different"
 
     response = client.post(form.action, data=data)
     assert response.status_code == 200
-    # The mismatch text is static in the template (client-side #match-error), so a body
-    # assertion would be vacuous; the unchanged hash below is the real oracle.
+    body = response.get_data(as_text=True)
+    assert 'class="alert alert-danger' in body
+    assert "Passwords do not match" in body
     db.session.refresh(account)
     assert account.password_hash == old_hash
     assert account.verify_password(OLD_PASSWORD) is True

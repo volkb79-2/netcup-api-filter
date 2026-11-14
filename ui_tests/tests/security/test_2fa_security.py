@@ -11,9 +11,9 @@ These tests verify the security improvements prevent brute-force attacks.
 """
 
 import re
-import os
 import sqlite3
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -354,10 +354,8 @@ class TestRecoveryCodeCount:
         """Verify the default recovery code count is 3 (not 10)."""
         # Avoid importing backend modules here (Playwright container may not have
         # Flask/SQLAlchemy runtime deps installed). Parse constant from source.
-        repo_root = os.environ.get("REPO_ROOT", "/workspaces/netcup-api-filter")
-        path = os.path.join(repo_root, "src", "netcup_api_filter", "recovery_codes.py")
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
+        path = Path(__file__).resolve().parents[3] / "src" / "netcup_api_filter" / "recovery_codes.py"
+        content = path.read_text(encoding="utf-8")
 
         # The default now lives inside a defensive helper that clamps the value:
         #   raw = os.environ.get("RECOVERY_CODE_COUNT", "3")
@@ -474,10 +472,8 @@ class TestAdminAuthentication:
         """Verify admin 2FA also tracks failures."""
         # Avoid importing backend modules here (Playwright container may not have
         # Flask/SQLAlchemy runtime deps installed). Verify by source inspection.
-        repo_root = os.environ.get("REPO_ROOT", "/workspaces/netcup-api-filter")
-        path = os.path.join(repo_root, "src", "netcup_api_filter", "account_auth.py")
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
+        path = Path(__file__).resolve().parents[3] / "src" / "netcup_api_filter" / "account_auth.py"
+        content = path.read_text(encoding="utf-8")
 
         for fn_name in ("increment_2fa_failures", "is_2fa_locked", "reset_2fa_failures"):
             assert re.search(rf"^def\s+{re.escape(fn_name)}\s*\(", content, re.MULTILINE), \

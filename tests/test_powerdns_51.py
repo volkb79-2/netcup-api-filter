@@ -1,19 +1,129 @@
-"""PowerDNS 5.1 stack config and API bootstrap contracts."""
+"""PowerDNS 5.1 stack config and API bootstrap contracts.
 
+The startup-template oracle in fixtures is GPL-licensed PowerDNS source copied from
+powerdns/pdns-auth-51:5.1.5, image sha256:aebf3621c09d8bc6d41a8cda533a8996bb9b507ed7f14aa0103bac034e0327f3
+(repo digest powerdns/pdns-auth-51@sha256:77ff4efdbb9ec30e9309c8a1cbed6121a67fa3be25c848bbbfa756fc75bf9a27).
+Its sibling .provenance file records the source path and fixture SHA-256. It is kept only as a
+test oracle, not shipped or executed as application code.
+"""
+
+import ast
+import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from jinja2 import Environment, StrictUndefined
+from jinja2 import Environment, StrictUndefined, meta, nodes
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "tooling" / "backend-powerdns"
+STARTUP_FIXTURE = ROOT / "tests" / "fixtures" / "pdns-auth-5.1.5-pdns_server-startup.py"
+STARTUP_PROVENANCE = STARTUP_FIXTURE.with_suffix(STARTUP_FIXTURE.suffix + ".provenance")
+STARTUP_FIXTURE_SHA256 = "17869813e5b375f9732c65fd3941d3101be1641b4837970486230c7951ad8e04"
+STARTUP_REFRESH_GUIDANCE = (
+    "Re-extract with `docker run --rm --entrypoint cat <image> "
+    "/usr/local/sbin/pdns_server-startup`, update the fixture SHA-256 and provenance, "
+    "then review the diff."
+)
 ZONE = "example.invalid"
+
+
+def _ast_name(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _ast_name(node.value)
+        return f"{parent}.{node.attr}" if parent else None
+    return None
+
+
+def _startup_template_mount_contract(source: str) -> tuple[str, str]:
+    """Read the input template root and suffix from the pinned image entrypoint."""
+    tree = ast.parse(source)
+    roots = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "templateroot" for target in node.targets)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+    assert len(roots) == 1, STARTUP_REFRESH_GUIDANCE
+
+    suffixes = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or _ast_name(node.func) != "os.path.join" or len(node.args) != 2:
+            continue
+        root_arg, template_arg = node.args
+        if not isinstance(root_arg, ast.Name) or root_arg.id != "templateroot":
+            continue
+        if not (
+            isinstance(template_arg, ast.BinOp)
+            and isinstance(template_arg.op, ast.Add)
+            and isinstance(template_arg.left, ast.Name)
+            and template_arg.left.id == "templateFile"
+            and isinstance(template_arg.right, ast.Constant)
+            and template_arg.right.value == ".j2"
+        ):
+            continue
+        suffixes.append(template_arg.right.value)
+    assert len(suffixes) == 1, STARTUP_REFRESH_GUIDANCE
+    return roots[0], suffixes[0]
+
+
+def _startup_renders_templates_from_os_environ(source: str) -> bool:
+    tree = ast.parse(source)
+    template_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and _ast_name(node.value.func) == "jinja2.Template"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "render"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id in template_names
+        and len(node.args) == 1
+        and _ast_name(node.args[0]) == "os.environ"
+        for node in ast.walk(tree)
+    )
+
+
+def _startup_fixture_tag() -> str:
+    fixture_tag_match = re.fullmatch(
+        r"pdns-auth-(?P<tag>\d+\.\d+\.\d+)-pdns_server-startup\.py",
+        STARTUP_FIXTURE.name,
+    )
+    assert fixture_tag_match is not None, STARTUP_REFRESH_GUIDANCE
+    return fixture_tag_match.group("tag")
+
+
+def _compose_powerdns_environment_names(compose: str) -> set[str]:
+    service_start = compose.index("  {{ backend_powerdns.name }}:")
+    environment_start = compose.index("    environment:\n", service_start)
+    environment_end = compose.index("\n    secrets:", environment_start)
+    environment_block = compose[environment_start:environment_end]
+    return set(re.findall(r"(?m)^\s+- ([A-Z][A-Z0-9_]*)=", environment_block))
+
+
+def _template_defaulted_names(parsed_template) -> set[str]:
+    return {
+        name
+        for filter_node in parsed_template.find_all(nodes.Filter)
+        if filter_node.name == "default"
+        for name in meta.find_undeclared_variables(filter_node.node)
+    }
 
 
 def _load_zone_hook():
@@ -100,7 +210,8 @@ def test_powerdns_51_template_renders_api_and_gsqlite_options():
     template = (BACKEND / "pdns-auth.conf.j2").read_text(encoding="utf-8")
     variables = {
         "PDNS_AUTH_API": "yes",
-        "POWERDNS_API_KEY": "unit-test-value",
+        "POWERDNS_API_KEY": "api-only-test-value",
+        "POWERDNS_WEBSERVER_PASSWORD": "webserver-only-test-value",
         "PDNS_AUTH_WEBSERVER": "yes",
         "PDNS_AUTH_WEBSERVER_ADDRESS": "0.0.0.0",
         "PDNS_AUTH_WEBSERVER_PORT": "8081",
@@ -117,32 +228,94 @@ def test_powerdns_51_template_renders_api_and_gsqlite_options():
 
     for expected in (
         "api=yes",
-        "api-key=unit-test-value",
+        "api-key=api-only-test-value",
         "webserver=yes",
         "webserver-address=0.0.0.0",
         "webserver-port=8081",
         "webserver-allow-from=0.0.0.0/0,::/0",
-        "webserver-password=unit-test-value",
+        "webserver-password=webserver-only-test-value",
         "launch=gsqlite3",
         "gsqlite3-database=/var/lib/powerdns/pdns.sqlite3",
         "gsqlite3-dnssec=yes",
         "disable-axfr=yes",
     ):
         assert expected in rendered.splitlines()
+    assert "webserver-password=api-only-test-value" not in rendered.splitlines()
     assert "allow-axfr-ips=" not in rendered
+
+
+def test_powerdns_startup_fixture_matches_recorded_source_and_provenance():
+    fixture_bytes = STARTUP_FIXTURE.read_bytes()
+    actual_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
+    assert actual_sha256 == STARTUP_FIXTURE_SHA256, STARTUP_REFRESH_GUIDANCE
+
+    provenance = STARTUP_PROVENANCE.read_text(encoding="utf-8")
+    assert f"Image: powerdns/pdns-auth-51:{_startup_fixture_tag()}" in provenance
+    assert "Image ID: sha256:aebf3621c09d8bc6d41a8cda533a8996bb9b507ed7f14aa0103bac034e0327f3" in provenance
+    assert "Repo digest: powerdns/pdns-auth-51@sha256:77ff4efdbb9ec30e9309c8a1cbed6121a67fa3be25c848bbbfa756fc75bf9a27" in provenance
+    assert f"SHA-256: {actual_sha256}" in provenance
+    assert "GPL-licensed PowerDNS source" in provenance
+
+
+def test_powerdns_image_tag_matches_pinned_startup_fixture():
+    defaults = (BACKEND / "ciu.defaults.toml.j2").read_text(encoding="utf-8")
+    image_tag_match = re.search(r"(?m)^image_tag\s*=\s*\"([^\"]+)\"", defaults)
+    assert image_tag_match is not None, "PowerDNS image_tag is missing from ciu.defaults.toml.j2"
+    assert image_tag_match.group(1) == _startup_fixture_tag(), STARTUP_REFRESH_GUIDANCE
 
 
 def test_powerdns_compose_uses_the_image_template_entrypoint_for_config():
     compose = (BACKEND / "ciu.compose.yml.j2").read_text(encoding="utf-8")
+    startup_source = STARTUP_FIXTURE.read_text(encoding="utf-8")
+    templateroot, template_suffix = _startup_template_mount_contract(startup_source)
 
     assert "- TEMPLATE_FILES={{ backend_powerdns.api.template_name }}" in compose
     assert "- POWERDNS_API_KEY=${POWERDNS_API_KEY:?POWERDNS_API_KEY must be set}" in compose
-    # startup.py (auth-5.1.5) opens templates.d/<TEMPLATE_FILES entry>.j2; a
-    # `.conf.j2` mount target would leave that file missing and crash the start.
-    assert "/etc/powerdns/templates.d/{{ backend_powerdns.api.template_name }}.j2:ro" in compose
+    assert "- POWERDNS_WEBSERVER_PASSWORD=${POWERDNS_WEBSERVER_PASSWORD:?POWERDNS_WEBSERVER_PASSWORD must be set}" in compose
+    assert "- powerdns_webserver_password" in compose
+    expected_mount = (
+        f"{templateroot}/{{{{ backend_powerdns.api.template_name }}}}{template_suffix}:ro"
+    )
+    assert expected_mount in compose, (
+        f"Compose must mount the config at the path derived from the pinned image entrypoint: "
+        f"{expected_mount}. {STARTUP_REFRESH_GUIDANCE}"
+    )
     assert "{{ backend_powerdns.api.template_name }}.conf.j2" not in compose
     assert "- PDNS_AUTH_API_KEY=${POWERDNS_API_KEY" not in compose
     assert "PDNS_ALLOW_AXFR_IPS" not in compose
+
+
+def test_powerdns_compose_environment_covers_template_variables():
+    startup_source = STARTUP_FIXTURE.read_text(encoding="utf-8")
+    assert _startup_renders_templates_from_os_environ(startup_source), STARTUP_REFRESH_GUIDANCE
+
+    template_source = (BACKEND / "pdns-auth.conf.j2").read_text(encoding="utf-8")
+    parsed_template = Environment().parse(template_source)
+    template_variables = meta.find_undeclared_variables(parsed_template)
+    # A variable used through Jinja's `default` filter is optional by template contract.
+    optional_variables = _template_defaulted_names(parsed_template)
+    required_variables = template_variables - optional_variables
+
+    compose = (BACKEND / "ciu.compose.yml.j2").read_text(encoding="utf-8")
+    environment_names = _compose_powerdns_environment_names(compose)
+    missing = required_variables - environment_names
+    assert not missing, (
+        "PowerDNS config template variables must be supplied in the daemon environment; "
+        f"missing={sorted(missing)}"
+    )
+
+
+def test_powerdns_webserver_password_is_its_own_checkout_secret():
+    defaults = (BACKEND / "ciu.defaults.toml.j2").read_text(encoding="utf-8")
+
+    assert (
+        'powerdns_api_key = { directive = "GEN_LOCAL:naf/powerdns_api_key", '
+        'expose_env = "POWERDNS_API_KEY" }'
+    ) in defaults
+    assert (
+        'powerdns_webserver_password = { directive = "GEN_LOCAL:naf/powerdns_webserver_password", '
+        'expose_env = "POWERDNS_WEBSERVER_PASSWORD" }'
+    ) in defaults
 
 
 def test_zone_create_payload_uses_explicit_soa_and_disabled_dnssec():

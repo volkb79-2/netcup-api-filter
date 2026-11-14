@@ -153,8 +153,9 @@ never hardcoded.
 ## 4. Verify
 
 ```bash
-# app reachable over TLS behind the guard
-curl -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" "https://naf-${INSTANCE_ID}.$PUBLIC_FQDN/admin/login" -I
+# app reachable over TLS behind the guard (credentials via a curl config on stdin, not argv)
+curl -I -K - "https://naf-${INSTANCE_ID}.$PUBLIC_FQDN/admin/login" \
+  <<<"user = \"$NAF_GUARD_USER:$NAF_GUARD_PASSWORD\""
 # the delegation answers on port 53
 dig +short NS "$NAF_DELEGATED_DNS_ZONE" @$PUBLIC_IP
 dig +short A "test.$NAF_DELEGATED_DNS_ZONE" @$PUBLIC_IP    # once a record exists

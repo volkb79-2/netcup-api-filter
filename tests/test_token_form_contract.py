@@ -159,7 +159,8 @@ def test_token_form_rejects_entire_submission_for_any_invalid_entry(
     )
 
 
-EXPECTED_EXPIRY_OPTIONS = frozenset({"never", *TOKEN_EXPIRY_DAYS})
+EXPECTED_EXPIRY_DAYS = {"1month": 30, "3months": 90, "1year": 365}
+EXPECTED_EXPIRY_OPTIONS = frozenset({"never", *EXPECTED_EXPIRY_DAYS})
 
 
 def _rendered_expiry_options(client, realm_id) -> tuple[str, ...]:
@@ -171,6 +172,7 @@ def test_token_form_expiry_select_matches_route_constant(
     app, client, token_owner, token_realm
 ):
     """The rendered #expires values are exactly what the route accepts (B057)."""
+    assert TOKEN_EXPIRY_DAYS == EXPECTED_EXPIRY_DAYS
     login_portal(client, token_owner)
     options = _rendered_expiry_options(client, token_realm.id)
     assert len(options) == len(set(options)), f"duplicate expiry options: {options!r}"
@@ -182,6 +184,7 @@ def test_token_form_expiry_options_match_route_contract(
 ):
     """Every rendered expiry option creates a token with the mapped lifetime."""
     login_portal(client, token_owner)
+    assert TOKEN_EXPIRY_DAYS == EXPECTED_EXPIRY_DAYS
     options = _rendered_expiry_options(client, token_realm.id)
     assert frozenset(options) == EXPECTED_EXPIRY_OPTIONS
 
@@ -204,7 +207,7 @@ def test_token_form_expiry_options_match_route_contract(
         if expires == "never":
             assert token.expires_at is None
         else:
-            expected_days = TOKEN_EXPIRY_DAYS[expires]
+            expected_days = EXPECTED_EXPIRY_DAYS[expires]
             assert before + timedelta(days=expected_days) <= token.expires_at, expires
             assert token.expires_at <= after + timedelta(days=expected_days), expires
 

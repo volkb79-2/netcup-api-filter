@@ -53,10 +53,16 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
 ## Secrets handling
 
 - **Secret comparisons are constant-time** (`hmac.compare_digest`) — e.g. the Telegram bot
-  callback secret. Passwords and tokens use bcrypt.
+  callback secret and the portal 2FA and registration codes. Exception: the admin email 2FA
+  code is still compared with `==` (B078, see the known gaps below). Passwords and tokens use
+  bcrypt.
 - **`SECRET_KEY` and all provider credentials come from configuration**, never hardcoded and
   with no published default: `SECRET_KEY_FILE`/`SECRET_KEY`, else a random key created once,
   race-free, in the database (`docs/CONFIGURATION_GUIDE.md`).
+- **PowerDNS API and webserver credentials are separate checkout-local `GEN_LOCAL` secrets.**
+  The API key is used for authenticated API calls and by the app seed hook; the webserver's own
+  password protects its dashboard, statistics/query rings, metrics and zone-management API.
+  Neither credential is committed or printed. See [`tooling/backend-powerdns/README.md`](../tooling/backend-powerdns/README.md).
 - **Only the Passenger tarball ships an account**: the pre-set admin (`DEFAULT_ADMIN_*`) with
   `must_change_password`. The OCI image ships none; a fresh container needs an operator-supplied
   bootstrap admin (`NAF_BOOTSTRAP_ADMIN_*`, password as a mounted secret file) or refuses to start
@@ -128,10 +134,11 @@ explicitly sets `TRUSTED_PROXY_HOPS=0` and `PUBLIC_BASE_URL` to empty, using its
 origin regardless of inherited runner environment values.
 
 The Passenger webhosting tarball ships `app-defaults.env` with `TRUSTED_PROXY_HOPS=0`, inherited
-from `.env.defaults`, so no forwarding headers affect the request by default. On 2026-11-13,
-probes from two clients against one shared Passenger webhoster showed forged `X-Forwarded-For`
-arriving unchanged as the only chain entry, `X-Forwarded-Proto` passing through unchanged while
-the server reported HTTPS, and `REMOTE_ADDR` remaining the actual client address. A deployment
+from `.env.defaults`, so no forwarding headers affect the request by default. On 2026-11-13, the
+evidence came from a PHP probe on the same webhost; the Passenger WSGI path is unmeasured (B054).
+The probe showed forged `X-Forwarded-For` arriving unchanged
+as the only chain entry, `X-Forwarded-Proto` passing through unchanged while the server reported
+HTTPS, and `REMOTE_ADDR` remaining the actual client address. A deployment
 behind a real proxy must set `TRUSTED_PROXY_HOPS` explicitly to the measured count and verify
 `GET /api/myip` with both a plain request and one carrying forged `X-Forwarded-For` and
 `X-Forwarded-Proto` values; confirm the returned `ip` is not changed by the forged values. With
@@ -165,5 +172,11 @@ Documented honestly so the doc and code stay in sync:
 - **Notification preferences** — `notify_new_ip` / `notify_failed_auth` /
   `notify_token_expiring` / `notification_email` are stored by the settings UI but no
   sender reads them.
+- **Open account/admin security defects** (tracked in `nyxloom-trove/4-backlog.md`):
+  disabling 2FA asks for a code but checks only the password (B073); the `/account/settings`
+  delete-account, disable-TOTP and unlink-Telegram forms do nothing, so a user who "unlinks"
+  Telegram keeps receiving codes there (B074); the admin email 2FA code is compared with `==`
+  (B078); failed admin logins create one Settings row per submitted username and log the raw
+  username (B079).
 
 Report a vulnerability privately to the maintainer rather than via a public issue.

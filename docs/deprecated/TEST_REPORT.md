@@ -1,7 +1,7 @@
 # Comprehensive Test Report
 **Date:** 2025-11-22  
 **Application:** Netcup API Filter  
-**Environment:** https://naf.vxxu.de/  
+**Environment:** https://naf.example.com/
 **Test Framework:** MCP Playwright + curl
 
 ## Executive Summary
@@ -41,12 +41,12 @@
 **Status:** PASSED
 
 **Tested All Menu Items:**
-1. ✅ Dashboard → https://naf.vxxu.de/admin/
-2. ✅ Clients → https://naf.vxxu.de/admin/client/
-3. ✅ Audit Logs → https://naf.vxxu.de/admin/auditlog/
-4. ✅ Netcup API → https://naf.vxxu.de/admin/netcup_config/
-5. ✅ Email Settings → https://naf.vxxu.de/admin/email_config/
-6. ✅ System Info → https://naf.vxxu.de/admin/system_info
+1. ✅ Dashboard → https://naf.example.com/admin/
+2. ✅ Clients → https://naf.example.com/admin/client/
+3. ✅ Audit Logs → https://naf.example.com/admin/auditlog/
+4. ✅ Netcup API → https://naf.example.com/admin/netcup_config/
+5. ✅ Email Settings → https://naf.example.com/admin/email_config/
+6. ✅ System Info → https://naf.example.com/admin/system_info
 
 **Results:**
 - ✅ All pages load without errors
@@ -107,7 +107,7 @@
 
 **Valid Token Test:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -H "Content-Type: application/json" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "qweqweqwe.vi"}}'
@@ -117,7 +117,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Invalid Token Test:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer invalid-token-12345"
 ```
 - ✅ Result: `{"message": "Invalid authentication token", "status": "error"}`
@@ -127,7 +127,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Domain Permission Test - Unauthorized Domain:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "unauthorized.com"}}'
 ```
@@ -136,7 +136,7 @@ curl -X POST https://naf.vxxu.de/api \
 
 **Operation Permission Test - Write with Read-Only Token:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -d '{"action": "updateDnsRecords", "param": {"domainname": "qweqweqwe.vi", "dnsrecordset": {"dnsrecords": [{"hostname": "test", "type": "A", "destination": "1.2.3.4"}]}}}'
 ```
@@ -197,7 +197,7 @@ ID | Client ID            | Operation        | Domain          | Success | Times
 **Detailed Entry Example (ID=3):**
 ```
 ID:            3
-IP Address:    152.53.179.117
+IP Address:    203.0.113.117
 Operation:     infoDnsRecords
 Domain:        unauthorized.com
 Success:       0
@@ -232,7 +232,7 @@ Error Message: Permission denied
 
 **Usage:**
 ```bash
-curl -X POST https://naf.vxxu.de/api \
+curl -X POST https://naf.example.com/api \
   -H "Authorization: Bearer qweqweqwe-vi-readonly" \
   -H "Content-Type: application/json" \
   -d '{"action": "infoDnsRecords", "param": {"domainname": "qweqweqwe.vi"}}'
@@ -263,9 +263,9 @@ curl -X POST https://naf.vxxu.de/api \
 
 ## Test Environment Details
 
-**Application URL:** https://naf.vxxu.de/  
+**Application URL:** https://naf.example.com/
 **Hosting:** Phusion Passenger on Netcup shared hosting  
-**Server:** hosting218629@hosting218629.ae98d.netcup.net  
+**Server:** <webhoster-user>@<webhoster-host>
 **Database:** SQLite at `/netcup-api-filter/netcup_filter.db` (52KB)  
 **Python Version:** 3.9  
 **Framework:** Flask 2.x with Flask-Admin

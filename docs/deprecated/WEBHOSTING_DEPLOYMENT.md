@@ -45,8 +45,8 @@ it helps if you have `ssh-agent` provide a key to auto-login to the server
 
 ```bash
 ./build_deployment.py && \
-scp deploy.zip hosting218629@hosting218629.ae98d.netcup.net:/ && \
-ssh hosting218629@hosting218629.ae98d.netcup.net \
+scp deploy.zip <webhoster-user>@<webhoster-host>:/ && \
+ssh <webhoster-user>@<webhoster-host> \
     'cd / && rm -rf /netcup-api-filter/* /netcup-api-filter/.[!.]* /netcup-api-filter/..?* && mkdir -p /netcup-api-filter/tmp/ && unzip -o -u deploy.zip -d /netcup-api-filter/ && touch /netcup-api-filter/tmp/restart.txt'
 ```
 
@@ -59,7 +59,7 @@ ssh hosting218629@hosting218629.ae98d.netcup.net \
    - Port 21 (FTP) or 22 (SFTP)
 
 2. **Navigate to your domain directory:**
-   - Example: `/www/htdocs/w0123456/yourdomain.com/`
+   - Example: `/www/htdocs/<webhoster-user>/yourdomain.com/`
 
 3. **Create application directory:**
    - Create folder: `netcup-filter/`
@@ -87,12 +87,12 @@ PassengerPython /path/to/your/domain/netcup-filter/venv/bin/python3
 
 **Change to your actual paths:**
 ```apache
-PassengerAppRoot /www/htdocs/w0123456/yourdomain.com/netcup-filter
+PassengerAppRoot /www/htdocs/<webhoster-user>/yourdomain.com/netcup-filter
 PassengerPython /usr/bin/python3
 ```
 
 **Important notes:**
-- Replace `w0123456` with your actual webhosting ID
+- Replace `<webhoster-user>` with your actual webhosting ID
 - Replace `yourdomain.com` with your actual domain
 - Use system Python (`/usr/bin/python3`), NOT a venv path
 - Save the file
@@ -398,7 +398,7 @@ python3 --version
 ### Directory Structure
 
 ```
-/www/htdocs/w0123456/
+/www/htdocs/<webhoster-user>/
 ├── yourdomain.com/
 │   └── netcup-filter/
 │       ├── venv/
@@ -428,8 +428,8 @@ If you encounter import errors, you may need to adjust the Python path in `wsgi.
 
 ```python
 import sys
-sys.path.insert(0, '/www/htdocs/w0123456/yourdomain.com/netcup-filter')
-sys.path.insert(0, '/www/htdocs/w0123456/yourdomain.com/netcup-filter/venv/lib/python3.9/site-packages')
+sys.path.insert(0, '/www/htdocs/<webhoster-user>/yourdomain.com/netcup-filter')
+sys.path.insert(0, '/www/htdocs/<webhoster-user>/yourdomain.com/netcup-filter/venv/lib/python3.9/site-packages')
 ```
 
 ---
@@ -556,10 +556,10 @@ Or use a process manager like `supervisor` if available.
 
 ```bash
 # 1. Connect via SSH
-ssh w0123456@ssh.webhosting-123.your-server.de
+ssh <webhoster-user>@ssh.webhosting-123.your-server.de
 
 # 2. Navigate to web directory
-cd /www/htdocs/w0123456/yourdomain.com/
+cd /www/htdocs/<webhoster-user>/yourdomain.com/
 
 # 3. Clone or upload files
 git clone https://github.com/volkb79-2/netcup-api-filter.git

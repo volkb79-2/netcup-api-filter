@@ -436,7 +436,7 @@ class AccountRealm(db.Model):
     Realm Types:
     - host: Exact match only (e.g., vpn.example.com)
     - subdomain: Apex + all children (e.g., iot.example.com, device.iot.example.com)
-    - subdomain_only: Children only, NOT apex (e.g., host1.client.vxxu.de)
+    - subdomain_only: Children only, NOT apex (e.g., host1.client.example.com)
     
     Structure:
     - domain: The base domain (e.g., example.com)

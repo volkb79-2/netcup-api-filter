@@ -46,8 +46,8 @@ ciu up --host webhoster --thin -- --variant py311 → Passenger activation
 
 ```bash
 # 1. Clone and open in the devcontainer (VS Code builds it and runs post-create,
-#    which installs packages and generates .env.workspace: PUBLIC_FQDN,
-#    PHYSICAL_REPO_ROOT, DOCKER_GID). The public FQDN is auto-detected there.
+#    which installs packages and generates .env.workspace with PHYSICAL_REPO_ROOT
+#    and DOCKER_GID. CIU resolves PUBLIC_FQDN into ciu.env.
 git clone git@github.com:user/netcup-api-filter.git
 cd netcup-api-filter
 
@@ -125,10 +125,12 @@ curl -s -H @- "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost/zones" \
 
 # External access through the host traefik route at
 # naf-pdns-<INSTANCE_ID>.<PUBLIC_FQDN>,
-# behind the same basicauth guard as the app.
-curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" -H @- \
-  "$POWERDNS_API_URL/api/v1/servers/localhost" \
-  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
+# behind the same basicauth guard as the app. Both credentials go in as a curl
+# config on stdin (-K -), never on the command line.
+curl -sf -K - "$POWERDNS_API_URL/api/v1/servers/localhost" <<EOF
+user = "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD"
+header = "X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
+EOF
 ```
 
 **DNS Delegation (at the delegated zone's parent):**

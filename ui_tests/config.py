@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Iterator, List, Mapping
 from urllib.parse import urljoin, urlsplit
 
+from netcup_api_filter.utils import parse_bool
+
 PRIMARY_PROFILE = "primary"
 
 # ---- target selection (local throwaway instance vs. remote read-only smoke) --------------
@@ -124,7 +126,7 @@ class UiTestConfig:
             from netcup_api_filter.config_defaults import require_default
 
             headless = require_default("PLAYWRIGHT_HEADLESS")
-        self.playwright_headless: bool = headless.lower() in {"true", "1"}
+        self.playwright_headless: bool = parse_bool(headless, strict=True)
         self.screenshot_prefix: str = os.getenv("UI_SCREENSHOT_PREFIX", "test")
         self._profiles: dict[str, UiTargetProfile] = {}
         self._active: UiTargetProfile | None = None

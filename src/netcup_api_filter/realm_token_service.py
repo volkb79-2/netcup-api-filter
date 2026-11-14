@@ -10,7 +10,7 @@ Handles:
 Realm Types:
 - host: Exact match only (vpn.example.com)
 - subdomain: Apex + children (iot.example.com, *.iot.example.com)
-- subdomain_only: Children only, NOT apex (*.client.vxxu.de)
+- subdomain_only: Children only, NOT apex (*.client.example.com)
 """
 from __future__ import annotations
 

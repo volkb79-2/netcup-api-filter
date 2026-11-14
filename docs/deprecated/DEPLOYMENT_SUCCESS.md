@@ -9,7 +9,7 @@
 ### 2. ✅ Create centralized FQDN detection in .env.workspace
 - Created `detect-fqdn.sh` for auto-detection via reverse DNS
 - PUBLIC_FQDN stored in `.env.workspace`
-- Current FQDN: `gstammtisch.dchive.de`
+- Current FQDN: `example.org`
 
 ### 3. ✅ Update .env.defaults to use PUBLIC_FQDN
 - Documented `.env` (gitignored secrets/overrides) alongside `.env.defaults`
@@ -58,7 +58,7 @@ naf-mailpit            Up
 
 | Service | URL | Status |
 |---------|-----|--------|
-| **HTTPS Admin (via proxy)** | https://gstammtisch.dchive.de/admin/login | ✅ Working |
+| **HTTPS Admin (via proxy)** | https://example.org/admin/login | ✅ Working |
 | **HTTPS Mailpit UI (retired proxy)** | Historical proxy path followed the Mailpit webroot, now configured by `mailpit.web_root` in `tooling/mailpit/ciu.defaults.toml.j2` | Legacy deployment snapshot; no current HTTPS route |
 | Flask App (HTTP direct) | http://localhost:5100/ | ✅ Responsive |
 | Mailpit API (internal) | http://naf-mailpit:8025/api/v1/messages | ✅ Working |
@@ -133,8 +133,8 @@ curl http://naf-mock-netcup-api:5555/health
 ## 🔧 Configuration
 
 ### Environment Variables
-- **PUBLIC_FQDN**: `gstammtisch.dchive.de` (auto-detected)
-- **PUBLIC_IP**: `152.53.179.117` (auto-detected)
+- **PUBLIC_FQDN**: `example.org` (auto-detected)
+- **PUBLIC_IP**: `203.0.113.117` (auto-detected)
 - **LOCAL_FLASK_PORT**: `5100`
 - **LOCAL_USE_HTTPS**: `true` (defaults to HTTP if no certs)
 
@@ -160,7 +160,7 @@ All testing containers use `naf-` prefix for easy identification:
 2. **HTTPS Testing**: Obtain Let's Encrypt certificates for full HTTPS testing
    ```bash
    # On host with certbot
-   sudo certbot certonly --standalone -d gstammtisch.dchive.de
+   sudo certbot certonly --standalone -d example.org
    ```
 
 3. **Development**: All services ready for local development and testing

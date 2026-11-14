@@ -50,7 +50,7 @@ Account (human user)
 │   │   └── record_types: [A, AAAA], operations: [R, U, C, D]
 │   ├── Realm 2: host:vpn.example.com
 │   │   └── record_types: [A], operations: [R, U]
-│   └── Realm 3: subdomain_only:client1.vxxu.de
+│   └── Realm 3: subdomain_only:client1.example.com
 │       └── record_types: [A, AAAA, TXT], operations: [R, U, C, D]
 │
 └── Tokens (API credentials, multiple per realm)
@@ -68,7 +68,7 @@ Account (human user)
 |------|---------|---------|----------|
 | `host` | `vpn.example.com` | Exact match only | Single host DDNS |
 | `subdomain` | `iot.example.com` | `iot.example.com` + `*.iot.example.com` | Zone delegation |
-| `subdomain_only` | `client1.vxxu.de` | `*.client1.vxxu.de` only (NOT apex) | Strict delegation |
+| `subdomain_only` | `client1.example.com` | `*.client1.example.com` only (NOT apex) | Strict delegation |
 
 ### API Authentication
 
@@ -485,7 +485,7 @@ Alpine.store('theme', {
 ┌─ Pending Realm Requests ─────────────────────────────────────────────────────┐
 │                                                                              │
 │  ┌─ Request from: johndoe ───────────────────────────────────────────────┐   │
-│  │  Realm: subdomain_only:client1.vxxu.de                                │   │
+│  │  Realm: subdomain_only:client1.example.com                                │   │
 │  │  Record Types: A, AAAA, TXT                                           │   │
 │  │  Operations: Read, Update, Create, Delete                             │   │
 │  │  Requested: 2025-12-01 15:00                                          │   │
@@ -631,8 +631,8 @@ Alpine.store('theme', {
 │ │   ✅ device1.iot.example.com                              │  │
 │ │                                                           │  │
 │ │ **subdomain_only**: Children only (NOT apex)              │  │
-│ │   ❌ client1.vxxu.de (apex excluded)                      │  │
-│ │   ✅ host1.client1.vxxu.de                                │  │
+│ │   ❌ client1.example.com (apex excluded)                      │  │
+│ │   ✅ host1.client1.example.com                                │  │
 │ │                                                           │  │
 │ └───────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────┘
@@ -1121,7 +1121,7 @@ Alpine.store('theme', {
 │  │  └────────────────────────────────────────────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
-│  ┌─ client1.vxxu.de (subdomain_only) ─────────────── ⏳ Pending Approval ─┐  │
+│  ┌─ client1.example.com (subdomain_only) ─────────────── ⏳ Pending Approval ─┐  │
 │  │  Requested: 2025-11-30  |  Records: A AAAA TXT  |  Perms: R U C D      │  │
 │  │  Status: Awaiting admin approval                                       │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
@@ -2707,7 +2707,7 @@ Populate the database with comprehensive test data so all UI states are visible 
 |---------|------------|--------|--------|--------|---------|
 | `demo-active` | host | home.example.com | Approved | 2 | DDNS single host |
 | `demo-active` | subdomain | iot.example.com | Approved | 2 | IoT zone delegation |
-| `demo-power-user` | subdomain_only | client1.vxxu.de | Approved | 3 | Strict subdomain |
+| `demo-power-user` | subdomain_only | client1.example.com | Approved | 3 | Strict subdomain |
 | `demo-power-user` | host | vpn.example.com | Approved | 2 | VPN endpoint |
 | `demo-power-user` | subdomain | acme.example.com | Pending | 0 | Pending approval |
 | `demo-power-user` | host | new.example.com | Rejected | 0 | Rejected request |
@@ -2722,9 +2722,9 @@ Populate the database with comprehensive test data so all UI states are visible 
 | home.example.com | backup-updater | Active | None | 2026-12-31 | With expiry |
 | iot.example.com | fleet-manager | Active | None | Never | Full access |
 | iot.example.com | monitoring | Active | None | Never | Read-only |
-| client1.vxxu.de | certbot-prod | Active | None | Never | DNS-01 challenge |
-| client1.vxxu.de | certbot-staging | Expired | None | 2024-01-01 | Expired example |
-| client1.vxxu.de | old-system | Revoked | None | Never | Revoked example |
+| client1.example.com | certbot-prod | Active | None | Never | DNS-01 challenge |
+| client1.example.com | certbot-staging | Expired | None | 2024-01-01 | Expired example |
+| client1.example.com | old-system | Revoked | None | Never | Revoked example |
 | monitor.example.com | grafana | Active | 10.0.0.0/8 | Never | Read-only + IP restricted |
 
 ### Activity Log States to Create

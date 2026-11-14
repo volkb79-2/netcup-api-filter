@@ -29,21 +29,27 @@ import re
 import secrets
 import string
 
+import pytest
+
 from ui_tests.browser import Browser
 from ui_tests.config import settings
 from ui_tests.tests.journeys import journey_state
 from ui_tests.mailpit_client import MailpitClient
+from ui_tests.personas import new_password
 from ui_tests import workflows
 
 logger = logging.getLogger(__name__)
 
+_ADMIN_INVITE_PATH_SKIP_REASON = (
+    "admin-invite path: self-registration not exercised here; register/verify-to-pending is "
+    "covered by ui_tests/tests/features/test_registration_e2e.py::"
+    "TestFullRegistrationFlow.test_full_registration_to_pending; full admin approval-to-login "
+    "integration is tracked in B105"
+)
+
 
 async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
-    """Handle 2FA page by intercepting code from Mailpit.
-    
-    Returns True if successfully handled, False otherwise.
-    Note: We fill the code and submit the form directly via JavaScript.
-    """
+    """Handle a login 2FA page with its emailed code and verify the redirect."""
     try:
         # If multiple 2FA methods exist, prefer email because our automation
         # can retrieve email codes (TOTP cannot be automated here).
@@ -57,61 +63,42 @@ async def _handle_2fa_via_mailpit(browser: Browser) -> bool:
             pass
 
         mailpit = MailpitClient()
-        
-        # Wait for 2FA email
-        msg = mailpit.wait_for_message(
-            predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
-            timeout=10.0
-        )
-        
-        if msg:
-            full_msg = mailpit.get_message(msg.id)
-            # Extract 6-digit code
-            code_match = re.search(r'\b(\d{6})\b', full_msg.text)
-            
-            if code_match:
-                code = code_match.group(1)
-                logger.info("extracted 2FA code from email (length=%d)", len(code))
-                
-                # Remember current URL to detect navigation
-                # Use _page.url directly to get live URL
-                url_before = browser._page.url
-                
-                # Fill the code field and submit the form directly via JavaScript
-                await browser.evaluate(f"""
-                    (function() {{
-                        const input = document.getElementById('code');
-                        const form = document.getElementById('twoFaForm');
-                        if (input && form) {{
-                            input.value = '{code}';
-                            form.submit();
-                        }}
-                    }})();
-                """)
-                
-                # Wait for navigation to complete
-                for _ in range(20):  # Up to 10 seconds
-                    await browser.wait_for_load_state('domcontentloaded')
-                    # Get live URL directly from page
-                    new_url = browser._page.url
-                    if new_url != url_before and "/2fa" not in new_url:
-                        logger.info(f"✓ 2FA navigation complete: {new_url}")
-                        break
-                else:
-                    logger.info(f"⚠️  2FA navigation did not complete, still at: {browser._page.url}")
-                
-                # Clear the used email
-                mailpit.delete_message(msg.id)
-                mailpit.close()
-                return True
-            else:
-                logger.info("⚠️  Could not extract code from email")
-        else:
-            logger.info("⚠️  No 2FA email found in Mailpit")
-        
-        mailpit.close()
+        try:
+            msg = mailpit.wait_for_message(
+                predicate=lambda m: "verification" in m.subject.lower() or "login" in m.subject.lower(),
+                timeout=10.0,
+            )
+            if not msg:
+                logger.info("No 2FA email found in Mailpit")
+                return False
+
+            code_match = re.search(r"\b(\d{6})\b", msg.text or msg.html or "")
+            if not code_match:
+                logger.info("Could not extract a 2FA code from the Mailpit message")
+                return False
+
+            code = code_match.group(1)
+            logger.info("extracted 2FA code from email (length=%d)", len(code))
+            url_before = browser._page.url
+            await browser.fill("#code", code)
+            async with browser._page.expect_navigation(
+                wait_until="domcontentloaded",
+                timeout=10000,
+            ):
+                await browser.click("form button[type='submit']")
+
+            new_url = browser._page.url
+            mailpit.delete_message(msg.id)
+            if new_url == url_before or "/2fa" in new_url:
+                logger.info("2FA submission did not leave the verification page")
+                return False
+
+            logger.info("2FA navigation completed")
+            return True
+        finally:
+            mailpit.close()
     except Exception as e:
-        logger.info("⚠️  2FA via Mailpit failed (%s)", type(e).__name__)
+        logger.info("2FA via Mailpit failed (%s)", type(e).__name__)
     
     return False
 
@@ -237,11 +224,13 @@ class TestJourney2AccountLifecycle:
         # Skip if we used admin creation
         if journey_state.test_account_username:
             logger.info("ℹ️  Skipping - account already created by admin")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         if not journey_state.get_extra("self_registration_available", False):
-            logger.info("ℹ️  Skipping - self-registration not available")
-            return
+            pytest.fail(
+                "J2_02 found no self-registration form and J2_01 did not create a fallback account",
+                pytrace=False,
+            )
         
         # Clear mailpit
         mailpit.clear()
@@ -278,12 +267,11 @@ class TestJourney2AccountLifecycle:
     async def test_J2_03_check_verification_email(self, browser: Browser, mailpit: MailpitClient):
         """Verification email is sent with correct content."""
         if not journey_state.test_account_email:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_03 requires J2_01/J2_02 to create an account email", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved (admin-created)")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         # Wait for verification email
         msg = mailpit.wait_for_message(
@@ -321,12 +309,11 @@ class TestJourney2AccountLifecycle:
     async def test_J2_04_complete_verification(self, browser: Browser):
         """Complete email verification process."""
         if not journey_state.test_account_email:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_04 requires J2_01/J2_02 to create an account email", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         verification_code = journey_state.get_extra("verification_code")
         verification_link = journey_state.get_extra("verification_link")
@@ -356,8 +343,7 @@ class TestJourney2AccountLifecycle:
     async def test_J2_05_admin_sees_pending_account(self, browser: Browser):
         """Admin can see the pending account in the list."""
         if not journey_state.test_account_username:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_05 requires J2_01/J2_02 to create an account", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
@@ -366,7 +352,7 @@ class TestJourney2AccountLifecycle:
             await browser.goto(settings.url("/admin/accounts"))
             await browser.wait_for_timeout(300)
             await capture(browser, "accounts-list-with-created")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         # Login as admin
         await _login_as_admin(browser)
@@ -388,12 +374,11 @@ class TestJourney2AccountLifecycle:
     async def test_J2_06_approve_account(self, browser: Browser, mailpit: MailpitClient):
         """Admin approves the pending account."""
         if not journey_state.test_account_username:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_06 requires J2_01/J2_02 to create an account", pytrace=False)
         
         if journey_state.test_account_approved:
             logger.info("ℹ️  Skipping - account already approved")
-            return
+            pytest.skip(_ADMIN_INVITE_PATH_SKIP_REASON)
         
         # Clear mailpit to catch approval email
         mailpit.clear()
@@ -439,20 +424,21 @@ class TestJourney2AccountLifecycle:
             logger.info(f"✓ Approval email sent to {journey_state.test_account_email}")
             await capture(browser, "approval-email-sent")
     
-    async def test_J2_07_user_can_login(self, browser: Browser):
+    async def test_J2_07_user_can_login(self, browser: Browser, mailpit: MailpitClient):
         """Approved user can login successfully."""
         if not journey_state.test_account_username:
-            logger.info("ℹ️  Skipping - no test account")
-            return
+            pytest.fail("J2_07 requires J2_01/J2_02 to create an account", pytrace=False)
         
         if not journey_state.test_account_approved:
-            logger.info("ℹ️  Skipping - account not approved")
-            return
+            pytest.fail("J2_07 requires J2_06 to approve the created account", pytrace=False)
         
-        # Skip if invite-based account (no password set - user sets via invite link)
         if journey_state.get_extra("invite_based_account") or not journey_state.test_account_password:
-            logger.info("ℹ️  Skipping - invite-based account (password set via invite link)")
-            return
+            if settings.deployment_target == "webhosting":
+                pytest.skip(
+                    "webhosting J2 uses an invite-based admin-created account; the synthetic "
+                    "mailbox cannot complete that invite login"
+                )
+            await self._accept_admin_invite(browser, mailpit)
         
         # Logout admin if needed
         await browser.goto(settings.url("/admin/logout"))
@@ -469,14 +455,56 @@ class TestJourney2AccountLifecycle:
         
         await browser.click("button[type='submit']")
         await browser.wait_for_timeout(1000)
+
+        if "/2fa" in (browser.current_url or ""):
+            if not await _handle_2fa_via_mailpit(browser):
+                pytest.fail("J2_07 login reached 2FA but Mailpit verification did not complete", pytrace=False)
+            await browser.wait_for_timeout(300)
         
         await capture(browser, "user-logged-in")
         
         # Verify not on login page anymore
-        current_url = browser.current_url or ""
+        current_url = browser._page.url
         assert "/login" not in current_url, f"Login should succeed, still at: {current_url}"
+        journey_state.set_extra("j2_user_login_verified", True)
         
         logger.info(f"✓ User {journey_state.test_account_username} logged in successfully")
+
+    async def _accept_admin_invite(self, browser: Browser, mailpit: MailpitClient) -> None:
+        """Accept the local admin-created account's Mailpit invite and set its password."""
+        email = journey_state.test_account_email
+        if not email:
+            pytest.fail("J2_07 invite acceptance requires the created account email", pytrace=False)
+
+        message = mailpit.wait_for_message(
+            predicate=lambda item: email.lower() in [address.address.lower() for address in item.to],
+            timeout=10.0,
+        )
+        if message is None:
+            pytest.fail("J2_07 could not find the account invite in Mailpit", pytrace=False)
+
+        invite_match = re.search(
+            r"https?://[^\s]+/account/invite/[A-Za-z0-9_-]+",
+            message.text or "",
+        )
+        if not invite_match:
+            pytest.fail("J2_07 Mailpit message did not contain an account invite link", pytrace=False)
+
+        password = new_password()
+        # The account invite requires an anonymous account-portal session.
+        await browser.goto(settings.url("/account/logout"), wait_until="domcontentloaded")
+        await browser.goto(invite_match.group(0), wait_until="domcontentloaded")
+        password_field = await browser.query_selector("#new_password, input[name='new_password']")
+        if not password_field:
+            pytest.fail("J2_07 invite page did not expose its password field", pytrace=False)
+
+        await browser.fill("#new_password, input[name='new_password']", password)
+        await browser.fill("#confirm_password, input[name='confirm_password']", password)
+        await browser.click("button[type='submit']")
+        await browser.wait_for_load_state("domcontentloaded")
+
+        journey_state.test_account_password = password
+        journey_state.set_extra("invite_based_account", False)
     
     async def test_J2_08_summary(self, browser: Browser):
         """Journey 2 complete - summarize account lifecycle."""

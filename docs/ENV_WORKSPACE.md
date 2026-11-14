@@ -7,6 +7,10 @@ shell workflows. The public edge facts (`PUBLIC_IP`, `PUBLIC_FQDN`) are not in t
 generates them into `ciu.env`. It is regenerated when
 the devcontainer is prepared; do not edit it by hand or copy its values into tracked files.
 
+`10-netcup-setup.sh` uses `PHYSICAL_REPO_ROOT` from the environment when set; otherwise it detects
+the devcontainer label and then falls back to the workspace path. Regenerate the file by rerunning
+`.devcontainer/finalize.post.d/10-netcup-setup.sh` or rebuilding the devcontainer.
+
 The file is not a secret store. It must not contain application, provider, mailbox or basic-auth
 credentials. Operator-supplied delegated-zone facts belong in `.env.operator`; the SSHFS and
 webhoster URL route belongs in `.env.webhoster`; live-check credentials belong in `.env.live` or

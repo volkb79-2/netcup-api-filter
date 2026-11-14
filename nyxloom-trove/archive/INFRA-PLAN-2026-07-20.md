@@ -76,7 +76,7 @@ the **production deploy path** (`deploy.sh`, `build_deployment.py`) and/or need 
 
 **Why:** naf's `tooling/test-runner/ciu.toml` is a *rendered-output* filename committed as
 source, with **no generator behind it** and a hardcoded host path
-(`ciu.toml:13 = /home/vb/volkb79-2/netcup-api-filter`). `ciu render`/`ciu up` can't run: there
+(`ciu.toml:13 = /home/<user>/netcup-api-filter`). `ciu render`/`ciu up` can't run: there
 is no repo-root marker, no `.j2` templates, no gitignore rules, no governance table, and the
 env layer uses `USER_UID` where ciu expects `CONTAINER_UID`.
 
@@ -84,7 +84,7 @@ env layer uses `USER_UID` where ciu expects `CONTAINER_UID`.
 1. Add repo-root marker `ciu.global.defaults.toml.j2`: `[deploy]` (project_name=`naf`,
    environment_tag, network_name=`naf-dev-network`), `[deploy.env.defaults]`/`[deploy.env.shared]`
    (bridge `USER_UID`→`CONTAINER_UID`, `DOCKER_GID`, `PHYSICAL_REPO_ROOT`,
-   `DOCKER_NETWORK_INTERNAL`), `[governance]` (see below), `[deploy.labels]` de.vxxu prefix,
+   `DOCKER_NETWORK_INTERNAL`), `[governance]` (see below), `[deploy.labels]` `naf` prefix,
    `[topology.external]` public_fqdn (INFRA-4 consumes it).
 2. Convert `tooling/test-runner/ciu.toml` → `ciu.defaults.toml.j2` using `{{ ciu.physical_repo_root }}`
    instead of the hardcoded path; gitignore the rendered `ciu.toml`, `ciu.env`, `**/.ciu/`
@@ -187,7 +187,7 @@ close it, superseded by INFRA-4. The `PUBLIC_TLS_*` cert paths lose all consumer
 ## Decisions this plan needs
 
 - **A · public FQDN / DNS** for the traefik `Host()` rule (INFRA-4). dstdns uses
-  `<project>.gstammtisch.dchive.de` behind wildcard DNS. What hostname base for naf? *(operator
+  `<project>.example.org` behind wildcard DNS. What hostname base for naf? *(operator
   — non-inferable env/DNS config)*
 - **B · pwmcp** (INFRA-2): vendor naf's own `infra/pwmcp/` stack on `naf-dev-network`
   (declarative, matches dstdns) vs. attach the running shared `dstdns-shared-local-pwmcp`. *Recommend

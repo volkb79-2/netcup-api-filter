@@ -43,7 +43,7 @@ You can pre-create users at first start using `[[users]]` entries in `app-config
 ```toml
 [[users]]
 username = "naf-user"
-email = "naf-user@vxxu.de"
+email = "naf-user@example.com"
 password = "generate" # or explicit strong password
 is_approved = true
 must_change_password = false

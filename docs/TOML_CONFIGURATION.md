@@ -92,8 +92,8 @@ config = {
 
 [[domain_roots]]
 backend = "platform-powerdns"  # References backends.service_name
-domain = "powerdomains.vxxu.de"
-dns_zone = "powerdomains.vxxu.de"
+domain = "powerdomains.example.com"
+dns_zone = "powerdomains.example.com"
 visibility = "public"  # "public", "private", "invite"
 display_name = "Free PowerDNS DDNS"
 description = "Public DDNS domain - users can create hosts without approval"
@@ -174,7 +174,7 @@ Maps DNS zones to backends with access policies.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `backend` | string | Yes | Backend service name (from `[[backends]]`) |
-| `domain` | string | Yes | Root domain (e.g., `powerdomains.vxxu.de`) |
+| `domain` | string | Yes | Root domain (e.g., `powerdomains.example.com`) |
 | `dns_zone` | string | No | Actual zone name in backend (defaults to `domain`) |
 | `visibility` | string | Yes | `"public"`, `"private"`, `"invite"` |
 | `display_name` | string | No | Human-readable name |
@@ -449,10 +449,10 @@ Bootstrap logs during initialization:
 [INFO]       - owner: platform
 [INFO] Auto-detected PowerDNS URL: http://naf-<INSTANCE_ID>-powerdns:8081
 [INFO] Created backend: platform-powerdns (powerdns, owner=platform)
-[INFO]   [1] powerdomains.vxxu.de (backend: platform-powerdns)
+[INFO]   [1] powerdomains.example.com (backend: platform-powerdns)
 [INFO]       - visibility: public
 [INFO]       - max_hosts_per_user: 5
-[INFO] Created domain root: powerdomains.vxxu.de (backend=platform-powerdns, visibility=public)
+[INFO] Created domain root: powerdomains.example.com (backend=platform-powerdns, visibility=public)
 [INFO] ✓ Platform backends initialized (NEW array-based structure)
 ```
 
@@ -488,7 +488,7 @@ max_hosts_per_user = 5
 
 ### Backend Not Found
 ```
-[ERROR] Backend platform-powerdns not found for domain powerdomains.vxxu.de, skipping
+[ERROR] Backend platform-powerdns not found for domain powerdomains.example.com, skipping
 ```
 **Solution:** Ensure `[[domain_roots]].backend` matches `[[backends]].service_name`.
 

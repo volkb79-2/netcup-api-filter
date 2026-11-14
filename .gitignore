@@ -293,7 +293,6 @@ ciu.global.worktree.toml.j2
 **/ciu.toml
 **/ciu.toml.j2
 **/ciu.compose.yml
-ciu.worktree-instance.json
 **/.ciu.worktree-instance.json.*.tmp
 **/.ciu.global.instance.toml.j2.*.tmp
 

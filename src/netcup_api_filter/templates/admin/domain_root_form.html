@@ -38,7 +38,7 @@
                                    value="{{ root.root_domain if root else '' }}"
                                    pattern="[a-z0-9.\-]+" required
                                    {% if root %}readonly{% endif %}
-                                   placeholder="e.g., dyn.vxxu.de">
+                                   placeholder="e.g., dyn.example.com">
                             <div class="form-text">The domain users will see and request subdomains under</div>
                         </div>
                         
@@ -46,7 +46,7 @@
                             <label class="form-label" for="dns_zone">DNS Zone <span class="text-danger">*</span></label>
                             <input type="text" class="form-control font-monospace" id="dns_zone" name="dns_zone"
                                    value="{{ root.dns_zone if root else '' }}" required
-                                   placeholder="e.g., vxxu.de">
+                                   placeholder="e.g., example.com">
                             <div class="form-text">Actual zone in the DNS backend (may differ from root)</div>
                         </div>
                         
@@ -186,8 +186,8 @@
                     <i class="bi bi-question-circle me-1"></i>Help
                 </div>
                 <div class="card-body small text-muted">
-                    <p><strong>Root Domain</strong> is what users see (e.g., <code>dyn.vxxu.de</code>).</p>
-                    <p><strong>DNS Zone</strong> is the actual zone in the backend. For delegated subdomains, this might differ (e.g., root=<code>dyn.vxxu.de</code>, zone=<code>dyn.vxxu.de</code> for PowerDNS).</p>
+                    <p><strong>Root Domain</strong> is what users see (e.g., <code>dyn.example.com</code>).</p>
+                    <p><strong>DNS Zone</strong> is the actual zone in the backend. For delegated subdomains, this might differ (e.g., root=<code>dyn.example.com</code>, zone=<code>dyn.example.com</code> for PowerDNS).</p>
                     <p><strong>Visibility:</strong></p>
                     <ul class="ps-3">
                         <li><strong>Public</strong> - Any user can claim subdomains</li>

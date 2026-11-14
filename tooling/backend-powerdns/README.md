@@ -67,10 +67,10 @@ returned `priority` value is not part of that request.
 The [PowerDNS 5.1 changelog](https://doc.powerdns.com/authoritative/changelog/5.1.html)
 also records stricter record-content validation and TTL checks for RRset updates.
 The app currently passes record destination and TTL through unchanged, so content that
-4.8 accepted (for example unquoted TXT or relative CNAME data) may receive HTTP 422;
-that is an inference from the upstream changes and the current request shape.
-**UNVERIFIED:** whether these exact examples receive 422 on auth-5.1.5; the controller
-checks representative app-generated requests under B095 R8.
+4.8 accepted can receive HTTP 422. Reproduced on a real auth-5.1.5 start (B095, 2026-11-13):
+a TXT with unquoted content and a CNAME with a relative target are both rejected with 422
+"Not in expected format"; well-formed A, AAAA, MX, quoted TXT and dot-terminated CNAME
+records are accepted.
 Backlog item B097 tracks client-side normalization/validation or a clear error mapping
 with tests; this stack update does not change the application backend.
 
@@ -80,10 +80,21 @@ the integration.
 
 ## Start the stack
 
-`POWERDNS_API_KEY` is generated once by ciu into this checkout's
-`GEN_LOCAL:naf/powerdns_api_key` store. It is never operator-supplied, committed, or
-shared with another worktree. The backend gets it through ciu's `expose_env` channel;
-the app-local seed hook reads the same file through `ctx.secret_file()`.
+`POWERDNS_API_KEY` and `POWERDNS_WEBSERVER_PASSWORD` are separate checkout-local CIU
+`GEN_LOCAL` secrets. The API key authenticates REST API calls; the webserver password protects
+the built-in webserver independently. Its dashboard and stats endpoints expose process statistics,
+query rings and Prometheus `/metrics`; the same listener also serves the JSON/REST API for zone
+content, metadata and DNSSEC management. `webserver-allow-from` is broad inside the container
+network, so sharing the API key with the webserver would couple both access paths.
+PowerDNS recommends both password protection and restricting webserver network access; this
+stack keeps the API key API-only and gives the webserver its own generated password. See the
+[PowerDNS HTTP API and webserver documentation](https://doc.powerdns.com/authoritative/http-api/)
+and [webserver settings](https://doc.powerdns.com/authoritative/settings.html#webserver-password).
+
+Both secrets are generated once into this checkout's CIU secret store, are not operator-supplied,
+committed, or shared with another worktree. They reach the daemon as Compose `environment:` values
+through CIU's `expose_env` mapping and are visible to anyone with permission to run `docker inspect`.
+The app-local seed hook reads only the API key through `ctx.secret_file()`.
 
 ```bash
 cd /workspaces/netcup-api-filter
@@ -100,8 +111,8 @@ ciu up --profile full
 ```
 
 `.env.operator` provides the delegated zone; `.env.guard` provides the basicauth
-username/password/hash used by the traefik route. `ciu up` materializes the generated
-PowerDNS key in this checkout's secret store and fails fast when the guard hash is
+username/password/hash used by the traefik route. `ciu up` materializes both generated
+PowerDNS secrets in this checkout's secret store and fails fast when the guard hash is
 absent. Values are never printed.
 
 ## URLs
@@ -132,12 +143,15 @@ curl -sf -H @- "$POWERDNS_API_URL_INTERNAL/api/v1/servers/localhost" \
   python3 -m json.tool
 ```
 
-External access adds the traefik basicauth guard:
+External access adds the traefik basicauth guard. Both credentials go in as a curl
+config on stdin (`-K -`), so neither the guard password nor the key is on the command line
+(a `"` or `\` in a value must be backslash-escaped in this config syntax):
 
 ```bash
-curl -sf -u "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD" -H @- \
-  "$POWERDNS_API_URL/api/v1/servers/localhost" \
-  <<<"X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
+curl -sf -K - "$POWERDNS_API_URL/api/v1/servers/localhost" <<EOF
+user = "$NAF_GUARD_USER:$NAF_GUARD_PASSWORD"
+header = "X-API-Key: $(cat .ciu/secrets/naf/powerdns_api_key)"
+EOF
 ```
 
 ## Record API examples
@@ -178,8 +192,8 @@ The stack keeps non-secret daemon configuration in `[backend_powerdns]`:
   logging, and AXFR settings;
 - health-check timing and external-route toggle.
 
-Only `POWERDNS_API_KEY` is secret. The delegated zone and public FQDN are global
-topology facts. `.env.services` reads the PowerDNS container identity from
+`POWERDNS_API_KEY` and `POWERDNS_WEBSERVER_PASSWORD` are secrets. The delegated zone and public
+FQDN are global topology facts. `.env.services` reads the PowerDNS container identity from
 `ciu resolve --json`; keep the resolved service and `backend_powerdns.ports.api`
 aligned through their stack declarations.
 
@@ -192,6 +206,9 @@ to the PowerDNS-image init service command in `ciu.compose.yml.j2`.
 The database is the host bind mount
 `tooling/backend-powerdns/data/pdns.sqlite3`, resolved through
 `PHYSICAL_REPO_ROOT`. It is not a Docker named volume.
+
+Only one checkout per host can run this stack at a time: each checkout publishes DNS on host
+port 53 over both UDP and TCP, so simultaneous checkouts collide at bind time.
 
 For an idempotent stack bring-up and teardown, use ciu's supported verbs:
 

@@ -413,21 +413,22 @@ async def test_user_token_revocation_blocks_api_and_logs(playwright_client, _dem
             # form's action, and submit directly — bypassing the Bootstrap modal.
             await user.goto(settings.url("/account/tokens"))
             await user.wait_for_text("main h1", "My Tokens", timeout=10.0)
-            await user.evaluate(
-                """
-                (tokenId) => {
-                    const f = document.getElementById('revokeForm');
-                    if (!f) throw new Error('revokeForm not found');
-                    f.action = `/account/tokens/${tokenId}/revoke`;
-                    f.submit();
-                }
-                """,
-                token_id,
-            )
-            # After revoke, user is redirected to dashboard
-            await user._page.wait_for_url(
-                "**dashboard**", timeout=10_000
-            )
+            # Arm navigation before submit; the POST immediately redirects, so registering after
+            # evaluate can miss the response on the remote pwmcp browser.
+            async with user._page.expect_navigation(
+                url="**dashboard**", wait_until="domcontentloaded", timeout=10_000
+            ):
+                await user.evaluate(
+                    """
+                    (tokenId) => {
+                        const f = document.getElementById('revokeForm');
+                        if (!f) throw new Error('revokeForm not found');
+                        f.action = `/account/tokens/${tokenId}/revoke`;
+                        f.submit();
+                    }
+                    """,
+                    token_id,
+                )
 
             # --- Channel A: is_active flipped to 0 ---
             verification.wait_for(

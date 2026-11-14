@@ -2,7 +2,7 @@
 
 **Review Date:** 2026-01-09
 **Reviewer:** Copilot Coding Agent (Comprehensive Deep-Dive Review)
-**Scope:** Full deployment and operations audit per `.vscode/REVIEW_PROMPT_DEPLOYMENT_OPS.md`
+**Scope:** Full deployment and operations audit per [REVIEW_PROMPT_DEPLOYMENT_OPS.md](REVIEW_PROMPT_DEPLOYMENT_OPS.md)
 
 ---
 
@@ -139,8 +139,8 @@ PUBLIC_FQDN=<auto-detected-from-reverse-dns>
 ### SSH Configuration (from `.env.defaults`)
 
 ```bash
-WEBHOSTING_SSH_USER=hosting218629
-WEBHOSTING_SSH_HOST=hosting218629.ae98d.netcup.net
+WEBHOSTING_SSH_USER=<webhoster-user>
+WEBHOSTING_SSH_HOST=<webhoster-host>
 WEBHOSTING_REMOTE_DIR=/netcup-api-filter
 ```
 
