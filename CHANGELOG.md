@@ -23,15 +23,15 @@
 
 ### Changed
 
-- **Adopt CMRU 7.3.1 for the KI-126 Passenger bundle canary (B106):** the configured build step
+- **Adopt CMRU 7.3.1 for the KI-126 Passenger bundle canary (B108):** the configured build step
   calls `cmru handler bundle-build`; `cmru.toml` declares the minimum CMRU version and remains the
   single variant list. CMRU 7.3.1 provides exact `[archive].keep` paths, a canonical manifest tag,
   an untagged `.devN+g<hash>` version fallback, and success cleanup of staged trees. Naf keeps only
   the generated `app-defaults.env` catalog and extracted `vendor/certifi/cacert.pem`, sources
   `.env.defaults` temporarily in its stage helper, and retains stale-archive pruning because CMRU
-  preserves sibling version archives. The real Passenger build has not been run by this
-  implementer; the controller's old/new data comparison and vbpub KI-126 acceptance remain open in
-  B106.
+  preserves sibling version archives. The controller ran both builders in a clean checkout runner on
+  2026-11-14: the old and new archives hold the same 1515 files except the old builder's own script and the new
+  `manifest.json`, no file content differs, and the seeded database is identical (B108). No release was cut.
 - **PowerDNS backend targets Authoritative 5.1 (B093):** the managed image is
   `powerdns/pdns-auth-51:5.1.5`; the startup config is rendered through the image's
   `TEMPLATE_FILES` mechanism, and the zone bootstrap now uses the Authoritative HTTP
@@ -85,8 +85,9 @@
 
 - **PowerDNS API and webserver credentials are separate checkout-local secrets**:
   `GEN_LOCAL:naf/powerdns_api_key` authenticates API calls, while
-  `GEN_LOCAL:naf/powerdns_webserver_password` protects the built-in dashboard, stats and
-  management listener. Both are generated once per checkout secret store and delivered through
+  `GEN_LOCAL:naf/powerdns_webserver_password` protects the dashboard, statistics/query rings and
+  `/metrics`; the zone-management API accepts only the API key. Both are generated once per
+  checkout secret store and delivered through
   CIU's `expose_env` channel; the app seed hook reads only the API key through `ctx.secret_file`.
 - **Authentication audit coverage and numeric rate-limit retries:** portal and admin login
   attempts now persist `ActivityLog` rows for password failures, lock-rejected attempts,

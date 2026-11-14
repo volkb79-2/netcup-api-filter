@@ -1,6 +1,8 @@
 """Render-driven tests for reset and invite password form contracts."""
 from __future__ import annotations
 
+import re
+
 from netcup_api_filter.password_reset import generate_reset_token
 from tests.form_contract_helpers import csrf_field, parse_forms
 
@@ -32,6 +34,16 @@ def _assert_password_changed(db, account, old_hash):
     assert account.password_hash != old_hash
     assert account.verify_password(OLD_PASSWORD) is False
     assert account.verify_password(STRONG_PASSWORD) is True
+
+
+def _flashed_alert_texts(html: str) -> list[str]:
+    fragments = re.findall(
+        r'<div(?=[^>]*\bclass="[^"]*\balert\b[^"]*")'
+        r'(?=[^>]*\brole="alert")[^>]*>(.*?)</div>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return [re.sub(r"<[^>]+>", " ", fragment).strip() for fragment in fragments]
 
 
 def test_reset_password_post_uses_names_from_rendered_template(
@@ -95,7 +107,10 @@ def _assert_mismatch_rejected(client, db, account, old_hash, page_path):
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert 'class="alert alert-danger' in body
-    assert "Passwords do not match" in body
+    assert any(
+        "Passwords do not match" in message
+        for message in _flashed_alert_texts(body)
+    ), "the mismatch message must appear inside the flashed danger alert"
     db.session.refresh(account)
     assert account.password_hash == old_hash
     assert account.verify_password(OLD_PASSWORD) is True

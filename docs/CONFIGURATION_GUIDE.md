@@ -18,7 +18,7 @@ order.
 | `.env.live` | Inputs for live mailbox/DNS checks and the on-demand deployed-instance smoke | No | Operator / later CIU secret delivery | No current `run-gate` lane consumes it; its live-test keys are read by `ui_tests/tests/live/*`, app settings by `passenger_wsgi.py` / `geoip_service.py`, and remote smoke keys by `ui_tests/config.py` | Credentials copied into tracked files or the webhoster SSH route |
 | `.env.guard` | Local Traefik basic-auth credentials for human access | No | Operator | the operator sources it in the setup sequence documented in `run-gate.toml`; `ciu.global.defaults.toml.j2` and the `app-local` / PowerDNS Compose templates consume the user/hash; documented human `curl` commands use the user/password | Any tracked credential value or live application login |
 | `.env` | Optional local override layer for `.env.defaults`; absent/empty by default | No | Local developer | `src/netcup_api_filter/config_defaults.py` reads it after `.env.defaults`; `build_deployment.py` uses that loader while seeding and removes it from the artifact | Live-tier credentials, deployment route facts or anything intended to ship |
-| `app-defaults.env` | Generated allowlist of runtime defaults in a staged tree | No | `config_defaults.write_shipped_defaults()` called by `build_deployment.py` and `tooling/passenger_bundle_stage.py`; CMRU 7.3.1+ includes this exact protected path through `[archive].keep` (B106) | `src/netcup_api_filter/config_defaults.py` | Credential-like values or build/test-only settings |
+| `app-defaults.env` | Generated allowlist of runtime defaults in a staged tree | No | `config_defaults.write_shipped_defaults()` called by `build_deployment.py` and `tooling/passenger_bundle_stage.py`; CMRU 7.3.1+ includes this exact protected path through `[archive].keep` (B108) | `src/netcup_api_filter/config_defaults.py` | Credential-like values or build/test-only settings |
 | `.env.operator.example` | Placeholder-only template for `.env.operator` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read as `.env.operator` above | Real zones, hosts, accounts or credentials |
 | `.env.webhoster.example` | Placeholder-only template for `.env.webhoster` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read by the documented `sshfs` / `curl` commands | Real hosts, account names or credentials |
 | `.env.live.example` | Placeholder-only template for `.env.live` | Yes | naf maintainers | A human copies it; `tests/test_env_layout.py` guards its shape; the resulting file is read by the live tests and app readers above | Real domains, mailbox/provider credentials or IPs |
@@ -182,9 +182,14 @@ Initialization uses an exclusive `<db>.init.lock`; other processes wait up to
 `SECRET_KEY` are mutually exclusive. A supplied key must be at least 16 characters; when neither
 is supplied, the app creates and persists one in the database.
 
-Local builds and `tooling/app-local` seed Mailpit settings from `SERVICE_MAILPIT` (resolved by
-`.env.services`) and the `.env.defaults` keys `LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, and
-`LOCAL_MAIL_ADMIN_EMAIL`. These are local-only configuration, not webhosting or OCI credentials.
+Local builds take the Mailpit host from `MAILPIT_HOST` and the mock Netcup URL from
+`MOCK_NETCUP_API_URL`, both exported by `.env.services` after `ciu resolve`. Mailpit's SMTP port,
+sender and admin recipient come from `.env.defaults` keys `LOCAL_MAILPIT_SMTP_PORT`,
+`LOCAL_MAIL_FROM` and `LOCAL_MAIL_ADMIN_EMAIL`. The local Netcup mock uses the
+`LOCAL_MOCK_NETCUP_CUSTOMER_ID`, `LOCAL_MOCK_NETCUP_API_KEY`, `LOCAL_MOCK_NETCUP_API_PASSWORD`
+and `LOCAL_MOCK_NETCUP_TIMEOUT` defaults. These local build values are test-fixture configuration,
+not webhosting or OCI credentials. `tooling/app-local` takes its Mailpit settings from
+`[app_local.mail]` in `tooling/app-local/ciu.defaults.toml.j2`.
 
 ## Adding configuration
 

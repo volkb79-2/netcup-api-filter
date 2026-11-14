@@ -55,8 +55,8 @@ The bundle keeps exactly the generated `app-defaults.env` and wheel-extracted
 `vendor/certifi/cacert.pem`. The stage helper reads `.env.defaults` from the checkout for database
 seeding and removes the temporary copy before manifest creation. CMRU removes `dist/app` after
 success (`keep_tree = false`); naf still removes stale `dist/naf-v*.tar.xz` siblings because CMRU
-keeps archives for other versions. The implementer has not run the real bundle build; the old/new
-artifact comparison and KI-126 acceptance remain open in B106.
+keeps archives for other versions. The controller's old/new artifact comparison and KI-126 acceptance
+(2026-11-14) are recorded in B108: same 1515 files, identical content and database.
 
 The configured artifact name is `naf-v<version>-<variant>.tar.xz`, matching CMRU's variant
 publisher and generated installer. The bundle manifest is inside one top-level `app/` directory;

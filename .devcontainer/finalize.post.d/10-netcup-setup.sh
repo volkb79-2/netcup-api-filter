@@ -52,7 +52,7 @@ setup_repository_paths() {
 
     export PHYSICAL_REPO_ROOT="$physical_repo_root"
 
-    # Generate .env.workspace — the single source of truth for all scripts
+    # Generate .env.workspace — shared workspace facts for shell workflows
     cat > "$WS/.env.workspace" << EOF
 # ============================================================================
 # Workspace Environment Configuration (Auto-generated)

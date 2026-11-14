@@ -32,8 +32,8 @@ Naf's exact `[archive].keep` paths preserve `app-defaults.env` and the wheel-ext
 `vendor/certifi/cacert.pem`. `.env.defaults` is copied by the stage helper for seeding only and is
 removed before manifest creation. CMRU cleans the staged bundle after success (`keep_tree = false`);
 naf retains the stale-archive prune because CMRU only deletes the current archive and leaves sibling
-versions in `dist/`. The real Passenger bundle has not been built by this implementer; KI-126
-acceptance and the old/new data comparison remain open in B106.
+versions in `dist/`. The controller built both the old and the new bundle on 2026-11-14 and found them equivalent; the
+comparison and the KI-126 acceptance are recorded in B108.
 
 The configured bundle uses the canonical name, `naf-v<version>-<variant>.tar.xz`, and carries a
 `manifest.json` under one top-level `app/` directory. The CIU adapter strips that directory while

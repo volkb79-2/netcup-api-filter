@@ -37,7 +37,7 @@
 | Journey | Purpose | Creates | Depends On | Status |
 |---------|---------|---------|------------|--------|
 | J1 | Fresh Deployment | Admin session, changed password | Fresh DB | Implemented (`j1_fresh_deployment.py`) |
-| J2 | Account Lifecycle | Pending account, verified account | J1 | Implemented (`j2_account_lifecycle.py`) |
+| J2 | Admin Invite and Login | Admin-created invite, authenticated invited account | J1 | Implemented (`j2_account_lifecycle.py`) |
 | J3 | Comprehensive States (accounts/realms/tokens) | Accounts/realms/tokens in many states | J2 | Implemented (`j3_comprehensive_states.py`) |
 | J4 | Realm Creation | Realms of each type | J3 | **Planned — not yet implemented** |
 | J5 | Token Issuance | Tokens with various scopes | J4 | **Planned — not yet implemented** |
@@ -116,7 +116,7 @@ own instance (`ui_tests/tests/smoke/test_installation_workflow.py`).
 
 ---
 
-## Journey 2: Account Lifecycle (j2_account_lifecycle.py)
+## Journey 2: Admin Invite and Login (j2_account_lifecycle.py)
 
 ### Contract Reference
 ```
@@ -124,77 +124,29 @@ ui_tests/tests/journeys/j2_account_lifecycle.py
 ```
 
 ### Preconditions
-- [x] Journey 1 completed
-- [x] Admin logged in with changed password
-- [x] Email notifications configured for Mailpit
+- Journey 1 completed with an admin session
+- Mailpit is reachable for invite delivery
 
-### Test: J2_01_registration_page
-**Action**: Navigate to `/account/register`
+### Test: J2_01_admin_invite_account_created
+**Action**: The admin creates an account at `/admin/accounts/new` and sends an invite.
 **Verify**:
-- [ ] Registration form exists OR "disabled" message
-- [ ] Username field, email field, password field present
-**State Change**:
-- `journey_state.self_registration_available` = True/False
-**Screenshot**: `J2-12-registration-page.webp`
-
-### Test: J2_02_submit_registration
-**Precondition**: Self-registration available
-**Action**:
-1. Generate unique username: `testuser_{6-char-random}`
-2. Generate unique email: `{username}@test.example.com`
-3. Generate random password
-4. Submit registration form
-**Verify**:
-- [ ] Form submits without error
-- [ ] Success message or redirect
-**State Change**:
-- `journey_state.test_account_username` = username
-- `journey_state.test_account_email` = email
-- `journey_state.test_account_password` = random password
-**Screenshot**: `J2-13-registration-filled.webp`, `J2-14-registration-submitted.webp`
-
-### Test: J2_03_check_verification_email
-**Action**: Check Mailpit for verification email
-**Verify**:
-- [ ] Email sent to correct address (test account email)
-- [ ] Subject contains "verify" or "confirm"
-- [ ] Body contains verification code or link
-**State Change**:
-- `journey_state.verification_code` = extracted code
-- `journey_state.verification_link` = extracted link
-**Screenshot**: (email content logged)
-
-### Test: J2_04_complete_verification
-**Action**: Complete email verification
-- If link: Navigate to link
-- If code: Submit code on verification page
-**Verify**:
-- [ ] Verification succeeds
-- [ ] Redirected to login or success page
-**Screenshot**: `J2-15-verification-complete.webp`
-
-### Test: J2_05_admin_sees_pending_account
-**Action**: Login as admin, navigate to `/admin/accounts/pending`
-**Verify**:
-- [ ] A self-registered pending account appears with Approve/Reject controls
-- [ ] An admin-created invite account is already approved and appears in the account list
-**Screenshot**: `J2-16-pending-accounts.webp`
+- The account username and invite recipient are recorded
+- The invite is consumed by the login step on local targets
+**Path**: The journey master records `j2_path=admin_invite` immediately after this step; later invite acceptance does not clear it.
 
 ### Test: J2_07_user_can_login
-When self-registration is disabled, J2 creates the account through the admin invite flow. On local
-targets it finds the invite in Mailpit, accepts it, sets a password, and verifies account login.
-J2_02 through J2_06 are reported as skipped on this path because they do not exercise
-self-registration; J2_05 still captures the admin account list. The journey master collects these
-step skips and continues through J2_07, then reports the overall J2 item as skipped. The feature test
-`ui_tests/tests/features/test_registration_e2e.py::TestFullRegistrationFlow.test_full_registration_to_pending`
-covers registration and verification through the pending state. No current e2e test combines that
-flow with admin approval and user login; B105 tracks the missing integration coverage. The invite
-login step is skipped on webhosting, where the synthetic mailbox cannot complete the invite.
+On local targets, J2 finds the admin-created invite in Mailpit, accepts it, sets a password, and
+then verifies login by confirming the browser left the login page. A missing invite, invite link,
+password field, or successful login fails J2. On webhosting only, the step is skipped because its
+synthetic mailbox cannot complete the invite.
+
+### Test: J2_08_summary
+**Action**: Log the created account and captured screenshot count.
 
 ### Postconditions
-- [x] Test account created through self-registration or the admin invite fallback
-- [x] Local invite fallback is accepted through Mailpit and the new account can log in
-- [x] Pending registration accounts remain available for admin approval when self-registration is enabled
+- The admin-invite route was recorded independently of transient invite-acceptance state
+- On local targets, the invite was accepted and the invited account logged in
+- Self-registration, email verification, and subsequent admin approval are not exercised by J2; the full integration oracle remains open in B105
 
 ---
 

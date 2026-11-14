@@ -100,7 +100,9 @@ items:
   - {id: B103, title: "Coordinate PowerDNS port 53 across checkouts", type: bugfix, component: infra, context_estimate: small}
   - {id: B104, title: "Move operator-specific values out of tracked live config", type: bugfix, component: infra, context_estimate: small}
   - {id: B105, title: "Add missing expired-token and registration-approval e2e oracles", type: bugfix, component: test-infra, context_estimate: medium}
-  - {id: B106, title: "Verify CMRU KI-126 Passenger bundle equivalence canary", type: feature, component: release, context_estimate: medium}
+  - {id: B106, title: "journey and test oracle gaps (low)", type: bugfix, component: tests, context_estimate: medium}
+  - {id: B107, title: "Diagnose the recurring ERR_CONNECTION_RESET in cross-role token lifecycle e2e tests", type: bugfix, component: test-infra, context_estimate: medium}
+  - {id: B108, title: "Verify CMRU KI-126 Passenger bundle equivalence canary", type: feature, component: release, context_estimate: medium}
 ---
 
 # Backlog
@@ -302,6 +304,7 @@ Opus review); decisions D-008..D-013.
   and `trusted_proxy_hops = 0` until WP4b-2/WP5 measure the hop chain (so all human clients appear as the proxy address); and the
   PowerDNS API key is a shared checkout-local `GEN_LOCAL` consumed by backend and app. Every checkout runs its own gate runners;
   a linked worktree's runner mounts the git common dir (Opus review H1). Release-builder runner readiness moved to WP9 (M4).
+  Downstream WP4b-2, WP5, WP6, WP7, WP9 and WP11 remain open pending ciu 7.25.0.
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
 - **B048 — Credentials. Status: part 1 delivered; part 2 remains open.** Part 1 provides the
@@ -337,9 +340,9 @@ class (b).
 
 - **B059 — Template-to-route form-field contract guard; journeys submit through the real form. Status: done (133a036).**
   The `tests/test_form_route_contract.py` guard compares Flask-rendered form fields with each handler's
-  `request.form` reads, using an explicit optional/alias allowlist. Journey source checks reject input-creating
-  or modifying `evaluate` calls; the two form contracts submit parsed fields and verify persisted outcomes.
-  Reintroducing a renamed field fails the guard.
+  `request.form` reads, using an explicit optional/alias allowlist. The two form contracts submit parsed
+  fields and verify persisted outcomes. Reintroducing a renamed field fails the guard. No source guard
+  currently rejects input-creating or input-modifying browser `evaluate` calls; that residual is B106.
 
 - **B060 — ui_tests: never print typed values or 2FA codes in failure output. Status: complete.**
   Evidence: browser fill/select/evaluate failures once put typed input in `ToolError` payloads; remote
@@ -600,9 +603,10 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   `tooling/ciu_identity.py:38` hardcodes a 30-second `ciu resolve` timeout. `tooling/app-local/post_compose_seed_domain.py:166-188`
   hardcodes 90-second health, 30 attempts with 5-second Docker probes and 2-second sleeps, a 60-second subprocess timeout,
   and `/opt/tester-venv/bin/python`; `tooling/app-local/post_compose_init_instance.py:37,81-87` hardcodes 120-second
-  health and subprocess timeouts. The journeys also hardcode 10-second waits/timeouts at
-  `ui_tests/tests/journeys/j2_account_lifecycle.py:69,86,420,481` and
-  `ui_tests/tests/journeys/j3_comprehensive_states.py:185,816,908`.
+  health and subprocess timeouts. The journeys hardcode 10-second waits/timeouts at
+  `ui_tests/tests/journeys/j2_account_lifecycle.py:57,74,234` and
+  `ui_tests/tests/journeys/j3_comprehensive_states.py:244,888,980`, plus fixed 250/300/1000 ms waits
+  such as J2 `:147-169,198-215` and J3 `:187,205,292-469,577-635,1061-1213`.
   Add typed `[app_local.hooks]` settings (and a corresponding ciu identity setting), pass them through the merged
   stack config, and add an `E2E_*` setting for journey waits/timeouts. Tests should prove configured values control each
   wait, timeout, and executable path.
@@ -631,7 +635,57 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   only checks visibility; neither performs admin approval followed by user login. Add an integration e2e for the
   full register, verify, approve, and login flow.
 
-- **B106 — Verify CMRU KI-126 Passenger bundle equivalence canary. Status: open**
+- **B106 — journey and test oracle gaps (low). Status: open (Low)**
+  - `ui_tests/tests/journeys/j3_comprehensive_states.py:442-466,758-782`: realm and token checkbox
+    helpers only click requested values on; they never untick a preselected value or compare the saved
+    `allowed_record_types`/`allowed_operations` with the requested sets. Make selections exact and verify
+    the persisted values.
+  - `ui_tests/tests/journeys/state_matrix.py:445-450`: the revoked-token API case accepts 401 without a
+    preceding 200 proving the same token worked. Add the positive read before revocation and then require
+    the post-revocation 401.
+  - `ui_tests/tests/journeys/j3_comprehensive_states.py:1199-1215` has no J3_05 assertions; the J3 test
+    list at `docs/JOURNEY_CONTRACTS.md:165-219` still names approval/login tests that J3 does not run.
+    Add real UI state checks and rewrite the contract from the actual J3 steps.
+  - Resolved by final2 J-N2: J2 no longer aggregates five skipped self-registration steps and reports the
+    whole local journey as skipped after a verified login; it now passes after invite acceptance and login.
+  - `ui_tests/tests/journeys/state_matrix.py:422-431` calls its case “outside its realm” but sends a
+    hostname in `example.com` to the `outside.example.net` API zone, so it only proves an out-of-zone
+    denial. Add a same-zone hostname outside the token's host realm and a `subdomain_only` apex case.
+  - `ui_tests/tests/journeys/j3_comprehensive_states.py:1120-1129,1157-1158` parses
+    `UI_J3_CREATE_TOKENS_WEBHOSTING` separately in J3_03 and J3_04. Parse it once with the shared
+    `utils.parse_bool` helper and reuse the result.
+  - `ui_tests/tests/journeys/state_matrix.py:110-135, ui_tests/tests/journeys/j3_comprehensive_states.py:166-280,1039-1054`:
+    the matrix names pending, rejected and unverified accounts, but the current J3 account creator uses
+    the admin-invite path (which creates an active, verified account) and disables the rejected fixture.
+    Implement real pending/unverified/rejected states or narrow the matrix to states the journey can
+    create; keep the read-only DB assertions aligned with the behavior.
+  - `tests/test_form_route_contract.py` verifies rendered form fields, but no test scans
+    `ui_tests/tests/**` for `evaluate` scripts that create or modify input controls. Existing legitimate
+    form workarounds include hidden TOTP form creation in `ui_tests/tests/security/test_account_2fa_disable.py:73-93,175-195`
+    and hidden realm-rejection inputs in `ui_tests/tests/roundtrip/test_cross_role_realm_propagation.py:377-390`.
+    Add a small AST/source guard with a commented allowlist only if it can stay cheap and auditable.
+  - `docs/UI_REQUIREMENTS.md:488,634-635,1124` has misaligned ASCII mock-up boxes; align them without
+    changing the UI contract.
+  - `nyxloom-trove/4-backlog.md:43,235`: B039's index title says “Adopt a meaningful, verified gate” while
+    its body says “Adopt the shared testing library once it exists.” Rename one so index and body agree.
+
+- **B107 — Diagnose the recurring ERR_CONNECTION_RESET in cross-role token lifecycle e2e tests. Status: open (Medium)**
+  Three full e2e runs, each on a different head, hit `net::ERR_CONNECTION_RESET` (or the 500/reset of the
+  throwaway app) in `ui_tests/tests/roundtrip/test_cross_role_token_lifecycle.py` and passed on the next run
+  with no code change in that area: (1) `test_user_token_revocation_blocks_api_and_logs` in the first candidate
+  run of the fold-in package (5 failures, later identical code passed); (2) the same test file in a later
+  candidate run of that package; (3) `test_readonly_token_scope_enforced` ("goto failed ... ERR_CONNECTION_RESET
+  at http://<runner>:<port>/account/login", networkidle) in the first correctly provisioned run of the next
+  package (1 failed, 316 passed, 36 skipped); the controller's rerun of the same head passed 317/36/0. It has
+  not been reproduced on demand and the cause is UNKNOWN. Do not mask it with retries or longer waits.
+  Diagnosis plan: capture the throwaway app's stdout/stderr (`ui_tests/e2e_env.py` starts it per session) and
+  the process state around the failing test (did the app process restart or hit a worker timeout while the
+  browser navigated); check the Playwright navigation uses `networkidle` against a server with keep-alive and
+  a single worker; check whether the pwmcp recycle (`E2E_PWMCP_RECYCLE_*`, B069) closes a context while a
+  request is in flight; add the app log tail to the failure message of the e2e harness so the next occurrence
+  carries evidence. Acceptance: either a root cause with a fix and a test that fails on the old behaviour, or
+  ten consecutive full e2e runs without the reset after the diagnostic logging is in place, recorded here.
+- **B108 — Verify CMRU KI-126 Passenger bundle equivalence canary. Status: done (equivalence verified 2026-11-14; cmru >= 7.3.1 required)**
   Naf replaces its hand-rolled Passenger tarball builder with `bundle.toml`, the `bundle-build`
   handler, and a naf-owned stage helper. CMRU 7.3.1 fixes the KI-162 hard-exclude collision and is
   now the minimum supported builder version (declared in the `cmru.toml` header); its exact
@@ -646,5 +700,18 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   commit-bound `.devN+g<hash>` fallback and removes staged trees after success. The tracked `src/`
   and `scripts/` copy inputs currently contain no protected-suffix files, so the expected CMRU
   skipped-path WARN count is zero; `.env.defaults` is excluded from CMRU copy and is stage-only.
-  The implementer has not run either real artifact build; KI-126 acceptance remains open until the
-  controller records the full comparison and any mismatch here.
+  RESULT (controller, 2026-11-14, real builds in a clean worktree with its own py311 runner, cmru 7.3.1,
+  naf bundle branch head eb5b7a3, version variable unset, SOURCE_DATE_EPOCH set): the old builder and the
+  configured `[steps.build]` both exited 0 and the new archive was named with the `.devN+g<hash>` fallback.
+  Old and new each hold 1515 files; the only path only in the old archive is `scripts/build_webhosting_tarball.py`
+  (the old builder copied its own file), the only path only in the new one is `manifest.json`; no file differs
+  in size or SHA-256; the SQLite schema, table row counts, accounts, settings keys and `user_version` are
+  identical; the shipped admin is the only account and no `secret_key` row exists. cmru's WARN count for
+  skipped copy paths was zero, and a static check of the old archive against cmru's own exclusion predicate with
+  the keep list found no protected-suffix file outside it. The real `scripts/activate.py` extracts the new
+  archive (the `app/` prefix is stripped) and finds it by name, and an import smoke in the runner confirms
+  every third-party module resolves from the bundle's `vendor/` and `certifi.where()` is the bundled CA file.
+  The manifest lists exactly two protected-suffix files, the two kept paths: `app-defaults.env` and
+  `vendor/certifi/cacert.pem`. Accepted differences: archive name and `app/` prefix, `manifest.json`, cmru's
+  normalised file modes and empty owner names. Not covered: a deploy to a real webhoster (B054, B092 part 2).
+  vbpub KI-126 and KI-162..165 are closed on the cmru side by their owners.

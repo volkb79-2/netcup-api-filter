@@ -68,9 +68,10 @@ the staged bundle after success because `keep_tree = false`. Naf still clears `d
 before building: CMRU removes the archive for the current variant/version but preserves sibling
 archives, and the publisher glob must see only this run's versions.
 
-The real Passenger build has **not** been run by this implementer. CMRU 7.3.1 removes the prior
-hard-exclude blocker; KI-126 acceptance remains open until the controller builds both implementations
-in the matching runner and records the data comparison in B106.
+CMRU 7.3.1 removed the prior hard-exclude blocker. The controller built both implementations in a clean
+checkout runner on 2026-11-14 and found them equivalent (same 1515 files, identical content and seeded
+database, apart from the manifest and the old builder's own script); the comparison is recorded in B108.
+No Passenger bundle has been deployed to a real webhoster by this change (B054, B092 part 2).
 
 ### Artifact contents
 
@@ -86,8 +87,8 @@ runtime catalog. Neither release artifact is intended to ship a secret or demo a
   (`is_admin=1`, `must_change_password=1`). No `secret_key` row (created at first start), no `.env*`,
   no `deployment_state_*.json`. The archive has a single top-level `app/` directory; CIU activation
   strips it into the Passenger application root, as CMRU's generated installer does for its bundles.
-  This is the configured artifact contract. The implementer has not run the real CMRU bundle build;
-  the controller owns the old/new equivalence build and KI-126 acceptance evidence (B106).
+  This is the configured artifact contract. The controller's old/new equivalence build and the KI-126 acceptance
+  evidence are recorded in B108.
 - **OCI image** (`Dockerfile.release`): the app, `app-defaults.env`, `NETCUP_FILTER_DB_PATH=/data/netcup_filter.db`
   and `VOLUME /data`; no database and no account. It runs as the non-root user `naf`
   (`APP_UID`/`APP_GID` build args, default 10001): `/app` is read-only for it, `/data` (DB, init lock,
