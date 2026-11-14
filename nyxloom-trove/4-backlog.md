@@ -648,4 +648,3 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   skipped-path WARN count is zero; `.env.defaults` is excluded from CMRU copy and is stage-only.
   The implementer has not run either real artifact build; KI-126 acceptance remains open until the
   controller records the full comparison and any mismatch here.
-
