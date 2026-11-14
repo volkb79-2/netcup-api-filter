@@ -1,8 +1,10 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-11-13 (B048 part 1 delivered; B093 PowerDNS 5.1 implementation and resolution committed; B095 real-start verification done; CIU secret delivery remains open).** Start here.
-For this sync, only this status note, the WP3 (B044) probe row and the `Open items for the operator` line below were
-re-synced (plus the WP8 row for the PowerDNS series decision); the other dashboard sections retain their earlier snapshot and were not checked.
+**Last synced: 2026-11-14 (B048 part 1 delivered; B093 PowerDNS 5.1 implementation and resolution committed; B095 real-start verification done; CIU secret delivery remains open).** Start here.
+For this sync, the status note, WP3 (B044) probe row, WP8 (B050/B093/B095) image and real-start row,
+WP4b-1/B046 identity row, remaining CIU-dependent work row, `Open items for the operator` line, and
+E2E/pwmcp review row plus the B059 and B105/B106 backlog entries below were re-synced; the other
+dashboard sections retain their earlier snapshot and were not checked.
 The direction spine lives in [1-north-star.md](1-north-star.md),
 [2-product-definition.md](2-product-definition.md), [3-roadmap.md](3-roadmap.md), and
 [4-backlog.md](4-backlog.md); decisions live in [decisions.md](decisions.md) (D-###), and
@@ -31,7 +33,8 @@ reviewed independently on the other, with gates through `run-gate`.
 | WP3 (B044) webhoster forwarded-header probe | done 2026-11-13 | Evidence: PHP probe on the same webhost; the Passenger WSGI path is unmeasured (B054). Forged XFF/XFP passed through unchanged and `REMOTE_ADDR` remained the real client address. Passenger catalog now ships zero trusted hops. |
 | WP8 (B050) cmru versions cover every image | merged (`c2d31a4`) | targets python 3.11.17 / 3.14.9, mailpit 1.33.0, powerdns 5.1.5 (was 4.8.5; the operator chose the 5.1 series on 2026-11-13, B093; real-start verification B095 done in `d5f7652`) |
 | ciu CIU-193/205/206 | merged in vbpub main, unreleased (ciu 7.25.0 planned by the vbpub controller) | worktree-safe `ciu down`, selection facts + selection record under `ciu up --dir`, `ASK_HOST` host-wide secret |
-| WP4b-1/WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | wait for ciu 7.25.0 (identity, deployment type, public stacks, credentials, `e2e-public`) |
+| WP4b-1 (B046) identity | merged (`51bcd81`) | Worktree identity facts, derived names, and `ciu resolve` consumers are in main |
+| WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | Downstream WP4b-2, WP5, WP6, WP7, WP9 and WP11 remain open pending ciu 7.25.0. |
 | Final gates | green | release-gate PASS on `43216d0` (unit py311/py314, R1 floors, R3 canaries), e2e PASS on `177bd79`, `cmru versions check naf` matches, pushed to origin (no tags) |
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058/B059 done (`133a036`) | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |

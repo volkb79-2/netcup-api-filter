@@ -8,8 +8,11 @@ generates them into `ciu.env`. It is regenerated when
 the devcontainer is prepared; do not edit it by hand or copy its values into tracked files.
 
 `10-netcup-setup.sh` uses `PHYSICAL_REPO_ROOT` from the environment when set; otherwise it detects
-the devcontainer label and then falls back to the workspace path. Regenerate the file by rerunning
-`.devcontainer/finalize.post.d/10-netcup-setup.sh` or rebuilding the devcontainer.
+the devcontainer label and then falls back to the workspace path. From the repository root,
+regenerate the file with `bash .devcontainer/finalize.post.d/10-netcup-setup.sh` or rebuild the
+devcontainer. The full hook also prepares `.venv` and its `~/.bashrc` activation block, rewrites the
+project alias block, configures available `bat`/Midnight Commander tools, adds mounted host SSH keys
+to the SSH agent, and joins the devcontainer to the internal Docker network when configured.
 
 The file is not a secret store. It must not contain application, provider, mailbox or basic-auth
 credentials. Operator-supplied delegated-zone facts belong in `.env.operator`; the SSHFS and

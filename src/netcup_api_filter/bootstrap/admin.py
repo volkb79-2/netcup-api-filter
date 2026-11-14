@@ -93,10 +93,12 @@ def seed_bootstrap_admin(spec: BootstrapAdmin, *, enforce: bool = False) -> tupl
 
     * Default (``enforce=False``): create-if-missing. An existing account with that
       username is left untouched — re-seeding never resets a password someone chose.
-    * ``enforce=True`` (the ciu post_compose hook of a stack that owns the secret):
+    * ``enforce=True`` (the explicit bootstrap CLI ``--enforce-admin`` option):
       create-or-update. The account is made an active admin with the configured
       password, email and ``must_change_password``, and its failed-login lockout is
-      cleared — the configured secret is the source of truth for that instance.
+      cleared — the configured secret is the source of truth for that instance. The
+      app-local post-compose initializer does not pass this option and does not
+      reassert an existing account.
 
     A new admin has no 2FA method enabled. Only the forced password change (the shipped
     tarball admin) switches email 2FA on, when an email is entered there; a configured

@@ -182,9 +182,14 @@ Initialization uses an exclusive `<db>.init.lock`; other processes wait up to
 `SECRET_KEY` are mutually exclusive. A supplied key must be at least 16 characters; when neither
 is supplied, the app creates and persists one in the database.
 
-Local builds and `tooling/app-local` seed Mailpit settings from `SERVICE_MAILPIT` (resolved by
-`.env.services`) and the `.env.defaults` keys `LOCAL_MAILPIT_SMTP_PORT`, `LOCAL_MAIL_FROM`, and
-`LOCAL_MAIL_ADMIN_EMAIL`. These are local-only configuration, not webhosting or OCI credentials.
+Local builds take the Mailpit host from `MAILPIT_HOST` and the mock Netcup URL from
+`MOCK_NETCUP_API_URL`, both exported by `.env.services` after `ciu resolve`. Mailpit's SMTP port,
+sender and admin recipient come from `.env.defaults` keys `LOCAL_MAILPIT_SMTP_PORT`,
+`LOCAL_MAIL_FROM` and `LOCAL_MAIL_ADMIN_EMAIL`. The local Netcup mock uses the
+`LOCAL_MOCK_NETCUP_CUSTOMER_ID`, `LOCAL_MOCK_NETCUP_API_KEY`, `LOCAL_MOCK_NETCUP_API_PASSWORD`
+and `LOCAL_MOCK_NETCUP_TIMEOUT` defaults. These local build values are test-fixture configuration,
+not webhosting or OCI credentials. `tooling/app-local` takes its Mailpit settings from
+`[app_local.mail]` in `tooling/app-local/ciu.defaults.toml.j2`.
 
 ## Adding configuration
 

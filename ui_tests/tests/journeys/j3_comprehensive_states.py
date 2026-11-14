@@ -68,6 +68,70 @@ async def capture(browser: Browser, name: str, journey: str = "J3") -> str:
     return path
 
 
+def _require_created_account(account_data: dict, spec_name: str) -> dict:
+    """Reject empty or incomplete account-creation results before J3 counts them."""
+    required = ("username", "email", "password", "account_id")
+    if not isinstance(account_data, dict) or any(not account_data.get(key) for key in required):
+        pytest.fail(
+            f"J3_01 did not fully create account {spec_name}; required fields: {', '.join(required)}",
+            pytrace=False,
+        )
+    return account_data
+
+
+def _assert_account_state_in_db(
+    account_data: dict, *, expected_is_active: int, expected_email_verified: int = 1
+) -> None:
+    """Compare the invite-created account with the existing read-only DB channel."""
+    if not verification.db_available():
+        return
+
+    username = account_data.get("username")
+    row = verification.get_account(username) if username else None
+    if row is None:
+        pytest.fail(
+            f"J3_01 cannot find created account {username!r} in the read-only database",
+            pytrace=False,
+        )
+    expected = {
+        "is_active": expected_is_active,
+        "email_verified": expected_email_verified,
+        "must_change_password": 0,
+    }
+    mismatches = {
+        field: (row.get(field), value)
+        for field, value in expected.items()
+        if row.get(field) != value
+    }
+    if mismatches:
+        pytest.fail(
+            f"J3_01 database state for {username!r} differs from the completed invite flow: {mismatches}",
+            pytrace=False,
+        )
+
+
+def _assert_token_matrix_complete(created_tokens: dict[str, dict]) -> None:
+    """Require every configured token to exist and retain its one-time value."""
+    expected_names = {spec.name for spec in TOKENS}
+    actual_names = set(created_tokens)
+    if len(created_tokens) != len(TOKENS) or actual_names != expected_names:
+        pytest.fail(
+            f"J3_03 created {len(created_tokens)} of {len(TOKENS)} configured tokens; "
+            f"missing={sorted(expected_names - actual_names)}, extra={sorted(actual_names - expected_names)}",
+            pytrace=False,
+        )
+    value_less = sorted(
+        name
+        for name, token in created_tokens.items()
+        if not isinstance(token, dict) or not token.get("token_value")
+    )
+    if value_less:
+        pytest.fail(
+            f"J3_03 did not capture the one-time token value for: {', '.join(value_less)}",
+            pytrace=False,
+        )
+
+
 class AccountCreator:
     """Helper to create accounts via admin UI and complete invite flow."""
     
@@ -120,9 +184,6 @@ class AccountCreator:
         email = f"{username}@test.example.com"
         password = new_password()  # random per run (ui_tests/personas.py)
         
-        # Clear Mailpit to find our specific email
-        initial_count = self.mailpit.list_messages().total
-        
         # Navigate to account creation
         await self.browser.goto(settings.url("/admin/accounts/new"))
         await self.browser.wait_for_timeout(300)
@@ -148,8 +209,7 @@ class AccountCreator:
         # Check if submit button is disabled
         submit_disabled = await self.browser.query_selector("#submitBtn:disabled")
         if submit_disabled:
-            page_text = await self.browser.text("body")
-            return {}
+            pytest.fail(f"J3_01 account form kept submit disabled for {spec.name}", pytrace=False)
         
         await self.browser.click("#submitBtn")
         await self.browser.wait_for_timeout(1500)
@@ -159,8 +219,7 @@ class AccountCreator:
         page_text = await self.browser.text("body")
         
         if "created" not in page_text.lower() and "invitation" not in page_text.lower():
-            logger.info(f"⚠️  Account creation may have failed for {username}")
-            return {}
+            pytest.fail(f"J3_01 account creation did not confirm {spec.name}", pytrace=False)
         
         # Get account ID from URL (redirects to /admin/accounts/{id})
         account_id = None
@@ -168,6 +227,8 @@ class AccountCreator:
         url_match = re.search(r'/admin/accounts/(\d+)', current_url)
         if url_match:
             account_id = int(url_match.group(1))
+        if account_id is None:
+            pytest.fail(f"J3_01 account creation did not expose an account id for {spec.name}", pytrace=False)
         
         account_data = {
             "spec_name": spec.name,
@@ -185,31 +246,35 @@ class AccountCreator:
             timeout=10.0
         )
         
-        if invite_msg:
-            email_body = invite_msg.text or ""
-            invite_link = self._extract_invite_link(email_body)
-            logger.info(f"  [DEBUG] Invite email for {username}:")
-            logger.info(f"          Subject: {invite_msg.subject}")
-            logger.info("invite email body length=%d", len(email_body or ""))
-            logger.info(
-                "          Invite link present=%s length=%d",
-                bool(invite_link),
-                len(invite_link or ""),
-            )
-            if invite_link:
-                # Accept the invite
-                await self._accept_invite(invite_link, username, password)
-                account_data["status"] = "active"
-                logger.info(f"✓ Created and activated account: {username}")
-            else:
-                logger.info(f"⚠️  No invite link found in email for {username}")
-        else:
-            logger.info(f"⚠️  No invite email received for {username}")
+        if invite_msg is None:
+            pytest.fail(f"J3_01 did not receive the invite email for {spec.name}", pytrace=False)
+
+        email_body = invite_msg.text or invite_msg.html or ""
+        invite_link = self._extract_invite_link(email_body)
+        logger.info(
+            "J3_01 invite received for %s: link_present=%s link_length=%d",
+            spec.name,
+            bool(invite_link),
+            len(invite_link or ""),
+        )
+        if not invite_link:
+            pytest.fail(f"J3_01 invite email for {spec.name} did not contain an invite link", pytrace=False)
+
+        await self._accept_invite(invite_link, username, password)
+        account_data["status"] = "active"
+        logger.info("✓ Created and activated account: %s", spec.name)
         
         # Handle rejection after creation if needed
         if spec.status == "rejected" and account_id:
             await self._reject_account(account_id, username)
             account_data["status"] = "rejected"
+
+        # Admin-created invite accounts are active and verified after acceptance; the
+        # rejected matrix entry is disabled in the admin UI and remains inactive.
+        _assert_account_state_in_db(
+            account_data,
+            expected_is_active=0 if spec.status == "rejected" else 1,
+        )
         
         self.created_accounts[spec.name] = account_data
         return account_data
@@ -302,6 +367,11 @@ class AccountCreator:
             await reject_btn.click()
             await self.browser.wait_for_load_state('domcontentloaded')
             logger.info(f"  ✓ Rejected/disabled account: {username}")
+        else:
+            pytest.fail(
+                f"J3_01 could not find a Reject or Disable control for account {username}",
+                pytrace=False,
+            )
 
 
 class RealmCreator:
@@ -774,6 +844,10 @@ class TokenCreator:
                 logger.info("          Validation error detected in HTML")
             # Take debug screenshot
             await capture(browser=self.browser, name=f"token-error-{token_name}")
+            pytest.fail(
+                f"J3_03 did not capture the one-time value for token {spec.name}",
+                pytrace=False,
+            )
         
         token_data = {
             "spec_name": spec.name,
@@ -785,10 +859,7 @@ class TokenCreator:
             "is_revoked": spec.is_revoked,
         }
         
-        if token_value:
-            logger.info(f"✓ Created token: {token_name} for {realm['fqdn']} (value captured)")
-        else:
-            logger.info(f"⚠️  Created token: {token_name} but couldn't capture value")
+        logger.info("✓ Created token: %s for %s (value captured)", token_name, realm["fqdn"])
         
         # Handle revoked tokens
         if spec.is_revoked and token_value:
@@ -974,11 +1045,14 @@ class TestJourney3ComprehensiveStates:
         creator = AccountCreator(browser)
         
         for spec in ACCOUNTS:
-            await creator.create_account(spec)
+            account_data = await creator.create_account(spec)
+            _require_created_account(account_data, spec.name)
             await capture(browser, f"account-{spec.name}")
         
         # Store for later journeys
-        assert creator.created_accounts, "J3_01 did not create any accounts"
+        assert len(creator.created_accounts) == len(ACCOUNTS), (
+            f"J3_01 created {len(creator.created_accounts)} of {len(ACCOUNTS)} configured accounts"
+        )
         journey_state.set_extra("account_creator", creator)
         
         # Screenshot: All accounts list
@@ -1061,7 +1135,7 @@ class TestJourney3ComprehensiveStates:
             await creator.create_token(spec)
         
         # Store for API testing
-        assert creator.created_tokens, "J3_03 did not create any tokens"
+        _assert_token_matrix_complete(creator.created_tokens)
         journey_state.set_extra("token_creator", creator)
         
         # Screenshot: Tokens list

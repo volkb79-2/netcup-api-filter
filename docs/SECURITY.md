@@ -61,7 +61,8 @@ undifferentiated "401". See `SECURITY_ERROR_TAXONOMY.md`.
   race-free, in the database (`docs/CONFIGURATION_GUIDE.md`).
 - **PowerDNS API and webserver credentials are separate checkout-local `GEN_LOCAL` secrets.**
   The API key is used for authenticated API calls and by the app seed hook; the webserver's own
-  password protects its dashboard, statistics/query rings, metrics and zone-management API.
+  password protects the dashboard, statistics/query rings and `/metrics`; the zone-management API
+  accepts only the API key.
   Neither credential is committed or printed. See [`tooling/backend-powerdns/README.md`](../tooling/backend-powerdns/README.md).
 - **Only the Passenger tarball ships an account**: the pre-set admin (`DEFAULT_ADMIN_*`) with
   `must_change_password`. The OCI image ships none; a fresh container needs an operator-supplied

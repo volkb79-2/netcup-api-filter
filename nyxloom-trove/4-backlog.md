@@ -100,6 +100,7 @@ items:
   - {id: B103, title: "Coordinate PowerDNS port 53 across checkouts", type: bugfix, component: infra, context_estimate: small}
   - {id: B104, title: "Move operator-specific values out of tracked live config", type: bugfix, component: infra, context_estimate: small}
   - {id: B105, title: "Add missing expired-token and registration-approval e2e oracles", type: bugfix, component: test-infra, context_estimate: medium}
+  - {id: B106, title: "journey and test oracle gaps (low)", type: bugfix, component: tests, context_estimate: medium}
 ---
 
 # Backlog
@@ -301,6 +302,7 @@ Opus review); decisions D-008..D-013.
   and `trusted_proxy_hops = 0` until WP4b-2/WP5 measure the hop chain (so all human clients appear as the proxy address); and the
   PowerDNS API key is a shared checkout-local `GEN_LOCAL` consumed by backend and app. Every checkout runs its own gate runners;
   a linked worktree's runner mounts the git common dir (Opus review H1). Release-builder runner readiness moved to WP9 (M4).
+  Downstream WP4b-2, WP5, WP6, WP7, WP9 and WP11 remain open pending ciu 7.25.0.
 - **B047 — Public stacks.** Frontends on the OCI release image (no repo mount), `public-dns` (`${PUBLIC_IP}:53`, IPv6 decision,
   delegated zone, realm-label reaper) and `public-edge` roles, public PowerDNS API route dropped, seed hook tested end to end.
 - **B048 — Credentials. Status: part 1 delivered; part 2 remains open.** Part 1 provides the
@@ -336,9 +338,9 @@ class (b).
 
 - **B059 — Template-to-route form-field contract guard; journeys submit through the real form. Status: done (133a036).**
   The `tests/test_form_route_contract.py` guard compares Flask-rendered form fields with each handler's
-  `request.form` reads, using an explicit optional/alias allowlist. Journey source checks reject input-creating
-  or modifying `evaluate` calls; the two form contracts submit parsed fields and verify persisted outcomes.
-  Reintroducing a renamed field fails the guard.
+  `request.form` reads, using an explicit optional/alias allowlist. The two form contracts submit parsed
+  fields and verify persisted outcomes. Reintroducing a renamed field fails the guard. No source guard
+  currently rejects input-creating or input-modifying browser `evaluate` calls; that residual is B106.
 
 - **B060 — ui_tests: never print typed values or 2FA codes in failure output. Status: complete.**
   Evidence: browser fill/select/evaluate failures once put typed input in `ToolError` payloads; remote
@@ -599,9 +601,10 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   `tooling/ciu_identity.py:38` hardcodes a 30-second `ciu resolve` timeout. `tooling/app-local/post_compose_seed_domain.py:166-188`
   hardcodes 90-second health, 30 attempts with 5-second Docker probes and 2-second sleeps, a 60-second subprocess timeout,
   and `/opt/tester-venv/bin/python`; `tooling/app-local/post_compose_init_instance.py:37,81-87` hardcodes 120-second
-  health and subprocess timeouts. The journeys also hardcode 10-second waits/timeouts at
-  `ui_tests/tests/journeys/j2_account_lifecycle.py:69,86,420,481` and
-  `ui_tests/tests/journeys/j3_comprehensive_states.py:185,816,908`.
+  health and subprocess timeouts. The journeys hardcode 10-second waits/timeouts at
+  `ui_tests/tests/journeys/j2_account_lifecycle.py:57,74,234` and
+  `ui_tests/tests/journeys/j3_comprehensive_states.py:244,888,980`, plus fixed 250/300/1000 ms waits
+  such as J2 `:147-169,198-215` and J3 `:187,205,292-469,577-635,1061-1213`.
   Add typed `[app_local.hooks]` settings (and a corresponding ciu identity setting), pass them through the merged
   stack config, and add an `E2E_*` setting for journey waits/timeouts. Tests should prove configured values control each
   wait, timeout, and executable path.
@@ -629,3 +632,37 @@ J2/J3 journeys, including J3's wrong `/api/dns/records` endpoint, are B037.
   covers register/verify through pending, while `TestAdminAccountApproval.test_pending_accounts_visible_in_admin`
   only checks visibility; neither performs admin approval followed by user login. Add an integration e2e for the
   full register, verify, approve, and login flow.
+
+- **B106 — journey and test oracle gaps (low). Status: open (Low)**
+  - `ui_tests/tests/journeys/j3_comprehensive_states.py:442-466,758-782`: realm and token checkbox
+    helpers only click requested values on; they never untick a preselected value or compare the saved
+    `allowed_record_types`/`allowed_operations` with the requested sets. Make selections exact and verify
+    the persisted values.
+  - `ui_tests/tests/journeys/state_matrix.py:445-450`: the revoked-token API case accepts 401 without a
+    preceding 200 proving the same token worked. Add the positive read before revocation and then require
+    the post-revocation 401.
+  - `ui_tests/tests/journeys/j3_comprehensive_states.py:1199-1215` has no J3_05 assertions; the J3 test
+    list at `docs/JOURNEY_CONTRACTS.md:165-219` still names approval/login tests that J3 does not run.
+    Add real UI state checks and rewrite the contract from the actual J3 steps.
+  - Resolved by final2 J-N2: J2 no longer aggregates five skipped self-registration steps and reports the
+    whole local journey as skipped after a verified login; it now passes after invite acceptance and login.
+  - `ui_tests/tests/journeys/state_matrix.py:422-431` calls its case “outside its realm” but sends a
+    hostname in `example.com` to the `outside.example.net` API zone, so it only proves an out-of-zone
+    denial. Add a same-zone hostname outside the token's host realm and a `subdomain_only` apex case.
+  - `ui_tests/tests/journeys/j3_comprehensive_states.py:1120-1129,1157-1158` parses
+    `UI_J3_CREATE_TOKENS_WEBHOSTING` separately in J3_03 and J3_04. Parse it once with the shared
+    `utils.parse_bool` helper and reuse the result.
+  - `ui_tests/tests/journeys/state_matrix.py:110-135, ui_tests/tests/journeys/j3_comprehensive_states.py:166-280,1039-1054`:
+    the matrix names pending, rejected and unverified accounts, but the current J3 account creator uses
+    the admin-invite path (which creates an active, verified account) and disables the rejected fixture.
+    Implement real pending/unverified/rejected states or narrow the matrix to states the journey can
+    create; keep the read-only DB assertions aligned with the behavior.
+  - `tests/test_form_route_contract.py` verifies rendered form fields, but no test scans
+    `ui_tests/tests/**` for `evaluate` scripts that create or modify input controls. Existing legitimate
+    form workarounds include hidden TOTP form creation in `ui_tests/tests/security/test_account_2fa_disable.py:73-93,175-195`
+    and hidden realm-rejection inputs in `ui_tests/tests/roundtrip/test_cross_role_realm_propagation.py:377-390`.
+    Add a small AST/source guard with a commented allowlist only if it can stay cheap and auditable.
+  - `docs/UI_REQUIREMENTS.md:488,634-635,1124` has misaligned ASCII mock-up boxes; align them without
+    changing the UI contract.
+  - `nyxloom-trove/4-backlog.md:43,235`: B039's index title says “Adopt a meaningful, verified gate” while
+    its body says “Adopt the shared testing library once it exists.” Rename one so index and body agree.

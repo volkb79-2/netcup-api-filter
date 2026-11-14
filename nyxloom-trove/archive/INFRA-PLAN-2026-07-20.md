@@ -84,7 +84,7 @@ env layer uses `USER_UID` where ciu expects `CONTAINER_UID`.
 1. Add repo-root marker `ciu.global.defaults.toml.j2`: `[deploy]` (project_name=`naf`,
    environment_tag, network_name=`naf-dev-network`), `[deploy.env.defaults]`/`[deploy.env.shared]`
    (bridge `USER_UID`→`CONTAINER_UID`, `DOCKER_GID`, `PHYSICAL_REPO_ROOT`,
-   `DOCKER_NETWORK_INTERNAL`), `[governance]` (see below), `[deploy.labels]` `naf` prefix,
+   `DOCKER_NETWORK_INTERNAL`), `[governance]` (see below), `[deploy.labels]` reverse-DNS prefix (see B104),
    `[topology.external]` public_fqdn (INFRA-4 consumes it).
 2. Convert `tooling/test-runner/ciu.toml` → `ciu.defaults.toml.j2` using `{{ ciu.physical_repo_root }}`
    instead of the hardcoded path; gitignore the rendered `ciu.toml`, `ciu.env`, `**/.ciu/`

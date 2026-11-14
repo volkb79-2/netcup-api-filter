@@ -427,12 +427,14 @@ class TestSessionRegeneration:
             logger.debug("session after login present=%s", bool(session_after))
             
             # Verify session changed
-            if session_before and session_after:
-                assert session_before != session_after, \
-                    "Session ID should change after login (session regeneration)"
-                logger.debug("session ID regenerated after login")
-            else:
-                logger.warning("could not verify session regeneration because cookies were not captured")
+            if not session_before or not session_after:
+                pytest.fail(
+                    "Session regeneration requires both before-login and after-login session cookies "
+                    f"(before_present={bool(session_before)}, after_present={bool(session_after)})"
+                )
+            assert session_before != session_after, \
+                "Session ID should change after login (session regeneration)"
+            logger.debug("session ID regenerated after login")
 
 
 class TestConfigurationDefaults:

@@ -76,8 +76,9 @@
 
 - **PowerDNS API and webserver credentials are separate checkout-local secrets**:
   `GEN_LOCAL:naf/powerdns_api_key` authenticates API calls, while
-  `GEN_LOCAL:naf/powerdns_webserver_password` protects the built-in dashboard, stats and
-  management listener. Both are generated once per checkout secret store and delivered through
+  `GEN_LOCAL:naf/powerdns_webserver_password` protects the dashboard, statistics/query rings and
+  `/metrics`; the zone-management API accepts only the API key. Both are generated once per
+  checkout secret store and delivered through
   CIU's `expose_env` channel; the app seed hook reads only the API key through `ctx.secret_file`.
 - **Authentication audit coverage and numeric rate-limit retries:** portal and admin login
   attempts now persist `ActivityLog` rows for password failures, lock-rejected attempts,
