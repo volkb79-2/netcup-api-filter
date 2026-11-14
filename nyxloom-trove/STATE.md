@@ -1,6 +1,6 @@
 # naf — project state (single point of truth)
 
-**Last synced: 2026-11-14 (B048 part 1 delivered; B093 PowerDNS 5.1 implementation and resolution committed; B095 real-start verification done; CIU secret delivery remains open).** Start here.
+**Last synced: 2026-11-14 (B048 part 1 delivered; PowerDNS 5.1.5 live with a separate webserver secret; the independent final review of the migration series passed after two fix rounds; the cmru 7.3.1 Passenger bundle canary is verified equivalent (B108); CIU secret delivery remains open).** Start here.
 For this sync, the status note, WP3 (B044) probe row, WP8 (B050/B093/B095) image and real-start row,
 WP4b-1/B046 identity row, remaining CIU-dependent work row, `Open items for the operator` line, and
 E2E/pwmcp review row plus the B059 and B105/B106 backlog entries below were re-synced; the other
@@ -34,7 +34,9 @@ reviewed independently on the other, with gates through `run-gate`.
 | WP8 (B050) cmru versions cover every image | merged (`c2d31a4`) | targets python 3.11.17 / 3.14.9, mailpit 1.33.0, powerdns 5.1.5 (was 4.8.5; the operator chose the 5.1 series on 2026-11-13, B093; real-start verification B095 done in `d5f7652`) |
 | ciu CIU-193/205/206 | merged in vbpub main, unreleased (ciu 7.25.0 planned by the vbpub controller) | worktree-safe `ciu down`, selection facts + selection record under `ciu up --dir`, `ASK_HOST` host-wide secret |
 | WP4b-1 (B046) identity | merged (`51bcd81`) | Worktree identity facts, derived names, and `ciu resolve` consumers are in main |
-| WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | Downstream WP4b-2, WP5, WP6, WP7, WP9 and WP11 remain open pending ciu 7.25.0. |
+| WP4b-2, WP5, WP6, WP7, WP9, WP11 | open | Not started. They were gated on ciu 7.25.0; ciu 7.25.x is now released and installed in the shared tool environment (7.25.1 on 2026-11-14), so that blocker is lifted, but each package must be re-scoped against the released ciu before it starts. |
+| cmru Passenger bundle canary (B108, KI-126) | merged (`ff8e72d`) | The Passenger tarball is built by `cmru handler bundle-build` (cmru >= 7.3.1); the controller's real old/new build comparison found the archives equivalent (same 1515 files except the old builder's own script and the new `manifest.json`, identical content and seeded database). No webhoster deploy yet (B054, B092 part 2). |
+| Independent final review of the series | passed | Opus final review: FIX, then FIX, then PASS on `053b765`; the findings were fixed in the fold-in packages (backlog B101-B107 hold what was deliberately left open). Release condition from that review: a green e2e run on the exact release head (B107 is an open intermittent connection reset). |
 | Final gates | green | release-gate PASS on `43216d0` (unit py311/py314, R1 floors, R3 canaries), e2e PASS on `177bd79`, `cmru versions check naf` matches, pushed to origin (no tags) |
 | R2 close-out (B041/WP0) | open | lane lists fixed (`d077df0`); rerun the four lanes on one stable commit |
 | E2E/pwmcp review backlog (B057..B071) | filed `2026-11-12`; B057/B058/B059 done (`133a036`) | [4-backlog § B-E2E-REVIEW](4-backlog.md#b-e2e-review-2026-11-12-independent-e2epwmcp-review) |
